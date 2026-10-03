@@ -231,9 +231,100 @@
     streaming: false,
     streamEl: null,
     streamBuf: '',
+    streamStarted: false,
     activeAssistantId: null,
+    thinkBody: null,
+    modelSets: [],
+    modelSetId: localStorage.getItem('cs_model') || '',
+    webSearch: localStorage.getItem('cs_websearch') === '1',
+    readonly: false,
+    publicToken: null,
+    greetTimer: null,
+    greetIdx: Math.floor(Math.random() * 100),
+    suggIdx: Math.floor(Math.random() * 50),
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
   };
+
+  const GREETINGS = [
+    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
+    'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
+    'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
+    'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
+    'О чём поговорим?', 'Что разберём?', 'Какая идея?', 'Что придумаем?',
+    'Чем помочь?', 'Что подскажем?', 'Какой план?', 'Что изучим?',
+    'Куда двигаемся?', 'Что создадим?', 'Какую проблему решаем?', 'Что анализируем?',
+    'О чём поразмышляем?', 'Что объяснить?', 'Какой текст разберём?', 'Что написать?',
+    'Какую тему раскроем?', 'Что посчитать?', 'Какой код нужен?', 'Что спроектируем?',
+    'О чём расскажу?', 'Что найдём?', 'Какую задачу решим?', 'Что улучшим?',
+    'С чего начать?', 'Какой вопрос у вас?', 'Что уточнить?', 'Как помочь?',
+    'О чём речь?', 'Что разложим по полочкам?', 'Какую идею обсудим?', 'Что проверим?',
+    'Куда копаем?', 'Что переведём?', 'Какой документ разберём?', 'Что суммируем?',
+    'О чём спросить?', 'Что построим?', 'Какой план составим?', 'Что оптимизируем?',
+    'Какую тему разберём?', 'Что изобретём?', 'О чём подумать?', 'Что настроим?',
+    'Какую статью разберём?', 'Что напишем?', 'О чём мечтаем?', 'Что решаем?',
+    'Какую мысль разовьём?', 'Что подытожим?', 'О чём поговорим сегодня?', 'Что найдём вместе?',
+    'Какая цель?', 'Что нужно объяснить?', 'Какой вопрос на повестке?', 'Что разгадаем?',
+    'О чём поспорим?', 'Что посоветовать?', 'Какую задачу разберём?', 'Что сравним?',
+    'Какой пример нужен?', 'Что расскажем?', 'О чём почитать?', 'Что запланируем?',
+    'Какую идею проверим?', 'Что упростим?', 'О чём подумаем вместе?', 'Что посмотрим?',
+    'Какой вопрос решаем?', 'Что подправим?', 'О чём расскажете?', 'Что придумаем вместе?',
+    'Какую проблему разберём?', 'Что нарисуем?', 'О чём поговорим?', 'Что сделаем?',
+    'Какой текст напишем?', 'Что разберём подробно?', 'О чём подумаем сейчас?', 'Что принесёте?',
+  ];
+
+  const SUGGESTIONS = [
+    'Помоги с Python — пример кода',
+    'Объясни, что такое API',
+    'Составь план на неделю',
+    'Напиши SQL-запрос с JOIN',
+    'Как работает Docker?',
+    'Переведи текст на английский',
+    'Сократи этот текст',
+    'Сравни React и Vue',
+    'Напиши регулярное выражение',
+    'Объясни async/await простыми словами',
+    'Составь резюме для junior-разработчика',
+    'Как настроить CI/CD?',
+    'Разбери ошибку в коде',
+    'Придумай название для проекта',
+    'Напиши письмо клиенту',
+    'Сделай конспект статьи',
+    'Как ускорить запрос к базе?',
+    'Объясни разницу между TCP и UDP',
+    'Составь бюджет на месяц',
+    'Напиши bash-скрипт для бэкапа',
+    'Что такое векторная база данных?',
+    'Придумай 10 идей для стартапа',
+    'Как работает JWT?',
+    'Оптимизируй этот алгоритм',
+    'Напиши тесты на pytest',
+    'Объясни принципы SOLID',
+    'Как развернуть приложение на сервере?',
+    'Составь чек-лист для релиза',
+    'Придумай вопросы для собеседования',
+    'Как работает HTTPS?',
+    'Напиши Dockerfile для Python',
+    'Разбери JSON на части',
+    'Объясни, что такое REST',
+    'Составь план изучения ML',
+    'Напиши функцию сортировки',
+    'Как чистить данные в pandas?',
+    'Придумай структуру базы данных',
+    'Объясни git rebase',
+    'Как работает Redis?',
+    'Составь договор простыми словами',
+    'Напиши HTML-страницу с формой',
+    'Объясни, что такое WebSocket',
+    'Как защитить API?',
+    'Придумай метрики для продукта',
+    'Напиши текст для лендинга',
+    'Объясни разницу между процессами и потоками',
+    'Как настроить nginx?',
+    'Составь roadmap проекта',
+    'Напиши SQL для отчёта',
+    'Что почитать про архитектуру?',
+  ];
+
 
   // ---------- auth ----------
   function showAuth() {
@@ -425,6 +516,10 @@
     }).join('') + '</div>';
   }
 
+  function thinkAnim() {
+    return '<span class="think-anim">' + '<span></span>'.repeat(8) + '</span>';
+  }
+
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
@@ -433,15 +528,32 @@
       inner = attsHtml(n.attachments) + '<div class="bubble">' + escapeHtml(n.content) + '</div>';
     } else {
       const failed = n.status === 'failed';
-      const waiting = (n.status === 'queued' || n.status === 'processing') && !n.content;
-      inner = '<div class="content md"' + (failed ? ' style="color:var(--danger)"' : '') + '>' +
+      const generating = n.status === 'queued' || n.status === 'processing';
+      const hasThink = !!(n.thinking && String(n.thinking).trim());
+      const showThink = hasThink || (generating && !n.content);
+
+      let think = '';
+      if (showThink) {
+        think = '<div class="think-box' + (n.thinkCollapsed ? ' collapsed' : '') + '">' +
+          '<div class="think-head">' + thinkAnim() +
+            '<span class="label">' + (hasThink ? 'Размышления' : 'Думает…') + '</span>' +
+            icon('chevron-down', 'chev') +
+          '</div>' +
+          '<div class="think-body">' + escapeHtml(n.thinking || '') + '</div></div>';
+      }
+
+      const body = '<div class="content md"' + (failed ? ' style="color:var(--danger)"' : '') + '>' +
         (failed ? 'Ошибка: ' + escapeHtml(n.error || 'генерация не удалась')
                 : renderMarkdown(n.content || '')) + '</div>';
-      if (waiting) inner += '<div class="thinking"><i></i><i></i><i></i></div>';
+
+      inner = think + body;
+      if (!showThink && generating && !n.content) {
+        inner += '<div class="thinking"><i></i><i></i><i></i></div>';
+      }
     }
 
     let meta = '';
-    if (!isUser) {
+    if (!isUser && !state.readonly) {
       const generating = n.status === 'queued' || n.status === 'processing';
       const parts = [];
       if (n.status === 'cancelled') parts.push('<span class="status">остановлено</span>');
@@ -473,23 +585,62 @@
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' + inner + branch + meta + sugg + '</div>';
   }
 
+  function renderEmptyState() {
+    const box = $('#messages');
+    box.innerHTML =
+      '<div class="empty-state">' +
+        '<h2 class="greet" id="greet-text">' +
+          escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
+        '<p>Задайте вопрос, прикрепите файл или включите поиск в интернете.</p>' +
+        '<div class="chips" id="sugg-chips"></div>' +
+      '</div>';
+    renderSuggestionChips();
+    startRotation();
+  }
+
+  function renderSuggestionChips() {
+    const box = $('#sugg-chips');
+    if (!box) return;
+    const total = SUGGESTIONS.length, n = 4;
+    const picks = [];
+    for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
+    state.suggIdx = (state.suggIdx + n) % total;
+    box.innerHTML = picks.map((p, i) =>
+      '<button class="chip-in" style="animation-delay:' + (i * 70) +
+      'ms" data-prompt="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>').join('');
+    $$('button[data-prompt]', box).forEach(b => b.addEventListener('click', () => {
+      $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
+    }));
+  }
+
+  function rotateGreeting() {
+    state.greetIdx = (state.greetIdx + 1) % GREETINGS.length;
+    const el = $('#greet-text');
+    if (!el) return;
+    el.textContent = GREETINGS[state.greetIdx];
+    el.classList.remove('greet');
+    void el.offsetWidth;   // restart the CSS animation
+    el.classList.add('greet');
+  }
+
+  function startRotation() {
+    stopRotation();
+    state.greetTimer = setInterval(() => {
+      if (!$('#greet-text')) { stopRotation(); return; }
+      rotateGreeting();
+      renderSuggestionChips();
+    }, 4200);
+  }
+
+  function stopRotation() {
+    if (state.greetTimer) { clearInterval(state.greetTimer); state.greetTimer = null; }
+  }
+
   function renderMessages() {
     const box = $('#messages');
     const path = activePath(state.tree, state.choices);
-    if (!path.length) {
-      box.innerHTML =
-        '<div class="empty-state"><h2>Чем помочь сегодня?</h2>' +
-        '<p>Задайте вопрос или прикрепите файл — ChatStudio ответит.</p>' +
-        '<div class="chips">' +
-        '<button data-prompt="Объясни кратко, что такое FastAPI.">Что такое FastAPI?</button>' +
-        '<button data-prompt="Составь план изучения Python на 4 недели.">План изучения Python</button>' +
-        '<button data-prompt="Напиши функцию на Python для чтения CSV и вывода статистики.">Пример кода</button>' +
-        '</div></div>';
-      $$('.chips button', box).forEach(b => b.addEventListener('click', () => {
-        $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
-      }));
-      return;
-    }
+    if (!path.length) { renderEmptyState(); return; }
+    stopRotation();
     box.innerHTML = '<div class="msg-wrap">' +
       path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
     bindMessageEvents();
@@ -497,6 +648,15 @@
   }
 
   function bindMessageEvents() {
+    $$('.think-head').forEach(h => h.addEventListener('click', () => {
+      const box = h.closest('.think-box');
+      if (!box) return;
+      box.classList.toggle('collapsed');
+      const msgEl = h.closest('.msg');
+      const n = msgEl ? findNode(state.tree, msgEl.dataset.mid) : null;
+      if (n) n.thinkCollapsed = box.classList.contains('collapsed');
+    }));
+
     $$('[data-mact]').forEach(btn => btn.addEventListener('click', async () => {
       const id = btn.dataset.id, act = btn.dataset.mact;
       if (act === 'copy') {
@@ -564,7 +724,8 @@
   async function streamRequest(path, body) {
     if (state.streaming) return;
     setStreaming(true);
-    state.streamEl = null; state.streamBuf = ''; state.streamStarted = false; state.activeAssistantId = null;
+    state.streamEl = null; state.thinkBody = null; state.streamBuf = '';
+    state.streamStarted = false; state.activeAssistantId = null;
     try {
       const headers = { 'X-CSRF-Token': api.csrf() };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -581,22 +742,34 @@
           renderMessages();
           if (ev === 'assistant_message') {
             state.activeAssistantId = data.id;
-            state.streamEl = $('.msg[data-mid="' + node.id + '"] .content');
+            const el = $('.msg[data-mid="' + node.id + '"]');
+            state.streamEl = el ? $('.content', el) : null;
+            state.thinkBody = el ? $('.think-body', el) : null;
+          }
+        } else if (ev === 'thinking') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.thinking = (n.thinking || '') + (data.text || '');
+          if (state.thinkBody) {
+            state.thinkBody.textContent += (data.text || '');
+            state.thinkBody.scrollTop = state.thinkBody.scrollHeight;
           }
         } else if (ev === 'delta') {
           state.streamBuf += data.text || '';
           if (state.streamEl) {
             if (!state.streamStarted) {
-              const th = state.streamEl.parentElement.querySelector('.thinking');
-              if (th) th.remove();
               state.streamStarted = true;
+              // the answer started: fold the thinking box away
+              const n = findNode(state.tree, state.activeAssistantId);
+              if (n && n.thinking) { n.thinkCollapsed = true; }
+              const tb = state.thinkBody && state.thinkBody.closest('.think-box');
+              if (tb) tb.classList.add('collapsed');
             }
             state.streamEl.textContent = state.streamBuf;
             scrollToBottom();
           }
         } else if (ev === 'done') {
           const n = findNode(state.tree, data.message_id);
-          if (n) { n.status = 'completed'; n.content = state.streamBuf; }
+          if (n) { n.status = 'completed'; n.content = data.text || state.streamBuf; }
           renderMessages();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id);
@@ -647,7 +820,12 @@
     input.value = ''; autoGrow();
     state.pendingAttachments = []; renderAttachments();
     await streamRequest('/api/chats/' + state.currentChatId + '/messages',
-      { content, attachment_ids: attachments });
+      {
+        content,
+        attachment_ids: attachments,
+        model_set_id: state.modelSetId || null,
+        web_search: !!state.webSearch,
+      });
   }
 
   // ---------- composer ----------
@@ -684,6 +862,42 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
+    $('#model-select').addEventListener('change', (e) => {
+      state.modelSetId = e.target.value;
+      localStorage.setItem('cs_model', state.modelSetId);
+    });
+    $('#search-toggle').addEventListener('click', () => {
+      state.webSearch = !state.webSearch;
+      localStorage.setItem('cs_websearch', state.webSearch ? '1' : '0');
+      applyToggles();
+      toast(state.webSearch ? 'Поиск в интернете включён' : 'Поиск в интернете выключен');
+    });
+  }
+
+  function applyToggles() {
+    const t = $('#search-toggle');
+    if (t) t.classList.toggle('active', !!state.webSearch);
+  }
+
+  async function loadModelSets() {
+    try {
+      state.modelSets = await api.get('/api/models/sets');
+    } catch (e) {
+      state.modelSets = [];
+    }
+    const sel = $('#model-select');
+    if (!sel) return;
+    const mains = state.modelSets.filter(s => s.route_type === 'MAIN');
+    if (!mains.length) { sel.classList.add('hidden'); return; }
+    sel.classList.remove('hidden');
+    sel.innerHTML = mains.map(s =>
+      '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>').join('');
+    if (state.modelSetId && mains.some(s => s.id === state.modelSetId)) {
+      sel.value = state.modelSetId;
+    } else {
+      sel.value = mains[0].id;
+      state.modelSetId = mains[0].id;
+    }
   }
 
   // ---------- files ----------
@@ -880,19 +1094,30 @@
   // ---------- sidebar ----------
   function applySidebar() {
     const sb = $('#sidebar');
-    sb.classList.toggle('collapsed', state.sidebarCollapsed && window.innerWidth > 820);
-    $('#collapse-btn').textContent = state.sidebarCollapsed ? '»' : '«';
+    const collapsed = state.sidebarCollapsed && window.innerWidth > 860;
+    sb.classList.toggle('collapsed', collapsed);
+    const openBtn = $('#sidebar-open-btn');
+    if (openBtn) openBtn.classList.toggle('hidden', !collapsed);
   }
   function closeMobileSidebar() {
-    if (window.innerWidth <= 820) { $('#sidebar').classList.remove('open'); $('#sidebar-overlay').classList.remove('show'); }
+    if (window.innerWidth <= 860) {
+      $('#sidebar').classList.remove('open');
+      $('#sidebar-overlay').classList.remove('show');
+    }
   }
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', newChat);
     $('#collapse-btn').addEventListener('click', () => {
-      state.sidebarCollapsed = !state.sidebarCollapsed;
-      localStorage.setItem('cs_sidebar', state.sidebarCollapsed ? '1' : '0');
+      state.sidebarCollapsed = true;
+      localStorage.setItem('cs_sidebar', '1');
       applySidebar();
     });
+    $('#sidebar-open-btn').addEventListener('click', () => {
+      state.sidebarCollapsed = false;
+      localStorage.setItem('cs_sidebar', '0');
+      applySidebar();
+    });
+    $('#share-btn').addEventListener('click', openShare);
     $('#menu-btn').addEventListener('click', () => {
       $('#sidebar').classList.add('open'); $('#sidebar-overlay').classList.add('show');
     });
@@ -936,22 +1161,130 @@
     });
     window.addEventListener('resize', () => {
       applySidebar();
-      $('#menu-btn').style.display = window.innerWidth <= 820 ? 'grid' : 'none';
+      $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
     });
+  }
+
+  // ---------- share / public ----------
+  async function openShare() {
+    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+    let st;
+    try { st = await api.get('/api/chats/' + state.currentChatId + '/share'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+
+    const url = st.share_token ? (location.origin + '/?share=' + st.share_token) : '';
+    openModal({
+      title: 'Поделиться чатом',
+      okText: 'Закрыть',
+      body: st.is_public
+        ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
+          '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
+          '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="chip-btn" id="copy-link">' + icon('copy') + 'Копировать</button>' +
+          '<button class="chip-btn" id="open-link">' + icon('link') + 'Открыть</button>' +
+          '<button class="chip-btn" id="stop-share">' + icon('x') + 'Отключить</button></div>'
+        : '<p>Создать публичную ссылку на этот чат? Доступ будет только на чтение.</p>' +
+          '<div style="margin-top:12px"><button class="chip-btn" id="start-share">' +
+          icon('link') + 'Создать ссылку</button></div>',
+      onOk: () => true,
+    });
+
+    const start = $('#start-share');
+    if (start) start.addEventListener('click', async () => {
+      try { await api.post('/api/chats/' + state.currentChatId + '/share'); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+      $('#modal-root').innerHTML = ''; openShare();
+    });
+    const copy = $('#copy-link');
+    if (copy) copy.addEventListener('click', async () => {
+      const ok = await copyText(url);
+      toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
+    });
+    const open = $('#open-link');
+    if (open) open.addEventListener('click', () => window.open(url, '_blank'));
+    const stop = $('#stop-share');
+    if (stop) stop.addEventListener('click', async () => {
+      try { await api.del('/api/chats/' + state.currentChatId + '/share'); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+      $('#modal-root').innerHTML = ''; openShare();
+    });
+  }
+
+  async function currentUserOrNull() {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) { return null; }
+  }
+
+  async function showPublicView(token) {
+    let data;
+    try {
+      const r = await fetch('/api/public/chats/' + encodeURIComponent(token),
+        { credentials: 'same-origin' });
+      if (!r.ok) {
+        throw new Error(r.status === 404 ? 'ссылка недействительна или отключена' : 'HTTP ' + r.status);
+      }
+      data = await r.json();
+    } catch (e) {
+      showAuth();
+      $('#auth-error').textContent = 'Не удалось открыть ссылку: ' + e.message;
+      return;
+    }
+
+    state.user = await currentUserOrNull();
+    state.publicToken = token;
+    state.readonly = true;
+    state.tree = data.messages || [];
+    state.currentChatId = null;
+    state.choices = {};
+
+    $('#auth-screen').classList.add('hidden');
+    $('#main-screen').classList.remove('hidden');
+    $('#sidebar').classList.add('collapsed');
+    $('#chat-title').textContent = data.title || 'Публичный чат';
+    $('#composer').classList.add('hidden');
+    $('#share-btn').classList.add('hidden');
+
+    const banner = document.createElement('div');
+    banner.className = 'public-banner';
+    banner.innerHTML = '<span>' + icon('link') + ' Публичный чат' +
+      (data.author ? ' · ' + escapeHtml(data.author) : '') + ' — только чтение</span>' +
+      (state.user
+        ? '<button id="fork-btn">Продолжить у себя</button>'
+        : '<button id="login-btn">Войти, чтобы продолжить</button>');
+    $('#chat-area').insertBefore(banner, $('#messages'));
+
+    const fb = $('#fork-btn');
+    if (fb) fb.addEventListener('click', async () => {
+      try {
+        await api.post('/api/public/chats/' + encodeURIComponent(token) + '/fork');
+        location.href = '/';
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    const lb = $('#login-btn');
+    if (lb) lb.addEventListener('click', () => { location.href = '/'; });
+
+    renderMessages();
   }
 
   // ---------- boot ----------
   async function boot() {
     showApp();
     applySidebar();
-    $('#menu-btn').style.display = window.innerWidth <= 820 ? 'grid' : 'none';
+    applyToggles();
+    $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
     await loadChats();
     await loadFiles();
+    await loadModelSets();
     renderMessages();
   }
 
   async function init() {
     bindAuth(); bindSidebar(); bindComposer(); bindFiles();
+    const token = new URLSearchParams(location.search).get('share');
+    if (token) { await showPublicView(token); return; }
     try {
       const me = await api.get('/api/auth/me');
       state.user = me;

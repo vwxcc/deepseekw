@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..models import Attachment, File, Message, Suggestion
 from ..schemas import AttachmentOut, MessageOut
+from .files import image_to_data_url
 
 
 def attachment_out(att: Attachment, f: File) -> AttachmentOut:
@@ -89,7 +90,11 @@ async def build_message_tree(
 async def ancestor_chain(
     db: AsyncSession, message_id: str, include_attachments: bool = True
 ) -> list[dict]:
-    """Return the linear dialogue (oldest first) ending at ``message_id``."""
+    """Linear dialogue (oldest first) ending at ``message_id``.
+
+    Image attachments become multimodal content parts (so a vision model can
+    actually see them); documents are inlined as text.
+    """
     chain: list[dict] = []
     current_id: str | None = message_id
     seen: set[str] = set()
@@ -98,18 +103,34 @@ async def ancestor_chain(
         msg = await db.get(Message, current_id)
         if msg is None:
             break
-        content = msg.content
+
+        text = msg.content or ""
+        images: list[dict] = []
         if include_attachments:
-            atts = await db.execute(
-                select(Attachment).where(Attachment.message_id == msg.id)
+            res = await db.execute(
+                select(Attachment, File)
+                .join(File, File.id == Attachment.file_id)
+                .where(Attachment.message_id == msg.id)
             )
-            for att in atts.scalars().all():
-                rec = await db.get(File, att.file_id)
-                if rec is not None and rec.extracted_text:
-                    content += (
+            for _att, rec in res.all():
+                if rec.kind == "image":
+                    url = image_to_data_url(rec.storage_path, rec.mime_type or "")
+                    if url:
+                        images.append(
+                            {"type": "image_url", "image_url": {"url": url}}
+                        )
+                elif rec.extracted_text:
+                    text += (
                         f"\n\n[Вложение: {rec.original_name}]\n"
                         f"{rec.extracted_text[: settings.max_attachment_chars]}"
                     )
+
+        if images:
+            content: list | str = [
+                {"type": "text", "text": text or "(см. изображение)"}
+            ] + images
+        else:
+            content = text
         chain.append({"role": msg.role.value, "content": content})
         current_id = msg.parent_message_id
     chain.reverse()

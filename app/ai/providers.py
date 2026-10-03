@@ -74,8 +74,8 @@ async def stream_chat(
     max_tokens: int,
     timeout: float,
     disable_thinking: bool = True,
-) -> AsyncIterator[str]:
-    """Yield answer chunks. Falls back to reasoning if no content is produced."""
+) -> AsyncIterator[tuple[str, str]]:
+    """Yield ("thinking"|"content", text) chunks from a streaming completion."""
     url = _endpoint(base_url)
     payload = _payload(
         messages=messages,
@@ -85,8 +85,6 @@ async def stream_chat(
         stream=True,
         disable_thinking=disable_thinking,
     )
-    content_seen = False
-    reasoning_parts: list[str] = []
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream(
@@ -111,14 +109,10 @@ async def stream_chat(
                 delta = choices[0].get("delta") or {}
                 rpiece = delta.get("reasoning")
                 if isinstance(rpiece, str) and rpiece:
-                    reasoning_parts.append(rpiece)
+                    yield ("thinking", rpiece)
                 piece = delta.get("content")
                 if isinstance(piece, str) and piece:
-                    content_seen = True
-                    yield piece
-
-    if not content_seen and reasoning_parts:
-        yield "".join(reasoning_parts)
+                    yield ("content", piece)
 
 
 async def complete_chat(

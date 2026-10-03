@@ -36,6 +36,37 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def image_to_data_url(path: str, mime: str = "", max_side: int = 1400) -> str | None:
+    """Downscale + base64-encode an image so a vision model can consume it."""
+    try:
+        import base64
+        import io
+
+        from PIL import Image
+
+        with Image.open(path) as im:
+            if im.mode in ("P", "RGBA", "LA", "CMYK"):
+                im = im.convert("RGB")
+            w, h = im.size
+            scale = min(1.0, max_side / max(w, h)) if max(w, h) else 1.0
+            if scale < 1.0:
+                im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=85)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception:
+        pass
+    try:
+        import base64
+
+        with open(path, "rb") as fh:
+            b64 = base64.b64encode(fh.read()).decode()
+        return f"data:{mime or 'image/png'};base64,{b64}"
+    except Exception:
+        return None
+
+
 def decode_text(data: bytes) -> str:
     try:
         import chardet

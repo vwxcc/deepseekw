@@ -10,7 +10,7 @@ from sqlalchemy import delete
 
 from ..config import settings
 from ..database import SessionLocal
-from ..models import Chat, Message, MessageStatus, RouteType, Suggestion
+from ..models import Chat, Message, MessageStatus, ModelSet, RouteType, Suggestion
 from . import model_sets as ms
 from . import prompts
 from .providers import ProviderError, complete_chat, stream_chat
@@ -31,12 +31,13 @@ class EntryConfig:
 
 @dataclass
 class Job:
-    kind: str  # "message" | "title"
+    kind: str  # "message" | "title" | "suggestions"
     route_type: RouteType
     chat_id: str
     history: list[dict] = field(default_factory=list)
     message_id: str | None = None
     user_text: str = ""
+    model_set_id: str | None = None
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -109,10 +110,16 @@ class AIRouter:
     # --- internals ---------------------------------------------------------
 
     async def _resolve_entries(
-        self, route_type: RouteType
+        self, route_type: RouteType, model_set_id: str | None = None
     ) -> tuple[str, str, list[EntryConfig]]:
         async with SessionLocal() as db:
-            mset = await ms.get_model_set(db, route_type)
+            mset = None
+            if model_set_id:
+                candidate = await db.get(ModelSet, model_set_id)
+                if candidate is not None and candidate.is_active:
+                    mset = candidate
+            if mset is None:
+                mset = await ms.get_model_set(db, route_type)
             if mset is None:
                 raise ProviderError(
                     f"Нет активного Model Set для маршрута {route_type.value}"
@@ -190,7 +197,9 @@ class AIRouter:
 
     async def _run_message(self, job: Job) -> None:
         try:
-            mset_id, mset_name, entries = await self._resolve_entries(job.route_type)
+            mset_id, mset_name, entries = await self._resolve_entries(
+                job.route_type, job.model_set_id
+            )
         except ProviderError as e:
             await self._finish(job.message_id, MessageStatus.failed, error=str(e))
             await job.output.put(("error", str(e)))
@@ -208,7 +217,8 @@ class AIRouter:
                 return
             try:
                 full = ""
-                async for piece in stream_chat(
+                thinking = ""
+                async for kind, piece in stream_chat(
                     messages=job.history,
                     base_url=entry.base_url,
                     api_key=entry.api_key,
@@ -222,26 +232,33 @@ class AIRouter:
                         await self._finish(
                             job.message_id,
                             MessageStatus.cancelled,
-                            content=full,
+                            content=(full or thinking),
                             error="Остановлено пользователем",
                         )
-                        await job.output.put(("cancelled", full))
+                        await job.output.put(("cancelled", full or thinking))
                         return
-                    full += piece
-                    await job.output.put(("delta", piece))
+                    if kind == "thinking":
+                        thinking += piece
+                        await job.output.put(("thinking", piece))
+                    else:
+                        full += piece
+                        await job.output.put(("delta", piece))
 
-                if not full.strip():
+                answer = full if full.strip() else thinking
+                if not answer.strip():
                     raise ProviderError("Пустой ответ модели")
 
-                await self._finish(job.message_id, MessageStatus.completed, content=full, error=None)
-                await job.output.put(("done", full))
+                await self._finish(
+                    job.message_id, MessageStatus.completed, content=answer, error=None
+                )
+                await job.output.put(("done", answer))
                 await self.enqueue(
                     Job(
                         kind="suggestions",
                         route_type=RouteType.SUGGESTIONS,
                         chat_id=job.chat_id,
                         message_id=job.message_id,
-                        history=[*job.history, {"role": "assistant", "content": full}],
+                        history=[*job.history, {"role": "assistant", "content": answer}],
                     )
                 )
                 return

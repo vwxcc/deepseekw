@@ -36,3 +36,24 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # lightweight forward migrations for columns added after the first release
+        for table, cols in _MIGRATIONS.items():
+            res = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
+            existing = {row[1] for row in res.fetchall()}
+            for name, ddl in cols.items():
+                if name not in existing:
+                    await conn.exec_driver_sql(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"
+                    )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_chats_share_token ON chats (share_token)"
+        )
+
+
+# table -> {column: ddl}
+_MIGRATIONS: dict[str, dict[str, str]] = {
+    "chats": {
+        "share_token": "VARCHAR(64)",
+        "is_public": "BOOLEAN DEFAULT 0",
+    },
+}

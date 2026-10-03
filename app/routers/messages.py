@@ -80,9 +80,11 @@ async def _stream_job(
 
             if kind == "delta":
                 yield _sse("delta", {"text": payload})
+            elif kind == "thinking":
+                yield _sse("thinking", {"text": payload})
             elif kind == "done":
                 finished = True
-                yield _sse("done", {"message_id": assistant.id})
+                yield _sse("done", {"message_id": assistant.id, "text": payload})
                 break
             elif kind == "error":
                 finished = True
@@ -196,7 +198,18 @@ async def send_message(
     user_atts = (await message_attachments(db, [user_msg.id])).get(user_msg.id, [])
 
     history_messages = await ancestor_chain(db, user_msg.id)
-    history = prompts.with_system(history_messages, prompts.MAIN_SYSTEM)
+
+    system_prompt = prompts.MAIN_SYSTEM
+    if data.web_search:
+        from ..services.websearch import format_context, web_search
+
+        results = await web_search(content)
+        ctx = format_context(results)
+        if ctx:
+            system_prompt = f"{system_prompt}\n\n{ctx}"
+        await db.commit()
+
+    history = prompts.with_system(history_messages, system_prompt)
 
     assistant = Message(
         chat_id=chat.id,
@@ -217,6 +230,7 @@ async def send_message(
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
+        model_set_id=data.model_set_id,
     )
     await ai_router.enqueue(job)
 

@@ -32,7 +32,14 @@ class Settings(BaseSettings):
     # --- AI ---
     global_ai_concurrency: int = 2
     request_timeout: int = 300
-    ai_disable_thinking: bool = True
+    # False => let reasoning-capable models stream their thinking
+    ai_disable_thinking: bool = False
+
+    # --- Web search (SearXNG) ---
+    web_search_enabled: bool = True
+    searxng_url: str = "http://searxng-web:8080"
+    web_search_results: int = 5
+    web_search_timeout: int = 12
 
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file

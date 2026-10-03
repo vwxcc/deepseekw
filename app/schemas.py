@@ -49,6 +49,8 @@ class ChatOut(ORMModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    is_public: bool = False
+    share_token: str | None = None
 
 
 class ChatCreate(BaseModel):
@@ -57,6 +59,12 @@ class ChatCreate(BaseModel):
 
 class ChatUpdate(BaseModel):
     title: str
+
+
+class ShareOut(BaseModel):
+    is_public: bool
+    share_token: str | None = None
+    url: str | None = None
 
 
 # --- Messages ---
@@ -87,6 +95,15 @@ class MessageCreate(BaseModel):
     content: str
     parent_message_id: str | None = None
     attachment_ids: list[str] = Field(default_factory=list)
+    model_set_id: str | None = None
+    web_search: bool = False
+
+
+class PublicChatOut(BaseModel):
+    title: str
+    created_at: datetime
+    author: str = ""
+    messages: list[MessageOut] = Field(default_factory=list)
 
 
 # --- Files ---

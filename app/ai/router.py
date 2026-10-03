@@ -11,9 +11,18 @@ from sqlalchemy import delete
 
 from ..config import settings
 from ..database import SessionLocal
-from ..models import Chat, Message, MessageStatus, ModelSet, RouteType, Suggestion
+from ..models import (
+    Chat,
+    Memory,
+    Message,
+    MessageStatus,
+    ModelSet,
+    RouteType,
+    Suggestion,
+)
 from . import model_sets as ms
 from . import prompts
+from .prompts import extract_memories
 from .providers import ProviderError, complete_chat, stream_chat
 
 log = logging.getLogger("chatstudio.ai")
@@ -40,6 +49,7 @@ class Job:
     user_text: str = ""
     model_set_id: str | None = None
     effort: str | None = None
+    user_id: str | None = None
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -264,6 +274,21 @@ class AIRouter:
                 answer = full if full.strip() else thinking
                 if not answer.strip():
                     raise ProviderError("Пустой ответ модели")
+
+                # pull [[memory: ...]] commands out of the visible answer
+                answer, memories = extract_memories(answer)
+                if memories and job.user_id:
+                    async with SessionLocal() as db:
+                        for item in memories:
+                            db.add(
+                                Memory(
+                                    user_id=job.user_id,
+                                    content=item[:2000],
+                                    message_id=job.message_id,
+                                )
+                            )
+                        await db.commit()
+                    await job.output.put(("memory", json.dumps(memories, ensure_ascii=False)))
 
                 await self._finish(
                     job.message_id,

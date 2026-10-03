@@ -57,7 +57,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "is_public": "BOOLEAN DEFAULT 0",
         "summary": "TEXT",
         "summary_upto": "VARCHAR(36)",
-        "effort": "VARCHAR(16) DEFAULT 'medium'",
+        "effort": "VARCHAR(16) DEFAULT 'recommended'",
     },
     "messages": {
         "tokens_cached": "INTEGER DEFAULT 0",

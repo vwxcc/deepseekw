@@ -87,6 +87,9 @@
   }
 
   // ---------- markdown ----------
+  let _mathStore = [];
+  const MATH_RE = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\$([^$\n]+?)\$|\\\(([\s\S]+?)\\\)/g;
+
   function inlineFmt(s) {
     s = escapeHtml(s);
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -94,7 +97,25 @@
     s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // restore raw math last so markdown does not mangle it
+    s = s.replace(/\u0001M(\d+)\u0001/g, (m, i) => _mathStore[+i] || '');
     return s;
+  }
+
+  function renderMath(root) {
+    if (!root || !window.renderMathInElement) return;
+    try {
+      window.renderMathInElement(root, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '\\[', right: '\\]', display: true },
+          { left: '$', right: '$', display: false },
+          { left: '\\(', right: '\\)', display: false },
+        ],
+        throwOnError: false,
+        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'option'],
+      });
+    } catch (e) { /* katex optional */ }
   }
 
   function tailText(s, n) {
@@ -183,20 +204,28 @@
   function codeBlockHtml(lang, code) {
     const id = 'code_' + Math.random().toString(36).slice(2);
     window.__codeStore = window.__codeStore || {};
-    window.__codeStore[id] = code;
+    window.__codeStore[id] = { lang: lang || '', code: code };
     return '<div class="code-block"><div class="code-head"><span>' +
-      escapeHtml(lang || 'code') + '</span><button data-copy="' + id + '">' +
-      icon('copy') + 'Копировать</button>' +
-      '</div><pre><code>' + escapeHtml(code) + '</code></pre></div>';
+      escapeHtml(lang || 'code') + '</span><span class="code-acts">' +
+      '<button data-copy="' + id + '">' + icon('copy') + 'Копировать</button>' +
+      '<button data-dl="' + id + '" title="Скачать">' + icon('download') + '</button>' +
+      '</span></div><pre><code>' + escapeHtml(code) + '</code></pre></div>';
   }
 
   function renderMarkdown(src) {
     if (!src) return '';
     const codes = [];
+    _mathStore = [];
     let text = String(src).replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (m, lang, code) => {
       const i = codes.length;
       codes.push({ lang: (lang || '').trim(), code: code.replace(/\s+$/, '') });
       return '\u0000C' + i + '\u0000';
+    });
+    // pull math out before markdown mangles it (KaTeX renders it later)
+    text = text.replace(MATH_RE, (m) => {
+      const i = _mathStore.length;
+      _mathStore.push(m);
+      return '\u0001M' + i + '\u0001';
     });
 
     const lines = text.split('\n');
@@ -231,7 +260,13 @@
           body.push(splitRow(lines[j]));
           j++;
         }
-        out.push('<div class="table-wrap"><table><thead><tr>' +
+        const tid = 'tbl_' + Math.random().toString(36).slice(2);
+        window.__tableStore = window.__tableStore || {};
+        window.__tableStore[tid] = [head].concat(body);
+        out.push('<div class="table-wrap" data-tbl="' + tid + '">' +
+          '<button class="tbl-dl" data-dl-table="' + tid + '" title="Скачать таблицу">' +
+          icon('download') + '</button>' +
+          '<table><thead><tr>' +
           head.map(c => '<th>' + inlineFmt(c) + '</th>').join('') +
           '</tr></thead><tbody>' +
           body.map(r => '<tr>' +
@@ -319,9 +354,10 @@
     thinkBody: null,
     modelSets: [],
     modelSetId: localStorage.getItem('cs_model') || '',
-    effort: localStorage.getItem('cs_effort') || 'medium',
+    effort: localStorage.getItem('cs_effort') || 'recommended',
     usage: null,
     draftTail: null,
+    memories: [],
     readonly: false,
     publicToken: null,
     greetTimer: null,
@@ -330,8 +366,15 @@
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
   };
 
-  const EFFORTS = ['none', 'low', 'medium', 'high'];
-  const EFFORT_LABELS = ['нет', 'низкое', 'среднее', 'высокое'];
+  const EFFORTS = ['recommended', 'low', 'medium', 'high', 'extra', 'max'];
+  const EFFORT_LABELS = ['Recommended', 'Low', 'Medium', 'High', 'Extra', 'Max'];
+
+  const TARIFFS = [
+    { name: 'Free', ctx: 10, out: 20, files: 5, note: 'знакомство и лёгкие задачи' },
+    { name: 'Plus', ctx: 30, out: 45, files: 25, note: 'ежедневная работа' },
+    { name: 'Pro', ctx: 60, out: 70, files: 100, note: 'длинные диалоги и файлы' },
+    { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
+  ];
 
   const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
     'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
@@ -651,6 +694,12 @@
           parts.push('<button data-mact="rate-down" data-id="' + n.id + '" class="rate' +
             (n.rating < 0 ? ' on' : '') + '" title="Плохой ответ">' + icon('thumb-down') + '</button>');
           parts.push('<button data-mact="copy" data-id="' + n.id + '">' + icon('copy') + 'Копировать</button>');
+          parts.push('<button data-mact="save" data-id="' + n.id + '" title="Сохранить как">' + icon('download') + 'Сохранить</button>');
+          if (n.memories && n.memories.length) {
+            parts.push('<button data-mact="memory" data-id="' + n.id + '" title="Что записано в память">' +
+              icon('sparkle') + 'Память</button>');
+          }
+          parts.push('<button data-mact="delete" data-id="' + n.id + '" title="Удалить ответ">' + icon('trash') + '</button>');
         }
         parts.push('<button data-mact="retry" data-id="' + n.id + '">' + icon('refresh') + 'Повторить</button>');
         if (n.content) parts.push('<button data-mact="continue" data-id="' + n.id + '">' + icon('continue') + 'Продолжить</button>');
@@ -672,8 +721,14 @@
         '<button data-sugg="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>').join('') + '</div>';
     }
 
+    let memLine = '';
+    if (!isUser && n.memories && n.memories.length && !generating) {
+      memLine = '<div class="mem-line" data-memline="' + n.id + '">' + icon('sparkle') +
+        '<span>Запомнил: ' + escapeHtml(n.memories.join('; ').slice(0, 140)) + '</span></div>';
+    }
+
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
-      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' + inner + branch + meta + sugg + '</div>';
+      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' + inner + branch + meta + sugg + memLine + '</div>';
   }
 
   function renderEmptyState() {
@@ -735,10 +790,13 @@
     box.innerHTML = '<div class="msg-wrap">' +
       path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
     bindMessageEvents();
+    renderMath(box.querySelector('.msg-wrap'));
     scrollToBottom();
   }
 
   function bindMessageEvents() {
+    $$('.mem-line').forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
+
     $$('.think-head').forEach(h => h.addEventListener('click', () => {
       const box = h.closest('.think-box');
       if (!box) return;
@@ -758,6 +816,18 @@
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
       else if (act === 'rate-up') { await rateMessage(id, 1); }
       else if (act === 'rate-down') { await rateMessage(id, -1); }
+      else if (act === 'delete') { await deleteMessage(id); }
+      else if (act === 'save') {
+        const n = findNode(state.tree, id);
+        if (n) {
+          const el = $('.msg[data-mid="' + id + '"] .content');
+          openSaveMenu({
+            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'ChatStudio',
+            text: n.content || '',
+            html: el ? el.innerHTML : '',
+          });
+        }
+      } else if (act === 'memory') { await openMemory(id); }
     }));
 
     $$('.branch-nav').forEach(nav => {
@@ -770,8 +840,21 @@
       }));
     });
 
-    $$('[data-copy]').forEach(b => b.addEventListener('click', () =>
-      copyWithFeedback(b, (window.__codeStore || {})[b.dataset.copy] || '')));
+    $$('[data-copy]').forEach(b => b.addEventListener('click', () => {
+      const rec = (window.__codeStore || {})[b.dataset.copy];
+      copyWithFeedback(b, rec ? rec.code : '');
+    }));
+
+    $$('[data-dl]').forEach(b => b.addEventListener('click', () => {
+      const rec = (window.__codeStore || {})[b.dataset.dl];
+      if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
+    }));
+
+    $$('[data-dl-table]').forEach(b => b.addEventListener('click', () => {
+      const rows = (window.__tableStore || {})[b.dataset.dlTable];
+      if (!rows) return;
+      openTableMenu(rows);
+    }));
 
     $$('[data-sugg]').forEach(b => b.addEventListener('click', () => {
       $('#input').value = b.dataset.sugg;
@@ -792,6 +875,29 @@
       await api.post('/api/messages/' + id + '/rate', { rating: next });
       if (n) n.rating = next;
       renderMessages();
+    } catch (e) {
+      toast('Ошибка: ' + e.message, 'error');
+    }
+  }
+
+  function removeFromTree(nodes, id) {
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].id === id) { nodes.splice(i, 1); return true; }
+      if (removeFromTree(nodes[i].children || [], id)) return true;
+    }
+    return false;
+  }
+
+  async function deleteMessage(id) {
+    const n = findNode(state.tree, id);
+    const many = n && n.children && n.children.length;
+    if (!confirm(many ? 'Удалить этот ответ и все вложенные сообщения?' : 'Удалить это сообщение?')) return;
+    try {
+      await api.del('/api/messages/' + id);
+      removeFromTree(state.tree, id);
+      renderMessages();
+      loadUsage();
+      toast('Удалено');
     } catch (e) {
       toast('Ошибка: ' + e.message, 'error');
     }
@@ -867,6 +973,10 @@
           if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
           if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
           scrollToBottom();
+        } else if (ev === 'memory') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.memories = (n.memories || []).concat(data.items || []);
+          loadMemory();
         } else if (ev === 'done') {
           const n = findNode(state.tree, data.message_id);
           if (n) {
@@ -1022,6 +1132,21 @@
       '</div>';
   }
 
+  function limitsHtml(plan) {
+    const mine = String(plan || '').toLowerCase();
+    return '<h4 class="sec">Лимиты по тарифам (в % от окна модели)</h4>' +
+      '<div class="tariffs">' + TARIFFS.map(t => {
+        const isMine = t.name.toLowerCase() === mine;
+        return '<div class="tariff' + (isMine ? ' me' : '') + '">' +
+          '<div class="tariff-head"><b>' + t.name + '</b>' +
+          (isMine ? '<span class="badge">ваш тариф</span>' : '') + '</div>' +
+          '<div class="tariff-row"><span>Контекст</span><i><b style="width:' + t.ctx + '%"></b></i><u>' + t.ctx + '%</u></div>' +
+          '<div class="tariff-row"><span>Ответ</span><i><b style="width:' + t.out + '%"></b></i><u>' + t.out + '%</u></div>' +
+          '<div class="tariff-note">' + t.note + ' · файлов: ' + t.files + '</div>' +
+          '</div>';
+      }).join('') + '</div>';
+  }
+
   async function openContextMenu() {
     if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
     let u;
@@ -1030,18 +1155,20 @@
     state.usage = u;
     const barW = Math.min(100, Math.max(0, u.percent || 0));
     openModal({
-      title: 'Контекст диалога',
+      title: 'Контекст и проценты',
       okText: 'Закрыть',
-      body: usageCards(u) +
+      body: '<h4 class="sec">Контекст и проценты</h4>' +
+        usageCards(u) +
         '<div class="usage-bar"><i style="width:' + barW + '%"></i></div>' +
         '<p class="usage-note">Окно модели — ' + fmtNum(u.context_len) + ' токенов. ' +
         'Резюме истории: ' + (u.summary_chars ? fmtNum(u.summary_chars) + ' симв.' : 'нет') + '. ' +
-        'Усилие: ' + escapeHtml(u.effort || 'medium') + '.</p>' +
+        'Усилие: ' + escapeHtml(u.effort || 'recommended') + '.</p>' +
         '<label style="margin-top:14px">Сжать историю до <b id="cmp-val">50</b>%</label>' +
         '<input type="range" id="cmp-range" class="orange-range" min="5" max="85" step="5" value="50" />' +
         '<p class="usage-note">Сжатие делает та же модель: старое сворачивается в краткое резюме.</p>' +
         '<div style="margin-top:10px"><button class="chip-btn" id="cmp-go">' +
-        icon('sparkle') + 'Сжать историю</button></div>',
+        icon('sparkle') + 'Сжать историю</button></div>' +
+        limitsHtml(state.user && state.user.plan),
       onOk: () => true,
     });
     const r = $('#cmp-range');
@@ -1220,6 +1347,7 @@
   function bindFiles() {
     $('#files-btn').addEventListener('click', () => toggleFiles(true));
     $('#links-btn').addEventListener('click', openLinks);
+    $('#memory-btn').addEventListener('click', () => openMemory());
     $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());
@@ -1540,6 +1668,319 @@
     renderMessages();
   }
 
+  // ---------- local file generation ----------
+  function downloadBlob(name, blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 600);
+  }
+
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function zipStore(entries) {
+    const enc = new TextEncoder();
+    const parts = [], central = [];
+    let offset = 0;
+    const dt = new Date();
+    const dosTime = ((dt.getHours() << 11) | (dt.getMinutes() << 5) | Math.floor(dt.getSeconds() / 2)) & 0xFFFF;
+    const dosDate = (((dt.getFullYear() - 1980) << 9) | ((dt.getMonth() + 1) << 5) | dt.getDate()) & 0xFFFF;
+    entries.forEach((e) => {
+      const nameBytes = enc.encode(e.name);
+      const data = typeof e.data === 'string' ? enc.encode(e.data) : e.data;
+      const crc = crc32(data);
+      const local = new Uint8Array(30 + nameBytes.length);
+      const lv = new DataView(local.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true); lv.setUint16(6, 0, true); lv.setUint16(8, 0, true);
+      lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+      lv.setUint16(26, nameBytes.length, true); lv.setUint16(28, 0, true);
+      local.set(nameBytes, 30);
+      parts.push(local, data);
+
+      const cen = new Uint8Array(46 + nameBytes.length);
+      const cv = new DataView(cen.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0, true); cv.setUint16(10, 0, true);
+      cv.setUint16(12, dosTime, true); cv.setUint16(14, dosDate, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+      cv.setUint16(28, nameBytes.length, true);
+      cv.setUint16(30, 0, true); cv.setUint16(32, 0, true);
+      cv.setUint16(34, 0, true); cv.setUint16(36, 0, true);
+      cv.setUint32(38, 0, true); cv.setUint32(42, offset, true);
+      cen.set(nameBytes, 46);
+      central.push(cen);
+      offset += local.length + data.length;
+    });
+    const centralSize = central.reduce((a, b) => a + b.length, 0);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, entries.length, true); ev.setUint16(10, entries.length, true);
+    ev.setUint32(12, centralSize, true); ev.setUint32(16, offset, true);
+    return new Blob(parts.concat(central, [end]), { type: 'application/zip' });
+  }
+
+  function xmlEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function textToDocx(text) {
+    const paras = String(text || '').split(/\r?\n/).map((line) =>
+      '<w:p><w:r><w:t xml:space="preserve">' + xmlEsc(line) + '</w:t></w:r></w:p>').join('');
+    const doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body>' + paras + '<w:sectPr/></w:body></w:document>';
+    const ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>';
+    const rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>';
+    return zipStore([
+      { name: '[Content_Types].xml', data: ct },
+      { name: '_rels/.rels', data: rels },
+      { name: 'word/document.xml', data: doc },
+    ]);
+  }
+
+  function colName(i) {
+    let s = '';
+    i += 1;
+    while (i > 0) {
+      const m = (i - 1) % 26;
+      s = String.fromCharCode(65 + m) + s;
+      i = Math.floor((i - 1) / 26);
+    }
+    return s;
+  }
+
+  function rowsToXlsx(rows) {
+    const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+      rows.map((r, i) => '<row r="' + (i + 1) + '">' + r.map((c, j) =>
+        '<c r="' + colName(j) + (i + 1) + '" t="inlineStr"><is><t xml:space="preserve">' +
+        xmlEsc(c) + '</t></is></c>').join('') + '</row>').join('') +
+      '</sheetData></worksheet>';
+    const wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>';
+    const wbrels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+      '</Relationships>';
+    const ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      '</Types>';
+    const rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+      '</Relationships>';
+    return zipStore([
+      { name: '[Content_Types].xml', data: ct },
+      { name: '_rels/.rels', data: rels },
+      { name: 'xl/workbook.xml', data: wb },
+      { name: 'xl/_rels/workbook.xml.rels', data: wbrels },
+      { name: 'xl/worksheets/sheet1.xml', data: sheet },
+    ]);
+  }
+
+  function rowsToOds(rows) {
+    const content = '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<office:document-content ' +
+      'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" ' +
+      'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" ' +
+      'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.2">' +
+      '<office:body><office:spreadsheet><table:table table:name="Sheet1">' +
+      rows.map((r) => '<table:table-row>' + r.map((c) =>
+        '<table:table-cell office:value-type="string"><text:p>' + xmlEsc(c) +
+        '</text:p></table:table-cell>').join('') + '</table:table-row>').join('') +
+      '</table:table></office:spreadsheet></office:body></office:document-content>';
+    const manifest = '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">' +
+      '<manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>' +
+      '<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>' +
+      '</manifest:manifest>';
+    return zipStore([
+      { name: 'mimetype', data: 'application/vnd.oasis.opendocument.spreadsheet' },
+      { name: 'content.xml', data: content },
+      { name: 'META-INF/manifest.xml', data: manifest },
+    ]);
+  }
+
+  function printPdf(title, html) {
+    const w = window.open('', '_blank');
+    if (!w) { toast('Разрешите всплывающие окна для PDF', 'error'); return; }
+    w.document.write('<html><head><meta charset="utf-8"><title>' + escapeHtml(title) + '</title>' +
+      '<style>body{font-family:system-ui,-apple-system,sans-serif;line-height:1.6;padding:34px;' +
+      'max-width:820px;margin:0 auto;color:#1f1e1d}pre{background:#f4f2ec;padding:12px;border-radius:8px;' +
+      'overflow-x:auto;white-space:pre-wrap}code{font-family:ui-monospace,Menlo,monospace;font-size:13px}' +
+      'table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px 10px;text-align:left}' +
+      'h1,h2,h3{margin-top:1.2em}blockquote{border-left:3px solid #ddd;margin:0;padding:2px 14px;color:#666}' +
+      '</style></head><body>' + html + '</body></html>');
+    w.document.close();
+    setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* noop */ } }, 500);
+  }
+
+  function openSaveMenu(p) {
+    const base = (p.title || 'chatstudio').replace(/[^\wа-яА-ЯёЁ\- ]+/g, '').trim().slice(0, 40) || 'chatstudio';
+    const items = [
+      { id: 'txt', label: 'TXT', hint: 'обычный текст' },
+      { id: 'md', label: 'Markdown', hint: '.md' },
+      { id: 'docx', label: 'DOCX', hint: 'Word' },
+      { id: 'pdf', label: 'PDF', hint: 'через печать' },
+    ];
+    if (p.svg) items.push({ id: 'svg', label: 'SVG', hint: 'вектор' });
+    openModal({
+      title: 'Сохранить как',
+      okText: 'Закрыть',
+      body: '<div class="fmt-grid">' + items.map((it) =>
+        '<button class="fmt-btn" data-fmt="' + it.id + '"><b>' + it.label + '</b><span>' +
+        it.hint + '</span></button>').join('') + '</div>',
+      onOk: () => true,
+    });
+    $$('[data-fmt]').forEach(b => b.addEventListener('click', () => {
+      const f = b.dataset.fmt;
+      const text = p.text || '';
+      try {
+        if (f === 'txt') downloadBlob(base + '.txt', new Blob([text], { type: 'text/plain;charset=utf-8' }));
+        else if (f === 'md') downloadBlob(base + '.md', new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+        else if (f === 'docx') downloadBlob(base + '.docx', textToDocx(text));
+        else if (f === 'pdf') printPdf(p.title || 'ChatStudio', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
+        else if (f === 'svg' && p.svg) downloadBlob(base + '.svg', new Blob([p.svg], { type: 'image/svg+xml' }));
+        $('#modal-root').innerHTML = '';
+        toast('Файл сохранён');
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+  }
+
+  function openTableMenu(rows) {
+    openModal({
+      title: 'Скачать таблицу',
+      okText: 'Закрыть',
+      body: '<div class="fmt-grid">' +
+        '<button class="fmt-btn" data-tf="xlsx"><b>XLSX</b><span>Excel</span></button>' +
+        '<button class="fmt-btn" data-tf="ods"><b>ODS</b><span>LibreOffice</span></button>' +
+        '<button class="fmt-btn" data-tf="csv"><b>CSV</b><span>текст</span></button>' +
+        '<button class="fmt-btn" data-tf="pdf"><b>PDF</b><span>печать</span></button>' +
+        '</div>',
+      onOk: () => true,
+    });
+    $$('[data-tf]').forEach(b => b.addEventListener('click', () => {
+      const f = b.dataset.tf;
+      try {
+        if (f === 'xlsx') downloadBlob('table.xlsx', rowsToXlsx(rows));
+        else if (f === 'ods') downloadBlob('table.ods', rowsToOds(rows));
+        else if (f === 'csv') downloadBlob('table.csv', new Blob(
+          [rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n')],
+          { type: 'text/csv;charset=utf-8' }));
+        else if (f === 'pdf') printPdf('Таблица', '<table><tbody>' +
+          rows.map(r => '<tr>' + r.map(c => '<td>' + escapeHtml(c) + '</td>').join('') + '</tr>').join('') +
+          '</tbody></table>');
+        $('#modal-root').innerHTML = '';
+        toast('Файл сохранён');
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+  }
+
+  // ---------- memory ----------
+  async function loadMemory() {
+    try {
+      const items = await api.get('/api/memory');
+      state.memories = items;
+      const btn = $('#memory-btn');
+      if (btn) {
+        const badge = btn.querySelector('.mem-count');
+        if (badge) badge.textContent = items.length ? String(items.length) : '';
+      }
+    } catch (e) { state.memories = []; }
+  }
+
+  async function openMemory(filterMessageId) {
+    let items = [];
+    try { items = await api.get('/api/memory'); } catch (e) { items = []; }
+    if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
+    openModal({
+      title: filterMessageId ? 'Что запомнил по этому ответу' : 'Память о вас',
+      okText: 'Закрыть',
+      body: (items.length
+        ? '<div class="mem-list">' + items.map(m =>
+            '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
+            '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>').join('') +
+          '</div>'
+        : '<p>Пока ничего не записано.</p>') +
+        '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить</button>' +
+        (items.length && !filterMessageId
+          ? '<button class="chip-btn" id="mem-clear">' + icon('trash') + 'Очистить всё</button>' : '') +
+        '</div>',
+      onOk: () => true,
+    });
+    $$('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
+      try {
+        await api.del('/api/memory/' + b.dataset.delMem);
+        $('#modal-root').innerHTML = '';
+        await loadMemory();
+        openMemory(filterMessageId);
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+    const add = $('#mem-add');
+    if (add) add.addEventListener('click', () => {
+      openModal({
+        title: 'Добавить в память',
+        body: '<textarea id="mem-text" rows="4" placeholder="Что запомнить о вас?"></textarea>',
+        onOk: async (root) => {
+          const val = $('#mem-text', root).value.trim();
+          if (!val) return false;
+          await api.post('/api/memory', { content: val });
+          await loadMemory();
+          $('#modal-root').innerHTML = '';
+          openMemory();
+          toast('Записано в память');
+          return true;
+        },
+      });
+    });
+    const clr = $('#mem-clear');
+    if (clr) clr.addEventListener('click', async () => {
+      if (!confirm('Очистить всю память о вас?')) return;
+      try {
+        await api.del('/api/memory');
+        await loadMemory();
+        $('#modal-root').innerHTML = '';
+        openMemory();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+  }
+
   // ---------- boot ----------
   async function boot() {
     showApp();
@@ -1548,6 +1989,7 @@
     await loadChats();
     await loadFiles();
     await loadModelSets();
+    await loadMemory();
     await loadUsage();
     renderMessages();
   }
@@ -1566,4 +2008,10 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // KaTeX loads with defer: re-render math once it is available
+  window.addEventListener('load', () => {
+    const box = document.getElementById('messages');
+    if (box) renderMath(box.querySelector('.msg-wrap'));
+  });
 })();

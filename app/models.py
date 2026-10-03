@@ -102,7 +102,7 @@ class Chat(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_upto: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    effort: Mapped[str] = mapped_column(String(16), default="medium")
+    effort: Mapped[str] = mapped_column(String(16), default="recommended")
 
     owner: Mapped["User"] = relationship(back_populates="chats")
     messages: Mapped[list["Message"]] = relationship(
@@ -230,3 +230,15 @@ class Suggestion(Base):
     )
     position: Mapped[int] = mapped_column(Integer, default=0)
     text: Mapped[str] = mapped_column(Text, default="")
+
+
+class Memory(Base):
+    __tablename__ = "memories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    content: Mapped[str] = mapped_column(Text, default="")
+    message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

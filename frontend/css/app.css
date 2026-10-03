@@ -259,14 +259,15 @@ a { color: var(--accent); }
 .msg .status { font-size: 12.5px; color: var(--fg-soft); }
 
 .branch-nav {
-  display: inline-flex; align-items: center; gap: 2px; margin-top: 8px;
+  display: inline-flex; align-items: center; gap: 12px; margin-top: 12px;
   font-size: 12.5px; color: var(--fg-soft);
 }
 .branch-nav button {
   border: 1px solid var(--border); background: var(--bg-panel);
-  border-radius: 6px; width: 24px; height: 24px; color: var(--fg-muted);
+  border-radius: 7px; width: 27px; height: 27px; color: var(--fg-muted);
   display: grid; place-items: center;
 }
+.branch-nav span { min-width: 40px; text-align: center; padding: 0 4px; letter-spacing: .03em; }
 .branch-nav button:hover { background: var(--bg-hover); }
 .branch-nav .ic { width: 14px; height: 14px; }
 .branch-nav .ic.prev { transform: rotate(180deg); }
@@ -630,6 +631,23 @@ a { color: var(--accent); }
 .icon-btn { transition: background .3s ease, color .3s ease, transform .24s ease; }
 .icon-btn:hover { transform: translateY(-1px); }
 
+/* ---------- gold hover fill (noticeable) ---------- */
+@keyframes goldFlow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.chip-btn:hover, .new-chat:hover, .chips button:hover,
+.msg .meta button:hover, .side-item:hover, .file-item button:hover,
+.modal .row .ghost:hover {
+  background-image: linear-gradient(135deg, #fdf0d0, #f3cf8e 45%, #fdf0d0 100%);
+  background-size: 240% 240%;
+  animation: goldFlow 3.4s ease infinite;
+  border-color: #e2b96a;
+  color: #6b4a16;
+  box-shadow: 0 2px 12px rgba(226, 185, 106, .45);
+}
+.msg .meta button.rate.on:hover { color: #6b4a16; }
+
 /* ============================================================
    Thinking stream
    ============================================================ */
@@ -814,4 +832,92 @@ input[type="range"].orange-range { width: 100%; }
 @media (prefers-color-scheme: dark) {
   .usage-card { background: #2a2a28; }
   .chip-btn.context.warn { background: #3a2422; border-color: #6c423d; }
+}
+
+/* ============================================================
+   Save-as / formats / tables / memory / tariffs
+   ============================================================ */
+.fmt-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.fmt-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  border: 1px solid var(--border); background: var(--bg-panel); border-radius: 10px;
+  padding: 11px 13px; cursor: pointer; text-align: left;
+  transition: border-color .25s ease, background .25s ease, transform .15s ease;
+}
+.fmt-btn b { font-size: 14px; }
+.fmt-btn span { font-size: 11.5px; color: var(--fg-soft); }
+.fmt-btn:hover {
+  background-image: linear-gradient(135deg, #fdf0d0, #f3cf8e 45%, #fdf0d0 100%);
+  background-size: 240% 240%; animation: goldFlow 3.4s ease infinite;
+  border-color: #e2b96a; transform: translateY(-1px);
+}
+.fmt-btn:hover span { color: #7a5a22; }
+
+.code-acts { display: inline-flex; align-items: center; gap: 6px; }
+.table-wrap { position: relative; }
+.tbl-dl {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  border: 1px solid var(--border); background: var(--bg-panel); border-radius: 7px;
+  width: 27px; height: 27px; display: grid; place-items: center; cursor: pointer;
+  color: var(--fg-soft); opacity: .55; transition: opacity .3s ease, transform .2s ease;
+}
+.table-wrap:hover .tbl-dl { opacity: 1; }
+.tbl-dl:hover { transform: translateY(-1px); color: var(--accent); }
+.tbl-dl .ic { width: 14px; height: 14px; }
+
+.mem-list { display: flex; flex-direction: column; gap: 7px; max-height: 50vh; overflow-y: auto; }
+.mem-row {
+  display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--border-soft);
+  border-radius: 10px; padding: 9px 11px; font-size: 13.5px; line-height: 1.45;
+}
+.mem-row span { flex: 1; }
+.mem-row button {
+  border: none; background: transparent; cursor: pointer; color: var(--fg-soft);
+  padding: 2px; border-radius: 6px; flex: 0 0 auto;
+}
+.mem-row button:hover { color: var(--danger); background: var(--bg-hover); }
+.mem-row button .ic { width: 15px; height: 15px; }
+
+.mem-line {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 8px;
+  border: 1px dashed #e0c48a; background: #fdf7e6; color: #7a5a22;
+  border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+  transition: background .3s ease, transform .2s ease;
+}
+.mem-line:hover { background: #faedcf; transform: translateY(-1px); }
+.mem-line .ic { width: 14px; height: 14px; flex: 0 0 auto; }
+.side-item .mem-count {
+  margin-left: auto; font-style: normal; font-size: 11px; color: var(--fg-soft);
+  background: var(--bg-hover); border-radius: 999px; padding: 1px 7px;
+}
+.side-item .mem-count:empty { display: none; }
+
+.tariffs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.tariff {
+  border: 1px solid var(--border-soft); border-radius: 11px; padding: 10px 12px;
+  background: #fbfaf5; display: flex; flex-direction: column; gap: 6px;
+}
+.tariff.me { border-color: #e2b96a; box-shadow: inset 0 0 0 1px #f0dcae; }
+.tariff-head { display: flex; align-items: center; gap: 8px; }
+.tariff-head b { font-size: 14px; }
+.tariff .badge {
+  font-size: 10.5px; background: #f3cf8e; color: #6b4a16;
+  border-radius: 999px; padding: 1px 8px;
+}
+.tariff-row { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--fg-soft); }
+.tariff-row span { width: 62px; flex: 0 0 auto; }
+.tariff-row i { flex: 1; height: 6px; border-radius: 999px; background: var(--bg-user); overflow: hidden; }
+.tariff-row i b { display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #e8834f, #f2b184); }
+.tariff-row u { text-decoration: none; width: 34px; text-align: right; flex: 0 0 auto; }
+.tariff-note { font-size: 11px; color: var(--fg-soft); }
+
+#mem-text {
+  width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  font: inherit; font-size: 13.5px; resize: vertical; background: var(--bg-panel); color: var(--fg);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tariff { background: #2a2a28; }
+  .mem-line { background: #3a3324; border-color: #6b5a33; color: #e8d5a8; }
 }

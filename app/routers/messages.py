@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from ..models import (
     Attachment,
     Chat,
     File,
+    Memory,
     Message,
     MessageStatus,
     Role,
@@ -90,6 +91,13 @@ async def _stream_job(
                 yield _sse("delta", {"text": payload})
             elif kind == "thinking":
                 yield _sse("thinking", {"text": payload})
+            elif kind == "memory":
+                try:
+                    items = json.loads(payload)
+                except Exception:
+                    items = []
+                if items:
+                    yield _sse("memory", {"items": items})
             elif kind == "done":
                 finished = True
                 yield _sse("done", {"message_id": assistant.id, "text": payload})
@@ -217,6 +225,20 @@ async def send_message(
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
+
+    mem_res = await db.execute(
+        select(Memory)
+        .where(Memory.user_id == user.id)
+        .order_by(Memory.created_at.desc())
+        .limit(40)
+    )
+    mem_lines = [m.content for m in mem_res.scalars().all() if m.content]
+    if mem_lines:
+        system_prompt += (
+            "\n\n[Что ты помнишь о пользователе]\n"
+            + "\n".join("- " + x for x in reversed(mem_lines))
+        )
+
     # web search is always on
     results = await web_search(content)
     ctx = format_context(results)
@@ -246,6 +268,7 @@ async def send_message(
         message_id=assistant.id,
         model_set_id=data.model_set_id,
         effort=chat.effort,
+        user_id=user.id,
     )
     await ai_router.enqueue(job)
 
@@ -385,6 +408,43 @@ async def rate_message(
     message.rating = max(-1, min(1, int(data.rating or 0)))
     await db.commit()
     return {"ok": True, "rating": message.rating}
+
+
+@router.delete("/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_message(
+    message: Message = Depends(get_owned_message),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a message together with its whole subtree."""
+    chat_id = message.chat_id
+    res = await db.execute(select(Message).where(Message.chat_id == chat_id))
+    all_msgs = list(res.scalars().all())
+    by_parent: dict[str, list[Message]] = {}
+    idmap: dict[str, Message] = {}
+    for m in all_msgs:
+        idmap[m.id] = m
+        by_parent.setdefault(m.parent_message_id or "", []).append(m)
+
+    to_delete: list[Message] = []
+    stack = [message.id]
+    seen: set[str] = set()
+    while stack:
+        mid = stack.pop()
+        if mid in seen:
+            continue
+        seen.add(mid)
+        m = idmap.get(mid)
+        if m is None:
+            continue
+        to_delete.append(m)
+        for child in by_parent.get(mid, []):
+            stack.append(child.id)
+
+    for m in to_delete:
+        await db.delete(m)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/chats/{chat_id}/compress", response_model=UsageOut)

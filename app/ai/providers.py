@@ -55,7 +55,8 @@ def _build_payload(
     e = (effort or "").lower()
     if e in ("none", "off"):
         payload["chat_template_kwargs"] = {"enable_thinking": False}
-    elif e in ("low", "medium", "high"):
+    elif e and e not in ("recommended", "default", "auto"):
+        # low / medium / high / extra / max (backend falls back if unsupported)
         payload["reasoning_effort"] = e
     elif disable_thinking:
         payload["chat_template_kwargs"] = {"enable_thinking": False}

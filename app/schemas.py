@@ -161,6 +161,18 @@ class AdminStatsOut(BaseModel):
     top_models: list[dict] = Field(default_factory=list)
 
 
+# --- Memory ---
+class MemoryOut(ORMModel):
+    id: str
+    content: str
+    message_id: str | None = None
+    created_at: datetime
+
+
+class MemoryIn(BaseModel):
+    content: str
+
+
 class PublicChatOut(BaseModel):
     title: str
     created_at: datetime

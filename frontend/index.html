@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ChatStudio</title>
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body>
+  <!-- ============ AUTH ============ -->
+  <div id="auth-screen" class="screen">
+    <div class="auth-card">
+      <h1>ChatStudio</h1>
+      <p class="sub">Приватное AI-пространство</p>
+
+      <form id="login-form">
+        <label for="login-email">Email</label>
+        <input id="login-email" type="email" autocomplete="username" required />
+        <label for="login-password">Пароль</label>
+        <input id="login-password" type="password" autocomplete="current-password" required />
+        <button class="primary" type="submit">Войти</button>
+        <div class="switch">Нет аккаунта? <a data-mode="register">Зарегистрироваться</a></div>
+      </form>
+
+      <form id="register-form" class="hidden">
+        <label for="reg-name">Имя</label>
+        <input id="reg-name" type="text" autocomplete="name" />
+        <label for="reg-email">Email</label>
+        <input id="reg-email" type="email" autocomplete="username" required />
+        <label for="reg-password">Пароль (минимум 8 символов)</label>
+        <input id="reg-password" type="password" autocomplete="new-password" required minlength="8" />
+        <button class="primary" type="submit">Создать аккаунт</button>
+        <div class="switch">Уже есть аккаунт? <a data-mode="login">Войти</a></div>
+      </form>
+
+      <div id="auth-error" class="auth-error"></div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div id="main-screen" class="screen hidden">
+    <div id="sidebar-overlay"></div>
+
+    <aside id="sidebar">
+      <div class="side-head">
+        <span class="brand">ChatStudio</span>
+        <button class="icon-btn" id="collapse-btn" title="Свернуть">«</button>
+      </div>
+      <button class="new-chat" id="new-chat-btn"><span>＋</span> Новый чат</button>
+      <div class="search-box"><input id="search-input" type="search" placeholder="Поиск по чатам" /></div>
+      <div class="side-scroll">
+        <div class="side-section">История</div>
+        <div id="chat-list"></div>
+      </div>
+      <div class="side-foot">
+        <div class="who" id="who"></div>
+        <button id="files-btn"><span>🗂</span> Файлы</button>
+        <button id="account-btn"><span>👤</span> Аккаунт</button>
+        <button id="settings-btn"><span>⚙</span> Настройки</button>
+        <button id="logout-btn"><span>⎋</span> Выйти</button>
+      </div>
+    </aside>
+
+    <main id="chat-area">
+      <header id="chat-header">
+        <button class="icon-btn" id="menu-btn" title="Меню" style="display:none">☰</button>
+        <div class="chat-title" id="chat-title">ChatStudio</div>
+        <button class="icon-btn" id="toggle-files-btn" title="Файлы">🗂</button>
+      </header>
+
+      <div id="messages"></div>
+
+      <div id="composer">
+        <div class="composer-inner">
+          <div class="attach-list" id="attach-list"></div>
+          <textarea id="input" rows="1" placeholder="Напишите сообщение…"></textarea>
+          <div class="composer-row">
+            <button class="chip-btn" id="attach-btn" title="Прикрепить файл">📎 Файл</button>
+            <span class="spacer"></span>
+            <button class="send-btn" id="send-btn" title="Отправить">↑</button>
+            <button class="send-btn hidden" id="stop-btn" title="Остановить" style="background:#6b6a66">■</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside id="files-panel" class="hidden">
+      <div class="panel-head">
+        <span>Файлы</span>
+        <button class="icon-btn" id="close-files-btn">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="drop-zone" id="drop-zone">
+          Перетащите файлы сюда<br />
+          <button class="chip-btn" id="upload-btn">Выбрать файлы</button>
+        </div>
+        <div id="file-list"></div>
+      </div>
+    </aside>
+  </div>
+
+  <input type="file" id="file-input" multiple class="hidden" />
+  <div id="modal-root"></div>
+
+  <script src="/assets/js/app.js"></script>
+</body>
+</html>

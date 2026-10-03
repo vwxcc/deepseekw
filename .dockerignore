@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+.git
+.gitignore
+.github
+.env
+.env.*
+data
+uploads
+*.md
+tests
+*.sh

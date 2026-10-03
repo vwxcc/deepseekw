@@ -1,0 +1,30 @@
+# ChatStudio backend requirements (Python 3.12)
+
+# --- Web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# --- Data / validation ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+
+# --- HTTP client (AI providers) ---
+httpx==0.28.1
+
+# --- Retry / backoff (AI Router fallback) ---
+tenacity==9.0.0
+
+# --- Fast JSON ---
+orjson==3.10.13
+
+# --- Document extraction (files) ---
+pypdf==5.1.0
+python-docx==1.1.2
+openpyxl==3.1.5
+python-pptx==1.0.2
+Pillow==11.0.0
+chardet==5.2.0

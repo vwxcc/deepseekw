@@ -71,4 +71,10 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "memories": {
         "kind": "VARCHAR(16) DEFAULT 'fact'",
     },
+    "model_sets": {
+        "is_router": "BOOLEAN DEFAULT 0",
+    },
+    "users": {
+        "avatar": "INTEGER DEFAULT 0",
+    },
 }

@@ -453,6 +453,7 @@
     usage: null,
     draftTail: null,
     memories: [],
+    style: localStorage.getItem('cs_style') || 'auto',
     readonly: false,
     publicToken: null,
     greetTimer: null,
@@ -696,6 +697,10 @@
     renderChatList();
     renderMessages();
     await loadUsage();
+    const meta = state.chats.find(c => c.id === id) || {};
+    const isCode = meta.mode === 'code';
+    $('#project-btn').classList.toggle('hidden', !isCode);
+    if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
     closeMobileSidebar();
   }
 
@@ -755,7 +760,8 @@
   }
 
   function thinkAnim() {
-    return '<span class="think-anim">' + '<span></span>'.repeat(8) + '</span>';
+    return '<span class="think-anim">' + '<span></span>'.repeat(7) +
+      '<i class="core"></i></span>';
   }
 
   function msgHtml(entry, isLast) {
@@ -843,9 +849,15 @@
       tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
     }
 
+    let routeLine = '';
+    if (!isUser && n.route) {
+      routeLine = '<div class="route-line">' + icon('sparkle') +
+        '<span>Auto → <b>' + escapeHtml(n.route) + '</b></span></div>';
+    }
+
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      tools + inner + branch + meta + sugg + memLine + '</div>';
+      routeLine + tools + inner + branch + meta + sugg + memLine + '</div>';
   }
 
   function toolRunHtml(r, i) {
@@ -1142,6 +1154,12 @@
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.memories = (n.memories || []).concat(data.items || []);
           loadMemory();
+        } else if (ev === 'route') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.route = data.name;
+          renderMessages();
+          bindStreamRefs();
+          toast('Auto: запрос направлен в «' + (data.name || '') + '»');
         } else if (ev === 'tool') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) {
@@ -1154,6 +1172,12 @@
           }
           renderMessages();
           bindStreamRefs();
+          if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
+          if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
+          if (data.files && data.files.length) {
+            appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
+          }
+          loadProject(false);
         } else if (ev === 'step') {
           state.streamBuf = '';
           const n = findNode(state.tree, state.activeAssistantId);
@@ -1228,6 +1252,7 @@
         model_set_id: state.modelSetId || null,
         web_search: true,
         effort: state.effort,
+        style: state.style,
       });
   }
 
@@ -1272,15 +1297,24 @@
     const er = $('#effort-range');
     const applyEffort = (v, save) => {
       let idx = EFFORTS.indexOf(v);
-      if (idx < 0) idx = 2;
+      if (idx < 0) idx = 0;
       state.effort = EFFORTS[idx];
       er.value = String(idx);
       $('#effort-label').textContent = EFFORT_LABELS[idx];
       if (save) localStorage.setItem('cs_effort', state.effort);
     };
-    er.addEventListener('input', () => applyEffort(EFFORTS[parseInt(er.value, 10)] || 'medium', true));
+    er.addEventListener('input', () => applyEffort(EFFORTS[parseInt(er.value, 10)] || 'recommended', true));
     applyEffort(state.effort, false);
+    const sel = $('#style-select');
+    sel.value = state.style;
+    sel.addEventListener('change', () => {
+      state.style = sel.value;
+      localStorage.setItem('cs_style', state.style);
+    });
     $('#context-btn').addEventListener('click', openContextMenu);
+    $('#project-btn').addEventListener('click', () => toggleProjectPanel());
+    $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
+    $('#pp-refresh').addEventListener('click', () => loadProject(true));
   }
 
   function fmtNum(n) {
@@ -1467,7 +1501,8 @@
     if (!mains.length) { sel.classList.add('hidden'); return; }
     sel.classList.remove('hidden');
     sel.innerHTML = mains.map(s =>
-      '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>').join('');
+      '<option value="' + s.id + '">' + (s.is_router ? '🔀 ' : '') +
+      escapeHtml(s.name) + '</option>').join('');
     if (state.modelSetId && mains.some(s => s.id === state.modelSetId)) {
       sel.value = state.modelSetId;
     } else {
@@ -1729,7 +1764,7 @@
         okText: 'Закрыть',
         body:
           '<div class="profile-box">' +
-          '<div class="profile-ava">' + escapeHtml((who[0] || 'U').toUpperCase()) + '</div>' +
+          '<img class="profile-ava" src="/api/avatars/' + (u.avatar || 0) + '.svg" alt="" />' +
           '<div class="profile-info"><b>' + escapeHtml(who) + '</b>' +
           '<span>' + escapeHtml(u.email || '') + '</span>' +
           '<span class="role-chip">' + (isAdmin ? 'администратор' : 'пользователь') + '</span></div>' +
@@ -2495,6 +2530,37 @@
 
   function stopShowcase() {
     if (showcaseTimer) { clearInterval(showcaseTimer); showcaseTimer = null; }
+  }
+
+  // ---------- code-agent project panel ----------
+  function toggleProjectPanel(show) {
+    const panel = $('#project-panel');
+    if (!panel) return;
+    const visible = show === undefined ? panel.classList.contains('hidden') : !!show;
+    panel.classList.toggle('hidden', !visible);
+    if (visible) loadProject(true);
+  }
+
+  async function loadProject(resetLogs) {
+    if (!state.currentChatId) return;
+    try {
+      const data = await api.get('/api/chats/' + state.currentChatId + '/project');
+      const files = data.files || [];
+      const tree = $('#pp-tree');
+      tree.innerHTML = files.length
+        ? files.map(f =>
+            '<div class="pp-file" title="' + escapeHtml(f.path) + '">' + icon('file') +
+            '<span>' + escapeHtml(f.path) + '</span><em>' + formatSize(f.size) + '</em></div>').join('')
+        : '<div class="pp-empty">Файлов пока нет — попроси агента создать проект.</div>';
+      if (resetLogs) $('#pp-logs').textContent = '';
+    } catch (e) { /* noop */ }
+  }
+
+  function appendLog(text) {
+    const box = $('#pp-logs');
+    if (!box || !text) return;
+    box.textContent = (box.textContent + '\n' + text).slice(-20000);
+    box.scrollTop = box.scrollHeight;
   }
 
   // ---------- boot ----------

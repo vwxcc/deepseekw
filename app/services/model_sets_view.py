@@ -27,5 +27,6 @@ def model_set_out(ms: ModelSet) -> ModelSetOut:
         slug=ms.slug,
         route_type=ms.route_type.value,
         is_active=ms.is_active,
+        is_router=bool(getattr(ms, "is_router", False)),
         entries=[entry_out(e) for e in sorted(ms.entries, key=lambda x: x.position)],
     )

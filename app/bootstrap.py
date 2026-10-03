@@ -66,3 +66,30 @@ async def _seed_model_sets(db: AsyncSession) -> None:
                     is_active=True,
                 )
             )
+
+    # "Auto (Routing)" — the router cluster picks a concrete set per request
+    result = await db.execute(select(ModelSet).where(ModelSet.slug == "auto-router"))
+    if result.scalar_one_or_none() is None:
+        ms = ModelSet(
+            name="Auto (Routing)",
+            slug="auto-router",
+            route_type=RouteType.MAIN,
+            is_active=True,
+            is_router=True,
+        )
+        db.add(ms)
+        await db.flush()
+        db.add(
+            ModelSetEntry(
+                model_set_id=ms.id,
+                position=0,
+                provider="openai",
+                base_url=settings.qwen_base_url,
+                api_key=settings.qwen_api_key,
+                model=settings.qwen_model,
+                temperature=0.0,
+                max_tokens=1000,
+                timeout=settings.request_timeout,
+                is_active=True,
+            )
+        )

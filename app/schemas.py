@@ -16,6 +16,7 @@ class UserOut(ORMModel):
     email: str
     name: str
     plan: str
+    avatar: int = 0
     is_admin: bool
     created_at: datetime
 
@@ -109,6 +110,7 @@ class MessageCreate(BaseModel):
     model_set_id: str | None = None
     web_search: bool = True
     effort: str | None = None
+    style: str = "auto"
 
 
 class RateIn(BaseModel):
@@ -300,6 +302,7 @@ class ModelSetOut(ORMModel):
     slug: str
     route_type: str
     is_active: bool
+    is_router: bool = False
     entries: list[ModelSetEntryOut] = Field(default_factory=list)
 
 

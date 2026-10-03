@@ -422,6 +422,57 @@ class AIRouter:
         )
         await self._run_message(job)
 
+    async def _is_router_set(self, mset_id: str | None) -> bool:
+        if not mset_id:
+            return False
+        async with SessionLocal() as db:
+            obj = await db.get(ModelSet, mset_id)
+            return bool(obj and getattr(obj, "is_router", False))
+
+    async def _route(self, job: Job, entry) -> tuple[str | None, str]:
+        """Ask the routing model which concrete cluster fits this request."""
+        async with SessionLocal() as db:
+            rows = (
+                await db.execute(
+                    select(ModelSet).where(
+                        ModelSet.route_type == RouteType.MAIN,
+                        ModelSet.is_active.is_(True),
+                    )
+                )
+            ).scalars().all()
+        candidates = [s for s in rows if not getattr(s, "is_router", False)]
+        if not candidates:
+            return None, ""
+        listing = "\n".join(f"{s.id} — {s.name}" for s in candidates)
+        try:
+            answer = await complete_chat(
+                messages=[
+                    {"role": "system", "content": prompts.ROUTER_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Запрос пользователя:\n{job.user_text or '(пусто)'}\n\n"
+                            f"Доступные кластеры:\n{listing}"
+                        ),
+                    },
+                ],
+                base_url=entry.base_url,
+                api_key=entry.api_key,
+                model=entry.model,
+                temperature=0.0,
+                max_tokens=200,
+                timeout=min(entry.timeout, 90),
+                disable_thinking=True,
+            )
+        except ProviderError as e:
+            log.warning("Router failed: %s", e)
+            return candidates[0].id, candidates[0].name
+        text = (answer or "").strip()
+        for s in candidates:
+            if s.id in text or (s.name and s.name.lower() in text.lower()):
+                return s.id, s.name
+        return candidates[0].id, candidates[0].name
+
     async def _run_message(self, job: Job) -> None:
         try:
             mset_id, mset_name, entries = await self._resolve_entries(
@@ -431,6 +482,18 @@ class AIRouter:
             await self._finish(job.message_id, MessageStatus.failed, error=str(e))
             await job.output.put(("error", str(e)))
             return
+
+        # Auto (Routing): let the router cluster pick a concrete model set first
+        if await self._is_router_set(mset_id):
+            chosen_id, chosen_name = await self._route(job, entries[0])
+            if chosen_id:
+                await job.output.put(
+                    ("route", json.dumps({"id": chosen_id, "name": chosen_name}))
+                )
+                job.model_set_id = chosen_id
+                mset_id, mset_name, entries = await self._resolve_entries(
+                    RouteType.MAIN, chosen_id
+                )
 
         await self._set_status(
             job.message_id, MessageStatus.processing, mset_id, mset_name

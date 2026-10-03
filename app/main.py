@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,6 +17,7 @@ from .database import init_db
 from .routers import (
     admin,
     auth,
+    avatars,
     chats,
     council,
     files,
@@ -25,6 +27,29 @@ from .routers import (
     posts,
     public,
 )
+from .services.storage import disk_free, enforce_disk_floor
+
+log = logging.getLogger("chatstudio")
+
+CLEANUP_INTERVAL = 600  # seconds
+
+
+async def _storage_watchdog() -> None:
+    """Keep the disk above the configured floor by pruning the oldest files."""
+    while True:
+        try:
+            await asyncio.sleep(CLEANUP_INTERVAL)
+            free = disk_free()
+            if free < settings.disk_min_free:
+                log.warning(
+                    "Low disk space (%.2f GB free) — pruning old files",
+                    free / (1024 ** 3),
+                )
+                await enforce_disk_floor()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # pragma: no cover
+            log.warning("Storage watchdog error: %s", e)
 
 
 @asynccontextmanager
@@ -35,9 +60,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     await bootstrap()
     await ai_router.start()
+    watchdog = asyncio.create_task(_storage_watchdog())
     try:
         yield
     finally:
+        watchdog.cancel()
         await ai_router.stop()
 
 
@@ -53,6 +80,7 @@ app.include_router(public.router)
 app.include_router(memory.router)
 app.include_router(council.router)
 app.include_router(posts.router)
+app.include_router(avatars.router)
 
 
 @app.get("/api/health")

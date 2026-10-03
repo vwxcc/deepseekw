@@ -57,6 +57,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     name: Mapped[str] = mapped_column(String(120), default="")
     plan: Mapped[str] = mapped_column(String(32), default="free")
+    avatar: Mapped[int] = mapped_column(Integer, default=0)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -195,6 +196,7 @@ class ModelSet(Base):
     slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     route_type: Mapped[RouteType] = mapped_column(Enum(RouteType), default=RouteType.MAIN)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_router: Mapped[bool] = mapped_column(Boolean, default=False)
 
     entries: Mapped[list["ModelSetEntry"]] = relationship(
         back_populates="model_set",

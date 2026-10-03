@@ -1114,3 +1114,96 @@ input[type="range"].orange-range { width: 100%; }
   .model-card { background: #272725; }
   .mc-good { color: #8fc98f; }
 }
+
+/* ============================================================
+   Side row / project panel / route chip / new thinking animation
+   ============================================================ */
+.side-row { display: flex; gap: 9px; }
+.side-row .new-chat { flex: 1 1 0; justify-content: center; padding: 8px 8px; }
+
+/* complex "thinking" animation: ring + orbiting dots + pulsing core */
+.think-anim { position: relative; width: 22px; height: 22px; flex: 0 0 auto; }
+.think-anim::after {
+  content: ''; position: absolute; inset: 1px; border-radius: 50%;
+  border: 1.3px solid transparent;
+  border-top-color: #e07a52; border-right-color: rgba(224, 122, 82, .38);
+  animation: thinkSpin 1.9s linear infinite;
+}
+.think-anim .core {
+  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
+  margin: -3px 0 0 -3px; border-radius: 50%; background: #e07a52;
+  animation: corePulse 1.6s ease-in-out infinite;
+}
+.think-anim span {
+  position: absolute; left: 50%; top: 50%; width: 3.4px; height: 3.4px;
+  margin: -1.7px 0 0 -1.7px; border-radius: 50%; background: #e07a52; opacity: .25;
+  animation: thinkOrbit 2.3s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+.think-anim span:nth-child(1) { animation-delay: 0s; }
+.think-anim span:nth-child(2) { animation-delay: .32s; }
+.think-anim span:nth-child(3) { animation-delay: .64s; }
+.think-anim span:nth-child(4) { animation-delay: .96s; }
+.think-anim span:nth-child(5) { animation-delay: 1.28s; }
+.think-anim span:nth-child(6) { animation-delay: 1.6s; }
+.think-anim span:nth-child(7) { animation-delay: 1.92s; }
+@keyframes thinkSpin { to { transform: rotate(360deg); } }
+@keyframes corePulse {
+  0%, 100% { transform: scale(.65); opacity: .45; }
+  50% { transform: scale(1.3); opacity: 1; }
+}
+@keyframes thinkOrbit {
+  0% { transform: rotate(0deg) translateY(-9px) scale(.5); opacity: .18; }
+  25% { transform: rotate(90deg) translateY(-6px) scale(1); opacity: 1; }
+  50% { transform: rotate(180deg) translateY(-10px) scale(.7); opacity: .5; }
+  75% { transform: rotate(270deg) translateY(-7px) scale(1.1); opacity: .85; }
+  100% { transform: rotate(360deg) translateY(-9px) scale(.5); opacity: .18; }
+}
+
+.route-line {
+  display: inline-flex; align-items: center; gap: 7px; margin-bottom: 9px;
+  border: 1px solid #cfe0f5; background: #eef5fd; color: #2f5f96;
+  border-radius: 999px; padding: 4px 12px; font-size: 12px;
+}
+.route-line .ic { width: 13px; height: 13px; }
+
+.project-panel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 330px; z-index: 6;
+  background: var(--bg-panel); border-left: 1px solid var(--border);
+  box-shadow: -10px 0 28px rgba(0, 0, 0, .09);
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: panelIn .3s ease;
+}
+@keyframes panelIn { from { transform: translateX(18px); opacity: 0; } to { transform: none; opacity: 1; } }
+.pp-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft); font-size: 13.5px;
+}
+.pp-head b { flex: 1; }
+.pp-tree { flex: 1 1 auto; overflow-y: auto; padding: 8px 6px; min-height: 80px; }
+.pp-file {
+  display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 7px;
+  font-size: 12.5px; color: var(--fg-muted);
+}
+.pp-file:hover { background: var(--bg-hover); color: var(--fg); }
+.pp-file .ic { width: 14px; height: 14px; flex: 0 0 auto; color: var(--accent); }
+.pp-file span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.pp-file em { font-style: normal; font-size: 10.5px; color: var(--fg-soft); }
+.pp-empty { padding: 12px; font-size: 12.5px; color: var(--fg-soft); }
+.pp-logs-head {
+  border-top: 1px solid var(--border-soft); padding: 8px 12px; font-size: 12px;
+  color: var(--fg-soft); text-transform: uppercase; letter-spacing: .06em;
+}
+.pp-logs {
+  margin: 0; height: 190px; overflow: auto; padding: 8px 12px;
+  font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.5;
+  background: #1f1e1d; color: #d8e4d8; white-space: pre-wrap; word-break: break-word;
+}
+.profile-ava { width: 46px; height: 46px; border-radius: 50%; flex: 0 0 auto; object-fit: cover; }
+
+@media (max-width: 860px) {
+  .project-panel { width: 100%; }
+}
+
+@media (prefers-color-scheme: dark) {
+  .route-line { background: #1d2a3a; border-color: #2f4a6b; color: #9dc4ee; }
+}

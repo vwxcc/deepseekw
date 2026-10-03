@@ -1,6 +1,8 @@
 """Auth endpoints: register, login, logout, me, csrf."""
 from __future__ import annotations
 
+import random
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +19,7 @@ from ..security import (
     session_expiry,
     verify_password,
 )
+from ..services.avatars import AVATAR_COUNT
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -71,6 +74,7 @@ async def register(
         email=email,
         name=data.name.strip(),
         password_hash=hash_password(data.password),
+        avatar=random.randrange(AVATAR_COUNT),
     )
     db.add(user)
     await db.commit()

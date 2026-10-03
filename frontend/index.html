@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=17" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=18" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -87,13 +87,15 @@
       </div>
 
       <div class="side-top">
-        <button class="new-chat" id="new-chat-btn">
-          <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
-        </button>
-        <button class="new-chat code-mode" id="new-code-btn" title="Чат-агент для программирования: пишет файлы, запускает код, собирает проект">
-          <svg class="ic"><use href="#i-terminal"/></svg><span>Код-агент</span>
-        </button>
-        <button class="new-chat council-mode" id="new-council-btn" title="Совет моделей (бета): несколько моделей отвечают параллельно, затем ответ объединяется">
+        <div class="side-row">
+          <button class="new-chat" id="new-chat-btn" title="Новый чат">
+            <svg class="ic"><use href="#i-plus"/></svg><span>Новый</span>
+          </button>
+          <button class="new-chat code-mode" id="new-code-btn" title="Код-агент: пишет файлы, запускает код, собирает проект">
+            <svg class="ic"><use href="#i-terminal"/></svg><span>Код</span>
+          </button>
+        </div>
+        <button class="new-chat council-mode" id="new-council-btn" title="Совет моделей (бета): несколько участников отвечают параллельно, затем ответ объединяется">
           <svg class="ic"><use href="#i-sparkle"/></svg><span>Совет моделей · бета</span>
         </button>
         <div class="search-box">
@@ -125,6 +127,7 @@
         </div>
         <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
         <div class="head-right">
+          <button class="icon-btn hidden" id="project-btn" title="Панель проекта"><svg class="ic"><use href="#i-terminal"/></svg></button>
           <button class="icon-btn" id="publish-btn" title="Опубликовать чат на стенке"><svg class="ic"><use href="#i-share"/></svg><span class="pub-label">Опубликовать</span></button>
           <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-link"/></svg></button>
           <button class="icon-btn" id="toggle-files-btn" title="Файлы"><svg class="ic"><use href="#i-folder"/></svg></button>
@@ -132,6 +135,17 @@
       </header>
 
       <div id="messages"></div>
+
+      <aside id="project-panel" class="project-panel hidden">
+        <div class="pp-head">
+          <b>Проект</b>
+          <button class="icon-btn" id="pp-refresh" title="Обновить"><svg class="ic"><use href="#i-refresh"/></svg></button>
+          <button class="icon-btn" id="pp-close" title="Скрыть"><svg class="ic"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="pp-tree" id="pp-tree"></div>
+        <div class="pp-logs-head">Логи выполнения</div>
+        <pre class="pp-logs" id="pp-logs"></pre>
+      </aside>
 
       <div id="composer">
         <div class="composer-inner">
@@ -145,6 +159,14 @@
               <span id="effort-label">Recommended</span>
             </div>
             <span class="spacer"></span>
+            <select id="style-select" class="model-select" title="Стиль оформления документов и презентаций">
+              <option value="auto">Стиль: авто</option>
+              <option value="apple">Apple</option>
+              <option value="fluent">Fluent</option>
+              <option value="glass">Glass</option>
+              <option value="neural">Neural</option>
+              <option value="minimal">Minimal</option>
+            </select>
             <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">🧠<b class="mem-count"></b></button>
             <button class="chip-btn context" id="context-btn" title="Использование контекста">0%</button>
             <select id="model-select" class="model-select" title="Модель"></select>
@@ -178,6 +200,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=17"></script>
+  <script src="/assets/js/app.js?v=18"></script>
 </body>
 </html>

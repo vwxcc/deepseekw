@@ -22,6 +22,7 @@ from ..deps import get_current_user, get_db, require_csrf
 from ..models import File, User
 from ..schemas import FileOut
 from ..services.files import detect_kind, extract_text, sha256_bytes
+from ..services.storage import user_usage
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -78,6 +79,17 @@ async def upload_files(
                 "Превышен общий лимит размера загрузки",
             )
         payloads.append((Path(uf.filename or "file").name, uf.content_type or "", data))
+
+    # per-user storage quota
+    used = await user_usage(db, user.id)
+    if used + total > settings.max_user_storage:
+        limit_gb = settings.max_user_storage / (1024 ** 3)
+        used_gb = used / (1024 ** 3)
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Лимит хранилища {limit_gb:.1f} ГБ исчерпан "
+            f"(занято {used_gb:.2f} ГБ). Удалите старые файлы.",
+        )
 
     # 2) only now write to disk and persist
     for name, mime, data in payloads:

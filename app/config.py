@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     model_context_len: int = 262144
     # --- Agent (sandboxed code execution) ---
     agent_enabled: bool = True
-    agent_max_steps: int = 4
+    agent_max_steps: int = 6
     agent_timeout: int = 40
     # isolated runner (separate container, internal network, no internet)
     sandbox_url: str = "http://chatstudio-sandbox:8000"
@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file
     max_total_file_size: int = 100 * 1024 * 1024  # 100 MB per request
     max_files_per_request: int = 10
+    # per-user storage quota (4 GB) and the free-space floor below which we prune
+    max_user_storage: int = 4 * 1024 * 1024 * 1024
+    disk_min_free: int = 3 * 1024 * 1024 * 1024
     # how many characters of an extracted document are sent to the model
     max_attachment_chars: int = 40000
 

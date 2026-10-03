@@ -113,6 +113,13 @@ async def _stream_job(
                 except Exception:
                     meta = {}
                 yield _sse("step", meta)
+            elif kind == "route":
+                try:
+                    route = json.loads(payload)
+                except Exception:
+                    route = {}
+                if route:
+                    yield _sse("route", route)
             elif kind == "done":
                 finished = True
                 yield _sse("done", {"message_id": assistant.id, "text": payload})
@@ -287,6 +294,7 @@ async def send_message(
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
+    system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
@@ -327,6 +335,7 @@ async def send_message(
         user_id=user.id,
         mode=chat.mode or "chat",
         project=chat.id if code_mode else None,
+        user_text=content,
     )
     await ai_router.enqueue(job)
     total = await db.scalar(
@@ -452,6 +461,32 @@ async def _usage_payload(chat: Chat, db: AsyncSession) -> UsageOut:
         summary_chars=len(chat.summary or ""),
         effort=chat.effort or "medium",
     )
+
+
+@router.get("/chats/{chat_id}/project")
+async def chat_project(
+    chat: Chat = Depends(get_owned_chat), db: AsyncSession = Depends(get_db)
+) -> dict:
+    """File tree of a code-agent project (lives in the shared sandbox directory)."""
+    root = settings.sandbox_path / "projects" / chat.id
+    files: list[dict] = []
+    if root.is_dir():
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root)
+            if any(part in {"__pycache__", ".git"} for part in rel.parts):
+                continue
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            files.append(
+                {"path": str(rel).replace("\\", "/"), "name": path.name, "size": size}
+            )
+            if len(files) >= 400:
+                break
+    return {"chat_id": chat.id, "mode": chat.mode or "chat", "files": files}
 
 
 @router.get("/chats/{chat_id}/usage", response_model=UsageOut)

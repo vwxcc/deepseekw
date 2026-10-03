@@ -1599,19 +1599,24 @@
     } catch (e) {
       state.modelSets = [];
     }
-    const sel = $('#model-select');
-    if (!sel) return;
-    const mains = state.modelSets.filter(s => s.route_type === 'MAIN');
-    if (!mains.length) { sel.classList.add('hidden'); return; }
-    sel.classList.remove('hidden');
-    sel.innerHTML = mains.map(s =>
-      '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>').join('');
-    if (state.modelSetId && mains.some(s => s.id === state.modelSetId)) {
-      sel.value = state.modelSetId;
-    } else {
-      sel.value = mains[0].id;
-      state.modelSetId = mains[0].id;
+    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
+    if (!mains.length) { updateModelButton(); return; }
+
+    // one-time switch to Auto as the default for everyone
+    if (!localStorage.getItem('cs_model_default_v2')) {
+      localStorage.setItem('cs_model_default_v2', '1');
+      const auto = mains.find(s => s.is_router);
+      if (auto) {
+        state.modelSetId = auto.id;
+        localStorage.setItem('cs_model', auto.id);
+      }
     }
+    if (!state.modelSetId || !mains.some(s => s.id === state.modelSetId)) {
+      const pick = mains.find(s => s.is_router) || mains[0];
+      state.modelSetId = pick.id;
+      localStorage.setItem('cs_model', state.modelSetId);
+    }
+    updateModelButton();
   }
 
   // ---------- files ----------
@@ -3075,7 +3080,8 @@
   async function openModelMenu() {
     await loadModelSets();
     if (!state.limits) await loadLimits();
-    const mains = (state.modelSets || []).filter(x => x.route_type === 'MAIN');
+    const mains = (state.modelSets || []).filter(x => x.route_type === 'MAIN')
+      .sort((a, b) => (b.is_router ? 1 : 0) - (a.is_router ? 1 : 0));
     const lim = (state.limits && state.limits.limits) || {};
     const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
     const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
@@ -3092,7 +3098,7 @@
       return '<label class="mm-card' + (x.id === state.modelSetId ? ' on' : '') + '">' +
         '<input type="radio" name="mm" value="' + x.id + '"' +
         (x.id === state.modelSetId ? ' checked' : '') + '/>' +
-        '<span class="mm-body"><b>' + escapeHtml(x.name) + (x.is_router ? ' · auto' : '') + '</b>' +
+        '<span class="mm-body"><b>' + escapeHtml(x.name) + (x.is_router ? ' · авто по умолчанию' : '') + '</b>' +
         '<em>' + escapeHtml(e.model || '—') + '</em>' +
         '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
     }).join('');

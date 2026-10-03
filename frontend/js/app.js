@@ -15,6 +15,10 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+  // inline SVG icon from the sprite in index.html
+  function icon(id, cls) {
+    return '<svg class="ic' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + id + '"/></svg>';
+  }
   function formatSize(n) {
     if (!n && n !== 0) return '';
     if (n < 1024) return n + ' Б';
@@ -98,7 +102,8 @@
     window.__codeStore = window.__codeStore || {};
     window.__codeStore[id] = code;
     return '<div class="code-block"><div class="code-head"><span>' +
-      escapeHtml(lang || 'code') + '</span><button data-copy="' + id + '">Копировать</button>' +
+      escapeHtml(lang || 'code') + '</span><button data-copy="' + id + '">' +
+      icon('copy') + 'Копировать</button>' +
       '</div><pre><code>' + escapeHtml(code) + '</code></pre></div>';
   }
 
@@ -297,8 +302,8 @@
       '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
         '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
         '<span class="acts">' +
-          '<button data-act="rename" title="Переименовать">✎</button>' +
-          '<button data-act="delete" title="Удалить">🗑</button>' +
+          '<button data-act="rename" title="Переименовать">' + icon('pencil') + '</button>' +
+          '<button data-act="delete" title="Удалить">' + icon('trash') + '</button>' +
         '</span>' +
       '</div>').join('');
 
@@ -414,7 +419,7 @@
       }
       return '<a class="msg-att" href="' + url + '" target="_blank" rel="noopener" title="' +
         escapeHtml(a.name) + '">' +
-        '<span class="att-icon">' + kindIcon(a.kind) + '</span>' +
+        '<span class="att-icon">' + icon('file') + '</span>' +
         '<span class="att-name">' + escapeHtml(a.name) + '</span>' +
         '<span class="att-size">' + formatSize(a.size) + '</span></a>';
     }).join('') + '</div>';
@@ -441,11 +446,11 @@
       const parts = [];
       if (n.status === 'cancelled') parts.push('<span class="status">остановлено</span>');
       if (generating) {
-        parts.push('<button data-mact="stop" data-id="' + n.id + '">Остановить</button>');
+        parts.push('<button data-mact="stop" data-id="' + n.id + '">' + icon('stop') + 'Остановить</button>');
       } else {
-        if (n.content) parts.push('<button data-mact="copy" data-id="' + n.id + '">Копировать</button>');
-        parts.push('<button data-mact="retry" data-id="' + n.id + '">Повторить</button>');
-        if (n.content) parts.push('<button data-mact="continue" data-id="' + n.id + '">Продолжить</button>');
+        if (n.content) parts.push('<button data-mact="copy" data-id="' + n.id + '">' + icon('copy') + 'Копировать</button>');
+        parts.push('<button data-mact="retry" data-id="' + n.id + '">' + icon('refresh') + 'Повторить</button>');
+        if (n.content) parts.push('<button data-mact="continue" data-id="' + n.id + '">' + icon('continue') + 'Продолжить</button>');
       }
       meta = '<div class="meta">' + parts.join('') + '</div>';
     }
@@ -453,9 +458,9 @@
     let branch = '';
     if (entry.siblings.length > 1) {
       branch = '<div class="branch-nav" data-parent="' + entry.parentKey + '" data-index="' + entry.index + '">' +
-        '<button data-b="prev">‹</button>' +
+        '<button data-b="prev">' + icon('chevron', 'prev') + '</button>' +
         '<span>' + (entry.index + 1) + ' / ' + entry.siblings.length + '</span>' +
-        '<button data-b="next">›</button></div>';
+        '<button data-b="next">' + icon('chevron') + '</button></div>';
     }
 
     let sugg = '';
@@ -655,8 +660,8 @@
   function renderAttachments() {
     const box = $('#attach-list');
     box.innerHTML = state.pendingAttachments.map(f =>
-      '<span class="attach-chip">📎 ' + escapeHtml(f.original_name) +
-      ' <button data-rm="' + f.id + '">✕</button></span>').join('');
+      '<span class="attach-chip">' + icon('paperclip') + escapeHtml(f.original_name) +
+      '<button data-rm="' + f.id + '" title="Убрать">' + icon('x') + '</button></span>').join('');
     $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
       state.pendingAttachments = state.pendingAttachments.filter(x => x.id !== b.dataset.rm);
       renderAttachments();
@@ -687,8 +692,8 @@
     renderFiles();
   }
 
-  function kindIcon(kind) {
-    return ({ pdf: '📕', doc: '📄', sheet: '📊', slide: '📽', image: '🖼', text: '📝' })[kind] || '📁';
+  function kindIcon() {
+    return icon('file');
   }
 
   function renderFiles() {
@@ -699,8 +704,8 @@
         '<span class="fi-kind">' + kindIcon(f.kind) + '</span>' +
         '<span class="fi-name" title="' + escapeHtml(f.original_name) + '">' + escapeHtml(f.original_name) + '</span>' +
         '<span class="fi-size">' + formatSize(f.size) + '</span>' +
-        '<button data-attach="' + f.id + '" title="Прикрепить">＋</button>' +
-        '<button data-del="' + f.id + '" title="Удалить">🗑</button>' +
+        '<button data-attach="' + f.id + '" title="Прикрепить">' + icon('plus') + '</button>' +
+        '<button data-del="' + f.id + '" title="Удалить">' + icon('trash') + '</button>' +
       '</div>').join('');
     $$('[data-del]', box).forEach(b => b.addEventListener('click', async () => {
       await api.del('/api/files/' + b.dataset.del);
@@ -801,22 +806,22 @@
           '<span class="spacer" style="flex:1"></span>' +
           '<button data-toggle="' + s.id + '" data-active="' + (s.is_active ? 1 : 0) + '">' +
             (s.is_active ? 'вкл' : 'выкл') + '</button>' +
-          '<button data-del-set="' + s.id + '" title="Удалить набор">🗑</button>' +
+          '<button data-del-set="' + s.id + '" title="Удалить набор">' + icon('trash') + '</button>' +
         '</div><div class="ms-entries">' +
           (s.entries.length ? s.entries.map(e =>
             '<div class="ms-entry">' +
               '<span class="ms-pos">' + e.position + '</span>' +
               '<span class="ms-model">' + escapeHtml(e.model) + '</span>' +
               '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
-              '<span class="ms-key">' + (e.has_api_key ? '🔑' : '—') + '</span>' +
-              '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">🗑</button>' +
+              '<span class="ms-key">' + (e.has_api_key ? icon('check') : '—') + '</span>' +
+              '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button>' +
             '</div>').join('') : '<div class="ms-empty">нет моделей</div>') +
-          '<button class="chip-btn" data-add-entry="' + s.id + '">＋ модель</button>' +
+          '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button>' +
         '</div></div>').join('') : '<p>Наборов нет.</p>';
 
       root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px">' +
         '<h3>Model Sets</h3><div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div>' +
-        '<div class="row"><button class="ghost" data-add-set>＋ Набор</button>' +
+        '<div class="row"><button class="ghost" data-add-set>' + icon('plus') + 'Набор</button>' +
         '<span style="flex:1"></span><button class="solid" data-close>Закрыть</button></div></div></div>';
 
       $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
@@ -922,7 +927,7 @@
               '<p>Follow-up подсказки: включены.</p>' +
               '<p>Файлы: лимиты задаются в конфигурации сервера.</p>' +
               (isAdmin
-                ? '<p><button class="chip-btn" id="open-ms">⚙ Управление Model Sets</button></p>'
+                ? '<p><button class="chip-btn" id="open-ms">' + icon('settings') + 'Управление Model Sets</button></p>'
                 : '<p>Model Sets настраивает администратор.</p>'),
         onOk: () => true,
       });

@@ -4,31 +4,59 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
-  <link rel="stylesheet" href="/assets/css/app.css" />
+  <meta name="theme-color" content="#faf9f5" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=10" />
 </head>
 <body>
-  <!-- ============ AUTH ============ -->
+  <!-- ===================== icon sprite ===================== -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.7 16.7"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.1-8.1a3.4 3.4 0 0 1 4.8 4.8l-8 8a1.8 1.8 0 0 1-2.5-2.5l7.3-7.3"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19.5V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7.5" y="7.5" width="9" height="9" rx="2"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h3.6l2 2h7.4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.2" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M4.9 7.5l1.7 1M17.4 15.5l1.7 1M4.9 16.5l1.7-1M17.4 8.5l1.7-1"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3M10.5 16l-4-4 4-4M6.5 12h11"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 12.5h9L17.5 7"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5-4-4L4 16z"/><path d="M14.5 5.5l4 4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5.5 15V6a2 2 0 0 1 2-2H15"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4.5V10h-5.5"/></symbol>
+    <symbol id="i-continue" viewBox="0 0 24 24"><path d="M12 5v14M12 12h7M19 9v6"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h4.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4.5v10M8 11l4 4 4-4M5 19.5h14"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 17.5V6.5A2 2 0 0 1 6 4.5h7.5L20 11v6.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M13 4.5V11h6.5"/></symbol>
+  </svg>
+
+  <!-- ===================== AUTH ===================== -->
   <div id="auth-screen" class="screen">
     <div class="auth-card">
+      <div class="auth-logo"><svg class="ic ic-lg"><use href="#i-logo"/></svg></div>
       <h1>ChatStudio</h1>
       <p class="sub">Приватное AI-пространство</p>
 
       <form id="login-form">
         <label for="login-email">Email</label>
-        <input id="login-email" type="email" autocomplete="username" required />
+        <input id="login-email" type="email" autocomplete="username" placeholder="you@example.com" required />
         <label for="login-password">Пароль</label>
-        <input id="login-password" type="password" autocomplete="current-password" required />
+        <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" required />
         <button class="primary" type="submit">Войти</button>
         <div class="switch">Нет аккаунта? <a data-mode="register">Зарегистрироваться</a></div>
       </form>
 
       <form id="register-form" class="hidden">
         <label for="reg-name">Имя</label>
-        <input id="reg-name" type="text" autocomplete="name" />
+        <input id="reg-name" type="text" autocomplete="name" placeholder="Как к вам обращаться" />
         <label for="reg-email">Email</label>
-        <input id="reg-email" type="email" autocomplete="username" required />
+        <input id="reg-email" type="email" autocomplete="username" placeholder="you@example.com" required />
         <label for="reg-password">Пароль (минимум 8 символов)</label>
-        <input id="reg-password" type="password" autocomplete="new-password" required minlength="8" />
+        <input id="reg-password" type="password" autocomplete="new-password" placeholder="••••••••" required minlength="8" />
         <button class="primary" type="submit">Создать аккаунт</button>
         <div class="switch">Уже есть аккаунт? <a data-mode="login">Войти</a></div>
       </form>
@@ -37,35 +65,44 @@
     </div>
   </div>
 
-  <!-- ============ MAIN ============ -->
+  <!-- ===================== MAIN ===================== -->
   <div id="main-screen" class="screen hidden">
     <div id="sidebar-overlay"></div>
 
     <aside id="sidebar">
       <div class="side-head">
-        <span class="brand">ChatStudio</span>
-        <button class="icon-btn" id="collapse-btn" title="Свернуть">«</button>
+        <span class="brand"><svg class="ic"><use href="#i-logo"/></svg> ChatStudio</span>
+        <button class="icon-btn" id="collapse-btn" title="Свернуть панель"><svg class="ic"><use href="#i-panel"/></svg></button>
       </div>
-      <button class="new-chat" id="new-chat-btn"><span>＋</span> Новый чат</button>
-      <div class="search-box"><input id="search-input" type="search" placeholder="Поиск по чатам" /></div>
+
+      <div class="side-top">
+        <button class="new-chat" id="new-chat-btn">
+          <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
+        </button>
+        <div class="search-box">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input id="search-input" type="search" placeholder="Поиск по чатам" />
+        </div>
+      </div>
+
       <div class="side-scroll">
-        <div class="side-section">История</div>
+        <div class="side-section">Чаты</div>
         <div id="chat-list"></div>
       </div>
+
       <div class="side-foot">
-        <div class="who" id="who"></div>
-        <button id="files-btn"><span>🗂</span> Файлы</button>
-        <button id="account-btn"><span>👤</span> Аккаунт</button>
-        <button id="settings-btn"><span>⚙</span> Настройки</button>
-        <button id="logout-btn"><span>⎋</span> Выйти</button>
+        <button class="side-item" id="files-btn"><svg class="ic"><use href="#i-folder"/></svg><span>Файлы</span></button>
+        <button class="side-item" id="account-btn"><svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span></button>
+        <button class="side-item" id="settings-btn"><svg class="ic"><use href="#i-settings"/></svg><span>Настройки</span></button>
+        <button class="side-item" id="logout-btn"><svg class="ic"><use href="#i-logout"/></svg><span>Выйти</span></button>
       </div>
     </aside>
 
     <main id="chat-area">
       <header id="chat-header">
-        <button class="icon-btn" id="menu-btn" title="Меню" style="display:none">☰</button>
-        <div class="chat-title" id="chat-title">ChatStudio</div>
-        <button class="icon-btn" id="toggle-files-btn" title="Файлы">🗂</button>
+        <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-menu"/></svg></button>
+        <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
+        <button class="icon-btn" id="toggle-files-btn" title="Файлы"><svg class="ic"><use href="#i-folder"/></svg></button>
       </header>
 
       <div id="messages"></div>
@@ -73,25 +110,27 @@
       <div id="composer">
         <div class="composer-inner">
           <div class="attach-list" id="attach-list"></div>
-          <textarea id="input" rows="1" placeholder="Напишите сообщение…"></textarea>
+          <textarea id="input" rows="1" placeholder="Написать сообщение…"></textarea>
           <div class="composer-row">
-            <button class="chip-btn" id="attach-btn" title="Прикрепить файл">📎 Файл</button>
+            <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-paperclip"/></svg></button>
             <span class="spacer"></span>
-            <button class="send-btn" id="send-btn" title="Отправить">↑</button>
-            <button class="send-btn hidden" id="stop-btn" title="Остановить" style="background:#6b6a66">■</button>
+            <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
+            <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
           </div>
         </div>
+        <p class="composer-hint">ChatStudio может ошибаться — проверяйте важную информацию.</p>
       </div>
     </main>
 
     <aside id="files-panel" class="hidden">
       <div class="panel-head">
         <span>Файлы</span>
-        <button class="icon-btn" id="close-files-btn">✕</button>
+        <button class="icon-btn" id="close-files-btn" title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button>
       </div>
       <div class="panel-body">
         <div class="drop-zone" id="drop-zone">
-          Перетащите файлы сюда<br />
+          <svg class="ic ic-lg"><use href="#i-file"/></svg>
+          <div>Перетащите файлы сюда</div>
           <button class="chip-btn" id="upload-btn">Выбрать файлы</button>
         </div>
         <div id="file-list"></div>
@@ -99,9 +138,10 @@
     </aside>
   </div>
 
-  <input type="file" id="file-input" multiple class="hidden" />
+  <input type="file" id="file-input" multiple class="hidden-file" />
   <div id="modal-root"></div>
+  <div id="toast-root"></div>
 
-  <script src="/assets/js/app.js"></script>
+  <script src="/assets/js/app.js?v=10"></script>
 </body>
 </html>

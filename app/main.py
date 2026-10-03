@@ -55,5 +55,6 @@ if _frontend.exists():
 async def index():
     idx = _frontend / "index.html"
     if idx.exists():
-        return FileResponse(idx)
+        # never let the shell HTML go stale in the browser
+        return FileResponse(idx, headers={"Cache-Control": "no-cache, must-revalidate"})
     return JSONResponse({"app": settings.app_name, "status": "ok"})

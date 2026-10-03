@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..ai import prompts
 from ..ai.router import Job, router as ai_router
 from ..ai.providers import ProviderError, complete_chat
+import re
 from ..deps import (
     get_current_user,
     get_db,

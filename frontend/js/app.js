@@ -860,7 +860,8 @@
     let routeLine = '';
     if (!isUser && n.route) {
       routeLine = '<div class="route-line">' + icon('sparkle') +
-        '<span>Auto → <b>' + escapeHtml(n.route) + '</b></span></div>';
+        '<span>Auto → <b>' + escapeHtml(n.route) + '</b>' +
+        (n.routeBrief ? ' · ' + escapeHtml(n.routeBrief) : '') + '</span></div>';
     }
 
     let askCard = '';
@@ -1209,10 +1210,10 @@
           loadMemory();
         } else if (ev === 'route') {
           const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.route = data.name;
+          if (n) { n.route = data.name; n.routeBrief = data.brief || ''; }
           renderMessages();
           bindStreamRefs();
-          toast('Auto: запрос направлен в «' + (data.name || '') + '»');
+          toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
         } else if (ev === 'tool_start') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) {
@@ -2712,22 +2713,35 @@
     const bytes = { file_size: 1, user_storage: 1 };
     const field = (plan, key, value) => {
       const isBytes = bytes[key];
-      const shown = isBytes ? Math.round((value || 0) / (1024 * 1024)) : value;
+      const shown = isBytes ? Math.round((value || 0) / (1024 * 1024)) : (value === null ? '' : value);
       return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
         (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
         '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
-        (shown === null || shown === undefined ? '' : shown) + '" /></label>';
+        shown + '" placeholder="∞" /></label>';
+    };
+    const modelBoxes = (plan) => {
+      const allowed = data.allowed[plan] || [];
+      const open = allowed.length === 0;
+      return '<div class="lim-models">' + (data.models || []).map(m =>
+        '<label class="council-row"><input type="checkbox" data-mplan="' + plan +
+        '" data-mid="' + m.id + '"' + (open || allowed.indexOf(m.id) >= 0 ? ' checked' : '') +
+        '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
+        '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';
     };
     const block = (plan) => {
       const lim = data.limits[plan] || {};
       return '<h4 class="sec">Тариф ' + plan.toUpperCase() + '</h4>' +
-        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>';
+        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>' +
+        '<h4 class="sec">Модели тарифа ' + plan.toUpperCase() + '</h4>' + modelBoxes(plan);
     };
     openModal({
-      title: 'Тарифы и лимиты',
+      title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
-      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах.</p>' +
-        (data.plans || ['free', 'pro']).map(block).join(''),
+      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
+        'деньги в рублях. Настройка действует для всех действий: файлы, чаты, посты, ' +
+        'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
+        (data.plans || ['free', 'pro']).map(block).join('') +
+        '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
         const grouped = {};
         $$('[data-plan]', root).forEach(inp => {
@@ -2742,10 +2756,43 @@
         for (const plan of Object.keys(grouped)) {
           await api.put('/api/limits/' + plan, grouped[plan]);
         }
-        toast('Лимиты сохранены');
+        for (const plan of (data.plans || [])) {
+          const ids = $$('[data-mplan="' + plan + '"]', root)
+            .filter(c => c.checked).map(c => c.dataset.mid);
+          const all = (data.models || []).map(m => m.id);
+          await api.put('/api/limits/' + plan + '/models',
+            { ids: ids.length === all.length ? [] : ids });
+        }
+        toast('Тарифы сохранены');
         return true;
       },
     });
+    loadLimitUsers();
+  }
+
+  async function loadLimitUsers() {
+    const box = $('#lim-users');
+    if (!box) return;
+    let rows = [];
+    try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
+    box.innerHTML = '<div class="link-list">' + rows.map(u =>
+      '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
+      '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
+      ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
+      ' · файлы: ' + formatSize(u.storage) +
+      ' · тариф ' + u.plan_price + ' ₽ · расход ' + u.cost + ' ₽</span></div>' +
+      '<button class="chip-btn" data-uplan="' + u.id + '">' +
+      (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
+      '</div>';
+    $$('[data-uplan]').forEach(b => b.addEventListener('click', async () => {
+      const cur = rows.find(x => x.id === b.dataset.uplan);
+      const next = cur && cur.plan === 'pro' ? 'free' : 'pro';
+      try {
+        await api.put('/api/limits/user/' + b.dataset.uplan, { plan: next });
+        toast('Тариф изменён: ' + next);
+        loadLimitUsers();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
   }
 
   // ---------- GitHub for the code agent ----------
@@ -2819,18 +2866,65 @@
 
   // ---------- main page: action tiles + rotating showcase ----------
   const ACTION_TILES = [
-    { id: 'essay', label: 'Написать сочинение', prompt: 'Напиши сочинение на тему: ', icon: 'i-pencil', color: '#f2c14e' },
-    { id: 'doc', label: 'Документ Word', prompt: 'Сделай документ Word: ', icon: 'i-doc', color: '#2f6fb0', ask: 'Что должно быть в документе? Опишите тему, структуру и объём.' },
-    { id: 'slides', label: 'Презентация', prompt: 'Сделай презентацию: ', icon: 'i-slides', color: '#e8834f', ask: 'О чём презентация? Сколько слайдов и для кого?' },
-    { id: 'sheet', label: 'Таблица Excel', prompt: 'Собери таблицу Excel: ', icon: 'i-sheet', color: '#2f8f6f', ask: 'Какие данные в таблице? Какие колонки нужны?' },
-    { id: 'code', label: 'Написать код', prompt: 'Напиши код: ', icon: 'i-terminal', color: '#7c5cbf' },
-    { id: 'draw', label: 'Нарисовать схему', prompt: 'Нарисуй схему: ', icon: 'i-sparkle', color: '#c0563f' },
-    { id: 'image', label: 'Сделать график', prompt: 'Построй график по данным: ', icon: 'i-chart', color: '#0e7c9b' },
-    { id: 'research', label: 'Найти в интернете', prompt: 'Найди в интернете и summarise: ', icon: 'i-globe', color: '#3f7a3f' },
-    { id: 'explain', label: 'Объяснить простыми словами', prompt: 'Объясни простыми словами: ', icon: 'i-brain', color: '#a03f6f' },
-    { id: 'plan', label: 'Составить план', prompt: 'Составь план: ', icon: 'i-file', color: '#8a4a2f' },
-    { id: 'translate', label: 'Перевести', prompt: 'Переведи на английский: ', icon: 'i-globe-box', color: '#4a5568' },
-    { id: 'wall', label: 'Посмотреть посты', action: 'wall', icon: 'i-globe-box', color: '#b8862f' },
+    {
+      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',
+      title: 'Сочинение',
+      questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
+        '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +
+        '3. Класс, курс или аудитория?\n4. Нужны аргументы из литературы или можно своими словами?\n\n' +
+        'Можно ответить одной строкой — остальное подберу сам.',
+    },
+    {
+      id: 'doc', label: 'Документ Word', icon: 'i-doc', color: '#2f6fb0',
+      title: 'Документ Word',
+      questions: '**Документ Word.** Чтобы получилось то, что нужно, уточните:\n\n' +
+        '1. Тема и назначение документа?\n2. Какие разделы должны быть?\n' +
+        '3. Примерный объём (страниц)?\n4. Нужен ли титульный лист и оглавление?\n5. Стиль оформления (деловой, научный, отчёт)?\n\n' +
+        'Ответьте одной строкой — оформлю в лучшем виде.',
+    },
+    {
+      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#e8834f',
+      title: 'Презентация',
+      questions: '**Презентация.** Расскажите:\n\n' +
+        '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
+        '3. Сколько слайдов?\n4. Нужны ли графики и цифры?\n5. Стиль: Apple, Fluent, Glass, Neural, Minimal?\n\n' +
+        'Достаточно одной строки.',
+    },
+    {
+      id: 'sheet', label: 'Таблица Excel', icon: 'i-sheet', color: '#2f8f6f',
+      title: 'Таблица Excel',
+      questions: '**Таблица Excel.** Уточните:\n\n' +
+        '1. Какие данные и по какой теме?\n2. Какие колонки нужны?\n' +
+        '3. Нужны ли формулы, итоги и графики?\n4. Данные дадите вы или их надо придумать/собрать?\n\n' +
+        'Ответьте одной строкой.',
+    },
+    {
+      id: 'code', label: 'Написать код', icon: 'i-terminal', color: '#7c5cbf',
+      title: 'Код',
+      questions: '**Код.** Что нужно написать?\n\n' +
+        '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
+        '3. Нужны ли тесты и комментарии?\n\n' +
+        'Или переключитесь в режим **Код-агента** — там будет полноценный проект с файлами.',
+    },
+    {
+      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#c0563f',
+      title: 'Схема',
+      questions: '**Схема.** Опишите:\n\n' +
+        '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
+        '2. Какие элементы и связи между ними?\n3. Нужны ли размеры и подписи?\n\n' +
+        'Нарисую в SVG — можно будет скачать.',
+    },
+    { id: 'image', label: 'Сделать график', icon: 'i-chart', color: '#0e7c9b', title: 'График',
+      questions: '**График.** Какие данные построить? Пришлите числа или опишите, откуда их взять, и укажите тип графика (линия, столбцы, круговая).' },
+    { id: 'research', label: 'Найти в интернете', icon: 'i-globe', color: '#3f7a3f', title: 'Поиск',
+      questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
+    { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#a03f6f', title: 'Объяснение',
+      questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
+    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#8a4a2f', title: 'План',
+      questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
+    { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
+      questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
+    { id: 'wall', label: 'Посмотреть посты', icon: 'i-globe-box', color: '#b8862f', action: 'wall' },
   ];
 
   function tileHtml(t) {
@@ -2853,15 +2947,30 @@
   function bindTiles() {
     $$('[data-tile]').forEach(b => b.addEventListener('click', () => {
       const t = ACTION_TILES.find(x => x.id === b.dataset.tile);
-      if (!t) return;
-      if (t.action === 'wall') { openWall(); return; }
-      const input = $('#input');
-      input.value = t.prompt;
-      autoGrow();
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-      if (t.ask) toast(t.ask);
+      if (t) useTile(t);
     }));
+  }
+
+  async function useTile(t) {
+    if (t.action === 'wall') { openWall(); return; }
+    let chat;
+    try {
+      chat = await api.post('/api/chats', { title: t.title || t.label });
+    } catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    state.chats.unshift(chat);
+    renderChatList();
+    await openChat(chat.id);
+    if (t.questions) {
+      try {
+        await api.post('/api/chats/' + chat.id + '/seed', { text: t.questions });
+        state.tree = await api.get('/api/chats/' + chat.id + '/messages');
+        renderMessages();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+      toast('Ответьте на вопросы — и я приступлю');
+      $('#input').focus();
+    } else {
+      $('#input').focus();
+    }
   }
 
   function rotateTiles() {

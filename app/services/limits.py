@@ -19,6 +19,11 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "code_agents": 1,
         "agent_steps": 6,
         "council_members": 2,
+        "chats_count": 30,
+        "messages_per_day": 100,
+        "sandbox_seconds": 40,
+        "price": 0,
+        "cost_per_1k": 0,
     },
     "pro": {
         "file_size": 100 * MB,
@@ -28,6 +33,11 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "code_agents": 20,
         "agent_steps": 10,
         "council_members": 4,
+        "chats_count": None,
+        "messages_per_day": None,
+        "sandbox_seconds": 120,
+        "price": 990,
+        "cost_per_1k": 2,
     },
 }
 
@@ -39,9 +49,16 @@ LABELS: dict[str, str] = {
     "code_agents": "Код-агентов",
     "agent_steps": "Шагов агента",
     "council_members": "Участников консилиума",
+    "chats_count": "Чатов всего",
+    "messages_per_day": "Сообщений в день",
+    "sandbox_seconds": "Секунд на запуск кода",
+    "price": "Цена тарифа, ₽/мес",
+    "cost_per_1k": "Цена за 1k токенов, ₽",
 }
 
 BYTE_KEYS = {"file_size", "user_storage"}
+MONEY_KEYS = {"price", "cost_per_1k"}
+TEXT_KEYS = {"models"}
 
 PLANS = ("free", "pro")
 
@@ -60,6 +77,38 @@ async def get_limits(db: AsyncSession, plan: str) -> dict[str, int | None]:
         if row.key in limits:
             limits[row.key] = row.value
     return limits
+
+
+async def get_models_for_plan(db: AsyncSession, plan: str) -> list[str]:
+    """Allowed model-set ids (empty list = все разрешены)."""
+    row = (
+        await db.execute(
+            select(PlanLimit).where(
+                PlanLimit.plan == plan, PlanLimit.key == "models"
+            )
+        )
+    ).scalars().first()
+    if row is None or not row.text_value:
+        return []
+    return [x.strip() for x in row.text_value.split(",") if x.strip()]
+
+
+async def set_models_for_plan(db: AsyncSession, plan: str, ids: list[str]) -> list[str]:
+    row = (
+        await db.execute(
+            select(PlanLimit).where(
+                PlanLimit.plan == plan, PlanLimit.key == "models"
+            )
+        )
+    ).scalars().first()
+    text = ",".join(dict.fromkeys([i for i in ids if i]))
+    if row is None:
+        row = PlanLimit(plan=plan, key="models", value=None, text_value=text)
+        db.add(row)
+    else:
+        row.text_value = text
+    await db.commit()
+    return await get_models_for_plan(db, plan)
 
 
 async def set_limits(db: AsyncSession, plan: str, values: dict) -> dict[str, int | None]:

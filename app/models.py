@@ -305,3 +305,4 @@ class PlanLimit(Base):
     plan: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     key: Mapped[str] = mapped_column(String(32), nullable=False)
     value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text_value: Mapped[str | None] = mapped_column(Text, nullable=True)

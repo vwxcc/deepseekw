@@ -517,6 +517,39 @@ async def _usage_payload(chat: Chat, db: AsyncSession) -> UsageOut:
     )
 
 
+@router.post("/chats/{chat_id}/seed")
+async def seed_chat(
+    data: dict,
+    chat: Chat = Depends(get_owned_chat),
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    """Insert a prepared assistant message without calling the model.
+
+    Used by the main-page tiles: they create a chat and immediately show the
+    questions the user should answer.
+    """
+    text = str((data or {}).get("text") or "").strip()
+    if not text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустой текст")
+    if (data or {}).get("title"):
+        chat.title = str(data["title"])[:200]
+    msg = Message(
+        chat_id=chat.id,
+        user_id=None,
+        role=Role.assistant,
+        content=text[:8000],
+        parent_message_id=None,
+        status=MessageStatus.completed,
+    )
+    db.add(msg)
+    chat.updated_at = utcnow()
+    await db.commit()
+    await db.refresh(msg)
+    return message_out(msg)
+
+
 @router.get("/chats/{chat_id}/project")
 async def chat_project(
     chat: Chat = Depends(get_owned_chat), db: AsyncSession = Depends(get_db)

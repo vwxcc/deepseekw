@@ -431,8 +431,11 @@ class AIRouter:
             obj = await db.get(ModelSet, mset_id)
             return bool(obj and getattr(obj, "is_router", False))
 
-    async def _route(self, job: Job, entry) -> tuple[str | None, str]:
-        """Ask the routing model which concrete cluster fits this request."""
+    async def _route(self, job: Job, entry) -> tuple[str | None, str, str]:
+        """Ask the routing model to compress the request and pick a cluster.
+
+        Returns ``(set_id, set_name, brief)``.
+        """
         async with SessionLocal() as db:
             rows = (
                 await db.execute(
@@ -444,8 +447,10 @@ class AIRouter:
             ).scalars().all()
         candidates = [s for s in rows if not getattr(s, "is_router", False)]
         if not candidates:
-            return None, ""
+            return None, "", ""
         listing = "\n".join(f"{s.id} — {s.name}" for s in candidates)
+        brief = ""
+        chosen = None
         try:
             answer = await complete_chat(
                 messages=[
@@ -462,18 +467,29 @@ class AIRouter:
                 api_key=entry.api_key,
                 model=entry.model,
                 temperature=0.0,
-                max_tokens=200,
+                max_tokens=300,
                 timeout=min(entry.timeout, 90),
                 disable_thinking=True,
             )
-        except ProviderError as e:
+            text = (answer or "").strip()
+            match = re.search(r"\{[\s\S]*\}", text)
+            data = json.loads(match.group(0)) if match else {}
+            brief = str(data.get("brief") or "")[:300]
+            raw_cluster = str(data.get("cluster") or "")
+            for s in candidates:
+                if s.id == raw_cluster.strip() or (raw_cluster and s.id in raw_cluster):
+                    chosen = s
+                    break
+            if chosen is None:
+                for s in candidates:
+                    if s.name and s.name.lower() in text.lower():
+                        chosen = s
+                        break
+        except (ProviderError, json.JSONDecodeError, ValueError) as e:
             log.warning("Router failed: %s", e)
-            return candidates[0].id, candidates[0].name
-        text = (answer or "").strip()
-        for s in candidates:
-            if s.id in text or (s.name and s.name.lower() in text.lower()):
-                return s.id, s.name
-        return candidates[0].id, candidates[0].name
+        if chosen is None:
+            chosen = candidates[0]
+        return chosen.id, chosen.name, brief
 
     async def _run_message(self, job: Job) -> None:
         try:
@@ -487,10 +503,13 @@ class AIRouter:
 
         # Auto (Routing): let the router cluster pick a concrete model set first
         if await self._is_router_set(mset_id):
-            chosen_id, chosen_name = await self._route(job, entries[0])
+            chosen_id, chosen_name, brief = await self._route(job, entries[0])
             if chosen_id:
                 await job.output.put(
-                    ("route", json.dumps({"id": chosen_id, "name": chosen_name}))
+                    ("route", json.dumps(
+                        {"id": chosen_id, "name": chosen_name, "brief": brief},
+                        ensure_ascii=False,
+                    ))
                 )
                 job.model_set_id = chosen_id
                 mset_id, mset_name, entries = await self._resolve_entries(

@@ -74,6 +74,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "model_sets": {
         "is_router": "BOOLEAN DEFAULT 0",
     },
+    "plan_limits": {
+        "text_value": "TEXT",
+    },
     "users": {
         "avatar": "INTEGER DEFAULT 0",
         "github_user": "VARCHAR(120)",

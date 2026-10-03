@@ -1634,12 +1634,10 @@
   }
 
   function bindFiles() {
-    $('#links-btn').addEventListener('click', openLinks);
     $('#models-btn').addEventListener('click', openModelStats);
     $('#wall-btn').addEventListener('click', openWall);
     $('#publish-btn').addEventListener('click', publishCurrentChat);
     $('#mem-quick-btn').addEventListener('click', () => openMemory());
-    $('#memory-btn').addEventListener('click', () => openMemory());
     $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());

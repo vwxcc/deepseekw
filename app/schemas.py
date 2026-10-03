@@ -92,6 +92,9 @@ class MessageOut(ORMModel):
     tokens_cached: int = 0
     suggestions: list[str] = Field(default_factory=list)
     attachments: list[AttachmentOut] = Field(default_factory=list)
+    sources: list[dict] = Field(default_factory=list)
+    tool_runs: list[dict] = Field(default_factory=list)
+    memories: list[str] = Field(default_factory=list)
     children: list["MessageOut"] = Field(default_factory=list)
 
 

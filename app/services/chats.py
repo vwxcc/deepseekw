@@ -1,6 +1,8 @@
 """Chat / message business logic helpers."""
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +21,16 @@ def attachment_out(att: Attachment, f: File) -> AttachmentOut:
         size=f.size,
         mime_type=f.mime_type or "",
     )
+
+
+def _json_list(raw: str | None) -> list:
+    if not raw:
+        return []
+    try:
+        val = json.loads(raw)
+    except Exception:
+        return []
+    return val if isinstance(val, list) else []
 
 
 def message_out(
@@ -41,6 +53,8 @@ def message_out(
         tokens_cached=m.tokens_cached or 0,
         suggestions=suggestions or [],
         attachments=attachments or [],
+        sources=_json_list(m.sources),
+        tool_runs=_json_list(m.tool_runs),
     )
 
 

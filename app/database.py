@@ -62,5 +62,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "messages": {
         "tokens_cached": "INTEGER DEFAULT 0",
         "rating": "INTEGER DEFAULT 0",
+        "sources": "TEXT",
+        "tool_runs": "TEXT",
     },
 }

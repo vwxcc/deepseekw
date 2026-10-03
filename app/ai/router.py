@@ -5,14 +5,18 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from sqlalchemy import delete
 
 from ..config import settings
 from ..database import SessionLocal
 from ..models import (
+    Attachment,
     Chat,
+    File,
     Memory,
     Message,
     MessageStatus,
@@ -20,12 +24,39 @@ from ..models import (
     RouteType,
     Suggestion,
 )
+from ..services.files import detect_kind, sha256_bytes
+from ..services.sandbox import cleanup, run_python
 from . import model_sets as ms
 from . import prompts
-from .prompts import extract_memories
+from .prompts import extract_memories, extract_run_blocks, strip_run_blocks
 from .providers import ProviderError, complete_chat, stream_chat
 
 log = logging.getLogger("chatstudio.ai")
+
+
+def _tool_feedback(run: dict) -> str:
+    """What the model sees after its code has run."""
+    parts = ["Результат выполнения твоего кода:"]
+    if run.get("stdout"):
+        parts.append("stdout:\n" + run["stdout"])
+    if run.get("stderr"):
+        parts.append("stderr:\n" + run["stderr"])
+    if not run.get("stdout") and not run.get("stderr"):
+        parts.append("(вывод пустой)")
+    if run.get("timed_out"):
+        parts.append("Код был остановлен по таймауту — сделай его быстрее.")
+    if run.get("files"):
+        parts.append(
+            "Созданные файлы (уже отправлены пользователю в чат): "
+            + ", ".join(f["name"] for f in run["files"])
+        )
+    parts.append(
+        "Код завершился успешно."
+        if run.get("ok")
+        else "Код завершился с ошибкой — исправь и запусти снова."
+    )
+    parts.append("Если задача решена, дай финальный ответ пользователю без блока run.")
+    return "\n".join(parts)
 
 
 @dataclass
@@ -175,6 +206,7 @@ class AIRouter:
         content: str | None = None,
         error: str | None = None,
         usage: dict | None = None,
+        tool_runs: list[dict] | None = None,
     ) -> None:
         if not message_id:
             return
@@ -185,6 +217,8 @@ class AIRouter:
                     msg.content = content
                 msg.status = status
                 msg.error = error
+                if tool_runs:
+                    msg.tool_runs = json.dumps(tool_runs, ensure_ascii=False)
                 if usage:
                     msg.tokens_in = int(usage.get("prompt_tokens") or 0)
                     msg.tokens_out = int(usage.get("completion_tokens") or 0)
@@ -213,6 +247,97 @@ class AIRouter:
                     self.active.pop(job.message_id, None)
                 self.queue.task_done()
 
+    async def _stream_once(self, job: Job, entry, messages: list[dict]):
+        """One model turn. Returns (full, thinking, usage) or None when cancelled."""
+        full = ""
+        thinking = ""
+        usage: dict | None = None
+        async for kind, piece in stream_chat(
+            messages=messages,
+            base_url=entry.base_url,
+            api_key=entry.api_key,
+            model=entry.model,
+            temperature=entry.temperature,
+            max_tokens=entry.max_tokens,
+            timeout=entry.timeout,
+            disable_thinking=settings.ai_disable_thinking,
+            effort=job.effort,
+        ):
+            if kind == "usage":
+                try:
+                    usage = json.loads(piece)
+                except Exception:
+                    usage = None
+                continue
+            if job.cancel.is_set():
+                await self._finish(
+                    job.message_id,
+                    MessageStatus.cancelled,
+                    content=(full or thinking),
+                    error="Остановлено пользователем",
+                    usage=usage,
+                )
+                await job.output.put(("cancelled", full or thinking))
+                return None
+            if kind == "thinking":
+                thinking += piece
+                await job.output.put(("thinking", piece))
+            else:
+                full += piece
+                await job.output.put(("delta", piece))
+        return full, thinking, usage
+
+    async def _attach_run_files(self, job: Job, result: dict) -> list[dict]:
+        """Persist files produced by sandboxed code and attach them to the message."""
+        items = result.get("files") or []
+        if not items or not job.chat_id or not job.message_id:
+            return []
+        out: list[dict] = []
+        async with SessionLocal() as db:
+            chat = await db.get(Chat, job.chat_id)
+            if chat is None:
+                return []
+            base = settings.upload_path / chat.user_id
+            base.mkdir(parents=True, exist_ok=True)
+            for item in items:
+                try:
+                    data = Path(item["abs"]).read_bytes()
+                except OSError:
+                    continue
+                fid = str(uuid.uuid4())
+                ext = Path(item["name"]).suffix
+                dest = base / f"{fid}{ext}"
+                try:
+                    dest.write_bytes(data)
+                except OSError:
+                    continue
+                kind = detect_kind(item["name"], "")
+                db.add(
+                    File(
+                        id=fid,
+                        user_id=chat.user_id,
+                        storage_path=str(dest),
+                        original_name=item["name"],
+                        mime_type="",
+                        size=len(data),
+                        sha256=sha256_bytes(data),
+                        extracted_text=None,
+                        kind=kind,
+                    )
+                )
+                db.add(Attachment(message_id=job.message_id, file_id=fid))
+                out.append(
+                    {
+                        "id": fid,
+                        "file_id": fid,
+                        "name": item["name"],
+                        "kind": kind,
+                        "size": len(data),
+                    }
+                )
+            await db.commit()
+        return out
+
     async def _run_message(self, job: Job) -> None:
         try:
             mset_id, mset_name, entries = await self._resolve_entries(
@@ -225,6 +350,8 @@ class AIRouter:
 
         await self._set_status(job.message_id, MessageStatus.processing, mset_id)
 
+        agent_on = bool(settings.agent_enabled)
+        max_steps = max(1, settings.agent_max_steps) if agent_on else 1
         last_error = "Генерация не удалась"
         for entry in entries:
             if job.cancel.is_set():
@@ -234,44 +361,45 @@ class AIRouter:
                 await job.output.put(("cancelled", ""))
                 return
             try:
-                full = ""
+                messages = list(job.history)
+                answer = ""
                 thinking = ""
                 usage: dict | None = None
-                async for kind, piece in stream_chat(
-                    messages=job.history,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=entry.temperature,
-                    max_tokens=entry.max_tokens,
-                    timeout=entry.timeout,
-                    disable_thinking=settings.ai_disable_thinking,
-                    effort=job.effort,
-                ):
-                    if kind == "usage":
-                        try:
-                            usage = json.loads(piece)
-                        except Exception:
-                            usage = None
-                        continue
-                    if job.cancel.is_set():
-                        await self._finish(
-                            job.message_id,
-                            MessageStatus.cancelled,
-                            content=(full or thinking),
-                            error="Остановлено пользователем",
-                            usage=usage,
-                        )
-                        await job.output.put(("cancelled", full or thinking))
+                all_runs: list[dict] = []
+                for step in range(max_steps):
+                    got = await self._stream_once(job, entry, messages)
+                    if got is None:
                         return
-                    if kind == "thinking":
-                        thinking += piece
-                        await job.output.put(("thinking", piece))
-                    else:
-                        full += piece
-                        await job.output.put(("delta", piece))
+                    full, thinking, usage = got
+                    runs = extract_run_blocks(full) if agent_on else []
+                    if not runs:
+                        answer = full if full.strip() else thinking
+                        break
+                    for code in runs:
+                        result = await run_python(code, timeout=settings.agent_timeout)
+                        attached = await self._attach_run_files(job, result)
+                        run = {
+                            "code": code,
+                            "ok": bool(result.get("ok")),
+                            "stdout": result.get("stdout", ""),
+                            "stderr": result.get("stderr", ""),
+                            "timed_out": bool(result.get("timed_out")),
+                            "files": attached,
+                        }
+                        await job.output.put(("tool", json.dumps(run, ensure_ascii=False)))
+                        all_runs.append(run)
+                        messages = [
+                            *messages,
+                            {"role": "assistant", "content": full},
+                            {"role": "user", "content": _tool_feedback(run)},
+                        ]
+                        cleanup(result.get("workdir"))
+                    answer = strip_run_blocks(full)
+                    if step + 1 < max_steps:
+                        await job.output.put(("step", json.dumps({"n": step + 1})))
 
-                answer = full if full.strip() else thinking
+                if extract_run_blocks(answer):
+                    answer = strip_run_blocks(answer)
                 if not answer.strip():
                     raise ProviderError("Пустой ответ модели")
 
@@ -296,6 +424,7 @@ class AIRouter:
                     content=answer,
                     error=None,
                     usage=usage,
+                    tool_runs=all_runs or None,
                 )
                 await job.output.put(("done", answer))
                 await self.enqueue(
@@ -304,7 +433,7 @@ class AIRouter:
                         route_type=RouteType.SUGGESTIONS,
                         chat_id=job.chat_id,
                         message_id=job.message_id,
-                        history=[*job.history, {"role": "assistant", "content": answer}],
+                        history=[*messages, {"role": "assistant", "content": answer}],
                     )
                 )
                 return

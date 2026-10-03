@@ -136,6 +136,8 @@ class Message(Base):
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
     tokens_cached: Mapped[int] = mapped_column(Integer, default=0)
     rating: Mapped[int] = mapped_column(Integer, default=0)
+    sources: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_runs: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")

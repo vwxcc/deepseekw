@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     web_search_timeout: int = 12
     # context window of the default model, used for the "usage %" widget
     model_context_len: int = 262144
+    # --- Agent (sandboxed code execution) ---
+    agent_enabled: bool = True
+    agent_max_steps: int = 4
+    agent_timeout: int = 40
 
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file

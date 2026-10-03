@@ -688,6 +688,10 @@
       if (generating) {
         parts.push('<button data-mact="stop" data-id="' + n.id + '">' + icon('stop') + 'Остановить</button>');
       } else {
+        if (n.sources && n.sources.length) {
+          parts.push('<button data-mact="sources" data-id="' + n.id + '" title="Источники из интернета">' +
+            icon('globe') + 'Источники <b class="cnt">' + n.sources.length + '</b></button>');
+        }
         if (n.content) {
           parts.push('<button data-mact="rate-up" data-id="' + n.id + '" class="rate' +
             (n.rating > 0 ? ' on' : '') + '" title="Хороший ответ">' + icon('thumb-up') + '</button>');
@@ -727,8 +731,49 @@
         '<span>Запомнил: ' + escapeHtml(n.memories.join('; ').slice(0, 140)) + '</span></div>';
     }
 
+    let tools = '';
+    if (!isUser && n.tool_runs && n.tool_runs.length) {
+      tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
+    }
+
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
-      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' + inner + branch + meta + sugg + memLine + '</div>';
+      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
+      tools + inner + branch + meta + sugg + memLine + '</div>';
+  }
+
+  function toolRunHtml(r, i) {
+    const files = (r.files || []).map(f => {
+      const url = '/api/files/' + f.file_id + '/download';
+      if (f.kind === 'image') {
+        return '<a class="tool-file img" href="' + url + '" target="_blank" rel="noopener">' +
+          '<img src="' + url + '?inline=1" alt="' + escapeHtml(f.name) + '" loading="lazy" /></a>';
+      }
+      return '<a class="tool-file" href="' + url + '" target="_blank" rel="noopener">' +
+        icon('download') + '<span>' + escapeHtml(f.name) + '</span>' +
+        '<em>' + formatSize(f.size) + '</em></a>';
+    }).join('');
+    return '<div class="tool-box' + (r.ok ? '' : ' err') + '">' +
+      '<div class="tool-head">' + icon('terminal') +
+      '<span>Шаг ' + (i + 1) + ' — код выполнен' + (r.ok ? '' : ' с ошибкой') + '</span>' +
+      (r.timed_out ? '<em class="warn">таймаут</em>' : '') + '</div>' +
+      '<pre class="tool-code">' + escapeHtml(r.code || '') + '</pre>' +
+      (r.stdout ? '<pre class="tool-out">' + escapeHtml(r.stdout) + '</pre>' : '') +
+      (r.stderr ? '<pre class="tool-err">' + escapeHtml(r.stderr) + '</pre>' : '') +
+      (files ? '<div class="tool-files">' + files + '</div>' : '') +
+      '</div>';
+  }
+
+  function openSources(list) {
+    openModal({
+      title: 'Источники',
+      okText: 'Закрыть',
+      body: '<div class="src-list">' + list.map((s, i) =>
+        '<a class="src-row" href="' + escapeHtml(s.url || '#') + '" target="_blank" rel="noopener">' +
+        '<b>[' + (i + 1) + '] ' + escapeHtml(s.title || s.url || '') + '</b>' +
+        (s.snippet ? '<span>' + escapeHtml(String(s.snippet).slice(0, 200)) + '</span>' : '') +
+        '<em>' + escapeHtml(s.url || '') + '</em></a>').join('') + '</div>',
+      onOk: () => true,
+    });
   }
 
   function renderEmptyState() {
@@ -828,6 +873,10 @@
           });
         }
       } else if (act === 'memory') { await openMemory(id); }
+      else if (act === 'sources') {
+        const n = findNode(state.tree, id);
+        if (n) openSources(n.sources || []);
+      }
     }));
 
     $$('.branch-nav').forEach(nav => {
@@ -866,6 +915,15 @@
   function scrollToBottom() {
     const box = $('#messages');
     box.scrollTop = box.scrollHeight;
+  }
+
+  function bindStreamRefs() {
+    const el = state.activeAssistantId
+      ? $('.msg[data-mid="' + state.activeAssistantId + '"]')
+      : null;
+    state.streamEl = el ? $('.content', el) : null;
+    state.thinkBody = el ? $('.think-tail', el) : null;
+    state.draftTail = el ? $('.think-tail.answer', el) : null;
   }
 
   async function rateMessage(id, rating) {
@@ -953,10 +1011,7 @@
           renderMessages();
           if (ev === 'assistant_message') {
             state.activeAssistantId = data.id;
-            const el = $('.msg[data-mid="' + node.id + '"]');
-            state.streamEl = el ? $('.content', el) : null;
-            state.thinkBody = el ? $('.think-tail', el) : null;
-            state.draftTail = el ? $('.think-tail.answer', el) : null;
+            bindStreamRefs();
           }
         } else if (ev === 'thinking') {
           const n = findNode(state.tree, state.activeAssistantId);
@@ -977,6 +1032,24 @@
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.memories = (n.memories || []).concat(data.items || []);
           loadMemory();
+        } else if (ev === 'tool') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) {
+            n.tool_runs = (n.tool_runs || []).concat([data]);
+            if (data.files && data.files.length) {
+              n.attachments = (n.attachments || []).concat(data.files.map(f => ({
+                id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
+              })));
+            }
+          }
+          renderMessages();
+          bindStreamRefs();
+        } else if (ev === 'step') {
+          state.streamBuf = '';
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.draft = '';
+          renderMessages();
+          bindStreamRefs();
         } else if (ev === 'done') {
           const n = findNode(state.tree, data.message_id);
           if (n) {
@@ -1032,11 +1105,15 @@
       renderChatList();
     }
     const attachments = state.pendingAttachments.map(f => f.id);
+    // continue the ACTIVE branch: the last message of the visible path
+    const path = activePath(state.tree, state.choices);
+    const parentId = path.length ? path[path.length - 1].node.id : null;
     input.value = ''; autoGrow();
     state.pendingAttachments = []; renderAttachments();
     await streamRequest('/api/chats/' + state.currentChatId + '/messages',
       {
         content,
+        parent_message_id: parentId,
         attachment_ids: attachments,
         model_set_id: state.modelSetId || null,
         web_search: true,

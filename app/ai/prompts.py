@@ -4,6 +4,33 @@ from __future__ import annotations
 import re
 
 MEMORY_RE = re.compile(r"\[\[\s*memory\s*:\s*(.+?)\s*\]\]", re.S | re.I)
+RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
+
+RUN_SKILL = (
+    "\n\nСкилл исполнения кода (ты — агент). Если для ответа нужны вычисления, обработка "
+    "данных, графики или файлы (docx, xlsx, pptx, pdf, png, csv, svg), напиши блок кода "
+    "с языком run:\n"
+    "```run\n"
+    "print(2 + 2)\n"
+    "```\n"
+    "Код выполняется на сервере в изолированной рабочей папке. Всё, что он печатает в "
+    "stdout, вернётся тебе как результат, а все созданные им файлы сразу отправляются "
+    "пользователю в чат как вложения — не нужно вставлять их содержимое в ответ.\n"
+    "Доступно: numpy, pandas, matplotlib (backend Agg), Pillow, python-docx, openpyxl, "
+    "python-pptx, pypdf. Примеры: plt.savefig('chart.png'); doc.save('report.docx'); "
+    "prs.save('slides.pptx'); wb.save('data.xlsx').\n"
+    "Пиши ТОЛЬКО относительные пути, не используй input() и сеть. Лимит — 40 секунд. "
+    "Можно делать несколько шагов: после результата исправь код или дай финальный ответ "
+    "уже без блока run."
+)
+
+
+def extract_run_blocks(text: str) -> list[str]:
+    return [b.strip() for b in RUN_RE.findall(text or "") if b.strip()]
+
+
+def strip_run_blocks(text: str) -> str:
+    return re.sub(r"```run[^\n]*\n[\s\S]*?```", "", text or "").strip()
 
 MEMORY_SKILL = (
     "\n\nПамять: если пользователь сообщает устойчивый факт о себе (имя, роль, город, стек, "
@@ -47,6 +74,7 @@ MAIN_SYSTEM = (
     "а код оформляй блоками с указанием языка.\n"
     "Будь по существу, не выдумывай факты и не повторяй вопрос пользователя."
     + DRAW_SKILL
+    + RUN_SKILL
     + MEMORY_SKILL
 )
 

@@ -1,6 +1,8 @@
 """Message endpoints: tree retrieval, streaming generation, retry/branch/continue/stop."""
 from __future__ import annotations
 
+import json
+
 import asyncio
 import json
 
@@ -98,6 +100,19 @@ async def _stream_job(
                     items = []
                 if items:
                     yield _sse("memory", {"items": items})
+            elif kind == "tool":
+                try:
+                    run = json.loads(payload)
+                except Exception:
+                    run = None
+                if run:
+                    yield _sse("tool", run)
+            elif kind == "step":
+                try:
+                    meta = json.loads(payload)
+                except Exception:
+                    meta = {}
+                yield _sse("step", meta)
             elif kind == "done":
                 finished = True
                 yield _sse("done", {"message_id": assistant.id, "text": payload})
@@ -126,8 +141,29 @@ async def _spawn(
     chat: Chat,
     parent_message_id: str | None,
     history_messages: list[dict],
+    user_id: str | None = None,
+    effort: str | None = None,
 ) -> StreamingResponse:
-    history = prompts.with_system(history_messages, prompts.MAIN_SYSTEM)
+    system_prompt = prompts.MAIN_SYSTEM
+    if chat.summary:
+        system_prompt += (
+            "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
+        )
+    if user_id:
+        mem_res = await db.execute(
+            select(Memory)
+            .where(Memory.user_id == user_id)
+            .order_by(Memory.created_at.desc())
+            .limit(40)
+        )
+        mem_lines = [m.content for m in mem_res.scalars().all() if m.content]
+        if mem_lines:
+            system_prompt += (
+                "\n\n[Что ты помнишь о пользователе]\n"
+                + "\n".join("- " + x for x in reversed(mem_lines))
+            )
+
+    history = prompts.with_system(history_messages, system_prompt)
     assistant = Message(
         chat_id=chat.id,
         user_id=None,
@@ -147,6 +183,8 @@ async def _spawn(
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
+        effort=effort or chat.effort,
+        user_id=user_id,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -186,6 +224,16 @@ async def send_message(
         parent = await db.get(Message, parent_id)
         if parent is None or parent.chat_id != chat.id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный parent_message_id")
+    else:
+        # no explicit parent: continue from the newest message in the chat
+        last = await db.scalar(
+            select(Message)
+            .where(Message.chat_id == chat.id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+        )
+        if last is not None:
+            parent_id = last.id
 
     attached: list[File] = []
     for fid in data.attachment_ids or []:
@@ -254,6 +302,7 @@ async def send_message(
         content="",
         parent_message_id=user_msg.id,
         status=MessageStatus.queued,
+        sources=json.dumps(results, ensure_ascii=False) if results else None,
     )
     db.add(assistant)
     chat.updated_at = utcnow()
@@ -271,7 +320,6 @@ async def send_message(
         user_id=user.id,
     )
     await ai_router.enqueue(job)
-
     total = await db.scalar(
         select(func.count()).select_from(Message).where(Message.chat_id == chat.id)
     )
@@ -291,6 +339,7 @@ async def send_message(
 async def retry_message(
     request: Request,
     message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
@@ -305,6 +354,7 @@ async def retry_message(
         chat=chat,
         parent_message_id=parent_id,
         history_messages=history_messages,
+        user_id=user.id,
     )
 
 
@@ -312,6 +362,7 @@ async def retry_message(
 async def branch_message(
     request: Request,
     message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
@@ -326,6 +377,7 @@ async def branch_message(
         chat=chat,
         parent_message_id=parent_id,
         history_messages=history_messages,
+        user_id=user.id,
     )
 
 
@@ -333,6 +385,7 @@ async def branch_message(
 async def continue_message(
     request: Request,
     message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
@@ -350,6 +403,7 @@ async def continue_message(
         chat=chat,
         parent_message_id=message.id,
         history_messages=history_messages,
+        user_id=user.id,
     )
 
 

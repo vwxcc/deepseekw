@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..models import Attachment, File, Message, Suggestion
 from ..schemas import AttachmentOut, MessageOut
 
@@ -107,7 +108,7 @@ async def ancestor_chain(
                 if rec is not None and rec.extracted_text:
                     content += (
                         f"\n\n[Вложение: {rec.original_name}]\n"
-                        f"{rec.extracted_text[:20000]}"
+                        f"{rec.extracted_text[: settings.max_attachment_chars]}"
                     )
         chain.append({"role": msg.role.value, "content": content})
         current_id = msg.parent_message_id

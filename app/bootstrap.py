@@ -1,12 +1,12 @@
 """Seed default data on startup (admin user + default model sets)."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from .database import SessionLocal
-from .models import ModelSet, ModelSetEntry, RouteType, User
+from .models import ModelSet, ModelSetEntry, RouteType, Session, User, utcnow
 from .security import hash_password
 
 
@@ -14,7 +14,12 @@ async def bootstrap() -> None:
     async with SessionLocal() as db:
         await _seed_admin(db)
         await _seed_model_sets(db)
+        await _purge_expired_sessions(db)
         await db.commit()
+
+
+async def _purge_expired_sessions(db: AsyncSession) -> None:
+    await db.execute(delete(Session).where(Session.expires_at < utcnow()))
 
 
 async def _seed_admin(db: AsyncSession) -> None:

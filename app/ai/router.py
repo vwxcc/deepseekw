@@ -59,8 +59,9 @@ def _parse_suggestions(text: str) -> list[str]:
     out: list[str] = []
     for line in (text or "").splitlines():
         t = line.strip().lstrip("-•*—").strip()
-        t = re.sub(r"^\d+[.)]\s*", "", t).strip()
-        if len(t) > 4:
+        t = re.sub(r"^\d+[.)]\s*", "", t).strip().strip('"').strip("'").strip()
+        # keep only question-like, multi-word suggestions
+        if len(t) > 8 and " " in t:
             out.append(t[:200])
     return out[:3]
 

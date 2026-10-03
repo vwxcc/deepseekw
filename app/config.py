@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file
     max_total_file_size: int = 100 * 1024 * 1024  # 100 MB per request
     max_files_per_request: int = 10
+    # how many characters of an extracted document are sent to the model
+    max_attachment_chars: int = 40000
 
     # --- Default model set seed (Qwen) ---
     qwen_api_key: str = ""

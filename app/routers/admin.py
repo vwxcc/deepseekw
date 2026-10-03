@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
@@ -29,7 +30,10 @@ router = APIRouter(
 
 def _slugify(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
-    return s or "set"
+    if not s:
+        # non-latin names (e.g. Cyrillic) would collapse to "" -> use unique suffix
+        s = "set-" + uuid.uuid4().hex[:8]
+    return s
 
 
 async def _get_set(db: AsyncSession, set_id: str) -> ModelSet:

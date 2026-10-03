@@ -30,6 +30,7 @@ from ..services.sandbox import cleanup, run_python
 from . import model_sets as ms
 from . import prompts
 from .prompts import (
+    extract_ask,
     extract_memories,
     extract_run_blocks,
     strip_run_blocks,
@@ -568,6 +569,12 @@ class AIRouter:
 
                 # pull [[memory: ...]] commands out of the visible answer
                 answer, memories = extract_memories(answer)
+                answer, ask = extract_ask(answer)
+                if not ask and len(answer) <= 500:
+                    # fallback: a short answer that ends with a question is a clarification
+                    tail = answer.strip().split("\n")[-1].strip()
+                    if tail.endswith("?") and 12 < len(tail) < 260:
+                        ask = tail
                 if memories and job.user_id:
                     async with SessionLocal() as db:
                         for kind, value in memories:
@@ -592,6 +599,10 @@ class AIRouter:
                     usage=usage,
                     tool_runs=all_runs or None,
                 )
+                if ask:
+                    await job.output.put(
+                        ("ask", json.dumps({"question": ask}, ensure_ascii=False))
+                    )
                 await job.output.put(("done", answer))
                 await self.enqueue(
                     Job(

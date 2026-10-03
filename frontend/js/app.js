@@ -300,11 +300,18 @@
     const id = 'code_' + Math.random().toString(36).slice(2);
     window.__codeStore = window.__codeStore || {};
     window.__codeStore[id] = { lang: lang || '', code: code };
+    const isHtml = ['html', 'htm'].indexOf((lang || '').toLowerCase()) >= 0;
+    const preview = isHtml
+      ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
+        '<span>Живое превью</span></div>' +
+        '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
+        escapeHtml(code) + '"></iframe></div>'
+      : '';
     return '<div class="code-block"><div class="code-head"><span>' +
       escapeHtml(lang || 'code') + '</span><span class="code-acts">' +
       '<button data-copy="' + id + '">' + icon('copy') + 'Копировать</button>' +
       '<button data-dl="' + id + '" title="Скачать">' + icon('download') + '</button>' +
-      '</span></div><pre><code>' + escapeHtml(code) + '</code></pre></div>';
+      '</span></div>' + preview + '<pre><code>' + escapeHtml(code) + '</code></pre></div>';
   }
 
   function renderMarkdown(src) {
@@ -856,9 +863,19 @@
         '<span>Auto → <b>' + escapeHtml(n.route) + '</b></span></div>';
     }
 
+    let askCard = '';
+    if (!isUser && n.ask) {
+      askCard = '<div class="ask-card">' +
+        '<div class="ask-q">' + icon('sparkle') + '<span>' + escapeHtml(n.ask) + '</span></div>' +
+        '<div class="ask-row">' +
+        '<input type="text" class="ask-input" placeholder="Ваш ответ…" />' +
+        '<button class="chip-btn ask-send">' + icon('arrow-up') + 'Ответить</button>' +
+        '</div></div>';
+    }
+
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      routeLine + tools + inner + branch + meta + sugg + memLine + '</div>';
+      routeLine + tools + inner + askCard + branch + meta + sugg + memLine + '</div>';
   }
 
   function toolRunHtml(r, i) {
@@ -905,10 +922,12 @@
       '<div class="empty-state">' +
         '<h2 class="greet" id="greet-text">' +
           escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
-        '<p>Задайте вопрос, прикрепите файл или включите поиск в интернете.</p>' +
+        '<div class="tiles" id="tiles"></div>' +
         '<div class="chips" id="sugg-chips"></div>' +
         '<div id="empty-showcase" class="showcase"></div>' +
       '</div>';
+    renderTiles();
+    bindTiles();
     renderSuggestionChips();
     startRotation();
     startShowcase();
@@ -941,15 +960,22 @@
 
   function startRotation() {
     stopRotation();
+    let tick = 0;
     state.greetTimer = setInterval(() => {
       if (!$('#greet-text')) { stopRotation(); return; }
-      rotateGreeting();
+      tick += 1;
+      if (tick % 2 === 0) rotateGreeting();
       renderSuggestionChips();
-    }, 4200);
+    }, 11000);
+    state.tileTimer = setInterval(() => {
+      if (!$('#tiles')) { if (state.tileTimer) clearInterval(state.tileTimer); return; }
+      rotateTiles();
+    }, 15000);
   }
 
   function stopRotation() {
     if (state.greetTimer) { clearInterval(state.greetTimer); state.greetTimer = null; }
+    if (state.tileTimer) { clearInterval(state.tileTimer); state.tileTimer = null; }
   }
 
   function renderMessages() {
@@ -966,6 +992,24 @@
   }
 
   function bindMessageEvents() {
+    $$('.ask-card').forEach(card => {
+      const input = $('.ask-input', card);
+      const send = () => {
+        const value = (input.value || '').trim();
+        if (!value) return;
+        $('#input').value = value;
+        autoGrow();
+        sendCurrent();
+      };
+      const btn = $('.ask-send', card);
+      if (btn) btn.addEventListener('click', send);
+      if (input) {
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); send(); }
+        });
+      }
+    });
+
     $$('.mem-line').forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
     $$('.think-head').forEach(h => h.addEventListener('click', () => {
@@ -1041,6 +1085,11 @@
   function scrollToBottom() {
     const box = $('#messages');
     box.scrollTop = box.scrollHeight;
+    state.stickBottom = true;
+  }
+
+  function maybeScroll() {
+    if (state.stickBottom !== false) scrollToBottom();
   }
 
   function bindStreamRefs() {
@@ -1153,7 +1202,7 @@
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
           if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
-          scrollToBottom();
+          maybeScroll();
         } else if (ev === 'memory') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.memories = (n.memories || []).concat(data.items || []);
@@ -1199,6 +1248,11 @@
           state.streamBuf = '';
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.draft = '';
+          renderMessages();
+          bindStreamRefs();
+        } else if (ev === 'ask') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.ask = data.question;
           renderMessages();
           bindStreamRefs();
         } else if (ev === 'done') {
@@ -1324,7 +1378,6 @@
     applyEffort(state.effort, false);
     $('#pick-file-btn').addEventListener('click', openFilePicker);
     $('#context-btn').addEventListener('click', openContextMenu);
-    $('#sys-pill').addEventListener('click', openSystemModal);
     $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
     $('#pp-refresh').addEventListener('click', () => loadProject(true));
@@ -1767,6 +1820,10 @@
       t = setTimeout(() => { state.query = e.target.value.trim(); loadChats(); }, 250);
     });
     $('#chat-title').addEventListener('click', renameCurrentChat);
+    $('#messages').addEventListener('scroll', () => {
+      const box = $('#messages');
+      state.stickBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 70;
+    });
     $('#settings-btn').addEventListener('click', () => {
       const u = state.user || {};
       const isAdmin = !!u.is_admin;
@@ -1786,6 +1843,8 @@
           escapeHtml(state.effort) + ' · Память: ' +
           ((state.memories || []).length) + ' записей<br/>' +
           'Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
+          '<h4 class="sec">Состояние сервера</h4>' +
+          '<div id="sys-block">' + systemRowsHtml() + '</div>' +
           '<h4 class="sec">Разделы</h4>' +
           '<div class="settings-grid">' +
           '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' +
@@ -2525,24 +2584,36 @@
 
   async function startShowcase() {
     stopShowcase();
-    const paint = async () => {
-      const box = $('#empty-showcase');
-      if (!box) { stopShowcase(); return; }
-      let post = null;
-      let stats = [];
-      try { post = await api.get('/api/posts/top'); } catch (e) { post = null; }
-      try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
-      const top = stats.length ? stats[Math.floor(Math.random() * stats.length)] : null;
-      box.innerHTML =
-        '<div class="show-col"><div class="show-label">Модель дня</div>' + modelCardHtml(top) + '</div>' +
-        '<div class="show-col"><div class="show-label">Топ-пост стенки</div>' +
-        (post ? postCard(Object.assign({}, post, { can_delete: false }), true)
-              : '<div class="show-empty">Постов пока нет — нажми «Опубликовать» в чате</div>') +
-        '</div>';
-      bindPostCards(box);
-    };
-    await paint();
-    showcaseTimer = setInterval(paint, 7000);
+    let posts = [];
+    let stats = [];
+    try { posts = await api.get('/api/posts?limit=6'); } catch (e) { posts = []; }
+    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
+    const top = stats.length ? stats[Math.floor(Math.random() * stats.length)] : null;
+
+    const slides = (posts || []).slice(0, 5);
+    const track = slides.length
+      ? '<div class="carousel"><div class="car-track" id="car-track">' +
+        slides.map(p => '<div class="car-item">' +
+          postCard(Object.assign({}, p, { can_delete: false }), true) + '</div>').join('') +
+        '</div></div>'
+      : '<div class="show-empty">Постов пока нет — нажми «Опубликовать» в чате</div>';
+
+    const box = $('#empty-showcase');
+    if (!box) return;
+    box.innerHTML =
+      '<div class="show-col"><div class="show-label">Модель дня</div>' + modelCardHtml(top) + '</div>' +
+      '<div class="show-col"><div class="show-label">Стенка постов</div>' + track + '</div>';
+    bindPostCards(box);
+
+    if (slides.length > 1) {
+      let i = 0;
+      showcaseTimer = setInterval(() => {
+        const el = $('#car-track');
+        if (!el) { stopShowcase(); return; }
+        i = (i + 1) % slides.length;
+        el.style.transform = 'translateX(' + (-i * 100) + '%)';
+      }, 8000);
+    }
   }
 
   function stopShowcase() {
@@ -2610,40 +2681,26 @@
 
   // ---------- server load ----------
   async function loadSystem() {
-    const pill = $('#sys-pill');
-    if (!pill) return;
-    try {
-      const s = await api.get('/api/system');
-      state.system = s;
-      pill.textContent = 'CPU ' + s.cpu + '% · RAM ' + s.ram_pct + '% · SSD ' + s.disk_pct + '%';
-      pill.classList.toggle('warn', s.cpu > 80 || s.ram_pct > 88 || s.disk_pct > 88);
-    } catch (e) {
-      pill.textContent = '—';
-    }
+    try { state.system = await api.get('/api/system'); }
+    catch (e) { /* noop */ }
   }
 
-  function openSystemModal() {
+  function systemRowsHtml() {
     const s = state.system;
-    if (!s) { loadSystem(); return; }
+    if (!s) return '<p class="usage-note">Загрузка…</p>';
     const row = (label, pct, note) =>
       '<div class="sys-row"><span>' + label + '</span>' +
       '<i><b style="width:' + Math.min(100, Math.max(0, pct)) + '%"></b></i>' +
       '<u>' + pct + '%</u></div>' +
       '<div class="sys-note">' + note + '</div>';
-    openModal({
-      title: 'Загрузка сервера',
-      okText: 'Закрыть',
-      body:
-        row('Процессор', s.cpu, 'load average: ' + s.load.map(v => v.toFixed(2)).join(' · ') +
-          ' · ядер: ' + s.cpus) +
-        row('Оперативная память', s.ram_pct, 'занято ' + formatSize(s.ram_used) +
-          ' из ' + formatSize(s.ram_total)) +
-        row('Диск', s.disk_pct, 'занято ' + formatSize(s.disk_used) +
-          ' из ' + formatSize(s.disk_total) + ' · свободно ' + formatSize(s.disk_free)) +
-        '<p class="usage-note">Квота на пользователя: ' + formatSize(s.quota) +
-        '. При нехватке места самые старые файлы удаляются автоматически.</p>',
-      onOk: () => true,
-    });
+    return row('Процессор', s.cpu, 'load average: ' + s.load.map(v => v.toFixed(2)).join(' · ') +
+        ' · ядер: ' + s.cpus) +
+      row('Оперативная память', s.ram_pct, 'занято ' + formatSize(s.ram_used) +
+        ' из ' + formatSize(s.ram_total)) +
+      row('Диск', s.disk_pct, 'занято ' + formatSize(s.disk_used) +
+        ' из ' + formatSize(s.disk_total) + ' · свободно ' + formatSize(s.disk_free)) +
+      '<p class="usage-note">Квота на пользователя: ' + formatSize(s.quota) +
+      '. При нехватке места самые старые файлы удаляются автоматически.</p>';
   }
 
   // ---------- plan limits ----------
@@ -2758,6 +2815,64 @@
         } catch (e) { log('Ошибка: ' + e.message); }
       });
     });
+  }
+
+  // ---------- main page: action tiles + rotating showcase ----------
+  const ACTION_TILES = [
+    { id: 'essay', label: 'Написать сочинение', prompt: 'Напиши сочинение на тему: ', icon: 'i-pencil', color: '#f2c14e' },
+    { id: 'doc', label: 'Документ Word', prompt: 'Сделай документ Word: ', icon: 'i-doc', color: '#2f6fb0', ask: 'Что должно быть в документе? Опишите тему, структуру и объём.' },
+    { id: 'slides', label: 'Презентация', prompt: 'Сделай презентацию: ', icon: 'i-slides', color: '#e8834f', ask: 'О чём презентация? Сколько слайдов и для кого?' },
+    { id: 'sheet', label: 'Таблица Excel', prompt: 'Собери таблицу Excel: ', icon: 'i-sheet', color: '#2f8f6f', ask: 'Какие данные в таблице? Какие колонки нужны?' },
+    { id: 'code', label: 'Написать код', prompt: 'Напиши код: ', icon: 'i-terminal', color: '#7c5cbf' },
+    { id: 'draw', label: 'Нарисовать схему', prompt: 'Нарисуй схему: ', icon: 'i-sparkle', color: '#c0563f' },
+    { id: 'image', label: 'Сделать график', prompt: 'Построй график по данным: ', icon: 'i-chart', color: '#0e7c9b' },
+    { id: 'research', label: 'Найти в интернете', prompt: 'Найди в интернете и summarise: ', icon: 'i-globe', color: '#3f7a3f' },
+    { id: 'explain', label: 'Объяснить простыми словами', prompt: 'Объясни простыми словами: ', icon: 'i-brain', color: '#a03f6f' },
+    { id: 'plan', label: 'Составить план', prompt: 'Составь план: ', icon: 'i-file', color: '#8a4a2f' },
+    { id: 'translate', label: 'Перевести', prompt: 'Переведи на английский: ', icon: 'i-globe-box', color: '#4a5568' },
+    { id: 'wall', label: 'Посмотреть посты', action: 'wall', icon: 'i-globe-box', color: '#b8862f' },
+  ];
+
+  function tileHtml(t) {
+    return '<button class="tile" data-tile="' + t.id + '" style="--tile:' + t.color + '">' +
+      '<span class="tile-ico">' + icon(t.icon) + '</span>' +
+      '<span class="tile-label">' + escapeHtml(t.label) + '</span></button>';
+  }
+
+  function renderTiles() {
+    const box = $('#tiles');
+    if (!box) return;
+    const picks = [];
+    const pool = ACTION_TILES.slice();
+    for (let i = 0; i < 6 && pool.length; i++) {
+      picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    box.innerHTML = picks.map(tileHtml).join('');
+  }
+
+  function bindTiles() {
+    $$('[data-tile]').forEach(b => b.addEventListener('click', () => {
+      const t = ACTION_TILES.find(x => x.id === b.dataset.tile);
+      if (!t) return;
+      if (t.action === 'wall') { openWall(); return; }
+      const input = $('#input');
+      input.value = t.prompt;
+      autoGrow();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      if (t.ask) toast(t.ask);
+    }));
+  }
+
+  function rotateTiles() {
+    const box = $('#tiles');
+    if (!box) return;
+    box.classList.add('swap');
+    setTimeout(() => {
+      renderTiles();
+      bindTiles();
+      box.classList.remove('swap');
+    }, 420);
   }
 
   // ---------- boot ----------

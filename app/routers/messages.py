@@ -128,6 +128,13 @@ async def _stream_job(
                     route = {}
                 if route:
                     yield _sse("route", route)
+            elif kind == "ask":
+                try:
+                    q = json.loads(payload)
+                except Exception:
+                    q = None
+                if q:
+                    yield _sse("ask", q)
             elif kind == "done":
                 finished = True
                 yield _sse("done", {"message_id": assistant.id, "text": payload})

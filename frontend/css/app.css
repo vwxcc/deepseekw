@@ -1585,3 +1585,9 @@ body { font-weight: 400; }
   .mm-list { max-height: none; }
   .modal.wide { width: auto; }
 }
+
+
+/* a touch larger composer text */
+#input { font-size: 17px; line-height: 1.5; }
+#input::placeholder { font-size: 17px; }
+@media (max-width: 620px) { #input, #input::placeholder { font-size: 16px; } }

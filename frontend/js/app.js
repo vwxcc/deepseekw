@@ -2996,10 +2996,40 @@
     { id: 'wall', label: 'Посмотреть посты', icon: 'i-globe-box', color: '#b8862f', action: 'wall' },
   ];
 
+  // inline tile icon paths — drawn directly, so they render everywhere
+  const TILE_PATHS = {
+    pencil: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>',
+    doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+    slides: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/><path d="M7 8h6M7 11h4"/>',
+    sheet: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/>',
+    terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
+    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18 16l.7 1.8L20.5 18.5l-1.8.7L18 21l-.7-1.8L15.5 18.5l1.8-.7z"/>',
+    chart: '<path d="M4 20V4M4 20h16"/><path d="M8 17v-6M12.5 17V8M17 17v-9"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+    brain: '<path d="M9.6 4.6A2.6 2.6 0 0 0 7 7.2v.4A2.8 2.8 0 0 0 5.3 12.4 2.8 2.8 0 0 0 7 17.1v.3a2.6 2.6 0 0 0 5.2 0V5.9a2.6 2.6 0 0 0-2.6-1.3Z"/><path d="M14.4 4.6A2.6 2.6 0 0 1 17 7.2v.4a2.8 2.8 0 0 1 1.7 4.8A2.8 2.8 0 0 1 17 17.1v.3a2.6 2.6 0 0 1-5.2 0"/><path d="M12 4.6v15"/>',
+    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    link: '<path d="M9.5 14.5l5-5"/><path d="M11 7l1.5-1.5a3.5 3.5 0 1 1 5 5L16 12M13 17l-1.5 1.5a3.5 3.5 0 1 1-5-5L8 12"/>',
+  };
+
+  // maps old sprite ids (and bare names) onto the inline set
+  const TILE_ALIAS = {
+    'i-pencil': 'pencil', 'i-doc': 'doc', 'i-slides': 'slides', 'i-sheet': 'sheet',
+    'i-terminal': 'terminal', 'i-sparkle': 'sparkle', 'i-chart': 'chart',
+    'i-globe': 'globe', 'i-globe-box': 'globe', 'i-brain': 'brain',
+    'i-file': 'file', 'i-link': 'link', 'i-search': 'globe',
+  };
+
+  function tileIcon(name) {
+    const key = TILE_ALIAS[name] || name;
+    const path = TILE_PATHS[key] || TILE_PATHS.sparkle;
+    return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffffff" ' +
+      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
+  }
+
   function tileHtml(t) {
     return '<button class="tile' + (t.locked ? ' locked' : '') + '" data-tile="' + t.id +
       '" style="--tile:' + t.color + '">' +
-      '<span class="tile-ico">' + icon(t.icon) + '</span>' +
+      '<span class="tile-ico">' + tileIcon(t.icon) + '</span>' +
       '<span class="tile-label">' + escapeHtml(t.label) + '</span>' +
       (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</button>';
   }

@@ -13,7 +13,7 @@ from .ai.router import router as ai_router
 from .bootstrap import bootstrap
 from .config import settings
 from .database import init_db
-from .routers import admin, auth, chats, files, memory, messages, models, public
+from .routers import admin, auth, chats, council, files, memory, messages, models, public
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.include_router(models.router)
 app.include_router(admin.router)
 app.include_router(public.router)
 app.include_router(memory.router)
+app.include_router(council.router)
 
 
 @app.get("/api/health")

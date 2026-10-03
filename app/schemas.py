@@ -53,6 +53,7 @@ class ChatOut(ORMModel):
     share_token: str | None = None
     mode: str = "chat"
     model_name: str | None = None
+    bundle_id: str | None = None
 
 
 class ChatCreate(BaseModel):
@@ -177,6 +178,24 @@ class MemoryOut(ORMModel):
 
 class MemoryIn(BaseModel):
     content: str
+
+
+# --- Council of models (beta) ---
+class CouncilIn(BaseModel):
+    question: str
+    personas: list[str] = Field(default_factory=list)
+
+
+class CouncilOut(BaseModel):
+    bundle_id: str
+    merge_chat_id: str
+    chat_ids: list[str] = Field(default_factory=list)
+
+
+class CouncilModelOut(BaseModel):
+    id: str
+    name: str
+    hint: str = ""
 
 
 class PublicChatOut(BaseModel):

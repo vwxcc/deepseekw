@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=15" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=16" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -93,6 +93,9 @@
         <button class="new-chat code-mode" id="new-code-btn" title="Чат-агент для программирования: пишет файлы, запускает код, собирает проект">
           <svg class="ic"><use href="#i-terminal"/></svg><span>Код-агент</span>
         </button>
+        <button class="new-chat council-mode" id="new-council-btn" title="Совет моделей (бета): несколько моделей отвечают параллельно, затем ответ объединяется">
+          <svg class="ic"><use href="#i-sparkle"/></svg><span>Совет моделей · бета</span>
+        </button>
         <div class="search-box">
           <svg class="ic"><use href="#i-search"/></svg>
           <input id="search-input" type="search" placeholder="Поиск по чатам" />
@@ -173,6 +176,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=15"></script>
+  <script src="/assets/js/app.js?v=16"></script>
 </body>
 </html>

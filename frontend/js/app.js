@@ -619,6 +619,8 @@
         '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
         '<span class="chat-meta">' +
           (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
+          (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
+          (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
           (c.model_name ? '<em class="model-tag">' + escapeHtml(c.model_name) + '</em>' : '') +
         '</span>' +
         '<span class="acts">' +
@@ -1681,6 +1683,7 @@
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
     $('#new-code-btn').addEventListener('click', () => newChat('code'));
+    $('#new-council-btn').addEventListener('click', openCouncil);
     $('#collapse-btn').addEventListener('click', () => {
       state.sidebarCollapsed = true;
       localStorage.setItem('cs_sidebar', '1');
@@ -2161,6 +2164,44 @@
         $('#modal-root').innerHTML = '';
         openMemory();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+  }
+
+  async function openCouncil() {
+    let models = [];
+    try { models = await api.get('/api/council/models'); } catch (e) { models = []; }
+    if (models.length < 2) {
+      toast('Совет недоступен', 'error');
+      return;
+    }
+    openModal({
+      title: 'Совет моделей · бета',
+      okText: 'Запустить',
+      body: '<p class="usage-note">Вопрос уйдёт всем участникам параллельно. ' +
+        'Каждый ответ сохранится отдельным чатом (они связаны группой «совет»), ' +
+        'а в этом чате появится объединённый ответ.</p>' +
+        '<textarea id="council-q" rows="3" placeholder="Ваш вопрос для совета..."></textarea>' +
+        '<div class="council-models">' + models.map((m, i) =>
+          '<label class="council-row"><input type="checkbox" data-ms="' + m.id + '"' +
+          (i < 3 ? ' checked' : '') + '/><span><b>' + escapeHtml(m.name) + '</b>' +
+          (m.hint ? '<em>' + escapeHtml(m.hint) + '</em>' : '') + '</span></label>').join('') +
+        '</div>',
+      onOk: async (root) => {
+        const q = ($('#council-q', root) || {}).value ? $('#council-q', root).value.trim() : '';
+        if (!q) { toast('Введите вопрос', 'error'); return false; }
+        const ids = $$('[data-ms]', root).filter(c => c.checked).map(c => c.dataset.ms);
+        if (ids.length < 2) { toast('Выберите минимум двух участников', 'error'); return false; }
+        try {
+          const res = await api.post('/api/council', { question: q, personas: ids });
+          await loadChats();
+          await openChat(res.merge_chat_id);
+          toast('Совет запущен: ' + ids.length + ' участников');
+          return true;
+        } catch (e) {
+          toast('Ошибка: ' + e.message, 'error');
+          return false;
+        }
+      },
     });
   }
 

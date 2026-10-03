@@ -5,11 +5,12 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from ..config import settings
 from ..database import SessionLocal
@@ -88,6 +89,7 @@ class Job:
     user_id: str | None = None
     mode: str = "chat"
     project: str | None = None
+    depends_on: list[str] = field(default_factory=list)
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -250,6 +252,8 @@ class AIRouter:
                     await self._run_title(job)
                 elif job.kind == "suggestions":
                     await self._run_suggestions(job)
+                elif job.kind == "merge":
+                    await self._run_merge(job)
                 else:
                     await self._run_message(job)
             except asyncio.CancelledError:
@@ -353,6 +357,70 @@ class AIRouter:
                 )
             await db.commit()
         return out
+
+    async def _run_merge(self, job: Job) -> None:
+        """Council: wait for every variant, then synthesise one answer."""
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            pending = False
+            async with SessionLocal() as db:
+                for mid in job.depends_on:
+                    m = await db.get(Message, mid)
+                    if m is None or m.status in (
+                        MessageStatus.queued,
+                        MessageStatus.processing,
+                    ):
+                        pending = True
+                        break
+            if not pending:
+                break
+            if job.cancel.is_set():
+                await self._finish(
+                    job.message_id, MessageStatus.cancelled, error="Остановлено"
+                )
+                await job.output.put(("cancelled", ""))
+                return
+            await asyncio.sleep(1.5)
+
+        parts: list[str] = []
+        question = job.user_text
+        async with SessionLocal() as db:
+            for i, mid in enumerate(job.depends_on, 1):
+                m = await db.get(Message, mid)
+                if m is not None and (m.content or "").strip():
+                    parts.append(f"### Вариант {i}\n{m.content.strip()[:6000]}")
+            if not question:
+                res = await db.execute(
+                    select(Message)
+                    .where(Message.chat_id == job.chat_id, Message.role == Role.user)
+                    .order_by(Message.created_at)
+                    .limit(1)
+                )
+                first = res.scalars().first()
+                question = first.content if first else ""
+
+        if not parts:
+            await self._finish(
+                job.message_id, MessageStatus.failed, error="Варианты не получены"
+            )
+            await job.output.put(("error", "Варианты не получены"))
+            return
+
+        job.history = prompts.with_system(
+            [
+                {
+                    "role": "user",
+                    "content": prompts.COUNCIL_MERGE_TEMPLATE.format(
+                        question=question, variants="\n\n".join(parts)
+                    ),
+                }
+            ],
+            prompts.MAIN_SYSTEM,
+        )
+        await job.output.put(
+            ("step", json.dumps({"n": 0, "variants": len(parts)}))
+        )
+        await self._run_message(job)
 
     async def _run_message(self, job: Job) -> None:
         try:

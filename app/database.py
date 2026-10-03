@@ -60,6 +60,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "effort": "VARCHAR(16) DEFAULT 'recommended'",
         "mode": "VARCHAR(16) DEFAULT 'chat'",
         "model_name": "VARCHAR(200)",
+        "bundle_id": "VARCHAR(36)",
     },
     "messages": {
         "tokens_cached": "INTEGER DEFAULT 0",

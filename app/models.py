@@ -105,6 +105,7 @@ class Chat(Base):
     effort: Mapped[str] = mapped_column(String(16), default="recommended")
     mode: Mapped[str] = mapped_column(String(16), default="chat")
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    bundle_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     owner: Mapped["User"] = relationship(back_populates="chats")
     messages: Mapped[list["Message"]] = relationship(

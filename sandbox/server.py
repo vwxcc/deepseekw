@@ -139,6 +139,7 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
         "LC_ALL": "C.UTF-8",
         "PYTHONUNBUFFERED": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "/srv",
         "MPLBACKEND": "Agg",
         "MPLCONFIGDIR": mpl_dir,
         "HOME": "/tmp",

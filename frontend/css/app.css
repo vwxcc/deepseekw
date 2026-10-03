@@ -1496,3 +1496,60 @@ input[type="range"].orange-range { width: 100%; }
   background: #fff; border: 2px solid #c9962e; box-shadow: 0 1px 5px rgba(0, 0, 0, .2);
 }
 .mm-slider b { min-width: 76px; text-align: right; font-size: 13px; color: var(--fg); }
+
+/* ============================================================
+   Fonts: Yandex Sans Text (UI) + Lora (literary serif)
+   ============================================================ */
+@font-face { font-family: 'YS Text'; font-weight: 300; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/ys-light.woff2') format('woff2'); }
+@font-face { font-family: 'YS Text'; font-weight: 400; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/ys-regular.woff2') format('woff2'); }
+@font-face { font-family: 'YS Text'; font-weight: 500; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/ys-medium.woff2') format('woff2'); }
+@font-face { font-family: 'YS Text'; font-weight: 700; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/ys-bold.woff2') format('woff2'); }
+@font-face { font-family: 'Lora'; font-weight: 400; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/lora-cyrillic-400.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Lora'; font-weight: 400; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/lora-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Lora'; font-weight: 600; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/lora-cyrillic-600.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Lora'; font-weight: 600; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/lora-latin-600.woff2') format('woff2'); }
+
+:root {
+  --font-ui: 'YS Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-lit: 'Lora', Georgia, 'Times New Roman', serif;
+}
+html, body, button, input, textarea, select {
+  font-family: var(--font-ui);
+}
+body { font-weight: 400; }
+.md, .content { font-family: var(--font-ui); }
+
+/* literary serif: greeting, chat title, composer placeholder */
+.empty-state h2, .empty-state h2.greet {
+  font-family: var(--font-lit); font-weight: 600; letter-spacing: -0.01em;
+}
+.chat-title { font-family: var(--font-lit); font-weight: 600; }
+#input { font-family: var(--font-lit); font-size: 15.5px; }
+#input::placeholder { font-family: var(--font-lit); font-style: italic; opacity: .75; }
+
+/* header: title to the left, action buttons compact and further left */
+.chat-title-wrap { justify-content: flex-start; }
+.chat-title { text-align: left; }
+.head-right { gap: 4px; }
+#publish-btn, #share-btn { padding: 0 9px; gap: 5px; }
+#publish-btn .pub-label, #share-btn .pub-label { font-size: 11.5px; }
+.head-left { gap: 4px; }
+@media (max-width: 1360px) {
+  #publish-btn .pub-label, #share-btn .pub-label { display: none; }
+  #publish-btn, #share-btn { width: 34px; padding: 0; }
+}
+
+/* sidebar footer: two shortcuts on one row */
+.side-row.two { display: flex; gap: 6px; }
+.side-row.two .side-item { flex: 1 1 0; min-width: 0; justify-content: center; gap: 6px; }
+.side-row.two .side-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

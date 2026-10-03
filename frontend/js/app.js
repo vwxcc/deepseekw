@@ -467,7 +467,6 @@
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
-    temperature: parseFloat(localStorage.getItem('cs_temp')) || 0.2,
     readonly: false,
     publicToken: null,
     greetTimer: null,
@@ -945,6 +944,7 @@
     renderTiles();
     bindTiles();
     renderSuggestionChips();
+    rollPlaceholder();
     startRotation();
   }
 
@@ -1200,8 +1200,6 @@
         (idle > 45 ? ' · модель долго думает…' : '');
       el.classList.toggle('warn', idle > 45);
     }, 1000);
-    let fetchFailed = false;
-    let fetchError = '';
     try {
       const headers = { 'X-CSRF-Token': api.csrf() };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -1308,20 +1306,11 @@
         }
       });
     } catch (err) {
-      fetchFailed = true;
-      fetchError = err && err.message ? String(err.message).slice(0, 300) : 'ошибка сети';
       console.error(err);
-      toast('Ошибка: ' + fetchError, 'error');
+      toast('Ошибка: ' + err.message, 'error');
     } finally {
       setStreaming(false);
       if (state.genTimer) { clearInterval(state.genTimer); state.genTimer = null; }
-      // never leave a message stuck in "generating" — that keeps the animation alive
-      const stuck = findNode(state.tree, state.activeAssistantId);
-      if (stuck && (stuck.status === 'queued' || stuck.status === 'processing')) {
-        stuck.status = fetchFailed ? 'failed' : 'cancelled';
-        if (fetchFailed && !stuck.error) stuck.error = fetchError || 'генерация прервана';
-        renderMessages();
-      }
       state.streamEl = null;
       await loadChats();
       // refresh title (generated in background)
@@ -1427,19 +1416,14 @@
   async function loadUsage() {
     const btn = $('#context-btn');
     if (!btn) return;
+    if (!state.currentChatId) { btn.textContent = '—'; return; }
     try {
-      if (!state.limits) await loadLimits();
-      const lim = (state.limits && state.limits.limits) || {};
-      const use = (state.limits && state.limits.usage) || {};
-      const cap = lim.messages_per_day;
-      const reqs = use.requests || 0;
-      btn.textContent = cap == null
-        ? (reqs + ' запр.')
-        : (reqs + ' / ' + cap);
-      btn.classList.toggle('warn', cap != null && reqs >= cap);
-      btn.title = 'Расход по тарифу: запросов ' + reqs +
-        (cap != null ? ' из ' + cap : '') +
-        ' · токенов ' + fmtNum(use.tokens || 0);
+      const u = await api.get('/api/chats/' + state.currentChatId + '/usage');
+      state.usage = u;
+      const p = u.percent || 0;
+      btn.textContent = p.toFixed(1) + '%';
+      btn.classList.toggle('warn', p > 60);
+      btn.title = 'Контекст: ' + p.toFixed(2) + '% из ' + fmtNum(u.context_len) + ' токенов';
     } catch (e) {
       btn.textContent = '—';
     }
@@ -1614,117 +1598,458 @@
     } catch (e) {
       state.modelSets = [];
     }
-    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    if (!mains.length) return;
-    if (!state.modelSetId || !mains.some(s => s.id === state.modelSetId)) {
+    const sel = $('#model-select');
+    if (!sel) return;
+    const mains = state.modelSets.filter(s => s.route_type === 'MAIN');
+    if (!mains.length) { sel.classList.add('hidden'); return; }
+    sel.classList.remove('hidden');
+    sel.innerHTML = mains.map(s =>
+      '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>').join('');
+    if (state.modelSetId && mains.some(s => s.id === state.modelSetId)) {
+      sel.value = state.modelSetId;
+    } else {
+      sel.value = mains[0].id;
       state.modelSetId = mains[0].id;
-      localStorage.setItem('cs_model', state.modelSetId);
     }
-    updateModelButton();
   }
 
-  function currentModelSet() {
-    return (state.modelSets || []).find(s => s.id === state.modelSetId) || null;
+  // ---------- files ----------
+  async function loadFiles() {
+    state.files = await api.get('/api/files');
+    renderFiles();
   }
 
-  function updateModelButton() {
-    const label = $('#model-btn-label');
-    if (!label) return;
-    const ms = currentModelSet();
-    label.textContent = ms ? ms.name : 'Модель';
+  function kindIcon() {
+    return icon('file');
   }
 
-  async function openModelMenu() {
-    await loadModelSets();
-    if (!state.limits) await loadLimits();
-    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    const lim = (state.limits && state.limits.limits) || {};
-    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
-    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
-    const cdef = Math.max(cmin, Math.min(cmax, 50));
-    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
-
-    const cards = mains.map(s => {
-      const e = (s.entries || [])[0] || {};
-      const bits = [];
-      bits.push('контекст ' + fmtNum(e.context_len || 0));
-      bits.push('ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.');
-      if (e.price_in) bits.push('вход ' + e.price_in + ' ₽/1M');
-      if (e.price_out) bits.push('выход ' + e.price_out + ' ₽/1M');
-      if (e.price_cache) bits.push('кэш ' + e.price_cache + ' ₽/1M');
-      return '<label class="mm-card' + (s.id === state.modelSetId ? ' on' : '') + '">' +
-        '<input type="radio" name="mm" value="' + s.id + '"' +
-        (s.id === state.modelSetId ? ' checked' : '') + '/>' +
-        '<span class="mm-body"><b>' + escapeHtml(s.name) +
-        (s.is_router ? ' · auto' : '') + '</b>' +
-        '<em>' + escapeHtml(e.model || '—') + '</em>' +
-        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
-    }).join('');
-
-    openModal({
-      title: 'Модель и параметры',
-      okText: 'Готово',
-      body:
-        '<h4 class="sec">Кластер</h4><div class="mm-list">' +
-        (cards || '<p>Моделей нет</p>') + '</div>' +
-        '<h4 class="sec">Усилие модели</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
-        (EFFORTS.length - 1) + '" step="1" value="' + idx +
-        '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
-        '<h4 class="sec">Температура</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
-        state.temperature + '"/><b id="mm-temp-label">' +
-        Number(state.temperature).toFixed(1) + '</b></div>' +
-        '<h4 class="sec">Сжатие истории</h4>' +
-        '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме и освободит контекст. ' +
-        'Ваш тариф: от ' + cmin + '% до ' + cmax + '%' +
-        (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
-        '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
-        '" max="' + cmax + '" step="5" value="' + cdef +
-        '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
-        '<div style="margin-top:10px"><button class="chip-btn" id="mm-comp-go">' +
-        icon('sparkle') + 'Сжать историю</button></div>',
-      onOk: (root) => {
-        const picked = $('input[name=mm]:checked', root);
-        if (picked) {
-          state.modelSetId = picked.value;
-          localStorage.setItem('cs_model', state.modelSetId);
-        }
-        updateModelButton();
-        return true;
-      },
-    });
-
-    const eff = $('#mm-effort');
-    eff.addEventListener('input', () => {
-      const i = parseInt(eff.value, 10) || 0;
-      state.effort = EFFORTS[i];
-      localStorage.setItem('cs_effort', state.effort);
-      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
-    });
-    const tmp = $('#mm-temp');
-    tmp.addEventListener('input', () => {
-      state.temperature = parseFloat(tmp.value) || 0;
-      localStorage.setItem('cs_temp', String(state.temperature));
-      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
-    });
-    const cmp = $('#mm-comp');
-    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
-    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
-      $$('.mm-card').forEach(c => c.classList.remove('on'));
-      const card = r.closest('.mm-card');
-      if (r.checked && card) card.classList.add('on');
+  function renderFiles() {
+    const box = $('#file-list');
+    const q = (state.fileQuery || '').toLowerCase();
+    const kind = state.fileKind || 'all';
+    let items = state.files || [];
+    if (q) items = items.filter(f => (f.original_name || '').toLowerCase().includes(q));
+    if (kind !== 'all') {
+      items = items.filter(f => {
+        const k = f.kind || 'other';
+        if (kind === 'image') return k === 'image';
+        if (kind === 'doc') return ['pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text'].includes(k);
+        if (kind === 'table') return ['sheet', 'csv', 'xlsx'].includes(k);
+        if (kind === 'slide') return k === 'slide' || k === 'presentation';
+        return !['image', 'pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text', 'sheet', 'csv', 'xlsx', 'slide'].includes(k);
+      });
+    }
+    if (!items.length) {
+      box.innerHTML = '<div class="side-empty">' +
+        (state.files.length ? 'Ничего не найдено' : 'Файлов пока нет') + '</div>';
+      return;
+    }
+    box.innerHTML = items.map(f =>
+      '<div class="file-item">' +
+        '<span class="fi-kind">' + kindIcon(f.kind) + '</span>' +
+        '<span class="fi-name" title="' + escapeHtml(f.original_name) + '">' + escapeHtml(f.original_name) + '</span>' +
+        '<span class="fi-size">' + formatSize(f.size) + '</span>' +
+        '<a class="fi-btn" href="/api/files/' + f.id + '/download" title="Скачать" download>' +
+        icon('download') + '</a>' +
+        '<button data-attach="' + f.id + '" title="Прикрепить">' + icon('plus') + '</button>' +
+        '<button data-del="' + f.id + '" title="Удалить">' + icon('trash') + '</button>' +
+      '</div>').join('');
+    $$('[data-del]', box).forEach(b => b.addEventListener('click', async () => {
+      await api.del('/api/files/' + b.dataset.del);
+      state.files = state.files.filter(x => x.id !== b.dataset.del);
+      renderFiles();
     }));
-    $('#mm-comp-go').addEventListener('click', async () => {
-      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-      toast('Сжимаю историю…');
-      try {
-        await api.post('/api/chats/' + state.currentChatId + '/compress',
-          { target_percent: parseInt(cmp.value, 10) || 50 });
-        toast('История сжата');
-        await loadUsage();
-      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
+    $$('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
+      const f = state.files.find(x => x.id === b.dataset.attach);
+      if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
+        state.pendingAttachments.push(f);
+        renderAttachments();
+      }
+      toggleFiles(false);
+    }));
+  }
+
+  async function uploadFiles(files) {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    try {
+      const out = await api.postForm('/api/files', fd);
+      state.files = out.concat(state.files);
+      renderFiles();
+      out.forEach(f => state.pendingAttachments.push(f));
+      renderAttachments();
+    } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }
+  }
+
+  function toggleFiles(force) {
+    const p = $('#files-panel');
+    const show = force === undefined ? p.classList.contains('hidden') : force;
+    p.classList.toggle('hidden', !show);
+    if (show) loadFiles();
+  }
+
+  function bindFiles() {
+    $('#models-btn').addEventListener('click', openModelStats);
+    $('#wall-btn').addEventListener('click', openWall);
+    $('#publish-btn').addEventListener('click', publishCurrentChat);
+    $('#mem-quick-btn').addEventListener('click', () => openMemory());
+    $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
+    $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
+    $('#upload-btn').addEventListener('click', () => $('#file-input').click());
+    $('#file-search').addEventListener('input', (e) => {
+      state.fileQuery = e.target.value.trim();
+      renderFiles();
     });
+    $('#file-filter').addEventListener('change', (e) => {
+      state.fileKind = e.target.value;
+      renderFiles();
+    });
+    const dz = $('#drop-zone');
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+    dz.addEventListener('drop', async (e) => {
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length) await uploadFiles(files);
+    });
+  }
+
+  // ---------- modal ----------
+  function closeModal() {
+    $('#modal-root').innerHTML = '';
+  }
+
+  function openModal({ title, body, onOk, okText }) {
+    const root = $('#modal-root');
+    const infoOnly = (okText || '') === 'Закрыть';
+    root.innerHTML = '<div class="modal-back"><div class="modal' + (infoOnly ? ' wide' : '') +
+      '"><h3>' + escapeHtml(title) + '</h3>' +
+      '<div class="modal-body">' + body + '</div>' +
+      '<div class="row">' +
+      (infoOnly ? '' : '<button class="ghost" data-cancel>Отмена</button>') +
+      '<button class="solid" data-ok>' + escapeHtml(okText || 'Сохранить') + '</button></div></div></div>';
+    const back = $('.modal-back', root);
+    const close = () => { root.innerHTML = ''; };
+    const cancel = $('[data-cancel]', root);
+    if (cancel) cancel.addEventListener('click', close);
+    back.addEventListener('click', (e) => { if (e.target === back) close(); });
+    $('[data-ok]', root).addEventListener('click', async () => {
+      try { const ok = onOk ? await onOk(root) : true; if (ok !== false) close(); }
+      catch (err) { toast('Ошибка: ' + err.message, 'error'); }
+    });
+    const inp = $('input, textarea', root);
+    if (inp) { inp.focus(); inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('[data-ok]', root).click(); } }); }
+  }
+
+  // ---------- admin: model sets ----------
+  function adminForm(root, title, fields, onSubmit, done) {
+    root.innerHTML = '<div class="modal-back"><div class="modal"><h3>' + escapeHtml(title) + '</h3>' +
+      '<div class="modal-body">' + fields.map(f =>
+        '<label>' + escapeHtml(f.label) +
+        (f.type === 'select'
+          ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
+          : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
+            (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
+            (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') + ' />') +
+        '</label>').join('') + '</div>' +
+      '<div class="row"><button class="ghost" data-cancel>Отмена</button>' +
+      '<button class="solid" data-ok>Сохранить</button></div></div></div>';
+    $('[data-cancel]', root).addEventListener('click', done);
+    $('[data-ok]', root).addEventListener('click', async () => {
+      try { await onSubmit(); done(); } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+  }
+
+  async function openModelSetsAdmin() {
+    const root = $('#modal-root');
+
+    async function rerender() {
+      const sets = await api.get('/api/admin/model-sets');
+      const body = sets.length ? sets.map(s =>
+        '<div class="ms-set"><div class="ms-head">' +
+          '<span class="ms-route">' + escapeHtml(s.route_type) + '</span>' +
+          '<b>' + escapeHtml(s.name) + '</b>' +
+          '<span class="ms-slug">' + escapeHtml(s.slug) + '</span>' +
+          '<span class="spacer" style="flex:1"></span>' +
+          '<button data-toggle="' + s.id + '" data-active="' + (s.is_active ? 1 : 0) + '">' +
+            (s.is_active ? 'вкл' : 'выкл') + '</button>' +
+          '<button data-del-set="' + s.id + '" title="Удалить набор">' + icon('trash') + '</button>' +
+        '</div><div class="ms-entries">' +
+          (s.entries.length ? s.entries.map(e =>
+            '<div class="ms-entry">' +
+              '<span class="ms-pos">' + e.position + '</span>' +
+              '<span class="ms-model">' + escapeHtml(e.model) + '</span>' +
+              '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
+              '<span class="ms-key">' + (e.has_api_key ? icon('check') : '—') + '</span>' +
+              '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button>' +
+            '</div>').join('') : '<div class="ms-empty">нет моделей</div>') +
+          '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button>' +
+        '</div></div>').join('') : '<p>Наборов нет.</p>';
+
+      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px">' +
+        '<h3>Model Sets</h3><div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div>' +
+        '<div class="row"><button class="ghost" data-add-set>' + icon('plus') + 'Набор</button>' +
+        '<span style="flex:1"></span><button class="solid" data-close>Закрыть</button></div></div></div>';
+
+      $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
+      $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
+      $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Удалить набор и все его модели?')) return;
+        await api.del('/api/admin/model-sets/' + b.dataset.delSet); rerender();
+      }));
+      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => {
+        await api.patch('/api/admin/model-sets/' + b.dataset.toggle,
+          { is_active: b.dataset.active !== '1' }); rerender();
+      }));
+      $$('[data-del-entry]', root).forEach(b => b.addEventListener('click', async () => {
+        const [sid, eid] = b.dataset.delEntry.split('|');
+        await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
+      }));
+      $$('[data-add-entry]', root).forEach(b =>
+        b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
+    }
+
+    await rerender();
+  }
+
+  function addSetForm(root, done) {
+    adminForm(root, 'Новый Model Set', [
+      { id: 'ms-name', label: 'Название', placeholder: 'Например: Qwen Fast' },
+      { id: 'ms-route', label: 'Маршрут', type: 'select', options: ['MAIN', 'TITLE', 'SUGGESTIONS'] },
+    ], async () => {
+      await api.post('/api/admin/model-sets', {
+        name: $('#ms-name').value.trim(),
+        route_type: $('#ms-route').value,
+      });
+    }, done);
+  }
+
+  function addEntryForm(root, setId, done) {
+    adminForm(root, 'Новая модель (шаг fallback)', [
+      { id: 'me-url', label: 'Base URL', placeholder: 'https://…/v1' },
+      { id: 'me-model', label: 'Модель', placeholder: 'qwen36-35b' },
+      { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
+      { id: 'me-pos', label: 'Позиция', type: 'number', value: '0' },
+      { id: 'me-temp', label: 'Temperature', type: 'number', value: '0.2' },
+      { id: 'me-max', label: 'Max tokens (ответ)', type: 'number', value: '32000' },
+      { id: 'me-ctx', label: 'Окно контекста, токенов (0 = общее)', type: 'number', value: '0' },
+    ], async () => {
+      await api.post('/api/admin/model-sets/' + setId + '/entries', {
+        base_url: $('#me-url').value.trim(),
+        model: $('#me-model').value.trim(),
+        api_key: $('#me-key').value,
+        position: parseInt($('#me-pos').value, 10) || 0,
+        temperature: parseFloat($('#me-temp').value) || 0.2,
+        max_tokens: parseInt($('#me-max').value, 10) || 32000,
+        context_len: parseInt($('#me-ctx').value, 10) || 0,
+      });
+    }, done);
+  }
+
+  // ---------- sidebar ----------
+  function applySidebar() {
+    const sb = $('#sidebar');
+    const collapsed = state.sidebarCollapsed && window.innerWidth > 860;
+    sb.classList.toggle('collapsed', collapsed);
+    const openBtn = $('#sidebar-open-btn');
+    if (openBtn) openBtn.classList.toggle('hidden', !collapsed);
+  }
+  function closeMobileSidebar() {
+    if (window.innerWidth <= 860) {
+      $('#sidebar').classList.remove('open');
+      $('#sidebar-overlay').classList.remove('show');
+    }
+  }
+  function bindSidebar() {
+    $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
+    $('#new-code-btn').addEventListener('click', () => toastSoon('Код-агент'));
+    $('#new-council-btn').addEventListener('click', () => toastSoon('Консилиум'));
+    $('#collapse-btn').addEventListener('click', () => {
+      state.sidebarCollapsed = true;
+      localStorage.setItem('cs_sidebar', '1');
+      applySidebar();
+    });
+    $('#sidebar-open-btn').addEventListener('click', () => {
+      state.sidebarCollapsed = false;
+      localStorage.setItem('cs_sidebar', '0');
+      applySidebar();
+    });
+    $('#share-btn').addEventListener('click', openShare);
+    $('#menu-btn').addEventListener('click', () => {
+      $('#sidebar').classList.add('open'); $('#sidebar-overlay').classList.add('show');
+    });
+    $('#sidebar-overlay').addEventListener('click', closeMobileSidebar);
+    let t = null;
+    $('#search-input').addEventListener('input', (e) => {
+      clearTimeout(t);
+      t = setTimeout(() => { state.query = e.target.value.trim(); loadChats(); }, 250);
+    });
+    $('#chat-title').addEventListener('click', renameCurrentChat);
+    $('#messages').addEventListener('scroll', () => {
+      const box = $('#messages');
+      state.stickBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 70;
+    });
+    $('#settings-btn').addEventListener('click', () => {
+      const u = state.user || {};
+      const isAdmin = !!u.is_admin;
+      const who = u.name || u.email || 'Аккаунт';
+      openModal({
+        title: 'Настройки и профиль',
+        okText: 'Закрыть',
+        body:
+          '<div class="profile-box">' +
+          '<img class="profile-ava" src="/api/avatars/' + (u.avatar || 0) + '.svg" alt="" />' +
+          '<div class="profile-info"><b>' + escapeHtml(who) + '</b>' +
+          '<span>' + escapeHtml(u.email || '') + '</span>' +
+          '<span class="role-chip">' + (isAdmin ? 'администратор' : 'пользователь') + '</span></div>' +
+          '</div>' +
+          '<h4 class="sec">Параметры</h4>' +
+          '<p class="usage-note">Поиск в интернете: всегда включён · Усилие: ' +
+          escapeHtml(state.effort) + ' · Память: ' +
+          ((state.memories || []).length) + ' записей<br/>' +
+          'Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
+          '<h4 class="sec">Состояние сервера</h4>' +
+          '<div id="sys-block">' + systemRowsHtml() + '</div>' +
+          '<h4 class="sec">Разделы</h4>' +
+          '<div class="settings-grid">' +
+          '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' +
+          '<button class="chip-btn" id="set-wall">' + icon('globe-box') + 'Стенка постов</button>' +
+          '<button class="chip-btn" id="set-memory">' + icon('sparkle') + 'Память</button>' +
+          '<button class="chip-btn" id="set-links">' + icon('link') + 'Мои ссылки</button>' +
+          '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
+          (isAdmin
+            ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
+              '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
+              '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>' +
+              '<button class="chip-btn" id="open-limits">' + icon('gauge') + 'Тарифы и лимиты</button>'
+            : '') +
+          '</div>' +
+          '<div style="margin-top:18px"><button class="chip-btn danger" id="set-logout">' +
+          icon('logout') + 'Выйти из аккаунта</button></div>',
+        onOk: () => true,
+      });
+      const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+      on('#set-models', () => { closeModal(); openModelStats(); });
+      on('#set-wall', () => { closeModal(); openWall(); });
+      on('#set-memory', () => { closeModal(); openMemory(); });
+      on('#set-links', () => { closeModal(); openLinks(); });
+      on('#set-files', () => { closeModal(); toggleFiles(true); });
+      on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
+      on('#open-stats', () => { closeModal(); openAdminStats(); });
+      on('#open-allchats', () => { closeModal(); openAdminChats(); });
+      on('#open-limits', () => { closeModal(); openLimits(); });
+      on('#set-logout', async () => {
+        try { await api.post('/api/auth/logout'); } catch (e) { /* noop */ }
+        location.reload();
+      });
+    });
+    window.addEventListener('resize', () => {
+      applySidebar();
+      $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
+    });
+  }
+
+  // ---------- share / public ----------
+  async function openShare() {
+    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+    let st;
+    try { st = await api.get('/api/chats/' + state.currentChatId + '/share'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+
+    const url = st.share_token ? (location.origin + '/?share=' + st.share_token) : '';
+    openModal({
+      title: 'Поделиться чатом',
+      okText: 'Закрыть',
+      body: st.is_public
+        ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
+          '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
+          '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="chip-btn" id="copy-link">' + icon('copy') + 'Копировать</button>' +
+          '<button class="chip-btn" id="open-link">' + icon('link') + 'Открыть</button>' +
+          '<button class="chip-btn" id="stop-share">' + icon('x') + 'Отключить</button></div>'
+        : '<p>Создать публичную ссылку на этот чат? Доступ будет только на чтение.</p>' +
+          '<div style="margin-top:12px"><button class="chip-btn" id="start-share">' +
+          icon('link') + 'Создать ссылку</button></div>',
+      onOk: () => true,
+    });
+
+    const start = $('#start-share');
+    if (start) start.addEventListener('click', async () => {
+      try { await api.post('/api/chats/' + state.currentChatId + '/share'); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+      $('#modal-root').innerHTML = ''; openShare();
+    });
+    const copy = $('#copy-link');
+    if (copy) copy.addEventListener('click', async () => {
+      const ok = await copyText(url);
+      toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
+    });
+    const open = $('#open-link');
+    if (open) open.addEventListener('click', () => window.open(url, '_blank'));
+    const stop = $('#stop-share');
+    if (stop) stop.addEventListener('click', async () => {
+      try { await api.del('/api/chats/' + state.currentChatId + '/share'); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+      $('#modal-root').innerHTML = ''; openShare();
+    });
+  }
+
+  async function currentUserOrNull() {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) { return null; }
+  }
+
+  async function showPublicView(token) {
+    let data;
+    try {
+      const r = await fetch('/api/public/chats/' + encodeURIComponent(token),
+        { credentials: 'same-origin' });
+      if (!r.ok) {
+        throw new Error(r.status === 404 ? 'ссылка недействительна или отключена' : 'HTTP ' + r.status);
+      }
+      data = await r.json();
+    } catch (e) {
+      showAuth();
+      $('#auth-error').textContent = 'Не удалось открыть ссылку: ' + e.message;
+      return;
+    }
+
+    state.user = await currentUserOrNull();
+    state.publicToken = token;
+    state.readonly = true;
+    state.tree = data.messages || [];
+    state.currentChatId = null;
+    state.choices = {};
+
+    $('#auth-screen').classList.add('hidden');
+    $('#main-screen').classList.remove('hidden');
+    $('#sidebar').classList.add('collapsed');
+    $('#chat-title').textContent = data.title || 'Публичный чат';
+    $('#composer').classList.add('hidden');
+    $('#share-btn').classList.add('hidden');
+
+    const banner = document.createElement('div');
+    banner.className = 'public-banner';
+    banner.innerHTML = '<span>' + icon('link') + ' Публичный чат' +
+      (data.author ? ' · ' + escapeHtml(data.author) : '') + ' — только чтение</span>' +
+      (state.user
+        ? '<button id="fork-btn">Продолжить у себя</button>'
+        : '<button id="login-btn">Войти, чтобы продолжить</button>');
+    $('#chat-area').insertBefore(banner, $('#messages'));
+
+    const fb = $('#fork-btn');
+    if (fb) fb.addEventListener('click', async () => {
+      try {
+        await api.post('/api/public/chats/' + encodeURIComponent(token) + '/fork');
+        location.href = '/';
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    const lb = $('#login-btn');
+    if (lb) lb.addEventListener('click', () => { location.href = '/'; });
+
+    renderMessages();
   }
 
   // ---------- local file generation ----------
@@ -2605,7 +2930,7 @@
   // ---------- main page: action tiles + rotating showcase ----------
   const ACTION_TILES = [
     {
-      id: 'essay', label: 'Написать сочинение', icon: 'pencil', color: '#f2c14e',
+      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',
       title: 'Сочинение',
       questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
         '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +
@@ -2613,7 +2938,7 @@
         'Можно ответить одной строкой — остальное подберу сам.',
     },
     {
-      id: 'doc', label: 'Документ Word', icon: 'doc', color: '#2f6fb0',
+      id: 'doc', label: 'Документ Word', icon: 'i-doc', color: '#2f6fb0',
       title: 'Документ Word',
       questions: '**Документ Word.** Чтобы получилось то, что нужно, уточните:\n\n' +
         '1. Тема и назначение документа?\n2. Какие разделы должны быть?\n' +
@@ -2621,7 +2946,7 @@
         'Ответьте одной строкой — оформлю в лучшем виде.',
     },
     {
-      id: 'slides', label: 'Презентация', icon: 'slides', color: '#e8834f',
+      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#e8834f',
       title: 'Презентация',
       questions: '**Презентация.** Расскажите:\n\n' +
         '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
@@ -2629,7 +2954,7 @@
         'Достаточно одной строки.',
     },
     {
-      id: 'sheet', label: 'Таблица Excel', icon: 'sheet', color: '#2f8f6f',
+      id: 'sheet', label: 'Таблица Excel', icon: 'i-sheet', color: '#2f8f6f',
       title: 'Таблица Excel',
       questions: '**Таблица Excel.** Уточните:\n\n' +
         '1. Какие данные и по какой теме?\n2. Какие колонки нужны?\n' +
@@ -2637,7 +2962,7 @@
         'Ответьте одной строкой.',
     },
     {
-      id: 'code', label: 'Написать код', icon: 'terminal', color: '#7c5cbf',
+      id: 'code', label: 'Написать код', icon: 'i-terminal', color: '#7c5cbf',
       title: 'Код',
       questions: '**Код.** Что нужно написать?\n\n' +
         '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
@@ -2645,51 +2970,30 @@
         'Или переключитесь в режим **Код-агента** — там будет полноценный проект с файлами.',
     },
     {
-      id: 'draw', label: 'Нарисовать схему', icon: 'sparkle', color: '#c0563f',
+      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#c0563f',
       title: 'Схема',
       questions: '**Схема.** Опишите:\n\n' +
         '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
         '2. Какие элементы и связи между ними?\n3. Нужны ли размеры и подписи?\n\n' +
         'Нарисую в SVG — можно будет скачать.',
     },
-    { id: 'image', label: 'Сделать график', icon: 'chart', color: '#0e7c9b', title: 'График',
+    { id: 'image', label: 'Сделать график', icon: 'i-chart', color: '#0e7c9b', title: 'График',
       questions: '**График.** Какие данные построить? Пришлите числа или опишите, откуда их взять, и укажите тип графика (линия, столбцы, круговая).' },
-    { id: 'research', label: 'Найти в интернете', icon: 'globe', color: '#3f7a3f', title: 'Поиск',
+    { id: 'research', label: 'Найти в интернете', icon: 'i-globe', color: '#3f7a3f', title: 'Поиск',
       questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
-    { id: 'explain', label: 'Объяснить простыми словами', icon: 'brain', color: '#a03f6f', title: 'Объяснение',
+    { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#a03f6f', title: 'Объяснение',
       questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
-    { id: 'plan', label: 'Составить план', icon: 'file', color: '#8a4a2f', title: 'План',
+    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#8a4a2f', title: 'План',
       questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
-    { id: 'translate', label: 'Перевести', icon: 'globe', color: '#4a5568', title: 'Перевод',
+    { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
       questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
-    { id: 'wall', label: 'Посмотреть посты', icon: 'globe', color: '#b8862f', action: 'wall' },
+    { id: 'wall', label: 'Посмотреть посты', icon: 'i-globe-box', color: '#b8862f', action: 'wall' },
   ];
-
-  // inline icon paths for the tiles — no sprite lookup, so they always render
-  const TILE_PATHS = {
-    pencil: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>',
-    doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
-    slides: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/><path d="M7 8h6M7 11h4"/>',
-    sheet: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/>',
-    terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
-    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/>',
-    chart: '<path d="M4 20V4M4 20h16"/><path d="M8 17v-6M12.5 17V8M17 17v-9"/>',
-    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
-    brain: '<path d="M9.6 4.6A2.6 2.6 0 0 0 7 7.2v.4A2.8 2.8 0 0 0 5.3 12.4 2.8 2.8 0 0 0 7 17.1v.3a2.6 2.6 0 0 0 5.2 0V5.9a2.6 2.6 0 0 0-2.6-1.3Z"/><path d="M14.4 4.6A2.6 2.6 0 0 1 17 7.2v.4a2.8 2.8 0 0 1 1.7 4.8A2.8 2.8 0 0 1 17 17.1v.3a2.6 2.6 0 0 1-5.2 0"/><path d="M12 4.6v15"/>',
-    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
-    link: '<path d="M9.5 14.5l5-5"/><path d="M11 7l1.5-1.5a3.5 3.5 0 1 1 5 5L16 12M13 17l-1.5 1.5a3.5 3.5 0 1 1-5-5L8 12"/>',
-  };
-
-  function tileIcon(name) {
-    const path = TILE_PATHS[name] || TILE_PATHS.sparkle;
-    return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffffff" ' +
-      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
-  }
 
   function tileHtml(t) {
     return '<button class="tile' + (t.locked ? ' locked' : '') + '" data-tile="' + t.id +
       '" style="--tile:' + t.color + '">' +
-      '<span class="tile-ico">' + tileIcon(t.icon) + '</span>' +
+      '<span class="tile-ico">' + icon(t.icon) + '</span>' +
       '<span class="tile-label">' + escapeHtml(t.label) + '</span>' +
       (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</button>';
   }
@@ -2752,6 +3056,120 @@
 
   function toastSoon(what) {
     toast('🔒 ' + what + ' скоро появится — уже в работе. Пока доступен обычный чат.', 'error');
+  }
+
+
+  // ---------- rich model menu (clusters + effort + temperature + compression) ----------
+  function currentModelSet() {
+    return (state.modelSets || []).find(x => x.id === state.modelSetId) || null;
+  }
+
+  function updateModelButton() {
+    const label = $('#model-btn-label');
+    if (!label) return;
+    const ms = currentModelSet();
+    label.textContent = ms ? ms.name : 'Модель';
+  }
+
+  async function openModelMenu() {
+    await loadModelSets();
+    if (!state.limits) await loadLimits();
+    const mains = (state.modelSets || []).filter(x => x.route_type === 'MAIN');
+    const lim = (state.limits && state.limits.limits) || {};
+    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
+    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
+    const cdef = Math.max(cmin, Math.min(cmax, 50));
+    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
+
+    const cards = mains.map(x => {
+      const e = (x.entries || [])[0] || {};
+      const bits = ['контекст ' + fmtNum(e.context_len || 0),
+                    'ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.'];
+      if (e.price_in) bits.push('вход ' + e.price_in + ' ₽/1M');
+      if (e.price_out) bits.push('выход ' + e.price_out + ' ₽/1M');
+      if (e.price_cache) bits.push('кэш ' + e.price_cache + ' ₽/1M');
+      return '<label class="mm-card' + (x.id === state.modelSetId ? ' on' : '') + '">' +
+        '<input type="radio" name="mm" value="' + x.id + '"' +
+        (x.id === state.modelSetId ? ' checked' : '') + '/>' +
+        '<span class="mm-body"><b>' + escapeHtml(x.name) + (x.is_router ? ' · auto' : '') + '</b>' +
+        '<em>' + escapeHtml(e.model || '—') + '</em>' +
+        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
+    }).join('');
+
+    openModal({
+      title: 'Модель и параметры',
+      okText: 'Готово',
+      body:
+        '<h4 class="sec">Кластер</h4><div class="mm-list">' + (cards || '<p>Моделей нет</p>') + '</div>' +
+        '<h4 class="sec">Усилие модели</h4>' +
+        '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' + (EFFORTS.length - 1) +
+        '" step="1" value="' + idx + '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
+        '<h4 class="sec">Температура</h4>' +
+        '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
+        (state.temperature != null ? state.temperature : 0.2) +
+        '"/><b id="mm-temp-label">' + Number(state.temperature != null ? state.temperature : 0.2).toFixed(1) + '</b></div>' +
+        '<h4 class="sec">Сжатие истории</h4>' +
+        '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме и освободит контекст. ' +
+        'Ваш тариф: от ' + cmin + '% до ' + cmax + '%' +
+        (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
+        '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
+        '" max="' + cmax + '" step="5" value="' + cdef + '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
+        '<div style="margin-top:10px"><button class="chip-btn" id="mm-comp-go">Сжать историю</button></div>',
+      onOk: (root) => {
+        const picked = $('input[name=mm]:checked', root);
+        if (picked) {
+          state.modelSetId = picked.value;
+          localStorage.setItem('cs_model', state.modelSetId);
+        }
+        updateModelButton();
+        return true;
+      },
+    });
+
+    const eff = $('#mm-effort');
+    eff.addEventListener('input', () => {
+      const i = parseInt(eff.value, 10) || 0;
+      state.effort = EFFORTS[i];
+      localStorage.setItem('cs_effort', state.effort);
+      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
+    });
+    const tmp = $('#mm-temp');
+    tmp.addEventListener('input', () => {
+      state.temperature = parseFloat(tmp.value) || 0;
+      localStorage.setItem('cs_temp', String(state.temperature));
+      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
+    });
+    const cmp = $('#mm-comp');
+    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
+    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
+      $$('.mm-card').forEach(c => c.classList.remove('on'));
+      const card = r.closest('.mm-card');
+      if (r.checked && card) card.classList.add('on');
+    }));
+    $('#mm-comp-go').addEventListener('click', async () => {
+      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+      toast('Сжимаю историю…');
+      try {
+        await api.post('/api/chats/' + state.currentChatId + '/compress',
+          { target_percent: parseInt(cmp.value, 10) || 50 });
+        toast('История сжата');
+        await loadUsage();
+      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
+    });
+  }
+
+  // playful composer placeholders
+  const PLACEHOLDERS = [
+    'Жду указаний…', 'Слушаю, мой повелитель…', 'Что изволите?', 'Приказывайте…',
+    'Готов служить…', 'Ваше слово?', 'Я весь внимание…', 'Жду вашу мудрую мысль…',
+    'Повелевайте…', 'Скажите слово — и я начну…', 'Ваш ход, господин…',
+    'Куда направим усилия?', 'Слушаю и повинуюсь…', 'Излагайте, я записываю…',
+  ];
+
+  function rollPlaceholder() {
+    const el = $('#input');
+    if (!el) return;
+    el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
   }
 
   // ---------- boot ----------

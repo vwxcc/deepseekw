@@ -86,6 +86,10 @@ class MessageOut(ORMModel):
     status: str
     error: str | None = None
     created_at: datetime
+    rating: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_cached: int = 0
     suggestions: list[str] = Field(default_factory=list)
     attachments: list[AttachmentOut] = Field(default_factory=list)
     children: list["MessageOut"] = Field(default_factory=list)
@@ -96,7 +100,65 @@ class MessageCreate(BaseModel):
     parent_message_id: str | None = None
     attachment_ids: list[str] = Field(default_factory=list)
     model_set_id: str | None = None
-    web_search: bool = False
+    web_search: bool = True
+    effort: str | None = None
+
+
+class RateIn(BaseModel):
+    rating: int = 0
+
+
+class UsageOut(BaseModel):
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_cached: int = 0
+    messages: int = 0
+    avg_in: int = 0
+    percent: float = 0.0
+    context_len: int = 0
+    summary_chars: int = 0
+    effort: str = "medium"
+
+
+class CompressIn(BaseModel):
+    target_percent: int = 50
+
+
+class SharedChatOut(BaseModel):
+    id: str
+    title: str
+    share_token: str
+    created_at: datetime
+    messages: int = 0
+
+
+class AdminChatOut(BaseModel):
+    id: str
+    title: str
+    owner: str = ""
+    messages: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    rating_up: int = 0
+    rating_down: int = 0
+    is_public: bool = False
+    share_token: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminStatsOut(BaseModel):
+    users: int = 0
+    chats: int = 0
+    messages: int = 0
+    files: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_cached: int = 0
+    rating_up: int = 0
+    rating_down: int = 0
+    hourly: list[dict] = Field(default_factory=list)
+    top_models: list[dict] = Field(default_factory=list)
 
 
 class PublicChatOut(BaseModel):

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     searxng_url: str = "http://searxng-web:8080"
     web_search_results: int = 5
     web_search_timeout: int = 12
+    # context window of the default model, used for the "usage %" widget
+    model_context_len: int = 262144
 
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file

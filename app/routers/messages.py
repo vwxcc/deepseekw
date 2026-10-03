@@ -18,6 +18,7 @@ from ..deps import (
     get_owned_message,
     require_csrf,
 )
+from ..config import settings
 from ..models import (
     Attachment,
     Chat,
@@ -29,13 +30,20 @@ from ..models import (
     User,
     utcnow,
 )
-from ..schemas import MessageCreate, MessageOut
+from ..schemas import (
+    CompressIn,
+    MessageCreate,
+    MessageOut,
+    RateIn,
+    UsageOut,
+)
 from ..services.chats import (
     ancestor_chain,
     build_message_tree,
     message_attachments,
     message_out,
 )
+from ..services.websearch import format_context, web_search
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
@@ -197,17 +205,23 @@ async def send_message(
 
     user_atts = (await message_attachments(db, [user_msg.id])).get(user_msg.id, [])
 
-    history_messages = await ancestor_chain(db, user_msg.id)
+    if data.effort:
+        chat.effort = data.effort
+
+    history_messages = await ancestor_chain(
+        db, user_msg.id, summary_upto=chat.summary_upto
+    )
 
     system_prompt = prompts.MAIN_SYSTEM
-    if data.web_search:
-        from ..services.websearch import format_context, web_search
-
-        results = await web_search(content)
-        ctx = format_context(results)
-        if ctx:
-            system_prompt = f"{system_prompt}\n\n{ctx}"
-        await db.commit()
+    if chat.summary:
+        system_prompt += (
+            "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
+        )
+    # web search is always on
+    results = await web_search(content)
+    ctx = format_context(results)
+    if ctx:
+        system_prompt = f"{system_prompt}\n\n{ctx}"
 
     history = prompts.with_system(history_messages, system_prompt)
 
@@ -231,6 +245,7 @@ async def send_message(
         history=history,
         message_id=assistant.id,
         model_set_id=data.model_set_id,
+        effort=chat.effort,
     )
     await ai_router.enqueue(job)
 
@@ -321,3 +336,116 @@ async def stop_message(
     _csrf=Depends(require_csrf),
 ) -> dict:
     return {"ok": ai_router.cancel(message.id)}
+
+
+# ---------- usage / rating / compression ----------
+
+async def _usage_payload(chat: Chat, db: AsyncSession) -> UsageOut:
+    res = await db.execute(
+        select(Message)
+        .where(Message.chat_id == chat.id)
+        .order_by(Message.created_at, Message.id)
+    )
+    rows = list(res.scalars().all())
+    tin = sum(m.tokens_in or 0 for m in rows)
+    tout = sum(m.tokens_out or 0 for m in rows)
+    cached = sum(m.tokens_cached or 0 for m in rows)
+    last_in = 0
+    for m in rows:
+        if m.role == Role.assistant and (m.tokens_in or 0):
+            last_in = m.tokens_in
+    ctx_len = settings.model_context_len
+    return UsageOut(
+        tokens_in=tin,
+        tokens_out=tout,
+        tokens_cached=cached,
+        messages=len(rows),
+        avg_in=(tin // len(rows)) if rows else 0,
+        percent=round(last_in / ctx_len * 100, 2) if ctx_len else 0.0,
+        context_len=ctx_len,
+        summary_chars=len(chat.summary or ""),
+        effort=chat.effort or "medium",
+    )
+
+
+@router.get("/chats/{chat_id}/usage", response_model=UsageOut)
+async def chat_usage(
+    chat: Chat = Depends(get_owned_chat), db: AsyncSession = Depends(get_db)
+):
+    return await _usage_payload(chat, db)
+
+
+@router.post("/messages/{message_id}/rate")
+async def rate_message(
+    data: RateIn,
+    message: Message = Depends(get_owned_message),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    message.rating = max(-1, min(1, int(data.rating or 0)))
+    await db.commit()
+    return {"ok": True, "rating": message.rating}
+
+
+@router.post("/chats/{chat_id}/compress", response_model=UsageOut)
+async def compress_chat(
+    data: CompressIn,
+    chat: Chat = Depends(get_owned_chat),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    target = max(5, min(85, int(data.target_percent or 50)))
+    res = await db.execute(
+        select(Message)
+        .where(Message.chat_id == chat.id)
+        .order_by(Message.created_at, Message.id)
+    )
+    rows = list(res.scalars().all())
+    if len(rows) < 4:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "История слишком короткая для сжатия"
+        )
+
+    keep = max(2, int(round(len(rows) * (100 - target) / 100.0)))
+    cut = rows[: len(rows) - keep]
+    if len(cut) < 2:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего сжимать")
+
+    from ..ai import model_sets as ms_mod
+    from ..ai.providers import ProviderError, complete_chat
+
+    mset = await ms_mod.get_model_set(db, RouteType.MAIN)
+    entries = await ms_mod.get_active_entries(db, mset.id) if mset else []
+    if not entries:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Нет активной модели для сжатия"
+        )
+    entry = entries[0]
+
+    transcript = "\n".join(
+        f"{m.role.value}: {(m.content or '')[:1500]}" for m in cut if m.content
+    )[:60000]
+    try:
+        summary = await complete_chat(
+            messages=[
+                {"role": "system", "content": prompts.COMPRESS_SYSTEM},
+                {"role": "user", "content": transcript},
+            ],
+            base_url=entry.base_url,
+            api_key=entry.api_key,
+            model=entry.model,
+            temperature=0.3,
+            max_tokens=1200,
+            timeout=150,
+            disable_thinking=True,
+        )
+    except ProviderError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {e}")
+
+    if not summary.strip():
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Модель вернула пустое резюме")
+
+    chat.summary = summary.strip()[:20000]
+    chat.summary_upto = cut[-1].id
+    await db.commit()
+    return await _usage_payload(chat, db)

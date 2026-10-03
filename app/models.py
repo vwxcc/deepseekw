@@ -100,6 +100,9 @@ class Chat(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     share_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_upto: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    effort: Mapped[str] = mapped_column(String(16), default="medium")
 
     owner: Mapped["User"] = relationship(back_populates="chats")
     messages: Mapped[list["Message"]] = relationship(
@@ -131,6 +134,8 @@ class Message(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_cached: Mapped[int] = mapped_column(Integer, default=0)
+    rating: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")

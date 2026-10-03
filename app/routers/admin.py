@@ -5,19 +5,22 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import get_current_admin, get_db, require_csrf
-from ..models import ModelSet, ModelSetEntry, RouteType
+from ..models import Chat, File, Message, ModelSet, ModelSetEntry, RouteType, User
 from ..schemas import (
+    AdminChatOut,
+    AdminStatsOut,
     ModelSetCreate,
     ModelSetEntryIn,
     ModelSetEntryOut,
     ModelSetEntryUpdate,
     ModelSetOut,
     ModelSetUpdate,
+    ShareOut,
 )
 from ..services.model_sets_view import entry_out, model_set_out
 
@@ -187,3 +190,136 @@ async def delete_entry(
     await db.delete(e)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- statistics ----------
+
+@router.get("/stats", response_model=AdminStatsOut)
+async def stats(db: AsyncSession = Depends(get_db)):
+    users = await db.scalar(select(func.count()).select_from(User))
+    chats = await db.scalar(select(func.count()).select_from(Chat))
+    messages = await db.scalar(select(func.count()).select_from(Message))
+    files = await db.scalar(select(func.count()).select_from(File))
+    tin = await db.scalar(select(func.coalesce(func.sum(Message.tokens_in), 0)))
+    tout = await db.scalar(select(func.coalesce(func.sum(Message.tokens_out), 0)))
+    cached = await db.scalar(select(func.coalesce(func.sum(Message.tokens_cached), 0)))
+    up = await db.scalar(
+        select(func.count()).select_from(Message).where(Message.rating > 0)
+    )
+    down = await db.scalar(
+        select(func.count()).select_from(Message).where(Message.rating < 0)
+    )
+
+    hourly: list[dict] = []
+    try:
+        rows = await db.execute(
+            text(
+                "SELECT strftime('%Y-%m-%dT%H:00', created_at) AS h, COUNT(*) AS n, "
+                "COALESCE(SUM(tokens_in),0) AS tin, COALESCE(SUM(tokens_out),0) AS tout "
+                "FROM messages WHERE created_at >= datetime('now', '-24 hours') "
+                "GROUP BY h ORDER BY h"
+            )
+        )
+        hourly = [
+            {"hour": r[0], "messages": r[1], "tokens_in": r[2], "tokens_out": r[3]}
+            for r in rows.fetchall()
+        ]
+    except Exception:
+        hourly = []
+
+    top_models: list[dict] = []
+    try:
+        rows = await db.execute(
+            text(
+                "SELECT ms.name AS name, COUNT(*) AS n FROM messages m "
+                "JOIN model_sets ms ON ms.id = m.model_set_id "
+                "GROUP BY ms.name ORDER BY n DESC LIMIT 10"
+            )
+        )
+        top_models = [{"name": r[0], "count": r[1]} for r in rows.fetchall()]
+    except Exception:
+        top_models = []
+
+    return AdminStatsOut(
+        users=users or 0,
+        chats=chats or 0,
+        messages=messages or 0,
+        files=files or 0,
+        tokens_in=int(tin or 0),
+        tokens_out=int(tout or 0),
+        tokens_cached=int(cached or 0),
+        rating_up=up or 0,
+        rating_down=down or 0,
+        hourly=hourly,
+        top_models=top_models,
+    )
+
+
+@router.get("/chats", response_model=list[AdminChatOut])
+async def admin_chats(limit: int = 100, db: AsyncSession = Depends(get_db)):
+    limit = max(1, min(limit, 500))
+    result = await db.execute(
+        select(Chat)
+        .where(Chat.deleted_at.is_(None))
+        .order_by(Chat.updated_at.desc())
+        .limit(limit)
+    )
+    out: list[AdminChatOut] = []
+    for c in result.scalars().all():
+        owner = await db.get(User, c.user_id)
+        cnt = await db.scalar(
+            select(func.count()).select_from(Message).where(Message.chat_id == c.id)
+        )
+        tin = await db.scalar(
+            select(func.coalesce(func.sum(Message.tokens_in), 0)).where(
+                Message.chat_id == c.id
+            )
+        )
+        tout = await db.scalar(
+            select(func.coalesce(func.sum(Message.tokens_out), 0)).where(
+                Message.chat_id == c.id
+            )
+        )
+        up = await db.scalar(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.chat_id == c.id, Message.rating > 0)
+        )
+        down = await db.scalar(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.chat_id == c.id, Message.rating < 0)
+        )
+        out.append(
+            AdminChatOut(
+                id=c.id,
+                title=c.title,
+                owner=(owner.name or owner.email) if owner else "",
+                messages=cnt or 0,
+                tokens_in=int(tin or 0),
+                tokens_out=int(tout or 0),
+                rating_up=up or 0,
+                rating_down=down or 0,
+                is_public=c.is_public,
+                share_token=c.share_token,
+                created_at=c.created_at,
+                updated_at=c.updated_at,
+            )
+        )
+    return out
+
+
+@router.post("/chats/{chat_id}/share", response_model=ShareOut)
+async def admin_share_chat(
+    chat_id: str, _csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)
+):
+    chat = await db.get(Chat, chat_id)
+    if chat is None or chat.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Чат не найден")
+    if not chat.share_token:
+        chat.share_token = uuid.uuid4().hex
+    chat.is_public = True
+    await db.commit()
+    return ShareOut(
+        is_public=True, share_token=chat.share_token, url=f"/?share={chat.share_token}"
+    )

@@ -55,5 +55,12 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "chats": {
         "share_token": "VARCHAR(64)",
         "is_public": "BOOLEAN DEFAULT 0",
+        "summary": "TEXT",
+        "summary_upto": "VARCHAR(36)",
+        "effort": "VARCHAR(16) DEFAULT 'medium'",
+    },
+    "messages": {
+        "tokens_cached": "INTEGER DEFAULT 0",
+        "rating": "INTEGER DEFAULT 0",
     },
 }

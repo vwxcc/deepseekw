@@ -1,9 +1,8 @@
 """OpenAI-compatible provider client (chat completions, stream + non-stream).
 
 Handles reasoning models: some vLLM deployments put the answer into
-``message.reasoning`` while ``content`` stays null. Thinking can be disabled
-per request via ``chat_template_kwargs`` (Qwen/vLLM) which keeps short tasks
-(titles, suggestions) fast and clean.
+``message.reasoning`` while ``content`` stays null. Thinking can be controlled
+via ``chat_template_kwargs`` (Qwen/vLLM) and/or ``reasoning_effort``.
 """
 from __future__ import annotations
 
@@ -33,7 +32,7 @@ def _headers(api_key: str) -> dict[str, str]:
     return headers
 
 
-def _payload(
+def _build_payload(
     *,
     messages: list[dict],
     model: str,
@@ -41,6 +40,7 @@ def _payload(
     max_tokens: int,
     stream: bool,
     disable_thinking: bool,
+    effort: str | None = None,
 ) -> dict:
     payload: dict = {
         "model": model,
@@ -49,7 +49,15 @@ def _payload(
         "max_tokens": max_tokens,
         "stream": stream,
     }
-    if disable_thinking:
+    if stream:
+        payload["stream_options"] = {"include_usage": True}
+
+    e = (effort or "").lower()
+    if e in ("none", "off"):
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
+    elif e in ("low", "medium", "high"):
+        payload["reasoning_effort"] = e
+    elif disable_thinking:
         payload["chat_template_kwargs"] = {"enable_thinking": False}
     return payload
 
@@ -64,28 +72,9 @@ def _extract_text(message: dict) -> str:
     return ""
 
 
-async def stream_chat(
-    *,
-    messages: list[dict],
-    base_url: str,
-    api_key: str,
-    model: str,
-    temperature: float,
-    max_tokens: int,
-    timeout: float,
-    disable_thinking: bool = True,
+async def _stream_once(
+    url: str, payload: dict, api_key: str, timeout: float
 ) -> AsyncIterator[tuple[str, str]]:
-    """Yield ("thinking"|"content", text) chunks from a streaming completion."""
-    url = _endpoint(base_url)
-    payload = _payload(
-        messages=messages,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        stream=True,
-        disable_thinking=disable_thinking,
-    )
-
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream(
             "POST", url, json=payload, headers=_headers(api_key)
@@ -103,6 +92,9 @@ async def stream_chat(
                     obj = json.loads(data)
                 except json.JSONDecodeError:
                     continue
+                usage = obj.get("usage")
+                if isinstance(usage, dict) and usage:
+                    yield ("usage", json.dumps(usage))
                 choices = obj.get("choices") or []
                 if not choices:
                     continue
@@ -115,6 +107,38 @@ async def stream_chat(
                     yield ("content", piece)
 
 
+async def stream_chat(
+    *,
+    messages: list[dict],
+    base_url: str,
+    api_key: str,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+    disable_thinking: bool = True,
+    effort: str | None = None,
+) -> AsyncIterator[tuple[str, str]]:
+    """Yield ("thinking"|"content"|"usage", text) chunks."""
+    url = _endpoint(base_url)
+    payload = _build_payload(
+        messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
+        stream=True, disable_thinking=disable_thinking, effort=effort,
+    )
+    try:
+        async for item in _stream_once(url, payload, api_key, timeout):
+            yield item
+    except ProviderError as e:
+        # some backends reject reasoning_effort -> retry once without it
+        if "reasoning_effort" in payload and "400" in str(e):
+            payload.pop("reasoning_effort", None)
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            async for item in _stream_once(url, payload, api_key, timeout):
+                yield item
+        else:
+            raise
+
+
 async def complete_chat(
     *,
     messages: list[dict],
@@ -125,22 +149,30 @@ async def complete_chat(
     max_tokens: int,
     timeout: float,
     disable_thinking: bool = True,
+    effort: str | None = None,
 ) -> str:
     url = _endpoint(base_url)
-    payload = _payload(
-        messages=messages,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        stream=False,
-        disable_thinking=disable_thinking,
+    payload = _build_payload(
+        messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
+        stream=False, disable_thinking=disable_thinking, effort=effort,
     )
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, json=payload, headers=_headers(api_key))
-        if resp.status_code >= 400:
-            raise ProviderError(f"HTTP {resp.status_code}: {resp.text[:400]}")
-        data = resp.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise ProviderError("Провайдер вернул пустой ответ")
-        return _extract_text(choices[0].get("message") or {}).strip()
+
+    async def _once(pl: dict) -> str:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=pl, headers=_headers(api_key))
+            if resp.status_code >= 400:
+                raise ProviderError(f"HTTP {resp.status_code}: {resp.text[:400]}")
+            data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise ProviderError("Провайдер вернул пустой ответ")
+            return _extract_text(choices[0].get("message") or {}).strip()
+
+    try:
+        return await _once(payload)
+    except ProviderError as e:
+        if "reasoning_effort" in payload and "400" in str(e):
+            payload.pop("reasoning_effort", None)
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            return await _once(payload)
+        raise

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ class Job:
     message_id: str | None = None
     user_text: str = ""
     model_set_id: str | None = None
+    effort: str | None = None
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -162,6 +164,7 @@ class AIRouter:
         status: MessageStatus,
         content: str | None = None,
         error: str | None = None,
+        usage: dict | None = None,
     ) -> None:
         if not message_id:
             return
@@ -172,6 +175,11 @@ class AIRouter:
                     msg.content = content
                 msg.status = status
                 msg.error = error
+                if usage:
+                    msg.tokens_in = int(usage.get("prompt_tokens") or 0)
+                    msg.tokens_out = int(usage.get("completion_tokens") or 0)
+                    details = usage.get("prompt_tokens_details") or {}
+                    msg.tokens_cached = int(details.get("cached_tokens") or 0)
                 await db.commit()
 
     async def _worker(self) -> None:
@@ -218,6 +226,7 @@ class AIRouter:
             try:
                 full = ""
                 thinking = ""
+                usage: dict | None = None
                 async for kind, piece in stream_chat(
                     messages=job.history,
                     base_url=entry.base_url,
@@ -227,13 +236,21 @@ class AIRouter:
                     max_tokens=entry.max_tokens,
                     timeout=entry.timeout,
                     disable_thinking=settings.ai_disable_thinking,
+                    effort=job.effort,
                 ):
+                    if kind == "usage":
+                        try:
+                            usage = json.loads(piece)
+                        except Exception:
+                            usage = None
+                        continue
                     if job.cancel.is_set():
                         await self._finish(
                             job.message_id,
                             MessageStatus.cancelled,
                             content=(full or thinking),
                             error="Остановлено пользователем",
+                            usage=usage,
                         )
                         await job.output.put(("cancelled", full or thinking))
                         return
@@ -249,7 +266,11 @@ class AIRouter:
                     raise ProviderError("Пустой ответ модели")
 
                 await self._finish(
-                    job.message_id, MessageStatus.completed, content=answer, error=None
+                    job.message_id,
+                    MessageStatus.completed,
+                    content=answer,
+                    error=None,
+                    usage=usage,
                 )
                 await job.output.put(("done", answer))
                 await self.enqueue(

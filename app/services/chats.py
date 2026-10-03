@@ -35,6 +35,10 @@ def message_out(
         status=m.status.value,
         error=m.error,
         created_at=m.created_at,
+        rating=m.rating or 0,
+        tokens_in=m.tokens_in or 0,
+        tokens_out=m.tokens_out or 0,
+        tokens_cached=m.tokens_cached or 0,
         suggestions=suggestions or [],
         attachments=attachments or [],
     )
@@ -88,17 +92,24 @@ async def build_message_tree(
 
 
 async def ancestor_chain(
-    db: AsyncSession, message_id: str, include_attachments: bool = True
+    db: AsyncSession,
+    message_id: str,
+    include_attachments: bool = True,
+    summary_upto: str | None = None,
 ) -> list[dict]:
     """Linear dialogue (oldest first) ending at ``message_id``.
 
     Image attachments become multimodal content parts (so a vision model can
-    actually see them); documents are inlined as text.
+    actually see them); documents are inlined as text. If ``summary_upto`` is
+    given, everything up to and including that message is dropped (it lives in
+    the chat summary instead).
     """
     chain: list[dict] = []
     current_id: str | None = message_id
     seen: set[str] = set()
     while current_id and current_id not in seen:
+        if summary_upto and current_id == summary_upto:
+            break
         seen.add(current_id)
         msg = await db.get(Message, current_id)
         if msg is None:

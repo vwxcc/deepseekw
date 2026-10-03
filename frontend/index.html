@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=11" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=12" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -36,6 +36,10 @@
     <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.2 10.8l7.6-4M8.2 13.2l7.6 4"/></symbol>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M11 4l1.5 4.1L16.6 9.6l-4.1 1.5L11 15.2 9.5 11.1 5.4 9.6l4.1-1.5z"/><path d="M18 14.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M9.5 14.5l5-5"/><path d="M11 7l1.5-1.5a3.5 3.5 0 1 1 5 5L16 12M13 17l-1.5 1.5a3.5 3.5 0 1 1-5-5L8 12"/></symbol>
+    <symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 10.5v9H4.5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z"/><path d="M7 10.5l4-6.5a1.8 1.8 0 0 1 3.3 1.2L13.5 9h4.4a1.8 1.8 0 0 1 1.8 2.2l-1.3 6.2a1.8 1.8 0 0 1-1.8 1.4H7"/></symbol>
+    <symbol id="i-thumb-down" viewBox="0 0 24 24"><path d="M17 13.5v-9h2.5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1z"/><path d="M17 13.5l-4 6.5a1.8 1.8 0 0 1-3.3-1.2L10.5 15H6.1a1.8 1.8 0 0 1-1.8-2.2l1.3-6.2A1.8 1.8 0 0 1 7.4 5H17"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="M8 17v-6M12.5 17V8M17 17v-9"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-5"/></symbol>
     <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 17.5V6.5A2 2 0 0 1 6 4.5h7.5L20 11v6.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M13 4.5V11h6.5"/></symbol>
   </svg>
 
@@ -97,6 +101,7 @@
 
       <div class="side-foot">
         <button class="side-item" id="files-btn"><svg class="ic"><use href="#i-folder"/></svg><span>Файлы</span></button>
+        <button class="side-item" id="links-btn"><svg class="ic"><use href="#i-link"/></svg><span>Мои ссылки</span></button>
         <button class="side-item" id="account-btn"><svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span></button>
         <button class="side-item" id="settings-btn"><svg class="ic"><use href="#i-settings"/></svg><span>Настройки</span></button>
         <button class="side-item" id="logout-btn"><svg class="ic"><use href="#i-logout"/></svg><span>Выйти</span></button>
@@ -124,8 +129,13 @@
           <textarea id="input" rows="1" placeholder="Написать сообщение…"></textarea>
           <div class="composer-row">
             <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-paperclip"/></svg></button>
-            <button class="chip-btn toggle" id="search-toggle" title="Искать в интернете"><svg class="ic"><use href="#i-globe"/></svg><span>Поиск</span></button>
+            <div class="effort-wrap" title="Усилие модели">
+              <svg class="ic"><use href="#i-gauge"/></svg>
+              <input type="range" id="effort-range" min="0" max="3" step="1" value="2" />
+              <span id="effort-label">средне</span>
+            </div>
             <span class="spacer"></span>
+            <button class="chip-btn context" id="context-btn" title="Использование контекста">0%</button>
             <select id="model-select" class="model-select" title="Модель"></select>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
@@ -155,6 +165,6 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="/assets/js/app.js?v=11"></script>
+  <script src="/assets/js/app.js?v=12"></script>
 </body>
 </html>

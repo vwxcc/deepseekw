@@ -4,12 +4,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_user, get_db, get_owned_chat, require_csrf
-from ..models import Chat, User
-from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut
+from ..models import Chat, Message, User
+from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut, SharedChatOut
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -26,6 +26,36 @@ async def list_chats(
     stmt = stmt.order_by(Chat.updated_at.desc())
     result = await db.execute(stmt)
     return [ChatOut.model_validate(c) for c in result.scalars().all()]
+
+
+@router.get("/shared", response_model=list[SharedChatOut])
+async def shared_chats(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Chat)
+        .where(
+            Chat.user_id == user.id,
+            Chat.is_public.is_(True),
+            Chat.deleted_at.is_(None),
+        )
+        .order_by(Chat.updated_at.desc())
+    )
+    out: list[SharedChatOut] = []
+    for c in result.scalars().all():
+        cnt = await db.scalar(
+            select(func.count()).select_from(Message).where(Message.chat_id == c.id)
+        )
+        out.append(
+            SharedChatOut(
+                id=c.id,
+                title=c.title,
+                share_token=c.share_token or "",
+                created_at=c.created_at,
+                messages=cnt or 0,
+            )
+        )
+    return out
 
 
 @router.post("", response_model=ChatOut, status_code=status.HTTP_201_CREATED)

@@ -97,6 +97,89 @@
     return s;
   }
 
+  function tailText(s, n) {
+    s = String(s == null ? '' : s);
+    return s.length > n ? '…' + s.slice(-n) : s;
+  }
+
+  // --- drawing skill: ```draw {json} -> inline SVG ---
+  function shapeSvg(s) {
+    if (!s || !s.type) return '';
+    const a = [];
+    const push = (k, v) => { if (v !== undefined && v !== null) a.push(k + '="' + v + '"'); };
+    const common = () => {
+      push('fill', s.fill);
+      push('stroke', s.stroke);
+      push('stroke-width', s.width);
+      push('opacity', s.opacity);
+    };
+    switch (String(s.type)) {
+      case 'rect':
+        push('x', s.x || 0); push('y', s.y || 0);
+        push('width', s.w || 0); push('height', s.h || 0);
+        if (s.rx) push('rx', s.rx);
+        if (s.fill == null && s.stroke == null) push('fill', '#c96442');
+        common();
+        return '<rect ' + a.join(' ') + '/>';
+      case 'circle':
+        push('cx', s.cx || 0); push('cy', s.cy || 0); push('r', s.r || 0);
+        if (s.fill == null) push('fill', '#c96442');
+        common();
+        return '<circle ' + a.join(' ') + '/>';
+      case 'ellipse':
+        push('cx', s.cx || 0); push('cy', s.cy || 0);
+        push('rx', s.rx || 0); push('ry', s.ry || 0);
+        if (s.fill == null) push('fill', '#c96442');
+        common();
+        return '<ellipse ' + a.join(' ') + '/>';
+      case 'line':
+        push('x1', s.x1 || 0); push('y1', s.y1 || 0);
+        push('x2', s.x2 || 0); push('y2', s.y2 || 0);
+        push('stroke', s.stroke || '#1f1e1d');
+        push('stroke-width', s.width || 2);
+        return '<line ' + a.join(' ') + '/>';
+      case 'polyline':
+      case 'polygon': {
+        const pts = (s.points || []).map(p => (p[0] || 0) + ',' + (p[1] || 0)).join(' ');
+        push('points', pts);
+        if (String(s.type) === 'polygon') {
+          if (s.fill == null) push('fill', '#c96442');
+        } else {
+          push('fill', 'none');
+          push('stroke', s.stroke || '#c96442');
+          push('stroke-width', s.width || 2);
+        }
+        common();
+        return '<' + s.type + ' ' + a.join(' ') + '/>';
+      }
+      case 'path':
+        push('d', s.d || '');
+        push('fill', s.fill || 'none');
+        push('stroke', s.stroke || '#c96442');
+        push('stroke-width', s.width || 2);
+        push('opacity', s.opacity);
+        return '<path ' + a.join(' ') + '/>';
+      case 'text':
+        push('x', s.x || 0); push('y', s.y || 0);
+        push('font-size', s.size || 16);
+        push('fill', s.fill || '#1f1e1d');
+        push('opacity', s.opacity);
+        return '<text ' + a.join(' ') + '>' + escapeHtml(s.text || '') + '</text>';
+      default:
+        return '';
+    }
+  }
+
+  function drawBlockHtml(code) {
+    let spec;
+    try { spec = JSON.parse(code); } catch (e) { return codeBlockHtml('draw', code); }
+    const w = spec.width || 420, h = spec.height || 300;
+    const bg = spec.background || 'transparent';
+    const shapes = (spec.shapes || []).map(shapeSvg).join('');
+    return '<div class="draw-block"><svg viewBox="0 0 ' + w + ' ' + h +
+      '" width="100%" style="max-width:' + w + 'px;background:' + bg + '">' + shapes + '</svg></div>';
+  }
+
   function codeBlockHtml(lang, code) {
     const id = 'code_' + Math.random().toString(36).slice(2);
     window.__codeStore = window.__codeStore || {};
@@ -132,7 +215,7 @@
       if (cm) {
         flushPara(); closeList(); closeQuote();
         const b = codes[+cm[1]];
-        out.push(codeBlockHtml(b.lang, b.code));
+        out.push(b.lang === 'draw' ? drawBlockHtml(b.code) : codeBlockHtml(b.lang, b.code));
         continue;
       }
       if (!line.trim()) { flushPara(); closeList(); closeQuote(); continue; }
@@ -236,7 +319,9 @@
     thinkBody: null,
     modelSets: [],
     modelSetId: localStorage.getItem('cs_model') || '',
-    webSearch: localStorage.getItem('cs_websearch') === '1',
+    effort: localStorage.getItem('cs_effort') || 'medium',
+    usage: null,
+    draftTail: null,
     readonly: false,
     publicToken: null,
     greetTimer: null,
@@ -245,8 +330,10 @@
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
   };
 
-  const GREETINGS = [
-    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
+  const EFFORTS = ['none', 'low', 'medium', 'high'];
+  const EFFORT_LABELS = ['нет', 'низкое', 'среднее', 'высокое'];
+
+  const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
     'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
     'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
     'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
@@ -458,6 +545,7 @@
     state.tree = await api.get('/api/chats/' + id + '/messages');
     renderChatList();
     renderMessages();
+    await loadUsage();
     closeMobileSidebar();
   }
 
@@ -530,25 +618,22 @@
       const failed = n.status === 'failed';
       const generating = n.status === 'queued' || n.status === 'processing';
       const hasThink = !!(n.thinking && String(n.thinking).trim());
-      const showThink = hasThink || (generating && !n.content);
+      const draft = n.draft || '';
 
-      let think = '';
-      if (showThink) {
-        think = '<div class="think-box' + (n.thinkCollapsed ? ' collapsed' : '') + '">' +
+      if (generating) {
+        // while generating we only show a few live lines (thinking + answer draft)
+        inner = '<div class="think-box">' +
           '<div class="think-head">' + thinkAnim() +
             '<span class="label">' + (hasThink ? 'Размышления' : 'Думает…') + '</span>' +
-            icon('chevron-down', 'chev') +
           '</div>' +
-          '<div class="think-body">' + escapeHtml(n.thinking || '') + '</div></div>';
-      }
-
-      const body = '<div class="content md"' + (failed ? ' style="color:var(--danger)"' : '') + '>' +
-        (failed ? 'Ошибка: ' + escapeHtml(n.error || 'генерация не удалась')
-                : renderMarkdown(n.content || '')) + '</div>';
-
-      inner = think + body;
-      if (!showThink && generating && !n.content) {
-        inner += '<div class="thinking"><i></i><i></i><i></i></div>';
+          '<div class="think-tail">' + escapeHtml(tailText(n.thinking, 260)) + '</div>' +
+          '<div class="think-tail answer">' + escapeHtml(tailText(n.draft, 260)) + '</div>' +
+          '</div>';
+      } else if (failed) {
+        inner = '<div class="content md" style="color:var(--danger)">Ошибка: ' +
+          escapeHtml(n.error || 'генерация не удалась') + '</div>';
+      } else {
+        inner = '<div class="content md">' + renderMarkdown(n.content || '') + '</div>';
       }
     }
 
@@ -560,7 +645,13 @@
       if (generating) {
         parts.push('<button data-mact="stop" data-id="' + n.id + '">' + icon('stop') + 'Остановить</button>');
       } else {
-        if (n.content) parts.push('<button data-mact="copy" data-id="' + n.id + '">' + icon('copy') + 'Копировать</button>');
+        if (n.content) {
+          parts.push('<button data-mact="rate-up" data-id="' + n.id + '" class="rate' +
+            (n.rating > 0 ? ' on' : '') + '" title="Хороший ответ">' + icon('thumb-up') + '</button>');
+          parts.push('<button data-mact="rate-down" data-id="' + n.id + '" class="rate' +
+            (n.rating < 0 ? ' on' : '') + '" title="Плохой ответ">' + icon('thumb-down') + '</button>');
+          parts.push('<button data-mact="copy" data-id="' + n.id + '">' + icon('copy') + 'Копировать</button>');
+        }
         parts.push('<button data-mact="retry" data-id="' + n.id + '">' + icon('refresh') + 'Повторить</button>');
         if (n.content) parts.push('<button data-mact="continue" data-id="' + n.id + '">' + icon('continue') + 'Продолжить</button>');
       }
@@ -665,6 +756,8 @@
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
+      else if (act === 'rate-up') { await rateMessage(id, 1); }
+      else if (act === 'rate-down') { await rateMessage(id, -1); }
     }));
 
     $$('.branch-nav').forEach(nav => {
@@ -690,6 +783,18 @@
   function scrollToBottom() {
     const box = $('#messages');
     box.scrollTop = box.scrollHeight;
+  }
+
+  async function rateMessage(id, rating) {
+    const n = findNode(state.tree, id);
+    const next = n && n.rating === rating ? 0 : rating;
+    try {
+      await api.post('/api/messages/' + id + '/rate', { rating: next });
+      if (n) n.rating = next;
+      renderMessages();
+    } catch (e) {
+      toast('Ошибка: ' + e.message, 'error');
+    }
   }
 
   // ---------- streaming ----------
@@ -724,8 +829,8 @@
   async function streamRequest(path, body) {
     if (state.streaming) return;
     setStreaming(true);
-    state.streamEl = null; state.thinkBody = null; state.streamBuf = '';
-    state.streamStarted = false; state.activeAssistantId = null;
+    state.streamEl = null; state.thinkBody = null; state.draftTail = null;
+    state.streamBuf = ''; state.streamStarted = false; state.activeAssistantId = null;
     try {
       const headers = { 'X-CSRF-Token': api.csrf() };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -744,33 +849,33 @@
             state.activeAssistantId = data.id;
             const el = $('.msg[data-mid="' + node.id + '"]');
             state.streamEl = el ? $('.content', el) : null;
-            state.thinkBody = el ? $('.think-body', el) : null;
+            state.thinkBody = el ? $('.think-tail', el) : null;
+            state.draftTail = el ? $('.think-tail.answer', el) : null;
           }
         } else if (ev === 'thinking') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.thinking = (n.thinking || '') + (data.text || '');
           if (state.thinkBody) {
-            state.thinkBody.textContent += (data.text || '');
-            state.thinkBody.scrollTop = state.thinkBody.scrollHeight;
+            state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
+            const head = state.thinkBody.parentElement;
+            const lbl = head ? head.querySelector('.label') : null;
+            if (lbl) lbl.textContent = 'Размышления';
           }
         } else if (ev === 'delta') {
           state.streamBuf += data.text || '';
-          if (state.streamEl) {
-            if (!state.streamStarted) {
-              state.streamStarted = true;
-              // the answer started: fold the thinking box away
-              const n = findNode(state.tree, state.activeAssistantId);
-              if (n && n.thinking) { n.thinkCollapsed = true; }
-              const tb = state.thinkBody && state.thinkBody.closest('.think-box');
-              if (tb) tb.classList.add('collapsed');
-            }
-            state.streamEl.textContent = state.streamBuf;
-            scrollToBottom();
-          }
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
+          if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
+          scrollToBottom();
         } else if (ev === 'done') {
           const n = findNode(state.tree, data.message_id);
-          if (n) { n.status = 'completed'; n.content = data.text || state.streamBuf; }
+          if (n) {
+            n.status = 'completed';
+            n.content = data.text || state.streamBuf;
+            n.draft = '';
+          }
           renderMessages();
+          loadUsage();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id);
           if (n) { n.status = 'failed'; n.error = data.error; }
@@ -824,7 +929,8 @@
         content,
         attachment_ids: attachments,
         model_set_id: state.modelSetId || null,
-        web_search: !!state.webSearch,
+        web_search: true,
+        effort: state.effort,
       });
   }
 
@@ -866,17 +972,173 @@
       state.modelSetId = e.target.value;
       localStorage.setItem('cs_model', state.modelSetId);
     });
-    $('#search-toggle').addEventListener('click', () => {
-      state.webSearch = !state.webSearch;
-      localStorage.setItem('cs_websearch', state.webSearch ? '1' : '0');
-      applyToggles();
-      toast(state.webSearch ? 'Поиск в интернете включён' : 'Поиск в интернете выключен');
+    const er = $('#effort-range');
+    const applyEffort = (v, save) => {
+      let idx = EFFORTS.indexOf(v);
+      if (idx < 0) idx = 2;
+      state.effort = EFFORTS[idx];
+      er.value = String(idx);
+      $('#effort-label').textContent = EFFORT_LABELS[idx];
+      if (save) localStorage.setItem('cs_effort', state.effort);
+    };
+    er.addEventListener('input', () => applyEffort(EFFORTS[parseInt(er.value, 10)] || 'medium', true));
+    applyEffort(state.effort, false);
+    $('#context-btn').addEventListener('click', openContextMenu);
+  }
+
+  function fmtNum(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+  }
+
+  async function loadUsage() {
+    const btn = $('#context-btn');
+    if (!btn) return;
+    if (!state.currentChatId) { btn.textContent = '—'; return; }
+    try {
+      const u = await api.get('/api/chats/' + state.currentChatId + '/usage');
+      state.usage = u;
+      const p = u.percent || 0;
+      btn.textContent = p.toFixed(1) + '%';
+      btn.classList.toggle('warn', p > 60);
+      btn.title = 'Контекст: ' + p.toFixed(2) + '% из ' + fmtNum(u.context_len) + ' токенов';
+    } catch (e) {
+      btn.textContent = '—';
+    }
+  }
+
+  function usageCards(u) {
+    const card = (label, val) =>
+      '<div class="usage-card"><span>' + label + '</span><b>' + val + '</b></div>';
+    return '<div class="usage-grid">' +
+      card('Вход', fmtNum(u.tokens_in)) +
+      card('Выход', fmtNum(u.tokens_out)) +
+      card('Из кэша', fmtNum(u.tokens_cached)) +
+      card('Сообщений', u.messages) +
+      card('Средний вход', fmtNum(u.avg_in)) +
+      card('Занято', (u.percent || 0).toFixed(2) + '%') +
+      '</div>';
+  }
+
+  async function openContextMenu() {
+    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+    let u;
+    try { u = await api.get('/api/chats/' + state.currentChatId + '/usage'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    state.usage = u;
+    const barW = Math.min(100, Math.max(0, u.percent || 0));
+    openModal({
+      title: 'Контекст диалога',
+      okText: 'Закрыть',
+      body: usageCards(u) +
+        '<div class="usage-bar"><i style="width:' + barW + '%"></i></div>' +
+        '<p class="usage-note">Окно модели — ' + fmtNum(u.context_len) + ' токенов. ' +
+        'Резюме истории: ' + (u.summary_chars ? fmtNum(u.summary_chars) + ' симв.' : 'нет') + '. ' +
+        'Усилие: ' + escapeHtml(u.effort || 'medium') + '.</p>' +
+        '<label style="margin-top:14px">Сжать историю до <b id="cmp-val">50</b>%</label>' +
+        '<input type="range" id="cmp-range" class="orange-range" min="5" max="85" step="5" value="50" />' +
+        '<p class="usage-note">Сжатие делает та же модель: старое сворачивается в краткое резюме.</p>' +
+        '<div style="margin-top:10px"><button class="chip-btn" id="cmp-go">' +
+        icon('sparkle') + 'Сжать историю</button></div>',
+      onOk: () => true,
+    });
+    const r = $('#cmp-range');
+    if (r) r.addEventListener('input', () => { $('#cmp-val').textContent = r.value; });
+    const go = $('#cmp-go');
+    if (go) go.addEventListener('click', async () => {
+      const p = parseInt(r.value, 10) || 50;
+      toast('Сжимаю историю…');
+      try {
+        await api.post('/api/chats/' + state.currentChatId + '/compress', { target_percent: p });
+        toast('История сжата');
+        $('#modal-root').innerHTML = '';
+        await loadUsage();
+      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
     });
   }
 
-  function applyToggles() {
-    const t = $('#search-toggle');
-    if (t) t.classList.toggle('active', !!state.webSearch);
+  async function openLinks() {
+    let items = [];
+    try { items = await api.get('/api/chats/shared'); } catch (e) { items = []; }
+    openModal({
+      title: 'Мои публичные ссылки',
+      okText: 'Закрыть',
+      body: items.length
+        ? '<div class="link-list">' + items.map(s =>
+            '<div class="link-row"><div class="link-info"><b>' + escapeHtml(s.title) + '</b>' +
+            '<span>' + s.messages + ' сообщ. · ' + timeAgo(s.created_at) + '</span></div>' +
+            '<button class="chip-btn" data-copy-link="' + s.share_token + '" title="Копировать">' + icon('copy') + '</button>' +
+            '<button class="chip-btn" data-open-link="' + s.share_token + '" title="Открыть">' + icon('link') + '</button>' +
+            '</div>').join('') + '</div>'
+        : '<p>Пока нет публичных ссылок. Откройте чат и нажмите иконку «Поделиться».</p>',
+      onOk: () => true,
+    });
+    $$('[data-copy-link]').forEach(b => b.addEventListener('click', async () => {
+      const ok = await copyText(location.origin + '/?share=' + b.dataset.copyLink);
+      toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
+    }));
+    $$('[data-open-link]').forEach(b => b.addEventListener('click', () =>
+      window.open('/?share=' + b.dataset.openLink, '_blank')));
+  }
+
+  async function openAdminStats() {
+    let s;
+    try { s = await api.get('/api/admin/stats'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    const maxH = Math.max(1, ...s.hourly.map(h => h.messages));
+    const bars = s.hourly.length
+      ? s.hourly.map(h =>
+          '<div class="bar" title="' + escapeHtml(h.hour) + ' — ' + h.messages + ' сообщ.">' +
+          '<i style="height:' + Math.round((h.messages / maxH) * 100) + '%"></i>' +
+          '<span>' + escapeHtml((h.hour || '').slice(11, 13)) + '</span></div>').join('')
+      : '<p class="usage-note">Нет данных за 24 часа</p>';
+    const card = (label, val) =>
+      '<div class="usage-card"><span>' + label + '</span><b>' + val + '</b></div>';
+    openModal({
+      title: 'Статистика использования',
+      okText: 'Закрыть',
+      body: '<div class="usage-grid">' +
+        card('Пользователи', s.users) + card('Чаты', s.chats) +
+        card('Сообщения', s.messages) + card('Файлы', s.files) +
+        card('Токенов вход', fmtNum(s.tokens_in)) + card('Токенов выход', fmtNum(s.tokens_out)) +
+        card('Из кэша', fmtNum(s.tokens_cached)) +
+        card('Оценки', '👍 ' + s.rating_up + ' · 👎 ' + s.rating_down) +
+        '</div>' +
+        '<h4 class="sec">Активность за 24 часа</h4><div class="chart">' + bars + '</div>' +
+        '<h4 class="sec">Модели</h4>' +
+        (s.top_models.length
+          ? s.top_models.map(m => '<div class="kv"><span>' + escapeHtml(m.name) + '</span><b>' + m.count + '</b></div>').join('')
+          : '<p class="usage-note">—</p>'),
+      onOk: () => true,
+    });
+  }
+
+  async function openAdminChats() {
+    let items = [];
+    try { items = await api.get('/api/admin/chats?limit=200'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    openModal({
+      title: 'Все чаты',
+      okText: 'Закрыть',
+      body: items.length
+        ? '<div class="link-list">' + items.map(c =>
+            '<div class="link-row"><div class="link-info"><b>' + escapeHtml(c.title) + '</b>' +
+            '<span>' + escapeHtml(c.owner) + ' · ' + c.messages + ' сообщ. · ' +
+            fmtNum(c.tokens_in) + '/' + fmtNum(c.tokens_out) + ' ток. · 👍' + c.rating_up +
+            ' 👎' + c.rating_down + '</span></div>' +
+            '<button class="chip-btn" data-open-chat="' + c.id + '">' + icon('link') + 'Открыть</button>' +
+            '</div>').join('') + '</div>'
+        : '<p>Чатов нет.</p>',
+      onOk: () => true,
+    });
+    $$('[data-open-chat]').forEach(b => b.addEventListener('click', async () => {
+      try {
+        const sh = await api.post('/api/admin/chats/' + b.dataset.openChat + '/share');
+        window.open('/?share=' + sh.share_token, '_blank');
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
   }
 
   async function loadModelSets() {
@@ -957,6 +1219,7 @@
 
   function bindFiles() {
     $('#files-btn').addEventListener('click', () => toggleFiles(true));
+    $('#links-btn').addEventListener('click', openLinks);
     $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());
@@ -1148,16 +1411,24 @@
       const isAdmin = !!(state.user && state.user.is_admin);
       openModal({
         title: 'Настройки', okText: 'Закрыть',
-        body: '<p>Тема: тёплая светлая (Claude-like).</p>' +
-              '<p>Follow-up подсказки: включены.</p>' +
-              '<p>Файлы: лимиты задаются в конфигурации сервера.</p>' +
+        body: '<p>Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
+              '<p>Поиск в интернете: всегда включён (SearXNG).</p>' +
+              '<p>Усилие модели: ' + escapeHtml(state.effort) + '.</p>' +
               (isAdmin
-                ? '<p><button class="chip-btn" id="open-ms">' + icon('settings') + 'Управление Model Sets</button></p>'
-                : '<p>Model Sets настраивает администратор.</p>'),
+                ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+                  '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
+                  '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
+                  '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>' +
+                  '</div>'
+                : '<p>Model Sets и статистику видит администратор.</p>'),
         onOk: () => true,
       });
       const b = $('#open-ms');
       if (b) b.addEventListener('click', () => { $('#modal-root').innerHTML = ''; openModelSetsAdmin(); });
+      const st = $('#open-stats');
+      if (st) st.addEventListener('click', () => { $('#modal-root').innerHTML = ''; openAdminStats(); });
+      const ac = $('#open-allchats');
+      if (ac) ac.addEventListener('click', () => { $('#modal-root').innerHTML = ''; openAdminChats(); });
     });
     window.addEventListener('resize', () => {
       applySidebar();
@@ -1273,11 +1544,11 @@
   async function boot() {
     showApp();
     applySidebar();
-    applyToggles();
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
     await loadChats();
     await loadFiles();
     await loadModelSets();
+    await loadUsage();
     renderMessages();
   }
 

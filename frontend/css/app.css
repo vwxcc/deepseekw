@@ -1568,3 +1568,20 @@ body { font-weight: 400; }
   font-weight: 700;
   letter-spacing: -0.01em;
 }
+
+
+/* Two-column model menu: clusters left, controls right */
+.modal.wide { max-width: 900px; width: 92vw; }
+.mm-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px; align-items: start;
+}
+.mm-col { min-width: 0; }
+.mm-col .sec:first-child { margin-top: 4px; }
+.mm-list { max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.mm-slider { margin: 4px 0 10px; }
+@media (max-width: 760px) {
+  .mm-grid { grid-template-columns: 1fr; gap: 6px; }
+  .mm-list { max-height: none; }
+  .modal.wide { width: auto; }
+}

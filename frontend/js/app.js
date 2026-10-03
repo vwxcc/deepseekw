@@ -3101,21 +3101,32 @@
       title: 'Модель и параметры',
       okText: 'Готово',
       body:
-        '<h4 class="sec">Кластер</h4><div class="mm-list">' + (cards || '<p>Моделей нет</p>') + '</div>' +
-        '<h4 class="sec">Усилие модели</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' + (EFFORTS.length - 1) +
-        '" step="1" value="' + idx + '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
-        '<h4 class="sec">Температура</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
-        (state.temperature != null ? state.temperature : 0.2) +
-        '"/><b id="mm-temp-label">' + Number(state.temperature != null ? state.temperature : 0.2).toFixed(1) + '</b></div>' +
-        '<h4 class="sec">Сжатие истории</h4>' +
-        '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме и освободит контекст. ' +
-        'Ваш тариф: от ' + cmin + '% до ' + cmax + '%' +
-        (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
-        '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
-        '" max="' + cmax + '" step="5" value="' + cdef + '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
-        '<div style="margin-top:10px"><button class="chip-btn" id="mm-comp-go">Сжать историю</button></div>',
+        '<div class="mm-grid">' +
+          '<div class="mm-col">' +
+            '<h4 class="sec">Кластер</h4>' +
+            '<div class="mm-list">' + (cards || '<p>Моделей нет</p>') + '</div>' +
+          '</div>' +
+          '<div class="mm-col">' +
+            '<h4 class="sec">Усилие модели</h4>' +
+            '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
+            (EFFORTS.length - 1) + '" step="1" value="' + idx +
+            '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
+            '<h4 class="sec">Температура</h4>' +
+            '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
+            (state.temperature != null ? state.temperature : 0.2) +
+            '"/><b id="mm-temp-label">' +
+            Number(state.temperature != null ? state.temperature : 0.2).toFixed(1) + '</b></div>' +
+            '<h4 class="sec">Сжатие истории</h4>' +
+            '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме. ' +
+            'Тариф: от ' + cmin + '% до ' + cmax + '%' +
+            (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
+            '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
+            '" max="' + cmax + '" step="5" value="' + cdef +
+            '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
+            '<div style="margin-top:10px">' +
+            '<button class="chip-btn" id="mm-comp-go">Сжать историю</button></div>' +
+          '</div>' +
+        '</div>',
       onOk: (root) => {
         const picked = $('input[name=mm]:checked', root);
         if (picked) {
@@ -3127,6 +3138,8 @@
       },
     });
 
+    const mmBox = document.querySelector('#modal-root .modal');
+    if (mmBox) mmBox.classList.add('wide');
     const eff = $('#mm-effort');
     eff.addEventListener('input', () => {
       const i = parseInt(eff.value, 10) || 0;

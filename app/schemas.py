@@ -69,6 +69,7 @@ class MessageOut(ORMModel):
     status: str
     error: str | None = None
     created_at: datetime
+    suggestions: list[str] = Field(default_factory=list)
     children: list["MessageOut"] = Field(default_factory=list)
 
 
@@ -86,6 +87,65 @@ class FileOut(ORMModel):
     size: int
     kind: str
     created_at: datetime
+
+
+# --- Model sets (admin) ---
+class ModelSetEntryOut(ORMModel):
+    id: str
+    position: int
+    provider: str
+    base_url: str
+    model: str
+    temperature: float
+    max_tokens: int
+    timeout: int
+    is_active: bool
+    has_api_key: bool = False
+
+
+class ModelSetOut(ORMModel):
+    id: str
+    name: str
+    slug: str
+    route_type: str
+    is_active: bool
+    entries: list[ModelSetEntryOut] = Field(default_factory=list)
+
+
+class ModelSetCreate(BaseModel):
+    name: str
+    slug: str | None = None
+    route_type: str = "MAIN"
+    is_active: bool = True
+
+
+class ModelSetUpdate(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class ModelSetEntryIn(BaseModel):
+    provider: str = "openai"
+    base_url: str
+    api_key: str = ""
+    model: str
+    position: int = 0
+    temperature: float = 0.2
+    max_tokens: int = 32000
+    timeout: int = 300
+    is_active: bool = True
+
+
+class ModelSetEntryUpdate(BaseModel):
+    provider: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    position: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    timeout: int | None = None
+    is_active: bool | None = None
 
 
 MessageOut.model_rebuild()

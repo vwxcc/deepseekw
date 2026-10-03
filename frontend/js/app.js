@@ -328,7 +328,7 @@
     return path;
   }
 
-  function msgHtml(entry) {
+  function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
     let inner;
@@ -362,8 +362,14 @@
         '<button data-b="next">›</button></div>';
     }
 
+    let sugg = '';
+    if (!isUser && isLast && n.status === 'completed' && n.suggestions && n.suggestions.length) {
+      sugg = '<div class="chips left">' + n.suggestions.map(s =>
+        '<button data-sugg="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>').join('') + '</div>';
+    }
+
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
-      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' + inner + branch + meta + '</div>';
+      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' + inner + branch + meta + sugg + '</div>';
   }
 
   function renderMessages() {
@@ -383,7 +389,8 @@
       }));
       return;
     }
-    box.innerHTML = '<div class="msg-wrap">' + path.map(msgHtml).join('') + '</div>';
+    box.innerHTML = '<div class="msg-wrap">' +
+      path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
     bindMessageEvents();
     scrollToBottom();
   }
@@ -414,6 +421,12 @@
       await navigator.clipboard.writeText(code);
       const old = b.textContent; b.textContent = 'Скопировано';
       setTimeout(() => b.textContent = old, 1200);
+    }));
+
+    $$('[data-sugg]').forEach(b => b.addEventListener('click', () => {
+      $('#input').value = b.dataset.sugg;
+      autoGrow();
+      sendCurrent();
     }));
   }
 
@@ -664,6 +677,109 @@
     if (inp) { inp.focus(); inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('[data-ok]', root).click(); } }); }
   }
 
+  // ---------- admin: model sets ----------
+  function adminForm(root, title, fields, onSubmit, done) {
+    root.innerHTML = '<div class="modal-back"><div class="modal"><h3>' + escapeHtml(title) + '</h3>' +
+      '<div class="modal-body">' + fields.map(f =>
+        '<label>' + escapeHtml(f.label) +
+        (f.type === 'select'
+          ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
+          : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
+            (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
+            (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') + ' />') +
+        '</label>').join('') + '</div>' +
+      '<div class="row"><button class="ghost" data-cancel>Отмена</button>' +
+      '<button class="solid" data-ok>Сохранить</button></div></div></div>';
+    $('[data-cancel]', root).addEventListener('click', done);
+    $('[data-ok]', root).addEventListener('click', async () => {
+      try { await onSubmit(); done(); } catch (e) { alert('Ошибка: ' + e.message); }
+    });
+  }
+
+  async function openModelSetsAdmin() {
+    const root = $('#modal-root');
+
+    async function rerender() {
+      const sets = await api.get('/api/admin/model-sets');
+      const body = sets.length ? sets.map(s =>
+        '<div class="ms-set"><div class="ms-head">' +
+          '<span class="ms-route">' + escapeHtml(s.route_type) + '</span>' +
+          '<b>' + escapeHtml(s.name) + '</b>' +
+          '<span class="ms-slug">' + escapeHtml(s.slug) + '</span>' +
+          '<span class="spacer" style="flex:1"></span>' +
+          '<button data-toggle="' + s.id + '" data-active="' + (s.is_active ? 1 : 0) + '">' +
+            (s.is_active ? 'вкл' : 'выкл') + '</button>' +
+          '<button data-del-set="' + s.id + '" title="Удалить набор">🗑</button>' +
+        '</div><div class="ms-entries">' +
+          (s.entries.length ? s.entries.map(e =>
+            '<div class="ms-entry">' +
+              '<span class="ms-pos">' + e.position + '</span>' +
+              '<span class="ms-model">' + escapeHtml(e.model) + '</span>' +
+              '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
+              '<span class="ms-key">' + (e.has_api_key ? '🔑' : '—') + '</span>' +
+              '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">🗑</button>' +
+            '</div>').join('') : '<div class="ms-empty">нет моделей</div>') +
+          '<button class="chip-btn" data-add-entry="' + s.id + '">＋ модель</button>' +
+        '</div></div>').join('') : '<p>Наборов нет.</p>';
+
+      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px">' +
+        '<h3>Model Sets</h3><div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div>' +
+        '<div class="row"><button class="ghost" data-add-set>＋ Набор</button>' +
+        '<span style="flex:1"></span><button class="solid" data-close>Закрыть</button></div></div></div>';
+
+      $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
+      $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
+      $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Удалить набор и все его модели?')) return;
+        await api.del('/api/admin/model-sets/' + b.dataset.delSet); rerender();
+      }));
+      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => {
+        await api.patch('/api/admin/model-sets/' + b.dataset.toggle,
+          { is_active: b.dataset.active !== '1' }); rerender();
+      }));
+      $$('[data-del-entry]', root).forEach(b => b.addEventListener('click', async () => {
+        const [sid, eid] = b.dataset.delEntry.split('|');
+        await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
+      }));
+      $$('[data-add-entry]', root).forEach(b =>
+        b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
+    }
+
+    await rerender();
+  }
+
+  function addSetForm(root, done) {
+    adminForm(root, 'Новый Model Set', [
+      { id: 'ms-name', label: 'Название', placeholder: 'Например: Qwen Fast' },
+      { id: 'ms-route', label: 'Маршрут', type: 'select', options: ['MAIN', 'TITLE', 'SUGGESTIONS'] },
+    ], async () => {
+      await api.post('/api/admin/model-sets', {
+        name: $('#ms-name').value.trim(),
+        route_type: $('#ms-route').value,
+      });
+    }, done);
+  }
+
+  function addEntryForm(root, setId, done) {
+    adminForm(root, 'Новая модель (шаг fallback)', [
+      { id: 'me-url', label: 'Base URL', placeholder: 'https://…/v1' },
+      { id: 'me-model', label: 'Модель', placeholder: 'qwen36-35b' },
+      { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
+      { id: 'me-pos', label: 'Позиция', type: 'number', value: '0' },
+      { id: 'me-temp', label: 'Temperature', type: 'number', value: '0.2' },
+      { id: 'me-max', label: 'Max tokens', type: 'number', value: '32000' },
+    ], async () => {
+      await api.post('/api/admin/model-sets/' + setId + '/entries', {
+        base_url: $('#me-url').value.trim(),
+        model: $('#me-model').value.trim(),
+        api_key: $('#me-key').value,
+        position: parseInt($('#me-pos').value, 10) || 0,
+        temperature: parseFloat($('#me-temp').value) || 0.2,
+        max_tokens: parseInt($('#me-max').value, 10) || 32000,
+      });
+    }, done);
+  }
+
   // ---------- sidebar ----------
   function applySidebar() {
     const sb = $('#sidebar');
@@ -707,13 +823,19 @@
       });
     });
     $('#settings-btn').addEventListener('click', () => {
+      const isAdmin = !!(state.user && state.user.is_admin);
       openModal({
         title: 'Настройки', okText: 'Закрыть',
         body: '<p>Тема: тёплая светлая (Claude-like).</p>' +
-              '<p>Модели и Model Sets настраиваются администратором.</p>' +
-              '<p>Файлы: лимиты задаются в конфигурации сервера.</p>',
+              '<p>Follow-up подсказки: включены.</p>' +
+              '<p>Файлы: лимиты задаются в конфигурации сервера.</p>' +
+              (isAdmin
+                ? '<p><button class="chip-btn" id="open-ms">⚙ Управление Model Sets</button></p>'
+                : '<p>Model Sets настраивает администратор.</p>'),
         onOk: () => true,
       });
+      const b = $('#open-ms');
+      if (b) b.addEventListener('click', () => { $('#modal-root').innerHTML = ''; openModelSetsAdmin(); });
     });
     window.addEventListener('resize', () => {
       applySidebar();

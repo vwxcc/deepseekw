@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,11 +13,14 @@ from .ai.router import router as ai_router
 from .bootstrap import bootstrap
 from .config import settings
 from .database import init_db
-from .routers import auth, chats, files, messages
+from .routers import admin, auth, chats, files, messages, models
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logging.basicConfig(
+        level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s"
+    )
     await init_db()
     await bootstrap()
     await ai_router.start()
@@ -32,6 +36,8 @@ app.include_router(auth.router)
 app.include_router(chats.router)
 app.include_router(messages.router)
 app.include_router(files.router)
+app.include_router(models.router)
+app.include_router(admin.router)
 
 
 @app.get("/api/health")

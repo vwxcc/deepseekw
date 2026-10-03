@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
+
+from sqlalchemy import delete
 
 from ..config import settings
 from ..database import SessionLocal
-from ..models import Chat, Message, MessageStatus, RouteType
+from ..models import Chat, Message, MessageStatus, RouteType, Suggestion
 from . import model_sets as ms
 from . import prompts
 from .providers import ProviderError, complete_chat, stream_chat
@@ -52,6 +55,16 @@ def _clean_title(text: str) -> str:
     return t[:120]
 
 
+def _parse_suggestions(text: str) -> list[str]:
+    out: list[str] = []
+    for line in (text or "").splitlines():
+        t = line.strip().lstrip("-•*—").strip()
+        t = re.sub(r"^\d+[.)]\s*", "", t).strip()
+        if len(t) > 4:
+            out.append(t[:200])
+    return out[:3]
+
+
 class AIRouter:
     def __init__(self, concurrency: int) -> None:
         self.concurrency = max(1, concurrency)
@@ -81,7 +94,7 @@ class AIRouter:
         self.workers.clear()
 
     async def enqueue(self, job: Job) -> None:
-        if job.message_id:
+        if job.message_id and job.kind == "message":
             self.active[job.message_id] = job
         await self.queue.put(job)
 
@@ -159,6 +172,8 @@ class AIRouter:
             try:
                 if job.kind == "title":
                     await self._run_title(job)
+                elif job.kind == "suggestions":
+                    await self._run_suggestions(job)
                 else:
                     await self._run_message(job)
             except asyncio.CancelledError:
@@ -219,6 +234,15 @@ class AIRouter:
 
                 await self._finish(job.message_id, MessageStatus.completed, content=full, error=None)
                 await job.output.put(("done", full))
+                await self.enqueue(
+                    Job(
+                        kind="suggestions",
+                        route_type=RouteType.SUGGESTIONS,
+                        chat_id=job.chat_id,
+                        message_id=job.message_id,
+                        history=[*job.history, {"role": "assistant", "content": full}],
+                    )
+                )
                 return
             except ProviderError as e:
                 last_error = str(e)
@@ -269,6 +293,55 @@ class AIRouter:
                     return
             except Exception as e:
                 log.warning("Title entry %s failed: %s", entry.model, e)
+
+
+    async def _run_suggestions(self, job: Job) -> None:
+        if not job.message_id:
+            return
+        try:
+            _, _, entries = await self._resolve_entries(RouteType.SUGGESTIONS)
+        except ProviderError as e:
+            log.warning("Suggestions skipped: %s", e)
+            return
+
+        dialogue = [m for m in job.history if m.get("role") != "system"]
+        messages = [
+            {"role": "system", "content": prompts.SUGGESTIONS_SYSTEM},
+            *dialogue[-8:],
+        ]
+        for entry in entries:
+            try:
+                raw = await complete_chat(
+                    messages=messages,
+                    base_url=entry.base_url,
+                    api_key=entry.api_key,
+                    model=entry.model,
+                    temperature=0.6,
+                    max_tokens=220,
+                    timeout=min(entry.timeout, 60),
+                    disable_thinking=True,
+                )
+                items = _parse_suggestions(raw)
+                if items:
+                    async with SessionLocal() as db:
+                        await db.execute(
+                            delete(Suggestion).where(
+                                Suggestion.message_id == job.message_id
+                            )
+                        )
+                        for i, text in enumerate(items):
+                            db.add(
+                                Suggestion(
+                                    message_id=job.message_id,
+                                    chat_id=job.chat_id,
+                                    position=i,
+                                    text=text,
+                                )
+                            )
+                        await db.commit()
+                    return
+            except Exception as e:
+                log.warning("Suggestions entry %s failed: %s", entry.model, e)
 
 
 router = AIRouter(settings.global_ai_concurrency)

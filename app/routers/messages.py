@@ -133,7 +133,7 @@ async def get_messages(
         .where(Message.chat_id == chat.id)
         .order_by(Message.created_at, Message.id)
     )
-    return build_message_tree(result.scalars().all())
+    return await build_message_tree(db, result.scalars().all())
 
 
 @router.post("/chats/{chat_id}/messages")

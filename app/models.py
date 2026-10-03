@@ -209,3 +209,17 @@ class ModelSetEntry(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     model_set: Mapped["ModelSet"] = relationship(back_populates="entries")
+
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    message_id: Mapped[str] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chat_id: Mapped[str] = mapped_column(
+        ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(Text, default="")

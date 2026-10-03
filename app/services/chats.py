@@ -4,11 +4,11 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Attachment, File, Message
+from ..models import Attachment, File, Message, Suggestion
 from ..schemas import MessageOut
 
 
-def message_out(m: Message) -> MessageOut:
+def message_out(m: Message, suggestions: list[str] | None = None) -> MessageOut:
     return MessageOut(
         id=m.id,
         chat_id=m.chat_id,
@@ -18,12 +18,28 @@ def message_out(m: Message) -> MessageOut:
         status=m.status.value,
         error=m.error,
         created_at=m.created_at,
+        suggestions=suggestions or [],
     )
 
 
-def build_message_tree(messages: list[Message]) -> list[MessageOut]:
+async def build_message_tree(
+    db: AsyncSession, messages: list[Message]
+) -> list[MessageOut]:
     """Build a nested tree of messages from a flat chronological list."""
-    by_id: dict[str, MessageOut] = {m.id: message_out(m) for m in messages}
+    sugg: dict[str, list[str]] = {}
+    ids = [m.id for m in messages]
+    if ids:
+        res = await db.execute(
+            select(Suggestion)
+            .where(Suggestion.message_id.in_(ids))
+            .order_by(Suggestion.message_id, Suggestion.position)
+        )
+        for s in res.scalars().all():
+            sugg.setdefault(s.message_id, []).append(s.text)
+
+    by_id: dict[str, MessageOut] = {
+        m.id: message_out(m, sugg.get(m.id)) for m in messages
+    }
     roots: list[MessageOut] = []
     for node in by_id.values():
         if node.parent_message_id and node.parent_message_id in by_id:

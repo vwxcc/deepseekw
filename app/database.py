@@ -76,5 +76,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "users": {
         "avatar": "INTEGER DEFAULT 0",
+        "github_user": "VARCHAR(120)",
+        "github_token": "VARCHAR(255)",
     },
 }

@@ -27,6 +27,7 @@ from ..schemas import (
     PostOut,
     PostVoteIn,
 )
+from ..services.limits import allow, get_limits
 
 router = APIRouter(prefix="/api/posts", tags=["posts"])
 
@@ -175,6 +176,19 @@ async def create_post(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    limits = await get_limits(db, user.plan or "free")
+    mine = (
+        await db.scalar(
+            select(func.count()).select_from(Post).where(Post.user_id == user.id)
+        )
+        or 0
+    )
+    allowed, message = allow(limits, "posts", mine)
+    if not allowed:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, f"{message}. Оформите Pro для большего."
+        )
+
     chat: Chat | None = None
     if data.chat_id:
         chat = await db.get(Chat, data.chat_id)

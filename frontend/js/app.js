@@ -428,6 +428,7 @@
     post(p, b) { return api.req('POST', p, b === undefined ? {} : b); },
     postForm(p, fd) { return api.req('POST', p, fd, true); },
     patch(p, b) { return api.req('PATCH', p, b); },
+    put(p, b) { return api.req('PUT', p, b === undefined ? {} : b); },
     del(p) { return api.req('DELETE', p); },
   };
 
@@ -449,7 +450,7 @@
     thinkBody: null,
     modelSets: [],
     modelSetId: localStorage.getItem('cs_model') || '',
-    effort: localStorage.getItem('cs_effort') || 'recommended',
+    effort: localStorage.getItem('cs_effort') || 'medium',
     usage: null,
     draftTail: null,
     memories: [],
@@ -462,8 +463,8 @@
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
   };
 
-  const EFFORTS = ['recommended', 'low', 'medium', 'high', 'extra', 'max'];
-  const EFFORT_LABELS = ['Recommended', 'Low', 'Medium', 'High', 'Extra', 'Max'];
+  const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
+  const EFFORT_LABELS = ['Low', 'Medium', 'High', 'Extra', 'Max'];
 
   const TARIFFS = [
     { name: 'Free', ctx: 10, out: 20, files: 5, note: 'знакомство и лёгкие задачи' },
@@ -861,6 +862,7 @@
   }
 
   function toolRunHtml(r, i) {
+    const running = !!r.running;
     const files = (r.files || []).map(f => {
       const url = '/api/files/' + f.file_id + '/download';
       if (f.kind === 'image') {
@@ -872,8 +874,10 @@
         '<em>' + formatSize(f.size) + '</em></a>';
     }).join('');
     return '<div class="tool-box' + (r.ok ? '' : ' err') + '">' +
-      '<div class="tool-head">' + icon('terminal') +
-      '<span>Шаг ' + (i + 1) + ' — код выполнен' + (r.ok ? '' : ' с ошибкой') + '</span>' +
+      '<div class="tool-head">' +
+      (running ? thinkAnim() : icon('terminal')) +
+      '<span>Шаг ' + (i + 1) + ' — ' +
+      (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
       (r.timed_out ? '<em class="warn">таймаут</em>' : '') + '</div>' +
       '<pre class="tool-code">' + escapeHtml(r.code || '') + '</pre>' +
       (r.stdout ? '<pre class="tool-out">' + escapeHtml(r.stdout) + '</pre>' : '') +
@@ -1160,10 +1164,23 @@
           renderMessages();
           bindStreamRefs();
           toast('Auto: запрос направлен в «' + (data.name || '') + '»');
+        } else if (ev === 'tool_start') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) {
+            n.tool_runs = (n.tool_runs || []).concat([
+              { code: data.code || '', running: true, ok: true, files: [] },
+            ]);
+          }
+          renderMessages();
+          bindStreamRefs();
+          appendLog('▶ запуск кода…');
         } else if (ev === 'tool') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) {
-            n.tool_runs = (n.tool_runs || []).concat([data]);
+            const runs = n.tool_runs || [];
+            const idx = runs.findIndex(r => r.running);
+            if (idx >= 0) runs[idx] = data; else runs.push(data);
+            n.tool_runs = runs;
             if (data.files && data.files.length) {
               n.attachments = (n.attachments || []).concat(data.files.map(f => ({
                 id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
@@ -1297,19 +1314,21 @@
     const er = $('#effort-range');
     const applyEffort = (v, save) => {
       let idx = EFFORTS.indexOf(v);
-      if (idx < 0) idx = 0;
+      if (idx < 0) idx = 1;
       state.effort = EFFORTS[idx];
       er.value = String(idx);
       $('#effort-label').textContent = EFFORT_LABELS[idx];
       if (save) localStorage.setItem('cs_effort', state.effort);
     };
-    er.addEventListener('input', () => applyEffort(EFFORTS[parseInt(er.value, 10)] || 'recommended', true));
+    er.addEventListener('input', () => applyEffort(EFFORTS[parseInt(er.value, 10)] || 'medium', true));
     applyEffort(state.effort, false);
     $('#pick-file-btn').addEventListener('click', openFilePicker);
     $('#context-btn').addEventListener('click', openContextMenu);
+    $('#sys-pill').addEventListener('click', openSystemModal);
     $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
     $('#pp-refresh').addEventListener('click', () => loadProject(true));
+    $('#pp-git').addEventListener('click', openGit);
   }
 
   function fmtNum(n) {
@@ -1496,8 +1515,7 @@
     if (!mains.length) { sel.classList.add('hidden'); return; }
     sel.classList.remove('hidden');
     sel.innerHTML = mains.map(s =>
-      '<option value="' + s.id + '">' + (s.is_router ? '🔀 ' : '') +
-      escapeHtml(s.name) + '</option>').join('');
+      '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>').join('');
     if (state.modelSetId && mains.some(s => s.id === state.modelSetId)) {
       sel.value = state.modelSetId;
     } else {
@@ -1562,7 +1580,6 @@
   }
 
   function bindFiles() {
-    $('#files-btn').addEventListener('click', () => toggleFiles(true));
     $('#links-btn').addEventListener('click', openLinks);
     $('#models-btn').addEventListener('click', openModelStats);
     $('#wall-btn').addEventListener('click', openWall);
@@ -1779,7 +1796,8 @@
           (isAdmin
             ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
               '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
-              '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>'
+              '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>' +
+              '<button class="chip-btn" id="open-limits">' + icon('gauge') + 'Тарифы и лимиты</button>'
             : '') +
           '</div>' +
           '<div style="margin-top:18px"><button class="chip-btn danger" id="set-logout">' +
@@ -1795,6 +1813,7 @@
       on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
       on('#open-stats', () => { closeModal(); openAdminStats(); });
       on('#open-allchats', () => { closeModal(); openAdminChats(); });
+      on('#open-limits', () => { closeModal(); openLimits(); });
       on('#set-logout', async () => {
         try { await api.post('/api/auth/logout'); } catch (e) { /* noop */ }
         location.reload();
@@ -2523,7 +2542,7 @@
       bindPostCards(box);
     };
     await paint();
-    showcaseTimer = setInterval(paint, 4000);
+    showcaseTimer = setInterval(paint, 7000);
   }
 
   function stopShowcase() {
@@ -2589,6 +2608,158 @@
     }));
   }
 
+  // ---------- server load ----------
+  async function loadSystem() {
+    const pill = $('#sys-pill');
+    if (!pill) return;
+    try {
+      const s = await api.get('/api/system');
+      state.system = s;
+      pill.textContent = 'CPU ' + s.cpu + '% · RAM ' + s.ram_pct + '% · SSD ' + s.disk_pct + '%';
+      pill.classList.toggle('warn', s.cpu > 80 || s.ram_pct > 88 || s.disk_pct > 88);
+    } catch (e) {
+      pill.textContent = '—';
+    }
+  }
+
+  function openSystemModal() {
+    const s = state.system;
+    if (!s) { loadSystem(); return; }
+    const row = (label, pct, note) =>
+      '<div class="sys-row"><span>' + label + '</span>' +
+      '<i><b style="width:' + Math.min(100, Math.max(0, pct)) + '%"></b></i>' +
+      '<u>' + pct + '%</u></div>' +
+      '<div class="sys-note">' + note + '</div>';
+    openModal({
+      title: 'Загрузка сервера',
+      okText: 'Закрыть',
+      body:
+        row('Процессор', s.cpu, 'load average: ' + s.load.map(v => v.toFixed(2)).join(' · ') +
+          ' · ядер: ' + s.cpus) +
+        row('Оперативная память', s.ram_pct, 'занято ' + formatSize(s.ram_used) +
+          ' из ' + formatSize(s.ram_total)) +
+        row('Диск', s.disk_pct, 'занято ' + formatSize(s.disk_used) +
+          ' из ' + formatSize(s.disk_total) + ' · свободно ' + formatSize(s.disk_free)) +
+        '<p class="usage-note">Квота на пользователя: ' + formatSize(s.quota) +
+        '. При нехватке места самые старые файлы удаляются автоматически.</p>',
+      onOk: () => true,
+    });
+  }
+
+  // ---------- plan limits ----------
+  async function openLimits() {
+    let data;
+    try { data = await api.get('/api/limits/all'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    const labels = data.labels || {};
+    const bytes = { file_size: 1, user_storage: 1 };
+    const field = (plan, key, value) => {
+      const isBytes = bytes[key];
+      const shown = isBytes ? Math.round((value || 0) / (1024 * 1024)) : value;
+      return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
+        (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
+        '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
+        (shown === null || shown === undefined ? '' : shown) + '" /></label>';
+    };
+    const block = (plan) => {
+      const lim = data.limits[plan] || {};
+      return '<h4 class="sec">Тариф ' + plan.toUpperCase() + '</h4>' +
+        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>';
+    };
+    openModal({
+      title: 'Тарифы и лимиты',
+      okText: 'Сохранить',
+      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах.</p>' +
+        (data.plans || ['free', 'pro']).map(block).join(''),
+      onOk: async (root) => {
+        const grouped = {};
+        $$('[data-plan]', root).forEach(inp => {
+          const plan = inp.dataset.plan;
+          const key = inp.dataset.key;
+          const raw = inp.value.trim();
+          let val = raw === '' ? null : Number(raw);
+          if (val !== null && bytes[key]) val = Math.round(val * 1024 * 1024);
+          grouped[plan] = grouped[plan] || {};
+          grouped[plan][key] = val;
+        });
+        for (const plan of Object.keys(grouped)) {
+          await api.put('/api/limits/' + plan, grouped[plan]);
+        }
+        toast('Лимиты сохранены');
+        return true;
+      },
+    });
+  }
+
+  // ---------- GitHub for the code agent ----------
+  async function openGit() {
+    if (!state.currentChatId) { toast('Откройте проект', 'error'); return; }
+    let me = { connected: false, login: '' };
+    try { me = await api.get('/api/github/me'); } catch (e) { /* noop */ }
+    let st = { initialized: false };
+    try { st = await api.get('/api/github/chats/' + state.currentChatId + '/status'); }
+    catch (e) { /* noop */ }
+    openModal({
+      title: 'GitHub · ' + (st.initialized ? 'репозиторий готов' : 'не подключён'),
+      okText: 'Закрыть',
+      body:
+        '<h4 class="sec">Аккаунт</h4>' +
+        '<div class="lim-grid">' +
+        '<label class="lim-field"><span>Логин GitHub</span>' +
+        '<input id="gh-login" value="' + escapeHtml(me.login || '') + '" placeholder="username" /></label>' +
+        '<label class="lim-field"><span>Токен (repo)</span>' +
+        '<input id="gh-token" type="password" placeholder="' +
+        (me.connected ? '•••••••• (сохранён)' : 'ghp_...') + '" /></label>' +
+        '</div>' +
+        '<div class="settings-grid" style="margin-top:10px">' +
+        '<button class="chip-btn" id="gh-save">Сохранить доступ</button>' +
+        (me.connected ? '<button class="chip-btn danger" id="gh-forget">Отключить</button>' : '') +
+        '</div>' +
+        '<h4 class="sec">Проект</h4>' +
+        '<label class="lim-field"><span>Репозиторий (owner/repo)</span>' +
+        '<input id="gh-repo" placeholder="user/my-project" /></label>' +
+        '<div class="settings-grid" style="margin-top:10px">' +
+        '<button class="chip-btn" id="gh-init">init</button>' +
+        '<button class="chip-btn" id="gh-commit">commit</button>' +
+        '<button class="chip-btn" id="gh-push">push</button>' +
+        '<button class="chip-btn" id="gh-sync">commit + push</button>' +
+        '</div>' +
+        (st.initialized ? '<p class="usage-note">Ветка: <b>' + escapeHtml(st.branch || '') +
+          '</b> · remote: ' + escapeHtml(st.remote || '—') + '<br/>' +
+          escapeHtml((st.changes || 'нет изменений').slice(0, 400)) + '</p>' : '') +
+        '<pre class="pp-logs" id="gh-log" style="margin-top:10px"></pre>',
+      onOk: () => true,
+    });
+    const log = (t) => { const el = $('#gh-log'); if (el) el.textContent = String(t || '').slice(-4000); };
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('#gh-save', async () => {
+      try {
+        await api.post('/api/github/me', {
+          login: $('#gh-login').value.trim(), token: $('#gh-token').value.trim(),
+        });
+        toast('Доступ сохранён');
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    on('#gh-forget', async () => {
+      try { await api.del('/api/github/me'); closeModal(); openGit(); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    ['init', 'commit', 'push', 'sync'].forEach(act => {
+      on('#gh-' + act, async () => {
+        log('выполняется ' + act + '…');
+        try {
+          const res = await api.post('/api/github/chats/' + state.currentChatId + '/git', {
+            action: act,
+            repo: ($('#gh-repo') || {}).value ? $('#gh-repo').value.trim() : '',
+            message: 'Update from ChatStudio',
+          });
+          log((res.log || '') + (res.ok ? '\n✓ готово' : '\n✗ ошибка'));
+          loadProject(false);
+        } catch (e) { log('Ошибка: ' + e.message); }
+      });
+    });
+  }
+
   // ---------- boot ----------
   async function boot() {
     showApp();
@@ -2601,6 +2772,8 @@
     await loadWallCount();
     await loadUsage();
     renderMessages();
+    await loadSystem();
+    setInterval(loadSystem, 20000);
   }
 
   async function init() {

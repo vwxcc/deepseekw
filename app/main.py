@@ -21,11 +21,14 @@ from .routers import (
     chats,
     council,
     files,
+    github,
+    limits,
     memory,
     messages,
     models,
     posts,
     public,
+    system,
 )
 from .services.storage import disk_free, enforce_disk_floor
 
@@ -81,6 +84,9 @@ app.include_router(memory.router)
 app.include_router(council.router)
 app.include_router(posts.router)
 app.include_router(avatars.router)
+app.include_router(system.router)
+app.include_router(limits.router)
+app.include_router(github.router)
 
 
 @app.get("/api/health")

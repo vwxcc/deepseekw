@@ -47,6 +47,7 @@ from ..services.chats import (
     message_out,
 )
 from ..services.websearch import format_context, web_search
+from ..services.limits import get_limits
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
@@ -100,6 +101,13 @@ async def _stream_job(
                     items = []
                 if items:
                     yield _sse("memory", {"items": items})
+            elif kind == "tool_start":
+                try:
+                    start = json.loads(payload)
+                except Exception:
+                    start = None
+                if start:
+                    yield _sse("tool_start", start)
             elif kind == "tool":
                 try:
                     run = json.loads(payload)
@@ -373,6 +381,8 @@ async def send_message(
         mode=chat.mode or "chat",
         project=chat.id if code_mode else None,
         user_text=content,
+        max_steps=int((await get_limits(db, user.plan or "free")).get("agent_steps") or 0)
+        or None,
     )
     await ai_router.enqueue(job)
     total = await db.scalar(

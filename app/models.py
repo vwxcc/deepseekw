@@ -58,6 +58,8 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), default="")
     plan: Mapped[str] = mapped_column(String(32), default="free")
     avatar: Mapped[int] = mapped_column(Integer, default=0)
+    github_user: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    github_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -285,7 +287,6 @@ class PostVote(Base):
 
 class PostComment(Base):
     __tablename__ = "post_comments"
-
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     post_id: Mapped[str] = mapped_column(
         ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True
@@ -295,3 +296,12 @@ class PostComment(Base):
     )
     text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlanLimit(Base):
+    __tablename__ = "plan_limits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    plan: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[int | None] = mapped_column(Integer, nullable=True)

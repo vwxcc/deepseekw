@@ -90,6 +90,7 @@ class Job:
     mode: str = "chat"
     project: str | None = None
     depends_on: list[str] = field(default_factory=list)
+    max_steps: int | None = None
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -501,7 +502,11 @@ class AIRouter:
 
         agent_on = bool(settings.agent_enabled)
         code_mode = job.mode == "code"
-        steps_limit = settings.code_agent_max_steps if code_mode else settings.agent_max_steps
+        plan_steps = job.max_steps
+        base_steps = plan_steps or (
+            settings.code_agent_max_steps if code_mode else settings.agent_max_steps
+        )
+        steps_limit = base_steps
         max_steps = max(1, steps_limit) if agent_on else 1
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
         last_error = "Генерация не удалась"
@@ -528,6 +533,9 @@ class AIRouter:
                         answer = full if full.strip() else thinking
                         break
                     for code in runs:
+                        await job.output.put(
+                            ("tool_start", json.dumps({"code": code}, ensure_ascii=False))
+                        )
                         result = await run_python(
                             code, timeout=run_timeout, project=job.project
                         )

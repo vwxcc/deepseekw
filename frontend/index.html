@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=19" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=20" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -88,17 +88,17 @@
       </div>
 
       <div class="side-top">
-        <div class="side-row">
+        <div class="side-row three">
           <button class="new-chat" id="new-chat-btn" title="Новый чат">
             <svg class="ic"><use href="#i-plus"/></svg><span>Новый</span>
           </button>
           <button class="new-chat code-mode" id="new-code-btn" title="Код-агент: пишет файлы, запускает код, собирает проект">
             <svg class="ic"><use href="#i-terminal"/></svg><span>Код</span>
           </button>
+          <button class="new-chat council-mode" id="new-council-btn" title="Консилиум: несколько ролей отвечают параллельно в этом же чате">
+            <svg class="ic"><use href="#i-sparkle"/></svg><span>Консилиум</span>
+          </button>
         </div>
-        <button class="new-chat council-mode" id="new-council-btn" title="Совет моделей (бета): несколько участников отвечают параллельно, затем ответ объединяется">
-          <svg class="ic"><use href="#i-sparkle"/></svg><span>Совет моделей · бета</span>
-        </button>
         <div class="search-box">
           <svg class="ic"><use href="#i-search"/></svg>
           <input id="search-input" type="search" placeholder="Поиск по чатам" />
@@ -111,8 +111,7 @@
       </div>
 
       <div class="side-foot">
-        <button class="side-item" id="files-btn"><svg class="ic"><use href="#i-folder"/></svg><span>Файлы</span></button>
-        <button class="side-item" id="memory-btn"><svg class="ic"><use href="#i-sparkle"/></svg><span>Память</span><em class="mem-count"></em></button>
+        <button class="side-item" id="memory-btn"><svg class="ic"><use href="#i-brain"/></svg><span>Память</span><em class="mem-count"></em></button>
         <button class="side-item" id="links-btn"><svg class="ic"><use href="#i-link"/></svg><span>Мои ссылки</span></button>
         <button class="side-item" id="models-btn"><svg class="ic"><use href="#i-chart"/></svg><span>Модели и статус</span></button>
         <button class="side-item" id="wall-btn"><svg class="ic"><use href="#i-globe-box"/></svg><span>Стенка постов</span><em class="wall-count"></em></button>
@@ -127,7 +126,10 @@
           <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-menu"/></svg></button>
           <button class="icon-btn small" id="toggle-files-btn" title="Файлы"><svg class="ic"><use href="#i-folder"/></svg></button>
         </div>
-        <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
+        <div class="chat-title-wrap">
+          <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
+          <button class="sys-pill" id="sys-pill" title="Загрузка сервера">—</button>
+        </div>
         <div class="head-right">
           <button class="icon-btn hidden" id="project-btn" title="Панель проекта"><svg class="ic"><use href="#i-terminal"/></svg></button>
           <button class="icon-btn" id="publish-btn" title="Опубликовать чат на стенке"><svg class="ic"><use href="#i-share"/></svg><span class="pub-label">Опубликовать</span></button>
@@ -140,6 +142,7 @@
       <aside id="project-panel" class="project-panel hidden">
         <div class="pp-head">
           <b>Проект</b>
+          <button class="icon-btn" id="pp-git" title="GitHub"><svg class="ic"><use href="#i-link"/></svg></button>
           <button class="icon-btn" id="pp-refresh" title="Обновить"><svg class="ic"><use href="#i-refresh"/></svg></button>
           <button class="icon-btn" id="pp-close" title="Скрыть"><svg class="ic"><use href="#i-x"/></svg></button>
         </div>
@@ -156,14 +159,9 @@
             <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-paperclip"/></svg></button>
             <button class="icon-btn round" id="pick-file-btn" title="Выбрать из загруженных файлов"><svg class="ic"><use href="#i-folder"/></svg></button>
             <div class="effort-wrap" title="Усилие модели">
-              <div class="effort-top">
-                <svg class="ic"><use href="#i-gauge"/></svg>
-                <span id="effort-label">Recommended</span>
-              </div>
-              <input type="range" id="effort-range" min="0" max="5" step="1" value="0" />
-              <div class="effort-scale">
-                <span>Rec</span><span>Low</span><span>Med</span><span>High</span><span>Extra</span><span>Max</span>
-              </div>
+              <svg class="ic"><use href="#i-gauge"/></svg>
+              <input type="range" id="effort-range" min="0" max="4" step="1" value="1" />
+              <span id="effort-label">Medium</span>
             </div>
             <span class="spacer"></span>
             <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">
@@ -201,6 +199,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=19"></script>
+  <script src="/assets/js/app.js?v=20"></script>
 </body>
 </html>

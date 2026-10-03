@@ -14,7 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
@@ -22,6 +22,7 @@ from ..deps import get_current_user, get_db, require_csrf
 from ..models import File, User
 from ..schemas import FileOut
 from ..services.files import detect_kind, extract_text, sha256_bytes
+from ..services.limits import allow, get_limits
 from ..services.storage import user_usage
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -80,16 +81,31 @@ async def upload_files(
             )
         payloads.append((Path(uf.filename or "file").name, uf.content_type or "", data))
 
-    # per-user storage quota
+    # per-plan storage quota
+    limits = await get_limits(db, user.plan or "free")
     used = await user_usage(db, user.id)
-    if used + total > settings.max_user_storage:
-        limit_gb = settings.max_user_storage / (1024 ** 3)
-        used_gb = used / (1024 ** 3)
+    count = (
+        await db.scalar(
+            select(func.count()).select_from(File).where(File.user_id == user.id)
+        )
+        or 0
+    )
+    allowed, message = allow(limits, "files_count", count, len(payloads))
+    if not allowed:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, message)
+    allowed, message = allow(limits, "user_storage", used, total)
+    if not allowed:
         raise HTTPException(
             status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            f"Лимит хранилища {limit_gb:.1f} ГБ исчерпан "
-            f"(занято {used_gb:.2f} ГБ). Удалите старые файлы.",
+            f"{message}. Занято {used / (1024 ** 3):.2f} ГБ.",
         )
+    per_file = int(limits.get("file_size") or settings.max_file_size)
+    for name, _mime, data in payloads:
+        if len(data) > per_file:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                f"Файл «{name}» больше лимита тарифа ({per_file // (1024 * 1024)} МБ)",
+            )
 
     # 2) only now write to disk and persist
     for name, mime, data in payloads:

@@ -34,7 +34,10 @@ async def add_memory(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустая заметка")
-    rec = Memory(user_id=user.id, content=content[:2000])
+    kind = (data.kind or "fact").strip().lower()
+    if kind not in ("fact", "preference"):
+        kind = "fact"
+    rec = Memory(user_id=user.id, content=content[:2000], kind=kind)
     db.add(rec)
     await db.commit()
     await db.refresh(rec)

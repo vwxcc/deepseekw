@@ -172,12 +172,77 @@ class AdminStatsOut(BaseModel):
 class MemoryOut(ORMModel):
     id: str
     content: str
+    kind: str = "fact"
     message_id: str | None = None
     created_at: datetime
 
 
 class MemoryIn(BaseModel):
     content: str
+    kind: str = "fact"
+
+
+# --- Models & status (public to signed-in users) ---
+class ModelStatOut(BaseModel):
+    id: str
+    name: str
+    model: str = ""
+    route_type: str = "MAIN"
+    entries: int = 0
+    active_entries: int = 0
+    messages: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_cached: int = 0
+    rating_up: int = 0
+    rating_down: int = 0
+    share: float = 0.0
+
+
+# --- Wall of posts ---
+class PostIn(BaseModel):
+    chat_id: str | None = None
+    message_id: str | None = None
+    title: str = ""
+
+
+class PostVoteIn(BaseModel):
+    value: int = 0
+
+
+class PostCommentIn(BaseModel):
+    text: str
+
+
+class PostCommentOut(ORMModel):
+    id: str
+    post_id: str
+    user_id: str
+    author: str = ""
+    text: str
+    created_at: datetime
+
+
+class PostOut(BaseModel):
+    id: str
+    user_id: str
+    author: str = ""
+    title: str
+    preview: str
+    chat_id: str | None = None
+    message_id: str | None = None
+    image_file_id: str | None = None
+    views: int = 0
+    likes: int = 0
+    dislikes: int = 0
+    comments: int = 0
+    my_vote: int = 0
+    can_delete: bool = False
+    created_at: datetime
+
+
+class PostDetailOut(PostOut):
+    comment_list: list[PostCommentOut] = Field(default_factory=list)
 
 
 # --- Council of models (beta) ---

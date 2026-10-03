@@ -499,16 +499,19 @@ class AIRouter:
                 answer, memories = extract_memories(answer)
                 if memories and job.user_id:
                     async with SessionLocal() as db:
-                        for item in memories:
+                        for kind, value in memories:
                             db.add(
                                 Memory(
                                     user_id=job.user_id,
-                                    content=item[:2000],
+                                    content=value[:2000],
+                                    kind=kind,
                                     message_id=job.message_id,
                                 )
                             )
                         await db.commit()
-                    await job.output.put(("memory", json.dumps(memories, ensure_ascii=False)))
+                    await job.output.put(
+                        ("memory", json.dumps([v for _, v in memories], ensure_ascii=False))
+                    )
 
                 await self._finish(
                     job.message_id,

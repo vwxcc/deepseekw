@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 MEMORY_RE = re.compile(r"\[\[\s*memory\s*:\s*(.+?)\s*\]\]", re.S | re.I)
+PREF_RE = re.compile(r"\[\[\s*pref\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
 
 RUN_SKILL = (
@@ -50,19 +51,32 @@ def strip_sandbox_paths(text: str) -> str:
     return out
 
 MEMORY_SKILL = (
-    "\n\nПамять: если пользователь сообщает устойчивый факт о себе (имя, роль, город, стек, "
-    "предпочтения в ответах, название проекта), сохрани его. Для этого добавь в САМЫЙ КОНЕЦ "
-    "ответа отдельную строку вида [[memory: факт]]. Пользователь эту строку не видит.\n"
-    "Записывай только то, что пригодится в будущих диалогах. Никогда не записывай пароли, "
-    "ключи, токены и разовые детали."
+    "\n\nПамять. Ты ведёшь долгую память о пользователе — она подставляется в КАЖДЫЙ "
+    "запрос, поэтому пользуйся ею естественно и не переспрашивай уже известное.\n"
+    "• Устойчивый факт (имя, роль, город, стек, проект) → строка [[memory: факт]]\n"
+    "• Предпочтение (как отвечать, формат, тон, что не любит) → строка [[pref: предпочтение]]\n"
+    "Обе строки добавляй в САМЫЙ КОНЕЦ ответа — пользователь их не видит.\n"
+    "В кодовом режиме тоже: имя проекта, стек, структура, договорённости — всё в память.\n"
+    "Никогда не записывай пароли, ключи, токены и разовые детали."
 )
 
 
-def extract_memories(text: str) -> tuple[str, list[str]]:
-    """Split [[memory: ...]] commands out of the answer. Returns (clean_text, items)."""
+def extract_memories(text: str) -> tuple[str, list[tuple[str, str]]]:
+    """Split [[memory: ...]] / [[pref: ...]] commands out of the answer.
+
+    Returns ``(clean_text, [(kind, value), ...])``.
+    """
     src = text or ""
-    items = [m.strip() for m in MEMORY_RE.findall(src) if m.strip()]
-    clean = MEMORY_RE.sub("", src)
+    items: list[tuple[str, str]] = []
+    for m in MEMORY_RE.finditer(src):
+        value = m.group(1).strip()
+        if value:
+            items.append(("fact", value))
+    for m in PREF_RE.finditer(src):
+        value = m.group(1).strip()
+        if value:
+            items.append(("preference", value))
+    clean = PREF_RE.sub("", MEMORY_RE.sub("", src))
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
     return clean, items
 

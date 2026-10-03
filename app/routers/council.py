@@ -70,9 +70,9 @@ async def create_council(
         if raw in prompts.COUNCIL_PERSONAS and raw not in keys:
             keys.append(raw)
     keys = keys[:MAX_MODELS]
-    if len(keys) < 2:
+    if len(keys) < 1:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Выберите минимум двух участников совета"
+            status.HTTP_400_BAD_REQUEST, "Выберите хотя бы одного участника совета"
         )
 
     bundle = uuid.uuid4().hex

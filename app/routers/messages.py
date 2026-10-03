@@ -134,6 +134,31 @@ async def _stream_job(
             job.cancel.set()
 
 
+async def _memory_block(db: AsyncSession, user_id: str) -> str:
+    """Facts + preferences. Preferences are sent with EVERY request on purpose."""
+    res = await db.execute(
+        select(Memory)
+        .where(Memory.user_id == user_id)
+        .order_by(Memory.created_at.desc())
+        .limit(60)
+    )
+    rows = [m for m in res.scalars().all() if m.content]
+    facts = [m.content for m in rows if (m.kind or "fact") == "fact"]
+    prefs = [m.content for m in rows if (m.kind or "fact") == "preference"]
+    out = ""
+    if facts:
+        out += (
+            "\n\n[Что ты помнишь о пользователе]\n"
+            + "\n".join("- " + x for x in reversed(facts))
+        )
+    if prefs:
+        out += (
+            "\n\n[ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ — соблюдай их ВСЕГДА, в каждом ответе]\n"
+            + "\n".join("- " + x for x in reversed(prefs))
+        )
+    return out
+
+
 async def _spawn(
     *,
     request: Request,
@@ -151,18 +176,7 @@ async def _spawn(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
     if user_id:
-        mem_res = await db.execute(
-            select(Memory)
-            .where(Memory.user_id == user_id)
-            .order_by(Memory.created_at.desc())
-            .limit(40)
-        )
-        mem_lines = [m.content for m in mem_res.scalars().all() if m.content]
-        if mem_lines:
-            system_prompt += (
-                "\n\n[Что ты помнишь о пользователе]\n"
-                + "\n".join("- " + x for x in reversed(mem_lines))
-            )
+        system_prompt += await _memory_block(db, user_id)
 
     history = prompts.with_system(history_messages, system_prompt)
     assistant = Message(
@@ -278,18 +292,7 @@ async def send_message(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
 
-    mem_res = await db.execute(
-        select(Memory)
-        .where(Memory.user_id == user.id)
-        .order_by(Memory.created_at.desc())
-        .limit(40)
-    )
-    mem_lines = [m.content for m in mem_res.scalars().all() if m.content]
-    if mem_lines:
-        system_prompt += (
-            "\n\n[Что ты помнишь о пользователе]\n"
-            + "\n".join("- " + x for x in reversed(mem_lines))
-        )
+    system_prompt += await _memory_block(db, user.id)
 
     # web search is always on
     results = await web_search(content)

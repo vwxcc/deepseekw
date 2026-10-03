@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=16" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=17" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -111,9 +111,9 @@
         <button class="side-item" id="files-btn"><svg class="ic"><use href="#i-folder"/></svg><span>Файлы</span></button>
         <button class="side-item" id="memory-btn"><svg class="ic"><use href="#i-sparkle"/></svg><span>Память</span><em class="mem-count"></em></button>
         <button class="side-item" id="links-btn"><svg class="ic"><use href="#i-link"/></svg><span>Мои ссылки</span></button>
-        <button class="side-item" id="account-btn"><svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span></button>
-        <button class="side-item" id="settings-btn"><svg class="ic"><use href="#i-settings"/></svg><span>Настройки</span></button>
-        <button class="side-item" id="logout-btn"><svg class="ic"><use href="#i-logout"/></svg><span>Выйти</span></button>
+        <button class="side-item" id="models-btn"><svg class="ic"><use href="#i-chart"/></svg><span>Модели и статус</span></button>
+        <button class="side-item" id="wall-btn"><svg class="ic"><use href="#i-globe-box"/></svg><span>Стенка постов</span><em class="wall-count"></em></button>
+        <button class="side-item" id="settings-btn"><svg class="ic"><use href="#i-user"/></svg><span id="who">Настройки и профиль</span></button>
       </div>
     </aside>
 
@@ -125,7 +125,8 @@
         </div>
         <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
         <div class="head-right">
-          <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-share"/></svg></button>
+          <button class="icon-btn" id="publish-btn" title="Опубликовать чат на стенке"><svg class="ic"><use href="#i-share"/></svg><span class="pub-label">Опубликовать</span></button>
+          <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-link"/></svg></button>
           <button class="icon-btn" id="toggle-files-btn" title="Файлы"><svg class="ic"><use href="#i-folder"/></svg></button>
         </div>
       </header>
@@ -144,6 +145,7 @@
               <span id="effort-label">Recommended</span>
             </div>
             <span class="spacer"></span>
+            <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">🧠<b class="mem-count"></b></button>
             <button class="chip-btn context" id="context-btn" title="Использование контекста">0%</button>
             <select id="model-select" class="model-select" title="Модель"></select>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
@@ -176,6 +178,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=16"></script>
+  <script src="/assets/js/app.js?v=17"></script>
 </body>
 </html>

@@ -1604,12 +1604,32 @@
 
   function renderFiles() {
     const box = $('#file-list');
-    if (!state.files.length) { box.innerHTML = '<div class="side-empty">Файлов пока нет</div>'; return; }
-    box.innerHTML = state.files.map(f =>
+    const q = (state.fileQuery || '').toLowerCase();
+    const kind = state.fileKind || 'all';
+    let items = state.files || [];
+    if (q) items = items.filter(f => (f.original_name || '').toLowerCase().includes(q));
+    if (kind !== 'all') {
+      items = items.filter(f => {
+        const k = f.kind || 'other';
+        if (kind === 'image') return k === 'image';
+        if (kind === 'doc') return ['pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text'].includes(k);
+        if (kind === 'table') return ['sheet', 'csv', 'xlsx'].includes(k);
+        if (kind === 'slide') return k === 'slide' || k === 'presentation';
+        return !['image', 'pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text', 'sheet', 'csv', 'xlsx', 'slide'].includes(k);
+      });
+    }
+    if (!items.length) {
+      box.innerHTML = '<div class="side-empty">' +
+        (state.files.length ? 'Ничего не найдено' : 'Файлов пока нет') + '</div>';
+      return;
+    }
+    box.innerHTML = items.map(f =>
       '<div class="file-item">' +
         '<span class="fi-kind">' + kindIcon(f.kind) + '</span>' +
         '<span class="fi-name" title="' + escapeHtml(f.original_name) + '">' + escapeHtml(f.original_name) + '</span>' +
         '<span class="fi-size">' + formatSize(f.size) + '</span>' +
+        '<a class="fi-btn" href="/api/files/' + f.id + '/download" title="Скачать" download>' +
+        icon('download') + '</a>' +
         '<button data-attach="' + f.id + '" title="Прикрепить">' + icon('plus') + '</button>' +
         '<button data-del="' + f.id + '" title="Удалить">' + icon('trash') + '</button>' +
       '</div>').join('');
@@ -1655,6 +1675,14 @@
     $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());
+    $('#file-search').addEventListener('input', (e) => {
+      state.fileQuery = e.target.value.trim();
+      renderFiles();
+    });
+    $('#file-filter').addEventListener('change', (e) => {
+      state.fileKind = e.target.value;
+      renderFiles();
+    });
     const dz = $('#drop-zone');
     ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
     ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
@@ -1781,7 +1809,8 @@
       { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
       { id: 'me-pos', label: 'Позиция', type: 'number', value: '0' },
       { id: 'me-temp', label: 'Temperature', type: 'number', value: '0.2' },
-      { id: 'me-max', label: 'Max tokens', type: 'number', value: '32000' },
+      { id: 'me-max', label: 'Max tokens (ответ)', type: 'number', value: '32000' },
+      { id: 'me-ctx', label: 'Окно контекста, токенов (0 = общее)', type: 'number', value: '0' },
     ], async () => {
       await api.post('/api/admin/model-sets/' + setId + '/entries', {
         base_url: $('#me-url').value.trim(),
@@ -1790,6 +1819,7 @@
         position: parseInt($('#me-pos').value, 10) || 0,
         temperature: parseFloat($('#me-temp').value) || 0.2,
         max_tokens: parseInt($('#me-max').value, 10) || 32000,
+        context_len: parseInt($('#me-ctx').value, 10) || 0,
       });
     }, done);
   }

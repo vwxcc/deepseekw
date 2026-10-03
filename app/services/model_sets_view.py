@@ -14,6 +14,7 @@ def entry_out(e: ModelSetEntry) -> ModelSetEntryOut:
         model=e.model,
         temperature=e.temperature,
         max_tokens=e.max_tokens,
+        context_len=getattr(e, "context_len", 0) or 0,
         timeout=e.timeout,
         is_active=e.is_active,
         has_api_key=bool(e.api_key),

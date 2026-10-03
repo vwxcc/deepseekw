@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=24" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=25" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -131,7 +131,7 @@
         <div class="head-right">
           <button class="icon-btn hidden" id="project-btn" title="Панель проекта"><svg class="ic"><use href="#i-terminal"/></svg></button>
           <button class="icon-btn" id="publish-btn" title="Опубликовать чат на стенке"><svg class="ic"><use href="#i-share"/></svg><span class="pub-label">Опубликовать</span></button>
-          <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-link"/></svg></button>
+          <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-link"/></svg><span class="pub-label">Поделиться</span></button>
         </div>
       </header>
 
@@ -186,6 +186,20 @@
           <div>Перетащите файлы сюда</div>
           <button class="chip-btn" id="upload-btn">Выбрать файлы</button>
         </div>
+        <div class="files-tools">
+          <div class="search-box">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input id="file-search" type="search" placeholder="Поиск по файлам" />
+          </div>
+          <select id="file-filter" class="model-select small">
+            <option value="all">Все типы</option>
+            <option value="image">Картинки</option>
+            <option value="doc">Документы</option>
+            <option value="table">Таблицы</option>
+            <option value="slide">Презентации</option>
+            <option value="other">Прочее</option>
+          </select>
+        </div>
         <div id="file-list"></div>
       </div>
     </aside>
@@ -197,6 +211,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=24"></script>
+  <script src="/assets/js/app.js?v=25"></script>
 </body>
 </html>

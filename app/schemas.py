@@ -291,6 +291,7 @@ class ModelSetEntryOut(ORMModel):
     model: str
     temperature: float
     max_tokens: int
+    context_len: int = 0
     timeout: int
     is_active: bool
     has_api_key: bool = False
@@ -327,6 +328,7 @@ class ModelSetEntryIn(BaseModel):
     temperature: float = 0.2
     max_tokens: int = 32000
     timeout: int = 300
+    context_len: int = 0
     is_active: bool = True
 
 
@@ -338,6 +340,7 @@ class ModelSetEntryUpdate(BaseModel):
     position: int | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    context_len: int | None = None
     timeout: int | None = None
     is_active: bool | None = None
 

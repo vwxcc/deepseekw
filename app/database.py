@@ -79,6 +79,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "plan_limits": {
         "text_value": "TEXT",
     },
+    "model_set_entries": {
+        "context_len": "INTEGER DEFAULT 0",
+    },
     "users": {
         "avatar": "INTEGER DEFAULT 0",
         "github_user": "VARCHAR(120)",

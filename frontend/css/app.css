@@ -1281,6 +1281,17 @@ input[type="range"].orange-range { width: 100%; }
 }
 .lim-field input:focus { outline: none; border-color: #e2b96a; }
 
+/* files: search + filter + download */
+.files-tools { display: flex; gap: 8px; margin: 10px 0 6px; align-items: center; }
+.files-tools .search-box { flex: 1; margin: 0; }
+.model-select.small { padding: 6px 26px 6px 10px; font-size: 12px; max-width: 150px; }
+.file-item .fi-btn {
+  display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 auto;
+  border-radius: 7px; color: var(--fg-soft); text-decoration: none;
+}
+.file-item .fi-btn:hover { background: var(--bg-hover); color: var(--accent); }
+.file-item .fi-btn .ic { width: 14px; height: 14px; }
+
 /* ============================================================
    Main page tiles + post carousel + ask card
    ============================================================ */

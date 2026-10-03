@@ -28,6 +28,8 @@ from ..models import (
     Memory,
     Message,
     MessageStatus,
+    ModelSet,
+    ModelSetEntry,
     Role,
     RouteType,
     User,
@@ -181,6 +183,33 @@ def _trim_history(
     while len(trimmed) > 2 and _estimate_chars(trimmed) > budget:
         trimmed.pop(0)
     return trimmed, True
+
+
+async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
+    """Context window of the concrete model behind a set (0 -> global default)."""
+    msid = model_set_id
+    if not msid:
+        row = (
+            await db.execute(
+                select(ModelSetEntry)
+                .join(ModelSet, ModelSet.id == ModelSetEntry.model_set_id)
+                .where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False))
+                .order_by(ModelSet.name, ModelSetEntry.position)
+                .limit(1)
+            )
+        ).scalars().first()
+    else:
+        row = (
+            await db.execute(
+                select(ModelSetEntry)
+                .where(ModelSetEntry.model_set_id == msid)
+                .order_by(ModelSetEntry.position)
+                .limit(1)
+            )
+        ).scalars().first()
+    if row is not None and (row.context_len or 0) > 0:
+        return int(row.context_len)
+    return settings.model_context_len
 
 
 async def _memory_block(db: AsyncSession, user_id: str) -> str:
@@ -339,7 +368,7 @@ async def send_message(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
     history_messages, trimmed = _trim_history(
-        history_messages, settings.model_context_len
+        history_messages, await _model_context(db, data.model_set_id)
     )
 
     code_mode = (chat.mode or "chat") == "code"
@@ -500,10 +529,14 @@ async def _usage_payload(chat: Chat, db: AsyncSession) -> UsageOut:
     tout = sum(m.tokens_out or 0 for m in rows)
     cached = sum(m.tokens_cached or 0 for m in rows)
     last_in = 0
+    last_model_set = None
     for m in rows:
-        if m.role == Role.assistant and (m.tokens_in or 0):
-            last_in = m.tokens_in
-    ctx_len = settings.model_context_len
+        if m.role == Role.assistant:
+            if m.tokens_in or 0:
+                last_in = m.tokens_in
+            if m.model_set_id:
+                last_model_set = m.model_set_id
+    ctx_len = await _model_context(db, last_model_set)
     return UsageOut(
         tokens_in=tin,
         tokens_out=tout,

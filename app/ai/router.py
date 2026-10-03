@@ -93,6 +93,7 @@ class Job:
     project: str | None = None
     depends_on: list[str] = field(default_factory=list)
     max_steps: int | None = None
+    retried: bool = False
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -648,6 +649,13 @@ class AIRouter:
                 last_error = f"{type(e).__name__}: {e}"
                 log.warning("Model entry %s error: %s", entry.model, e)
 
+        # one automatic retry with the same model (matters for Auto routing)
+        if not job.retried and not job.cancel.is_set():
+            job.retried = True
+            log.warning("Retrying once: %s", last_error)
+            await job.output.put(("step", json.dumps({"n": 0, "retry": True})))
+            await self.enqueue(job)
+            return
         await self._finish(job.message_id, MessageStatus.failed, error=last_error)
         await job.output.put(("error", last_error))
 

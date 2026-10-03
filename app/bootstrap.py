@@ -8,6 +8,7 @@ from .config import settings
 from .database import SessionLocal
 from .models import ModelSet, ModelSetEntry, RouteType, Session, User, utcnow
 from .security import hash_password
+from .services.memory_cleanup import clean_noisy_memories
 
 
 async def bootstrap() -> None:
@@ -15,6 +16,7 @@ async def bootstrap() -> None:
         await _seed_admin(db)
         await _seed_model_sets(db)
         await _purge_expired_sessions(db)
+        await clean_noisy_memories(db)
         await db.commit()
 
 

@@ -292,6 +292,9 @@ class ModelSetEntryOut(ORMModel):
     temperature: float
     max_tokens: int
     context_len: int = 0
+    price_in: float = 0.0
+    price_out: float = 0.0
+    price_cache: float = 0.0
     timeout: int
     is_active: bool
     has_api_key: bool = False
@@ -329,6 +332,9 @@ class ModelSetEntryIn(BaseModel):
     max_tokens: int = 32000
     timeout: int = 300
     context_len: int = 0
+    price_in: float = 0.0
+    price_out: float = 0.0
+    price_cache: float = 0.0
     is_active: bool = True
 
 
@@ -341,6 +347,9 @@ class ModelSetEntryUpdate(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     context_len: int | None = None
+    price_in: float | None = None
+    price_out: float | None = None
+    price_cache: float | None = None
     timeout: int | None = None
     is_active: bool | None = None
 

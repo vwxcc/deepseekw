@@ -134,6 +134,9 @@ async def add_entry(
         temperature=data.temperature,
         max_tokens=data.max_tokens,
         context_len=data.context_len,
+        price_in=data.price_in,
+        price_out=data.price_out,
+        price_cache=data.price_cache,
         timeout=data.timeout,
         is_active=data.is_active,
     )
@@ -164,6 +167,9 @@ async def update_entry(
         "temperature",
         "max_tokens",
         "context_len",
+        "price_in",
+        "price_out",
+        "price_cache",
         "timeout",
         "is_active",
     ):

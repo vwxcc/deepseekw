@@ -81,6 +81,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "model_set_entries": {
         "context_len": "INTEGER DEFAULT 0",
+        "price_in": "FLOAT DEFAULT 0",
+        "price_out": "FLOAT DEFAULT 0",
+        "price_cache": "FLOAT DEFAULT 0",
     },
     "users": {
         "avatar": "INTEGER DEFAULT 0",

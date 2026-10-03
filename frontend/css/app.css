@@ -1456,3 +1456,43 @@ input[type="range"].orange-range { width: 100%; }
   .project-panel { width: 100%; }
   .pub-label { display: none; }
 }
+
+
+/* ============================================================
+   Model button + rich model menu
+   ============================================================ */
+.model-btn {
+  display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto;
+  border: 1px solid var(--border); background: var(--bg-panel); color: var(--fg);
+  border-radius: 999px; padding: 7px 13px; font-size: 12.5px; cursor: pointer;
+  max-width: 200px; transition: border-color .25s ease, box-shadow .3s ease;
+}
+.model-btn:hover { border-color: #e2b96a; box-shadow: 0 2px 12px rgba(226, 185, 106, .35); }
+.model-btn .ic { width: 14px; height: 14px; color: var(--accent); }
+.model-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mm-list { display: flex; flex-direction: column; gap: 8px; }
+.mm-card {
+  display: flex; align-items: flex-start; gap: 10px; cursor: pointer;
+  border: 1px solid var(--border-soft); border-radius: 11px; padding: 10px 12px;
+  transition: border-color .25s ease, background .25s ease, box-shadow .3s ease;
+}
+.mm-card:hover { border-color: #e2b96a; }
+.mm-card.on { border-color: var(--accent); background: var(--accent-soft); }
+.mm-card input { margin-top: 3px; accent-color: #c96442; }
+.mm-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mm-body b { font-size: 14px; }
+.mm-body em { font-style: normal; font-size: 12px; color: var(--fg-soft);
+  font-family: ui-monospace, Menlo, monospace; }
+.mm-meta { font-size: 11.5px; color: var(--fg-muted); }
+
+.mm-slider { display: flex; align-items: center; gap: 12px; margin: 6px 0 4px; }
+.mm-slider input[type=range] {
+  flex: 1; height: 6px; border-radius: 999px; appearance: none; -webkit-appearance: none;
+  background: linear-gradient(90deg, #f6e3b4, #e0b45c 55%, #c9962e); cursor: pointer;
+}
+.mm-slider input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; border: 2px solid #c9962e; box-shadow: 0 1px 5px rgba(0, 0, 0, .2);
+}
+.mm-slider b { min-width: 76px; text-align: right; font-size: 13px; color: var(--fg); }

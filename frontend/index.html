@@ -159,17 +159,12 @@
           <div class="composer-row">
             <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-paperclip"/></svg></button>
             <button class="icon-btn round" id="pick-file-btn" title="Выбрать из загруженных файлов"><svg class="ic"><use href="#i-folder"/></svg></button>
-            <div class="effort-wrap" title="Усилие модели">
-              <svg class="ic"><use href="#i-gauge"/></svg>
-              <input type="range" id="effort-range" min="0" max="4" step="1" value="1" />
-              <span id="effort-label">Medium</span>
-            </div>
             <span class="spacer"></span>
             <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">
               <svg class="ic"><use href="#i-brain"/></svg><b class="mem-count"></b>
             </button>
-            <button class="chip-btn context" id="context-btn" title="Использование контекста">0%</button>
-            <select id="model-select" class="model-select" title="Модель"></select>
+            <button class="chip-btn context" id="context-btn" title="Расход по тарифу">—</button>
+            <button class="model-btn" id="model-btn" title="Модель и параметры"><svg class="ic"><use href="#i-sparkle"/></svg><span id="model-btn-label">Модель</span></button>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
           </div>

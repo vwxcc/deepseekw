@@ -40,6 +40,15 @@ async def my_limits(
         .select_from(Chat)
         .where(Chat.user_id == user.id, Chat.mode == "code", Chat.deleted_at.is_(None))
     )
+    spent = await db.scalar(
+        select(func.coalesce(func.sum(Message.tokens_in), 0) + func.coalesce(func.sum(Message.tokens_out), 0))
+        .select_from(Message).join(Chat, Chat.id == Message.chat_id)
+        .where(Chat.user_id == user.id, Message.role == Role.assistant)
+    )
+    reqs = await db.scalar(
+        select(func.count()).select_from(Message).join(Chat, Chat.id == Message.chat_id)
+        .where(Chat.user_id == user.id, Message.role == Role.assistant)
+    )
     return {
         "plan": user.plan or "free",
         "labels": LABELS,
@@ -49,6 +58,8 @@ async def my_limits(
             "storage": int(used or 0),
             "posts": posts or 0,
             "code_agents": agents or 0,
+            "tokens": int(spent or 0),
+            "requests": int(reqs or 0),
         },
     }
 

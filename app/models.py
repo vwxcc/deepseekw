@@ -224,6 +224,9 @@ class ModelSetEntry(Base):
     temperature: Mapped[float] = mapped_column(Float, default=0.2)
     max_tokens: Mapped[int] = mapped_column(Integer, default=32000)
     context_len: Mapped[int] = mapped_column(Integer, default=0)
+    price_in: Mapped[float] = mapped_column(Float, default=0.0)
+    price_out: Mapped[float] = mapped_column(Float, default=0.0)
+    price_cache: Mapped[float] = mapped_column(Float, default=0.0)
     timeout: Mapped[int] = mapped_column(Integer, default=300)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

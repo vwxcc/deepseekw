@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
 from ..ai.router import Job, router as ai_router
+from ..ai.providers import ProviderError, complete_chat
 from ..deps import (
     get_current_user,
     get_db,
@@ -48,8 +49,12 @@ from ..services.chats import (
     message_attachments,
     message_out,
 )
+import logging
+
 from ..services.websearch import format_context, web_search
 from ..services.limits import get_limits
+
+log = logging.getLogger("chatstudio.messages")
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
@@ -306,6 +311,99 @@ async def get_messages(
     return await build_message_tree(db, result.scalars().all())
 
 
+SEARCH_QUERIES_SYSTEM = (
+    "Ты составляешь поисковые запросы для интернет-поиска. На входе — сообщение "
+    "пользователя. Верни от 1 до 3 коротких поисковых запросов (2-5 слов каждый), "
+    "по одному на строку, без нумерации, кавычек и пояснений — только то, что реально "
+    "надо найти. Если поиск не нужен (простой вопрос, математика, рассуждение, код) — "
+    "верни ровно одно слово NONE."
+)
+
+
+async def _main_entry(db: AsyncSession, model_set_id: str | None):
+    """The concrete model entry that will answer (for the query-writing call)."""
+    if model_set_id:
+        row = (
+            await db.execute(
+                select(ModelSetEntry)
+                .where(ModelSetEntry.model_set_id == model_set_id)
+                .order_by(ModelSetEntry.position)
+                .limit(1)
+            )
+        ).scalars().first()
+        if row is not None:
+            return row
+    return (
+        await db.execute(
+            select(ModelSetEntry)
+            .join(ModelSet, ModelSet.id == ModelSetEntry.model_set_id)
+            .where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False))
+            .order_by(ModelSet.name, ModelSetEntry.position)
+            .limit(1)
+        )
+    ).scalars().first()
+
+
+async def _smart_search(
+    message: str, db: AsyncSession, model_set_id: str | None
+) -> list[dict]:
+    """Let the model write the queries, then search with each of them."""
+    queries: list[str] = []
+    try:
+        entry = await _main_entry(db, model_set_id)
+        if entry is not None:
+            answer = await complete_chat(
+                messages=[
+                    {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
+                    {"role": "user", "content": (message or "")[:1500]},
+                ],
+                base_url=entry.base_url,
+                api_key=entry.api_key,
+                model=entry.model,
+                temperature=0.0,
+                max_tokens=120,
+                timeout=min(entry.timeout or 60, 45),
+                disable_thinking=True,
+            )
+            text = (answer or "").strip()
+            if text and "NONE" not in text.upper():
+                for line in text.splitlines():
+                    q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
+                    q = q.replace('\u00ab', '').replace('\u00bb', '')
+                    q = q.strip('"').strip("'").strip()
+                    if 2 < len(q) <= 120:
+                        queries.append(q)
+    except Exception as e:  # noqa: BLE001 - search must never break a chat
+        log.warning("Query generation failed: %s", e)
+
+    if not queries:
+        # fall back to keywords: long phrases return nothing from the engine
+        words = re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", (message or "").lower())
+        stop = {
+            "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
+            "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
+            "мне", "нужно", "хочу", "можно", "есть", "это", "the", "and", "for",
+            "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
+        }
+        key = [w for w in words if w not in stop][:6]
+        queries = [" ".join(key) if key else (message or "").strip()]
+    queries = [q for q in queries if q][:3]
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for q in queries:
+        try:
+            for item in await web_search(q):
+                url = item.get("url") or ""
+                if url and url not in seen:
+                    seen.add(url)
+                    out.append(item)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Search failed for %r: %s", q[:60], e)
+    log.info("Search queries=%s results=%d", queries, len(out))
+    return out[:6]
+
+
 @router.post("/chats/{chat_id}/messages")
 async def send_message(
     request: Request,
@@ -383,8 +481,8 @@ async def send_message(
 
     system_prompt += await _memory_block(db, user.id)
 
-    # web search is always on
-    results = await web_search(content)
+    # web search is always on: the model writes its own short queries first
+    results = await _smart_search(content, db, data.model_set_id)
     ctx = format_context(results)
     if ctx:
         system_prompt = f"{system_prompt}\n\n{ctx}"

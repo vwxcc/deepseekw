@@ -33,6 +33,7 @@ from .prompts import (
     extract_ask,
     extract_memories,
     extract_run_blocks,
+    strip_cot,
     strip_run_blocks,
     strip_sandbox_paths,
 )
@@ -589,6 +590,7 @@ class AIRouter:
                 # pull [[memory: ...]] commands out of the visible answer
                 answer, memories = extract_memories(answer)
                 answer, ask = extract_ask(answer)
+                answer = strip_cot(answer)
                 if not ask and len(answer) <= 500:
                     # fallback: a short answer that ends with a question is a clarification
                     tail = answer.strip().split("\n")[-1].strip()

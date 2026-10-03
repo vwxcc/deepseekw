@@ -21,7 +21,11 @@ ASK_SKILL = (
     "Пользователь увидит её как красивое поле ввода и ответит текстом.\n"
     "Обязательно уточняй перед созданием документа, презентации или таблицы, если "
     "пользователь не сказал, что в них должно быть. Задавай ОДИН конкретный вопрос, "
-    "коротко, без списка из десяти пунктов. Не задавай вопрос, если задача и так ясна."
+    "коротко, без списка из десяти пунктов. Не задавай вопрос, если задача и так ясна.\n"
+    "НИКОГДА не показывай пользователю свои рассуждения, план анализа, черновики и "
+    "служебные пометки («Here's a thinking process», «Analyze User Input», "
+    "«Self-Correction», «Output Generation» и подобное). В ответ идёт только готовый "
+    "результат. Всегда закрывай блоки кода — незакрытый ``` ломает отображение."
 )
 RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
 
@@ -45,6 +49,42 @@ RUN_SKILL = (
     "или абсолютных путей). Просто назови файл по имени — он уже прикреплён к сообщению "
     "красивой карточкой, пользователь скачает его одним кликом."
 )
+
+
+COT_RE = re.compile(
+    r"^\s*(?:here'?s?\s+(?:a\s+)?(?:my\s+)?thinking process|thinking process|"
+    r"analyze (?:the )?user input|let me think|internal monologue|"
+    r"chain of thought|рассуждени[ея]|мои рассуждения)\b[\s:：]*",
+    re.I,
+)
+COT_BLOCK_RE = re.compile(
+    r"(?im)^\s*(?:self-correction\s*/?\s*(?:refinement|verification|note)?|"
+    r"output generation|output matches response|final check|ready\.?|"
+    r"\[done\.?\]|all (?:constraints|good)\.?|proceeds?\.?)\b.*$"
+)
+
+
+def strip_cot(text: str) -> str:
+    """Remove leaked chain-of-thought scaffolding from a visible answer."""
+    src = text or ""
+    lines = src.split("\n")
+    # drop a leading leaked reasoning preamble (before the actual answer)
+    for i, line in enumerate(lines[:6]):
+        if COT_RE.match(line):
+            cut = i + 1
+            # skip everything that looks like reasoning narration
+            while cut < len(lines) and (
+                lines[cut].strip() == ""
+                or lines[cut].lstrip().startswith(("*", "-", "1.", "2.", "3."))
+                or re.match(r"^\s*(Analyze|Identify|Select|Draft|Check|Wait|Note|Context|User|Topic|Style|Format)", lines[cut])
+            ):
+                cut += 1
+            lines = lines[cut:]
+            break
+    out = "\n".join(lines)
+    out = COT_BLOCK_RE.sub("", out)
+    out = re.sub(r"\n{3,}", "\n\n", out).strip()
+    return out
 
 
 def extract_ask(text: str) -> tuple[str, str | None]:

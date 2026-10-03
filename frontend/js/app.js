@@ -87,6 +87,7 @@
   }
 
   // ---------- markdown ----------
+  const FULL_RENDER_LIMIT = 30000;
   let _mathStore = [];
   const MATH_RE = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\$([^$\n]+?)\$|\\\(([\s\S]+?)\\\)/g;
 
@@ -318,7 +319,11 @@
     if (!src) return '';
     const codes = [];
     _mathStore = [];
-    let text = String(src).replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (m, lang, code) => {
+    let text = String(src);
+    // models sometimes forget to close a code fence — close it for them,
+    // otherwise the whole message turns into one broken block
+    if (((text.match(/```/g) || []).length) % 2 === 1) text += '\n```';
+    text = text.replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (m, lang, code) => {
       const i = codes.length;
       codes.push({ lang: (lang || '').trim(), code: code.replace(/\s+$/, '') });
       return '\u0000C' + i + '\u0000';
@@ -789,15 +794,25 @@
         inner = '<div class="think-box">' +
           '<div class="think-head">' + thinkAnim() +
             '<span class="label">' + (hasThink ? 'Размышления' : 'Думает…') + '</span>' +
+            '<em class="gen-status" data-gen="1"></em>' +
           '</div>' +
           '<div class="think-tail">' + escapeHtml(tailText(n.thinking, 260)) + '</div>' +
-          '<div class="think-tail answer">' + escapeHtml(tailText(n.draft, 260)) + '</div>' +
+          '<div class="think-tail answer">' + escapeHtml(tailText(n.draft, 900)) + '</div>' +
           '</div>';
       } else if (failed) {
         inner = '<div class="content md" style="color:var(--danger)">Ошибка: ' +
           escapeHtml(n.error || 'генерация не удалась') + '</div>';
       } else {
-        inner = '<div class="content md">' + renderMarkdown(n.content || '') + '</div>';
+        const raw = String(n.content || '');
+        const truncated = raw.length > FULL_RENDER_LIMIT && !n.showFull;
+        const body = truncated ? raw.slice(0, FULL_RENDER_LIMIT) : raw;
+        inner = '<div class="content md">' + renderMarkdown(body) + '</div>' +
+          (truncated
+            ? '<div class="more-note">Показано ' + FULL_RENDER_LIMIT.toLocaleString('ru-RU') +
+              ' из ' + raw.length.toLocaleString('ru-RU') + ' символов — ' +
+              'чтобы не подвешивать браузер. <button data-mact="expand" data-id="' + n.id +
+              '">Показать полностью</button></div>'
+            : '');
       }
     }
 
@@ -925,13 +940,11 @@
           escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
         '<div class="tiles" id="tiles"></div>' +
         '<div class="chips" id="sugg-chips"></div>' +
-        '<div id="empty-showcase" class="showcase"></div>' +
       '</div>';
     renderTiles();
     bindTiles();
     renderSuggestionChips();
     startRotation();
-    startShowcase();
   }
 
   function renderSuggestionChips() {
@@ -1043,6 +1056,9 @@
             html: el ? el.innerHTML : '',
           });
         }
+      } else if (act === 'expand') {
+        const n = findNode(state.tree, id);
+        if (n) { n.showFull = true; renderMessages(); }
       } else if (act === 'memory') { await openMemory(id); }
       else if (act === 'sources') {
         const n = findNode(state.tree, id);
@@ -1171,6 +1187,18 @@
     setStreaming(true);
     state.streamEl = null; state.thinkBody = null; state.draftTail = null;
     state.streamBuf = ''; state.streamStarted = false; state.activeAssistantId = null;
+    state.genStart = Date.now();
+    state.lastEvent = Date.now();
+    if (state.genTimer) clearInterval(state.genTimer);
+    state.genTimer = setInterval(() => {
+      const el = $('[data-gen]');
+      const secs = Math.round((Date.now() - (state.genStart || Date.now())) / 1000);
+      const idle = Math.round((Date.now() - (state.lastEvent || Date.now())) / 1000);
+      if (!el) return;
+      el.textContent = state.streamBuf.length.toLocaleString('ru-RU') + ' симв. · ' + secs + ' с' +
+        (idle > 45 ? ' · модель долго думает…' : '');
+      el.classList.toggle('warn', idle > 45);
+    }, 1000);
     try {
       const headers = { 'X-CSRF-Token': api.csrf() };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -1182,6 +1210,7 @@
       if (!res.ok) { const t = await res.text(); throw new Error(t); }
 
       await consumeSse(res, (ev, data) => {
+        state.lastEvent = Date.now();
         if (ev === 'user_message' || ev === 'assistant_message') {
           const node = insertMessage(state.tree, data);
           renderMessages();
@@ -1280,6 +1309,7 @@
       toast('Ошибка: ' + err.message, 'error');
     } finally {
       setStreaming(false);
+      if (state.genTimer) { clearInterval(state.genTimer); state.genTimer = null; }
       state.streamEl = null;
       await loadChats();
       // refresh title (generated in background)
@@ -1840,8 +1870,8 @@
   }
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
-    $('#new-code-btn').addEventListener('click', () => newChat('code'));
-    $('#new-council-btn').addEventListener('click', openCouncil);
+    $('#new-code-btn').addEventListener('click', () => toastSoon('Код-агент'));
+    $('#new-council-btn').addEventListener('click', () => toastSoon('Консилиум'));
     $('#collapse-btn').addEventListener('click', () => {
       state.sidebarCollapsed = true;
       localStorage.setItem('cs_sidebar', '1');
@@ -2970,9 +3000,11 @@
   ];
 
   function tileHtml(t) {
-    return '<button class="tile" data-tile="' + t.id + '" style="--tile:' + t.color + '">' +
+    return '<button class="tile' + (t.locked ? ' locked' : '') + '" data-tile="' + t.id +
+      '" style="--tile:' + t.color + '">' +
       '<span class="tile-ico">' + icon(t.icon) + '</span>' +
-      '<span class="tile-label">' + escapeHtml(t.label) + '</span></button>';
+      '<span class="tile-label">' + escapeHtml(t.label) + '</span>' +
+      (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</button>';
   }
 
   function renderTiles() {
@@ -2989,7 +3021,12 @@
   function bindTiles() {
     $$('[data-tile]').forEach(b => b.addEventListener('click', () => {
       const t = ACTION_TILES.find(x => x.id === b.dataset.tile);
-      if (t) useTile(t);
+      if (!t) return;
+      if (t.locked) {
+        toast('«' + t.label + '» появится в ближайшем обновлении — уже пишем', 'error');
+        return;
+      }
+      useTile(t);
     }));
   }
 
@@ -3024,6 +3061,10 @@
       bindTiles();
       box.classList.remove('swap');
     }, 420);
+  }
+
+  function toastSoon(what) {
+    toast('🔒 ' + what + ' скоро появится — уже в работе. Пока доступен обычный чат.', 'error');
   }
 
   // ---------- boot ----------

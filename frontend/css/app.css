@@ -1553,3 +1553,18 @@ body { font-weight: 400; }
 .side-row.two { display: flex; gap: 6px; }
 .side-row.two .side-item { flex: 1 1 0; min-width: 0; justify-content: center; gap: 6px; }
 .side-row.two .side-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+/* Sidebar keeps the original system stack; only the ChatStudio wordmark uses the new font */
+#sidebar, #sidebar button, #sidebar input, #sidebar select,
+#sidebar .side-item, #sidebar .new-chat, #sidebar .chat-item,
+#sidebar .chat-title-text, #sidebar .side-empty, #sidebar .wall-count,
+#sidebar .mem-count, #sidebar .side-head, #sidebar .side-foot button {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+}
+#sidebar .brand, #sidebar .brand span {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}

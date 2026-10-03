@@ -1393,17 +1393,18 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
-    $('#model-select').addEventListener('change', (e) => {
+    const legacySelect = $('#model-select');
+    if (legacySelect) legacySelect.addEventListener('change', (e) => {
       state.modelSetId = e.target.value;
       localStorage.setItem('cs_model', state.modelSetId);
     });
-    $('#model-btn').addEventListener('click', openModelMenu);
+    if ($('#model-btn')) $('#model-btn').addEventListener('click', openModelMenu);
     updateModelButton();
-    $('#context-btn').addEventListener('click', openContextMenu);
-    $('#project-btn').addEventListener('click', () => toggleProjectPanel());
-    $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
-    $('#pp-refresh').addEventListener('click', () => loadProject(true));
-    $('#pp-git').addEventListener('click', openGit);
+    if ($('#context-btn')) $('#context-btn').addEventListener('click', openContextMenu);
+    if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
+    if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
+    if ($('#pp-refresh')) $('#pp-refresh').addEventListener('click', () => loadProject(true));
+    if ($('#pp-git')) $('#pp-git').addEventListener('click', openGit);
   }
 
   function fmtNum(n) {

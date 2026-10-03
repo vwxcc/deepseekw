@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=18" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=19" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -40,6 +40,7 @@
     <symbol id="i-thumb-down" viewBox="0 0 24 24"><path d="M17 13.5v-9h2.5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1z"/><path d="M17 13.5l-4 6.5a1.8 1.8 0 0 1-3.3-1.2L10.5 15H6.1a1.8 1.8 0 0 1-1.8-2.2l1.3-6.2A1.8 1.8 0 0 1 7.4 5H17"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="M8 17v-6M12.5 17V8M17 17v-9"/></symbol>
     <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-5"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.6 4.6A2.6 2.6 0 0 0 7 7.2v.4A2.8 2.8 0 0 0 5.3 12.4 2.8 2.8 0 0 0 7 17.1v.3a2.6 2.6 0 0 0 5.2 0V5.9a2.6 2.6 0 0 0-2.6-1.3Z"/><path d="M14.4 4.6A2.6 2.6 0 0 1 17 7.2v.4a2.8 2.8 0 0 1 1.7 4.8A2.8 2.8 0 0 1 17 17.1v.3a2.6 2.6 0 0 1-5.2 0"/><path d="M12 4.6v15"/><path d="M9.8 9.4h2.4M9.8 13.6h2.4M14.2 11h-2.4"/></symbol>
     <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></symbol>
     <symbol id="i-globe-box" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></symbol>
     <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 17.5V6.5A2 2 0 0 1 6 4.5h7.5L20 11v6.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M13 4.5V11h6.5"/></symbol>
@@ -124,13 +125,13 @@
       <header id="chat-header">
         <div class="head-left">
           <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-menu"/></svg></button>
+          <button class="icon-btn small" id="toggle-files-btn" title="Файлы"><svg class="ic"><use href="#i-folder"/></svg></button>
         </div>
         <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
         <div class="head-right">
           <button class="icon-btn hidden" id="project-btn" title="Панель проекта"><svg class="ic"><use href="#i-terminal"/></svg></button>
           <button class="icon-btn" id="publish-btn" title="Опубликовать чат на стенке"><svg class="ic"><use href="#i-share"/></svg><span class="pub-label">Опубликовать</span></button>
           <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-link"/></svg></button>
-          <button class="icon-btn" id="toggle-files-btn" title="Файлы"><svg class="ic"><use href="#i-folder"/></svg></button>
         </div>
       </header>
 
@@ -153,21 +154,21 @@
           <textarea id="input" rows="1" placeholder="Написать сообщение…"></textarea>
           <div class="composer-row">
             <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-paperclip"/></svg></button>
+            <button class="icon-btn round" id="pick-file-btn" title="Выбрать из загруженных файлов"><svg class="ic"><use href="#i-folder"/></svg></button>
             <div class="effort-wrap" title="Усилие модели">
-              <svg class="ic"><use href="#i-gauge"/></svg>
+              <div class="effort-top">
+                <svg class="ic"><use href="#i-gauge"/></svg>
+                <span id="effort-label">Recommended</span>
+              </div>
               <input type="range" id="effort-range" min="0" max="5" step="1" value="0" />
-              <span id="effort-label">Recommended</span>
+              <div class="effort-scale">
+                <span>Rec</span><span>Low</span><span>Med</span><span>High</span><span>Extra</span><span>Max</span>
+              </div>
             </div>
             <span class="spacer"></span>
-            <select id="style-select" class="model-select" title="Стиль оформления документов и презентаций">
-              <option value="auto">Стиль: авто</option>
-              <option value="apple">Apple</option>
-              <option value="fluent">Fluent</option>
-              <option value="glass">Glass</option>
-              <option value="neural">Neural</option>
-              <option value="minimal">Minimal</option>
-            </select>
-            <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">🧠<b class="mem-count"></b></button>
+            <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">
+              <svg class="ic"><use href="#i-brain"/></svg><b class="mem-count"></b>
+            </button>
             <button class="chip-btn context" id="context-btn" title="Использование контекста">0%</button>
             <select id="model-select" class="model-select" title="Модель"></select>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
@@ -200,6 +201,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=18"></script>
+  <script src="/assets/js/app.js?v=19"></script>
 </body>
 </html>

@@ -161,16 +161,26 @@ AGENT_MODE = (
 )
 
 STYLE_SKILL = (
-    "\n\nОформление. Документы, презентации, таблицы и схемы делай в аккуратном современном "
-    "стиле уровня топовых продуктов — не оставляй «как получилось». Доступные стили:\n"
-    "• Apple-like — много воздуха, крупная типографика, скругления, мягкие тени, "
-    "палитра #F5F5F7 / #1D1D1F, акцент #0071E3;\n"
-    "• Microsoft Fluent — чёткая сетка, #0078D4, лёгкие градиенты, строгие заголовки;\n"
-    "• Glass — полупрозрачные панели, размытие, тонкие светлые обводки, градиентный фон;\n"
-    "• Neural/Tech — тёмный фон #0B0F17, неоновые акценты #5EEAD4 / #8B5CF6, техно-сетка;\n"
-    "• Minimal — только типографика, один акцентный цвет, ничего лишнего.\n"
+    "\n\nОформление. Документы, презентации, таблицы, схемы и графики делай в аккуратном "
+    "современном стиле уровня топовых продуктов — не оставляй «как получилось». "
+    "Стиль выбирай сам по смыслу задачи или по просьбе пользователя.\n"
+    "Базовые системы: Apple-like (воздух, крупная типографика, #F5F5F7/#1D1D1F, #0071E3); "
+    "Microsoft Fluent (#0078D4, строгая сетка); Material 3; IBM Carbon; GitHub Primer; "
+    "Atlassian; Stripe gradient; Vercel monochrome; Linear/Raycast dark; Notion clean; "
+    "Tailwind; Bootstrap; Fluent 2.\n"
+    "Направления: Glassmorphism (матовое стекло), Neumorphism (мягкие тени), Claymorphism "
+    "(пластилин), Neubrutalism (жирные обводки), Brutalism, Swiss/International (сетка + "
+    "Helvetica), Bauhaus (геометрия + первичные цвета), Art Deco (золото + симметрия), "
+    "Mid-century modern, Scandinavian, Japanese minimal, Wabi-sabi, Nordic, Memphis, "
+    "Vaporwave, Y2K, Cyberpunk, Solarpunk, Retro 70s, Isometric 3D, Bento grid, "
+    "Aurora gradient, Kinetic typography, Editorial magazine, Newspaper, Scientific paper, "
+    "Financial report (Bloomberg terminal), Consulting deck (McKinsey), Pitch deck (Sequoia), "
+    "Legal document, Medical chart, Academic poster, Infographic, Data-viz по Тафти, "
+    "Blueprint (чертёж), Terminal/monospace, Pixel art, Hand-drawn sketch, "
+    "Детская иллюстрация, Фотореализм-монтаж, Минимализм без декора.\n"
     "Общие правила: не больше трёх цветов, одинаковые отступы, выравнивание по сетке, "
-    "читаемые размеры (заголовок ≥ 28 pt, текст ≥ 14 pt), максимум 6 строк на слайд."
+    "читаемые размеры (заголовок ≥ 28 pt, текст ≥ 14 pt), максимум 6 строк на слайд, "
+    "единая типографика во всём документе."
 )
 
 STYLE_PROMPTS: dict[str, str] = {
@@ -212,6 +222,11 @@ CODE_SYSTEM = (
     "Отвечай на языке пользователя."
     + RUN_SKILL
     + MEMORY_SKILL
+)
+
+CONTEXT_LIMIT_NOTE = (
+    "\n\n[Внимание] Из-за лимита контекста самая ранняя часть переписки не передана. "
+    "Если не хватает деталей — попроси пользователя напомнить или опирайся на резюме выше."
 )
 
 TITLE_SYSTEM = (

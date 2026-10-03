@@ -1305,12 +1305,7 @@
     };
     er.addEventListener('input', () => applyEffort(EFFORTS[parseInt(er.value, 10)] || 'recommended', true));
     applyEffort(state.effort, false);
-    const sel = $('#style-select');
-    sel.value = state.style;
-    sel.addEventListener('change', () => {
-      state.style = sel.value;
-      localStorage.setItem('cs_style', state.style);
-    });
+    $('#pick-file-btn').addEventListener('click', openFilePicker);
     $('#context-btn').addEventListener('click', openContextMenu);
     $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
@@ -2235,9 +2230,9 @@
     openModal({
       title: 'Совет моделей · бета',
       okText: 'Запустить',
-      body: '<p class="usage-note">Вопрос уйдёт всем участникам параллельно. ' +
-        'Каждый ответ сохранится отдельным чатом (они связаны группой «совет»), ' +
-        'а в этом чате появится объединённый ответ.</p>' +
+      body: '<p class="usage-note">Все участники отвечают <b>в этом же чате</b> и параллельно. ' +
+        'Переключай ответы стрелками ‹ › под сообщением — последний вариант «Совет» ' +
+        'сводит их в один общий ответ.</p>' +
         '<textarea id="council-q" rows="3" placeholder="Ваш вопрос для совета..."></textarea>' +
         '<div class="council-models">' + models.map((m, i) =>
           '<label class="council-row"><input type="checkbox" data-ms="' + m.id + '"' +
@@ -2489,43 +2484,46 @@
     } catch (e) { /* noop */ }
   }
 
-  // ---------- main page showcase (rotates every ~4s) ----------
+  // ---------- main page showcase: model + top post, both visible, refreshed ----------
   let showcaseTimer = null;
+
+  function modelCardHtml(s) {
+    if (!s) return '<div class="show-empty">Модели недоступны</div>';
+    const total = (s.rating_up + s.rating_down) || 0;
+    const good = total ? Math.round((s.rating_up / total) * 100) : 0;
+    return '<div class="model-card compact">' +
+      '<div class="mc-head"><b>' + escapeHtml(s.name) + '</b>' +
+      '<em class="route">' + escapeHtml(s.route_type) + '</em></div>' +
+      '<div class="mc-model">' + escapeHtml(s.model || '—') + '</div>' +
+      '<div class="mc-bar"><i style="width:' + Math.min(100, s.share) + '%"></i></div>' +
+      '<div class="mc-rows"><span>Запросов: <b>' + s.messages + '</b></span>' +
+      '<span>Доля: <b>' + s.share + '%</b></span>' +
+      '<span>Вход/выход: <b>' + fmtNum(s.tokens_in) + ' / ' + fmtNum(s.tokens_out) + '</b></span>' +
+      '<span>Оценки: 👍 <b>' + s.rating_up + '</b> · 👎 <b>' + s.rating_down + '</b></span>' +
+      (total ? '<span>Довольных: <b>' + good + '%</b></span>' : '') +
+      '</div></div>';
+  }
 
   async function startShowcase() {
     stopShowcase();
-    let post = null, stats = [];
-    try { post = await api.get('/api/posts/top'); } catch (e) { post = null; }
-    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
-    const top = stats[0] || null;
-    let flip = false;
-    const paint = () => {
+    const paint = async () => {
       const box = $('#empty-showcase');
       if (!box) { stopShowcase(); return; }
-      if (flip && post) {
-        box.innerHTML = '<div class="show-label">Топ-пост стенки</div>' +
-          '<div class="wall-grid">' + postCard(Object.assign({}, post, { can_delete: false }), true) + '</div>';
-        bindPostCards(box);
-      } else if (top) {
-        const total = (top.rating_up + top.rating_down) || 0;
-        const good = total ? Math.round((top.rating_up / total) * 100) : 0;
-        box.innerHTML = '<div class="show-label">Модель дня</div>' +
-          '<div class="model-card compact"><div class="mc-head"><b>' + escapeHtml(top.name) + '</b>' +
-          '<em class="route">' + escapeHtml(top.route_type) + '</em></div>' +
-          '<div class="mc-model">' + escapeHtml(top.model || '—') + '</div>' +
-          '<div class="mc-bar"><i style="width:' + Math.min(100, top.share) + '%"></i></div>' +
-          '<div class="mc-rows"><span>Запросов: <b>' + top.messages + '</b></span>' +
-          '<span>Вход/выход: <b>' + fmtNum(top.tokens_in) + ' / ' + fmtNum(top.tokens_out) + '</b></span>' +
-          '<span>Оценки: 👍 <b>' + top.rating_up + '</b> · 👎 <b>' + top.rating_down + '</b></span>' +
-          (total ? '<span>Довольных: <b>' + good + '%</b></span>' : '') +
-          '</div></div>';
-      } else {
-        box.innerHTML = '';
-      }
-      flip = !flip;
+      let post = null;
+      let stats = [];
+      try { post = await api.get('/api/posts/top'); } catch (e) { post = null; }
+      try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
+      const top = stats.length ? stats[Math.floor(Math.random() * stats.length)] : null;
+      box.innerHTML =
+        '<div class="show-col"><div class="show-label">Модель дня</div>' + modelCardHtml(top) + '</div>' +
+        '<div class="show-col"><div class="show-label">Топ-пост стенки</div>' +
+        (post ? postCard(Object.assign({}, post, { can_delete: false }), true)
+              : '<div class="show-empty">Постов пока нет — нажми «Опубликовать» в чате</div>') +
+        '</div>';
+      bindPostCards(box);
     };
-    paint();
-    if (post || top) showcaseTimer = setInterval(paint, 4000);
+    await paint();
+    showcaseTimer = setInterval(paint, 4000);
   }
 
   function stopShowcase() {
@@ -2561,6 +2559,34 @@
     if (!box || !text) return;
     box.textContent = (box.textContent + '\n' + text).slice(-20000);
     box.scrollTop = box.scrollHeight;
+  }
+
+  // ---------- pick from already uploaded files ----------
+  async function openFilePicker() {
+    if (!state.files || !state.files.length) {
+      toast('Сначала загрузите файлы', 'error');
+      return;
+    }
+    const items = state.files.slice(0, 200);
+    openModal({
+      title: 'Выбрать из загруженных файлов',
+      okText: 'Закрыть',
+      body: '<div class="link-list">' + items.map(f =>
+        '<div class="link-row"><div class="link-info"><b>' + escapeHtml(f.original_name) + '</b>' +
+        '<span>' + escapeHtml(f.kind || 'файл') + ' · ' + formatSize(f.size) + '</span></div>' +
+        '<button class="chip-btn" data-att="' + f.id + '">' + icon('plus') + 'Прикрепить</button>' +
+        '</div>').join('') + '</div>',
+      onOk: () => true,
+    });
+    $$('[data-att]').forEach(b => b.addEventListener('click', () => {
+      const f = state.files.find(x => x.id === b.dataset.att);
+      if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
+        state.pendingAttachments.push(f);
+        renderAttachments();
+        toast('Прикреплено: ' + f.original_name);
+      }
+      closeModal();
+    }));
   }
 
   // ---------- boot ----------

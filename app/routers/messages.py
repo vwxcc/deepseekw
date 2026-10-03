@@ -141,6 +141,33 @@ async def _stream_job(
             job.cancel.set()
 
 
+def _estimate_chars(messages: list[dict]) -> int:
+    total = 0
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            total += sum(len(str(part)) for part in content)
+        else:
+            total += len(str(content or ""))
+    return total
+
+
+def _trim_history(
+    messages: list[dict], context_len: int, reserve: int = 6144
+) -> tuple[list[dict], bool]:
+    """Drop the oldest turns so the request fits the model window.
+
+    ~2.6 characters per token is a safe estimate for mixed Russian/English text.
+    """
+    budget = max(4000, int(max(0, context_len - reserve) * 2.6))
+    if _estimate_chars(messages) <= budget:
+        return messages, False
+    trimmed = list(messages)
+    while len(trimmed) > 2 and _estimate_chars(trimmed) > budget:
+        trimmed.pop(0)
+    return trimmed, True
+
+
 async def _memory_block(db: AsyncSession, user_id: str) -> str:
     """Facts + preferences. Preferences are sent with EVERY request on purpose."""
     res = await db.execute(
@@ -178,6 +205,11 @@ async def _spawn(
 ) -> StreamingResponse:
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
+    history_messages, trimmed = _trim_history(
+        history_messages, settings.model_context_len
+    )
+    if trimmed:
+        system_prompt += prompts.CONTEXT_LIMIT_NOTE
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
@@ -291,10 +323,15 @@ async def send_message(
     history_messages = await ancestor_chain(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
+    history_messages, trimmed = _trim_history(
+        history_messages, settings.model_context_len
+    )
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
+    if trimmed:
+        system_prompt += prompts.CONTEXT_LIMIT_NOTE
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary

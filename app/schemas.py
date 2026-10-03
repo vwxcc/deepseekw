@@ -51,10 +51,13 @@ class ChatOut(ORMModel):
     updated_at: datetime
     is_public: bool = False
     share_token: str | None = None
+    mode: str = "chat"
+    model_name: str | None = None
 
 
 class ChatCreate(BaseModel):
     title: str = "Новый чат"
+    mode: str = "chat"
 
 
 class ChatUpdate(BaseModel):

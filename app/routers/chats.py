@@ -65,7 +65,10 @@ async def create_chat(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    chat = Chat(user_id=user.id, title=data.title.strip() or "Новый чат")
+    mode = (data.mode or "chat").strip().lower()
+    if mode not in ("chat", "code"):
+        mode = "chat"
+    chat = Chat(user_id=user.id, title=data.title.strip() or "Новый чат", mode=mode)
     db.add(chat)
     await db.commit()
     await db.refresh(chat)

@@ -127,13 +127,16 @@
   function shapeSvg(s) {
     if (!s || !s.type) return '';
     const a = [];
-    const push = (k, v) => { if (v !== undefined && v !== null) a.push(k + '="' + v + '"'); };
+    const push = (k, v) => { if (v !== undefined && v !== null && v !== '') a.push(k + '="' + v + '"'); };
     const common = () => {
       push('fill', s.fill);
       push('stroke', s.stroke);
       push('stroke-width', s.width);
       push('opacity', s.opacity);
+      if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
+      if (s.rotate) push('transform', 'rotate(' + s.rotate + ' ' + (s.cx || s.x || 0) + ' ' + (s.cy || s.y || 0) + ')');
     };
+    const pts = (list) => (list || []).map(p => (p[0] || 0) + ',' + (p[1] || 0)).join(' ');
     switch (String(s.type)) {
       case 'rect':
         push('x', s.x || 0); push('y', s.y || 0);
@@ -158,11 +161,66 @@
         push('x2', s.x2 || 0); push('y2', s.y2 || 0);
         push('stroke', s.stroke || '#1f1e1d');
         push('stroke-width', s.width || 2);
+        if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
+        push('opacity', s.opacity);
         return '<line ' + a.join(' ') + '/>';
+      case 'arrow':
+        return arrowSvg(s);
+      case 'arc': {
+        const cx = s.cx || 0, cy = s.cy || 0, r = s.r || 0;
+        const a0 = (Number(s.start) || 0) * Math.PI / 180;
+        const a1 = (Number(s.end) || 180) * Math.PI / 180;
+        const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+        const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+        const large = Math.abs((Number(s.end) || 0) - (Number(s.start) || 0)) > 180 ? 1 : 0;
+        push('d', 'M ' + x0.toFixed(2) + ' ' + y0.toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' +
+          large + ' 1 ' + x1.toFixed(2) + ' ' + y1.toFixed(2));
+        push('fill', s.fill || 'none');
+        push('stroke', s.stroke || '#c96442');
+        push('stroke-width', s.width || 2);
+        push('opacity', s.opacity);
+        if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
+        return '<path ' + a.join(' ') + '/>';
+      }
+      case 'star': {
+        const cx = s.cx || 0, cy = s.cy || 0, R = s.r || 20;
+        const n = Math.max(3, Math.min(24, Number(s.points) || 5));
+        const r2 = R * 0.45;
+        const out = [];
+        for (let k = 0; k < n * 2; k++) {
+          const ang = (Math.PI / n) * k - Math.PI / 2;
+          const rad = k % 2 === 0 ? R : r2;
+          out.push([(cx + rad * Math.cos(ang)).toFixed(2), (cy + rad * Math.sin(ang)).toFixed(2)]);
+        }
+        push('points', out.map(p => p[0] + ',' + p[1]).join(' '));
+        if (s.fill == null) push('fill', '#f2c14e');
+        common();
+        return '<polygon ' + a.join(' ') + '/>';
+      }
+      case 'dim': {
+        // blueprint dimension line: extension ticks + arrows + centred label
+        const x1 = Number(s.x1) || 0, y1 = Number(s.y1) || 0;
+        const x2 = Number(s.x2) || 0, y2 = Number(s.y2) || 0;
+        const stroke = s.stroke || '#1f1e1d';
+        const w = s.width || 1.4;
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const tick = 6;
+        const vertical = Math.abs(y2 - y1) > Math.abs(x2 - x1);
+        const t1 = vertical
+          ? '<line x1="' + (x1 - tick) + '" y1="' + y1 + '" x2="' + (x1 + tick) + '" y2="' + y1 + '" stroke="' + stroke + '" stroke-width="' + w + '"/>'
+          : '<line x1="' + x1 + '" y1="' + (y1 - tick) + '" x2="' + x1 + '" y2="' + (y1 + tick) + '" stroke="' + stroke + '" stroke-width="' + w + '"/>';
+        const t2 = vertical
+          ? '<line x1="' + (x2 - tick) + '" y1="' + y2 + '" x2="' + (x2 + tick) + '" y2="' + y2 + '" stroke="' + stroke + '" stroke-width="' + w + '"/>'
+          : '<line x1="' + x2 + '" y1="' + (y2 - tick) + '" x2="' + x2 + '" y2="' + (y2 + tick) + '" stroke="' + stroke + '" stroke-width="' + w + '"/>';
+        return '<g>' + t1 + t2 +
+          arrowSvg({ x1: x1, y1: y1, x2: x2, y2: y2, stroke: stroke, width: w, both: true }) +
+          (s.text ? '<text x="' + mx + '" y="' + (my - 6) + '" font-size="' + (s.size || 12) +
+            '" fill="' + stroke + '" text-anchor="middle">' + escapeHtml(s.text) + '</text>' : '') +
+          '</g>';
+      }
       case 'polyline':
       case 'polygon': {
-        const pts = (s.points || []).map(p => (p[0] || 0) + ',' + (p[1] || 0)).join(' ');
-        push('points', pts);
+        push('points', pts(s.points));
         if (String(s.type) === 'polygon') {
           if (s.fill == null) push('fill', '#c96442');
         } else {
@@ -179,16 +237,53 @@
         push('stroke', s.stroke || '#c96442');
         push('stroke-width', s.width || 2);
         push('opacity', s.opacity);
+        if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
         return '<path ' + a.join(' ') + '/>';
       case 'text':
         push('x', s.x || 0); push('y', s.y || 0);
         push('font-size', s.size || 16);
         push('fill', s.fill || '#1f1e1d');
         push('opacity', s.opacity);
+        if (s.anchor) push('text-anchor', s.anchor);
+        if (s.weight) push('font-weight', s.weight);
+        if (s.rotate) push('transform', 'rotate(' + s.rotate + ' ' + (s.x || 0) + ' ' + (s.y || 0) + ')');
         return '<text ' + a.join(' ') + '>' + escapeHtml(s.text || '') + '</text>';
       default:
         return '';
     }
+  }
+
+  function arrowSvg(s) {
+    const x1 = Number(s.x1) || 0, y1 = Number(s.y1) || 0;
+    let x2 = Number(s.x2) || 0, y2 = Number(s.y2) || 0;
+    const stroke = s.stroke || '#2f6fb0';
+    const w = Number(s.width) || 2;
+    const head = Math.max(6, w * 3.2);
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    const tipX = x2, tipY = y2;
+    const bx = x2 - head * Math.cos(ang), by = y2 - head * Math.sin(ang);
+    const spread = 0.42;
+    const p1x = bx + (head * 0.55) * Math.cos(ang + Math.PI / 2 + spread);
+    const p1y = by + (head * 0.55) * Math.sin(ang + Math.PI / 2 + spread);
+    const p2x = bx + (head * 0.55) * Math.cos(ang - Math.PI / 2 - spread);
+    const p2y = by + (head * 0.55) * Math.sin(ang - Math.PI / 2 - spread);
+    const line = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + bx.toFixed(2) + '" y2="' + by.toFixed(2) +
+      '" stroke="' + stroke + '" stroke-width="' + w + '"' +
+      (s.dash ? ' stroke-dasharray="' + (typeof s.dash === 'number' ? s.dash + ' ' + s.dash : s.dash) + '"' : '') +
+      (s.opacity != null ? ' opacity="' + s.opacity + '"' : '') + '/>';
+    const headEl = '<polygon points="' + tipX + ',' + tipY + ' ' + p1x.toFixed(2) + ',' + p1y.toFixed(2) +
+      ' ' + p2x.toFixed(2) + ',' + p2y.toFixed(2) + '" fill="' + stroke + '"/>';
+    if (!s.both) return '<g>' + line + headEl + '</g>';
+    const ang2 = ang + Math.PI;
+    const bx2 = x1 + head * Math.cos(ang2), by2 = y1 + head * Math.sin(ang2);
+    const forward = ang;
+    const q1x = bx2 + (head * 0.55) * Math.cos(forward + Math.PI / 2 + spread);
+    const q1y = by2 + (head * 0.55) * Math.sin(forward + Math.PI / 2 + spread);
+    const q2x = bx2 + (head * 0.55) * Math.cos(forward - Math.PI / 2 - spread);
+    const q2y = by2 + (head * 0.55) * Math.sin(forward - Math.PI / 2 - spread);
+    const headEl2 = '<polygon points="' + x1 + ',' + y1 + ' ' + q1x.toFixed(2) + ',' + q1y.toFixed(2) +
+      ' ' + q2x.toFixed(2) + ',' + q2y.toFixed(2) + '" fill="' + stroke + '"/>';
+    return '<g>' + line + headEl + headEl2 + '</g>';
   }
 
   function drawBlockHtml(code) {
@@ -522,6 +617,10 @@
     box.innerHTML = state.chats.map(c =>
       '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
         '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
+        '<span class="chat-meta">' +
+          (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
+          (c.model_name ? '<em class="model-tag">' + escapeHtml(c.model_name) + '</em>' : '') +
+        '</span>' +
         '<span class="acts">' +
           '<button data-act="rename" title="Переименовать">' + icon('pencil') + '</button>' +
           '<button data-act="delete" title="Удалить">' + icon('trash') + '</button>' +
@@ -542,12 +641,18 @@
     });
   }
 
-  async function newChat() {
-    const chat = await api.post('/api/chats', { title: 'Новый чат' });
+  async function newChat(mode) {
+    const chat = await api.post('/api/chats', {
+      title: mode === 'code' ? 'Код-проект' : 'Новый чат',
+      mode: mode || 'chat',
+    });
     state.chats.unshift(chat);
     renderChatList();
     await openChat(chat.id);
     $('#input').focus();
+    if (mode === 'code') {
+      toast('Код-агент: файлы проекта сохраняются между сообщениями');
+    }
   }
 
   function openRename(id) {
@@ -1574,7 +1679,8 @@
     }
   }
   function bindSidebar() {
-    $('#new-chat-btn').addEventListener('click', newChat);
+    $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
+    $('#new-code-btn').addEventListener('click', () => newChat('code'));
     $('#collapse-btn').addEventListener('click', () => {
       state.sidebarCollapsed = true;
       localStorage.setItem('cs_sidebar', '1');

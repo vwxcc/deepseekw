@@ -28,7 +28,12 @@ from ..services.files import detect_kind, sha256_bytes
 from ..services.sandbox import cleanup, run_python
 from . import model_sets as ms
 from . import prompts
-from .prompts import extract_memories, extract_run_blocks, strip_run_blocks
+from .prompts import (
+    extract_memories,
+    extract_run_blocks,
+    strip_run_blocks,
+    strip_sandbox_paths,
+)
 from .providers import ProviderError, complete_chat, stream_chat
 
 log = logging.getLogger("chatstudio.ai")
@@ -81,6 +86,8 @@ class Job:
     model_set_id: str | None = None
     effort: str | None = None
     user_id: str | None = None
+    mode: str = "chat"
+    project: str | None = None
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -187,17 +194,26 @@ class AIRouter:
             return mset.id, mset.name, configs
 
     async def _set_status(
-        self, message_id: str | None, status: MessageStatus, model_set_id: str | None = None
+        self,
+        message_id: str | None,
+        status: MessageStatus,
+        model_set_id: str | None = None,
+        model_name: str | None = None,
     ) -> None:
         if not message_id:
             return
         async with SessionLocal() as db:
             msg = await db.get(Message, message_id)
-            if msg is not None:
-                msg.status = status
-                if model_set_id:
-                    msg.model_set_id = model_set_id
-                await db.commit()
+            if msg is None:
+                return
+            msg.status = status
+            if model_set_id:
+                msg.model_set_id = model_set_id
+            if model_name and msg.chat_id:
+                chat = await db.get(Chat, msg.chat_id)
+                if chat is not None and chat.model_name != model_name:
+                    chat.model_name = model_name
+            await db.commit()
 
     async def _finish(
         self,
@@ -348,10 +364,15 @@ class AIRouter:
             await job.output.put(("error", str(e)))
             return
 
-        await self._set_status(job.message_id, MessageStatus.processing, mset_id)
+        await self._set_status(
+            job.message_id, MessageStatus.processing, mset_id, mset_name
+        )
 
         agent_on = bool(settings.agent_enabled)
-        max_steps = max(1, settings.agent_max_steps) if agent_on else 1
+        code_mode = job.mode == "code"
+        steps_limit = settings.code_agent_max_steps if code_mode else settings.agent_max_steps
+        max_steps = max(1, steps_limit) if agent_on else 1
+        run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
         last_error = "Генерация не удалась"
         for entry in entries:
             if job.cancel.is_set():
@@ -376,7 +397,9 @@ class AIRouter:
                         answer = full if full.strip() else thinking
                         break
                     for code in runs:
-                        result = await run_python(code, timeout=settings.agent_timeout)
+                        result = await run_python(
+                            code, timeout=run_timeout, project=job.project
+                        )
                         attached = await self._attach_run_files(job, result)
                         run = {
                             "code": code,
@@ -400,6 +423,7 @@ class AIRouter:
 
                 if extract_run_blocks(answer):
                     answer = strip_run_blocks(answer)
+                answer = strip_sandbox_paths(answer)
                 if not answer.strip():
                     raise ProviderError("Пустой ответ модели")
 

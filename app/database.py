@@ -58,6 +58,8 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "summary": "TEXT",
         "summary_upto": "VARCHAR(36)",
         "effort": "VARCHAR(16) DEFAULT 'recommended'",
+        "mode": "VARCHAR(16) DEFAULT 'chat'",
+        "model_name": "VARCHAR(200)",
     },
     "messages": {
         "tokens_cached": "INTEGER DEFAULT 0",

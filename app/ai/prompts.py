@@ -21,7 +21,10 @@ RUN_SKILL = (
     "prs.save('slides.pptx'); wb.save('data.xlsx').\n"
     "Пиши ТОЛЬКО относительные пути, не используй input() и сеть. Лимит — 40 секунд. "
     "Можно делать несколько шагов: после результата исправь код или дай финальный ответ "
-    "уже без блока run."
+    "уже без блока run.\n"
+    "ВАЖНО: в тексте ответа НИКОГДА не пиши пути к файлам (никаких /work/..., /tmp/... "
+    "или абсолютных путей). Просто назови файл по имени — он уже прикреплён к сообщению "
+    "красивой карточкой, пользователь скачает его одним кликом."
 )
 
 
@@ -31,6 +34,20 @@ def extract_run_blocks(text: str) -> list[str]:
 
 def strip_run_blocks(text: str) -> str:
     return re.sub(r"```run[^\n]*\n[\s\S]*?```", "", text or "").strip()
+
+
+# sandbox paths must never leak into the chat: files arrive as attachments
+SANDBOX_PATH_RE = re.compile(
+    r"(?:/work|/tmp/chatstudio-runs|/app/data/sandbox|/app/uploads|/srv|/tmp/sandbox)"
+    r"(?:/[0-9a-fA-F]{6,})?/",
+)
+
+
+def strip_sandbox_paths(text: str) -> str:
+    """Turn ``/work/<id>/slides.pptx`` into ``slides.pptx`` and drop bare roots."""
+    out = SANDBOX_PATH_RE.sub("", text or "")
+    out = re.sub(r"(?<![\w/])/(?:work|srv)(?![\w/])", "", out)
+    return out
 
 MEMORY_SKILL = (
     "\n\nПамять: если пользователь сообщает устойчивый факт о себе (имя, роль, город, стек, "
@@ -51,21 +68,26 @@ def extract_memories(text: str) -> tuple[str, list[str]]:
 
 
 DRAW_SKILL = (
-    "\n\nУ тебя есть скилл рисования. Чтобы показать рисунок, схему или график, "
-    "выведи блок кода с языком draw и JSON-описанием фигур:\n"
+    "\n\nСкилл рисования (SVG). Если пользователь просит рисунок, чертёж, схему, план, "
+    "блок-схему, диаграмму, иконку или иллюстрацию — ВСЕГДА используй этот скилл, "
+    "а не текстовое описание. Выведи блок кода с языком draw и JSON-описанием фигур:\n"
     "```draw\n"
-    '{"width":420,"height":280,"background":"#faf9f5","shapes":['
-    '{"type":"rect","x":30,"y":30,"w":140,"h":90,"fill":"#c96442","rx":8},'
-    '{"type":"circle","cx":280,"cy":110,"r":55,"fill":"#2f6fb0"},'
-    '{"type":"line","x1":30,"y1":200,"x2":390,"y2":200,"stroke":"#1f1e1d","width":3},'
-    '{"type":"text","x":30,"y":240,"text":"Пример","size":18,"fill":"#1f1e1d"}]}\n'
+    '{"width":420,"height":320,"background":"#faf9f5","shapes":['
+    '{"type":"rect","x":30,"y":120,"w":160,"h":120,"fill":"#e8d5b7","stroke":"#8B4513","width":2},'
+    '{"type":"polygon","points":[[20,120],[110,50],[200,120]],"fill":"#c96442"},'
+    '{"type":"circle","cx":340,"cy":70,"r":34,"fill":"#f2c14e"},'
+    '{"type":"dim","x1":30,"y1":265,"x2":190,"y2":265,"text":"160 см","stroke":"#1f1e1d"},'
+    '{"type":"arrow","x1":235,"y1":185,"x2":305,"y2":120,"stroke":"#2f6fb0","width":3},'
+    '{"type":"text","x":30,"y":300,"text":"Дом","size":18}]}\n'
     "```\n"
-    "Фигуры: rect (x,y,w,h,rx), circle (cx,cy,r), ellipse (cx,cy,rx,ry), "
-    "line (x1,y1,x2,y2), polyline (points:[[x,y],...]), polygon (points), "
-    "path (d), text (x,y,text,size).\n"
-    "Общие свойства: fill, stroke, width, opacity. Координаты — в пикселях внутри "
-    "width/height. Можно комбинировать несколько фигур: так рисуются 2D-схемы, "
-    "диаграммы и простые 3D-объекты (кубы, изометрия)."
+    "Фигуры: rect (x,y,w,h,rx), circle (cx,cy,r), ellipse (cx,cy,rx,ry), line (x1,y1,x2,y2), "
+    "arrow (x1,y1,x2,y2 — со стрелкой), polyline (points), polygon (points), path (d), "
+    "arc (cx,cy,r,start,end — дуга в градусах), star (cx,cy,r,points), "
+    "dim (x1,y1,x2,y2,text — размерная линия, как на чертеже), text (x,y,text,size).\n"
+    "Общие свойства: fill, stroke, width, opacity, dash (пунктир), rotate (градусы).\n"
+    "Координаты — в пикселях внутри width/height. Комбинируй фигуры: так получаются "
+    "чертежи (с размерными линиями), блок-схемы (rect + стрелки), изометрия и простые "
+    "3D-объекты. Если нужен ТОЧНЫЙ график по числам — используй скилл run с matplotlib."
 )
 
 MAIN_SYSTEM = (
@@ -78,8 +100,23 @@ MAIN_SYSTEM = (
     + MEMORY_SKILL
 )
 
-TITLE_SYSTEM = (
-    "Придумай короткое название диалога (не более 6 слов) по первому сообщению пользователя.\n"
+CODE_SYSTEM = (
+    "Ты — ChatStudio Code, инженер-агент. Ты работаешь в ПОСТОЯННОЙ папке проекта, "
+    "которая сохраняется между сообщениями, и пишешь реальный рабочий код.\n"
+    "Как работать:\n"
+    "1. Сначала осмотрись: если нужно — выведи список файлов проекта и прочитай их.\n"
+    "2. Создавай файлы и папки кодом (open(...).write, os.makedirs) через скилл run.\n"
+    "3. После написания кода ВСЕГДА запускай его и тесты, исправляй ошибки до победного.\n"
+    "4. Мелкие шаги лучше одного гигантского скрипта.\n"
+    "5. В финальном ответе коротко: что сделано, структура файлов, как запустить.\n"
+    "Пиши чистый код с комментариями, используй стандартные библиотеки и уже установленные "
+    "пакеты (numpy, pandas, matplotlib, python-docx, openpyxl, python-pptx).\n"
+    "Отвечай на языке пользователя."
+    + RUN_SKILL
+    + MEMORY_SKILL
+)
+
+TITLE_SYSTEM = (    "Придумай короткое название диалога (не более 6 слов) по первому сообщению пользователя.\n"
     "Ответь ТОЛЬКО названием: без кавычек, без точки в конце и без пояснений."
 )
 

@@ -144,7 +144,8 @@ async def _spawn(
     user_id: str | None = None,
     effort: str | None = None,
 ) -> StreamingResponse:
-    system_prompt = prompts.MAIN_SYSTEM
+    mode = chat.mode or "chat"
+    system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
@@ -185,6 +186,8 @@ async def _spawn(
         message_id=assistant.id,
         effort=effort or chat.effort,
         user_id=user_id,
+        mode=mode,
+        project=chat.id if mode == "code" else None,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -268,7 +271,8 @@ async def send_message(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
 
-    system_prompt = prompts.MAIN_SYSTEM
+    code_mode = (chat.mode or "chat") == "code"
+    system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
@@ -318,6 +322,8 @@ async def send_message(
         model_set_id=data.model_set_id,
         effort=chat.effort,
         user_id=user.id,
+        mode=chat.mode or "chat",
+        project=chat.id if code_mode else None,
     )
     await ai_router.enqueue(job)
     total = await db.scalar(

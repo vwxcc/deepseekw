@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     agent_enabled: bool = True
     agent_max_steps: int = 4
     agent_timeout: int = 40
+    # isolated runner (separate container, internal network, no internet)
+    sandbox_url: str = "http://chatstudio-sandbox:8000"
+    sandbox_work_dir: str = "/app/data/sandbox"
+    sandbox_concurrency: int = 2
+    sandbox_queue_limit: int = 12
+    # code-agent mode: persistent project per chat, more steps
+    code_agent_max_steps: int = 10
+    code_agent_timeout: int = 60
 
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file
@@ -77,6 +85,11 @@ class Settings(BaseSettings):
     @property
     def upload_path(self) -> Path:
         return Path(self.upload_dir).expanduser().resolve()
+
+    @property
+    def sandbox_path(self) -> Path:
+        """Directory shared with the sandbox container (read-only for us)."""
+        return Path(self.sandbox_work_dir).expanduser().resolve()
 
 
 settings = Settings()

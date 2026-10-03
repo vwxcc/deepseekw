@@ -1436,6 +1436,11 @@
       }).join('') + '</div>';
   }
 
+  async function loadLimits() {
+    try { state.limits = await api.get('/api/limits'); }
+    catch (e) { state.limits = null; }
+  }
+
   async function openContextMenu() {
     if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
     let u;
@@ -1443,6 +1448,11 @@
     catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
     state.usage = u;
     const barW = Math.min(100, Math.max(0, u.percent || 0));
+    const lim = (state.limits && state.limits.limits) || {};
+    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
+    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
+    const cdef = Math.max(cmin, Math.min(cmax, Math.round((cmin + cmax) / 2 / 5) * 5));
+    const perDay = lim.compress_per_day;
     openModal({
       title: 'Контекст и проценты',
       okText: 'Закрыть',
@@ -1452,8 +1462,12 @@
         '<p class="usage-note">Окно модели — ' + fmtNum(u.context_len) + ' токенов. ' +
         'Резюме истории: ' + (u.summary_chars ? fmtNum(u.summary_chars) + ' симв.' : 'нет') + '. ' +
         'Усилие: ' + escapeHtml(u.effort || 'recommended') + '.</p>' +
-        '<label style="margin-top:14px">Сжать историю до <b id="cmp-val">50</b>%</label>' +
-        '<input type="range" id="cmp-range" class="orange-range" min="5" max="85" step="5" value="50" />' +
+        '<label style="margin-top:14px">Сжать историю до <b id="cmp-val">' + cdef + '</b>%</label>' +
+        '<input type="range" id="cmp-range" class="orange-range" min="' + cmin + '" max="' + cmax +
+        '" step="5" value="' + cdef + '" />' +
+        '<p class="usage-note">Ваш тариф («' + escapeHtml((state.limits && state.limits.plan) || 'free') +
+        '»): сжатие от ' + cmin + '% до ' + cmax + '%' +
+        (perDay != null ? ' · до ' + perDay + ' сжатий в день' : ' · без лимита сжатий') + '.</p>' +
         '<p class="usage-note">Сжатие делает та же модель: старое сворачивается в краткое резюме.</p>' +
         '<div style="margin-top:10px"><button class="chip-btn" id="cmp-go">' +
         icon('sparkle') + 'Сжать историю</button></div>' +
@@ -2992,6 +3006,7 @@
     await loadModelSets();
     await loadMemory();
     await loadWallCount();
+    await loadLimits();
     await loadUsage();
     renderMessages();
     await loadSystem();

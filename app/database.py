@@ -61,6 +61,8 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "mode": "VARCHAR(16) DEFAULT 'chat'",
         "model_name": "VARCHAR(200)",
         "bundle_id": "VARCHAR(36)",
+        "compress_count": "INTEGER DEFAULT 0",
+        "compress_date": "VARCHAR(10)",
     },
     "messages": {
         "tokens_cached": "INTEGER DEFAULT 0",

@@ -636,10 +636,29 @@ async def delete_message(
 async def compress_chat(
     data: CompressIn,
     chat: Chat = Depends(get_owned_chat),
+    user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    target = max(5, min(85, int(data.target_percent or 50)))
+    limits = await get_limits(db, user.plan or "free")
+    cmin = int(limits.get("compress_min") or 5)
+    cmax = int(limits.get("compress_max") or 85)
+    if cmin > cmax:
+        cmin, cmax = cmax, cmin
+    raw_target = int(data.target_percent or 50)
+    target = max(cmin, min(cmax, raw_target))
+
+    per_day = limits.get("compress_per_day")
+    today = utcnow().strftime("%Y-%m-%d")
+    if (chat.compress_date or "") != today:
+        chat.compress_date = today
+        chat.compress_count = 0
+    if per_day is not None and (chat.compress_count or 0) >= int(per_day):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"Лимит тарифа: сжатий в день — {int(per_day)}. Оформите Pro для снятия лимита.",
+        )
+
     res = await db.execute(
         select(Message)
         .where(Message.chat_id == chat.id)
@@ -692,5 +711,6 @@ async def compress_chat(
 
     chat.summary = summary.strip()[:20000]
     chat.summary_upto = cut[-1].id
+    chat.compress_count = (chat.compress_count or 0) + 1
     await db.commit()
     return await _usage_payload(chat, db)

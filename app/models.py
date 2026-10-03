@@ -109,6 +109,8 @@ class Chat(Base):
     mode: Mapped[str] = mapped_column(String(16), default="chat")
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     bundle_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    compress_count: Mapped[int] = mapped_column(Integer, default=0)
+    compress_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     owner: Mapped["User"] = relationship(back_populates="chats")
     messages: Mapped[list["Message"]] = relationship(

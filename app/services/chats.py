@@ -5,10 +5,25 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Attachment, File, Message, Suggestion
-from ..schemas import MessageOut
+from ..schemas import AttachmentOut, MessageOut
 
 
-def message_out(m: Message, suggestions: list[str] | None = None) -> MessageOut:
+def attachment_out(att: Attachment, f: File) -> AttachmentOut:
+    return AttachmentOut(
+        id=att.id,
+        file_id=f.id,
+        name=f.original_name,
+        kind=f.kind,
+        size=f.size,
+        mime_type=f.mime_type or "",
+    )
+
+
+def message_out(
+    m: Message,
+    suggestions: list[str] | None = None,
+    attachments: list[AttachmentOut] | None = None,
+) -> MessageOut:
     return MessageOut(
         id=m.id,
         chat_id=m.chat_id,
@@ -19,15 +34,34 @@ def message_out(m: Message, suggestions: list[str] | None = None) -> MessageOut:
         error=m.error,
         created_at=m.created_at,
         suggestions=suggestions or [],
+        attachments=attachments or [],
     )
+
+
+async def message_attachments(
+    db: AsyncSession, message_ids: list[str]
+) -> dict[str, list[AttachmentOut]]:
+    """Map message_id -> list of attachments (with file metadata)."""
+    out: dict[str, list[AttachmentOut]] = {}
+    if not message_ids:
+        return out
+    res = await db.execute(
+        select(Attachment, File)
+        .join(File, File.id == Attachment.file_id)
+        .where(Attachment.message_id.in_(message_ids))
+    )
+    for att, f in res.all():
+        out.setdefault(att.message_id, []).append(attachment_out(att, f))
+    return out
 
 
 async def build_message_tree(
     db: AsyncSession, messages: list[Message]
 ) -> list[MessageOut]:
     """Build a nested tree of messages from a flat chronological list."""
-    sugg: dict[str, list[str]] = {}
     ids = [m.id for m in messages]
+
+    sugg: dict[str, list[str]] = {}
     if ids:
         res = await db.execute(
             select(Suggestion)
@@ -37,8 +71,10 @@ async def build_message_tree(
         for s in res.scalars().all():
             sugg.setdefault(s.message_id, []).append(s.text)
 
+    atts = await message_attachments(db, ids)
+
     by_id: dict[str, MessageOut] = {
-        m.id: message_out(m, sugg.get(m.id)) for m in messages
+        m.id: message_out(m, sugg.get(m.id), atts.get(m.id)) for m in messages
     }
     roots: list[MessageOut] = []
     for node in by_id.values():

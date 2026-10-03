@@ -60,6 +60,15 @@ class ChatUpdate(BaseModel):
 
 
 # --- Messages ---
+class AttachmentOut(BaseModel):
+    id: str
+    file_id: str
+    name: str
+    kind: str
+    size: int
+    mime_type: str
+
+
 class MessageOut(ORMModel):
     id: str
     chat_id: str
@@ -70,6 +79,7 @@ class MessageOut(ORMModel):
     error: str | None = None
     created_at: datetime
     suggestions: list[str] = Field(default_factory=list)
+    attachments: list[AttachmentOut] = Field(default_factory=list)
     children: list["MessageOut"] = Field(default_factory=list)
 
 

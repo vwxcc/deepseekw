@@ -30,7 +30,12 @@ from ..models import (
     utcnow,
 )
 from ..schemas import MessageCreate, MessageOut
-from ..services.chats import ancestor_chain, build_message_tree, message_out
+from ..services.chats import (
+    ancestor_chain,
+    build_message_tree,
+    message_attachments,
+    message_out,
+)
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
@@ -49,9 +54,18 @@ def _json(model) -> dict:
     return model.model_dump(mode="json")
 
 
-async def _stream_job(request: Request, job: Job, assistant: Message, user_msg: Message | None):
+async def _stream_job(
+    request: Request,
+    job: Job,
+    assistant: Message,
+    user_msg: Message | None,
+    user_attachments: list | None = None,
+):
     if user_msg is not None:
-        yield _sse("user_message", _json(message_out(user_msg)))
+        yield _sse(
+            "user_message",
+            _json(message_out(user_msg, attachments=user_attachments or [])),
+        )
     yield _sse("assistant_message", _json(message_out(assistant)))
 
     finished = False
@@ -179,6 +193,8 @@ async def send_message(
             db.add(Attachment(message_id=user_msg.id, file_id=rec.id))
         await db.commit()
 
+    user_atts = (await message_attachments(db, [user_msg.id])).get(user_msg.id, [])
+
     history_messages = await ancestor_chain(db, user_msg.id)
     history = prompts.with_system(history_messages, prompts.MAIN_SYSTEM)
 
@@ -213,7 +229,7 @@ async def send_message(
         )
 
     return StreamingResponse(
-        _stream_job(request, job, assistant, user_msg),
+        _stream_job(request, job, assistant, user_msg, user_atts),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )

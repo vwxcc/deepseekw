@@ -61,6 +61,9 @@ async def upload_files(
 
     saved: list[File] = []
     total = 0
+
+    # 1) read + validate everything BEFORE touching the disk
+    payloads: list[tuple[str, str, bytes]] = []
     for uf in files:
         data = await uf.read()
         if len(data) > settings.max_file_size:
@@ -74,21 +77,23 @@ async def upload_files(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 "Превышен общий лимит размера загрузки",
             )
+        payloads.append((Path(uf.filename or "file").name, uf.content_type or "", data))
 
+    # 2) only now write to disk and persist
+    for name, mime, data in payloads:
         fid = str(uuid.uuid4())
-        name = Path(uf.filename or "file").name
         ext = Path(name).suffix
         dest = _user_dir(user.id) / f"{fid}{ext}"
         dest.write_bytes(data)
 
-        kind = detect_kind(name, uf.content_type or "")
+        kind = detect_kind(name, mime)
         text = extract_text(kind, name, data)
         rec = File(
             id=fid,
             user_id=user.id,
             storage_path=str(dest),
             original_name=name,
-            mime_type=uf.content_type or "",
+            mime_type=mime,
             size=len(data),
             sha256=sha256_bytes(data),
             extracted_text=(text[:MAX_EXTRACTED] if text else None),
@@ -106,6 +111,7 @@ async def upload_files(
 @router.get("/{file_id}/download")
 async def download_file(
     file_id: str,
+    inline: bool = False,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -115,9 +121,11 @@ async def download_file(
     p = Path(rec.storage_path)
     if not p.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл отсутствует на диске")
-    return FileResponse(
-        p, filename=rec.original_name, media_type=rec.mime_type or "application/octet-stream"
-    )
+    media = rec.mime_type or "application/octet-stream"
+    if inline:
+        # no filename -> no Content-Disposition: attachment, so <img> renders it
+        return FileResponse(p, media_type=media)
+    return FileResponse(p, filename=rec.original_name, media_type=media)
 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)

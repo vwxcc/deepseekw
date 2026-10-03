@@ -31,6 +31,57 @@
     return d.toLocaleDateString('ru-RU');
   }
 
+  // Clipboard that also works over plain http:// (not a secure context)
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) { /* fall through to legacy path */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function toast(message, kind) {
+    let root = document.getElementById('toast-root');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'toast-root';
+      document.body.appendChild(root);
+    }
+    const el = document.createElement('div');
+    el.className = 'toast' + (kind ? ' ' + kind : '');
+    el.textContent = message;
+    root.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 320);
+    }, 3400);
+  }
+
+  async function copyWithFeedback(btn, text, okLabel) {
+    const original = btn.textContent;
+    const ok = await copyText(text);
+    btn.textContent = ok ? (okLabel || 'Скопировано') : 'Не удалось';
+    if (!ok) toast('Не удалось скопировать', 'error');
+    setTimeout(() => { btn.textContent = original; }, 1300);
+  }
+
   // ---------- markdown ----------
   function inlineFmt(s) {
     s = escapeHtml(s);
@@ -67,8 +118,11 @@
     const flushPara = () => { if (para.length) { out.push('<p>' + inlineFmt(para.join(' ')) + '</p>'); para = []; } };
     const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
     const closeQuote = () => { if (inQuote) { out.push('</blockquote>'); inQuote = false; } };
+    const isTableSep = (s) => s.includes('|') && /^[\s:|-]+$/.test(s) && s.includes('-');
+    const splitRow = (r) => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const cm = line.match(/^\u0000C(\d+)\u0000$/);
       if (cm) {
         flushPara(); closeList(); closeQuote();
@@ -78,6 +132,28 @@
       }
       if (!line.trim()) { flushPara(); closeList(); closeQuote(); continue; }
       let m;
+
+      // tables: header row followed by a |---| separator row
+      if (line.includes('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        flushPara(); closeList(); closeQuote();
+        const head = splitRow(line);
+        const body = [];
+        let j = i + 2;
+        while (j < lines.length && lines[j].includes('|') && lines[j].trim()) {
+          body.push(splitRow(lines[j]));
+          j++;
+        }
+        out.push('<div class="table-wrap"><table><thead><tr>' +
+          head.map(c => '<th>' + inlineFmt(c) + '</th>').join('') +
+          '</tr></thead><tbody>' +
+          body.map(r => '<tr>' +
+            head.map((_, k) => '<td>' + inlineFmt(r[k] || '') + '</td>').join('') +
+          '</tr>').join('') +
+          '</tbody></table></div>');
+        i = j - 1;
+        continue;
+      }
+
       if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
         flushPara(); closeList(); closeQuote();
         const lvl = Math.min(m[1].length, 3);
@@ -85,7 +161,7 @@
         continue;
       }
       if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { flushPara(); closeList(); closeQuote(); out.push('<hr>'); continue; }
-      if ((m = line.match(/^\s*&gt;\s?(.*)$/))) {
+      if ((m = line.match(/^\s*>\s?(.*)$/))) {
         flushPara(); closeList();
         if (!inQuote) { out.push('<blockquote>'); inQuote = true; }
         out.push('<p>' + inlineFmt(m[1]) + '</p>');
@@ -328,12 +404,28 @@
     return path;
   }
 
+  function attsHtml(atts) {
+    if (!atts || !atts.length) return '';
+    return '<div class="msg-atts">' + atts.map(a => {
+      const url = '/api/files/' + a.file_id + '/download';
+      if (a.kind === 'image') {
+        return '<a class="msg-att img" href="' + url + '" target="_blank" rel="noopener" title="' +
+          escapeHtml(a.name) + '"><img src="' + url + '?inline=1" alt="' + escapeHtml(a.name) + '" loading="lazy" /></a>';
+      }
+      return '<a class="msg-att" href="' + url + '" target="_blank" rel="noopener" title="' +
+        escapeHtml(a.name) + '">' +
+        '<span class="att-icon">' + kindIcon(a.kind) + '</span>' +
+        '<span class="att-name">' + escapeHtml(a.name) + '</span>' +
+        '<span class="att-size">' + formatSize(a.size) + '</span></a>';
+    }).join('') + '</div>';
+  }
+
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
     let inner;
     if (isUser) {
-      inner = '<div class="bubble">' + escapeHtml(n.content) + '</div>';
+      inner = attsHtml(n.attachments) + '<div class="bubble">' + escapeHtml(n.content) + '</div>';
     } else {
       const failed = n.status === 'failed';
       const waiting = (n.status === 'queued' || n.status === 'processing') && !n.content;
@@ -345,13 +437,17 @@
 
     let meta = '';
     if (!isUser) {
-      meta = '<div class="meta">' +
-        (n.status === 'cancelled' ? '<span class="status">остановлено</span>' : '') +
-        '<button data-mact="copy" data-id="' + n.id + '">Копировать</button>' +
-        '<button data-mact="retry" data-id="' + n.id + '">Повторить</button>' +
-        '<button data-mact="continue" data-id="' + n.id + '">Продолжить</button>' +
-        (n.status === 'processing' ? '<button data-mact="stop" data-id="' + n.id + '">Остановить</button>' : '') +
-        '</div>';
+      const generating = n.status === 'queued' || n.status === 'processing';
+      const parts = [];
+      if (n.status === 'cancelled') parts.push('<span class="status">остановлено</span>');
+      if (generating) {
+        parts.push('<button data-mact="stop" data-id="' + n.id + '">Остановить</button>');
+      } else {
+        if (n.content) parts.push('<button data-mact="copy" data-id="' + n.id + '">Копировать</button>');
+        parts.push('<button data-mact="retry" data-id="' + n.id + '">Повторить</button>');
+        if (n.content) parts.push('<button data-mact="continue" data-id="' + n.id + '">Продолжить</button>');
+      }
+      meta = '<div class="meta">' + parts.join('') + '</div>';
     }
 
     let branch = '';
@@ -400,7 +496,7 @@
       const id = btn.dataset.id, act = btn.dataset.mact;
       if (act === 'copy') {
         const n = findNode(state.tree, id);
-        if (n) { await navigator.clipboard.writeText(n.content || ''); btn.textContent = 'Скопировано'; setTimeout(() => btn.textContent = 'Копировать', 1200); }
+        if (n) await copyWithFeedback(btn, n.content || '');
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
@@ -416,12 +512,8 @@
       }));
     });
 
-    $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
-      const code = (window.__codeStore || {})[b.dataset.copy] || '';
-      await navigator.clipboard.writeText(code);
-      const old = b.textContent; b.textContent = 'Скопировано';
-      setTimeout(() => b.textContent = old, 1200);
-    }));
+    $$('[data-copy]').forEach(b => b.addEventListener('click', () =>
+      copyWithFeedback(b, (window.__codeStore || {})[b.dataset.copy] || '')));
 
     $$('[data-sugg]').forEach(b => b.addEventListener('click', () => {
       $('#input').value = b.dataset.sugg;
@@ -513,7 +605,7 @@
       });
     } catch (err) {
       console.error(err);
-      alert('Ошибка: ' + err.message);
+      toast('Ошибка: ' + err.message, 'error');
     } finally {
       setStreaming(false);
       state.streamEl = null;
@@ -634,7 +726,7 @@
       renderFiles();
       out.forEach(f => state.pendingAttachments.push(f));
       renderAttachments();
-    } catch (err) { alert('Ошибка загрузки: ' + err.message); }
+    } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }
   }
 
   function toggleFiles(force) {
@@ -671,7 +763,7 @@
     back.addEventListener('click', (e) => { if (e.target === back) close(); });
     $('[data-ok]', root).addEventListener('click', async () => {
       try { const ok = onOk ? await onOk(root) : true; if (ok !== false) close(); }
-      catch (err) { alert('Ошибка: ' + err.message); }
+      catch (err) { toast('Ошибка: ' + err.message, 'error'); }
     });
     const inp = $('input, textarea', root);
     if (inp) { inp.focus(); inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('[data-ok]', root).click(); } }); }
@@ -692,7 +784,7 @@
       '<button class="solid" data-ok>Сохранить</button></div></div></div>';
     $('[data-cancel]', root).addEventListener('click', done);
     $('[data-ok]', root).addEventListener('click', async () => {
-      try { await onSubmit(); done(); } catch (e) { alert('Ошибка: ' + e.message); }
+      try { await onSubmit(); done(); } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     });
   }
 

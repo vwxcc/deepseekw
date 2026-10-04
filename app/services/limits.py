@@ -42,7 +42,7 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "compress_min": 5,
         "compress_max": 85,
         "compress_per_day": None,
-        "price": 990,
+        "price": 19,
         "cost_per_1k": 2,
     },
 }
@@ -61,8 +61,8 @@ LABELS: dict[str, str] = {
     "compress_min": "Сжатие: минимум %",
     "compress_max": "Сжатие: максимум %",
     "compress_per_day": "Сжатий в день",
-    "price": "Цена тарифа, ₽/мес",
-    "cost_per_1k": "Цена за 1k токенов, ₽",
+    "price": "Цена тарифа, $/мес",
+    "cost_per_1k": "Цена за 1k токенов, $",
 }
 
 BYTE_KEYS = {"file_size", "user_storage"}

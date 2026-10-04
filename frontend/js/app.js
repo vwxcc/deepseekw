@@ -1400,7 +1400,7 @@
     });
     if ($('#model-btn')) $('#model-btn').addEventListener('click', openModelMenu);
     updateModelButton();
-    if ($('#context-btn')) $('#context-btn').addEventListener('click', openContextMenu);
+    if ($('#context-btn')) $('#context-btn').addEventListener('click', openUsageModal);
     if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
     if ($('#pp-refresh')) $('#pp-refresh').addEventListener('click', () => loadProject(true));
@@ -1414,20 +1414,37 @@
     return String(n);
   }
 
+  // percent of the subscription limit that is used the most
+  function planUsage() {
+    const data = state.limits || {};
+    const lim = data.limits || {};
+    const use = data.usage || {};
+    const defs = [
+      ['files', 'files_count', 'Файлы', 'шт'],
+      ['storage', 'user_storage', 'Хранилище', ' Б'],
+      ['posts', 'posts', 'Посты', 'шт'],
+      ['requests', 'messages_per_day', 'Запросы в день', 'шт'],
+    ];
+    const rows = [];
+    defs.forEach(d => {
+      const used = Number(use[d[0]] || 0);
+      const cap = lim[d[1]];
+      const unlimited = (cap === null || cap === undefined);
+      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
+      rows.push({ key: d[0], label: d[2], unit: d[3], used: used, cap: cap, unlimited: unlimited, pct: pct });
+    });
+    const worst = rows.reduce((m, r) => (r.unlimited ? m : Math.max(m, r.pct)), 0);
+    return { rows: rows, worst: worst, plan: data.plan || 'free' };
+  }
+
   async function loadUsage() {
     const btn = $('#context-btn');
     if (!btn) return;
-    if (!state.currentChatId) { btn.textContent = '—'; return; }
-    try {
-      const u = await api.get('/api/chats/' + state.currentChatId + '/usage');
-      state.usage = u;
-      const p = u.percent || 0;
-      btn.textContent = p.toFixed(1) + '%';
-      btn.classList.toggle('warn', p > 60);
-      btn.title = 'Контекст: ' + p.toFixed(2) + '% из ' + fmtNum(u.context_len) + ' токенов';
-    } catch (e) {
-      btn.textContent = '—';
-    }
+    if (!state.limits) await loadLimits();
+    const info = planUsage();
+    btn.textContent = info.worst + '%';
+    btn.classList.toggle('warn', info.worst >= 80);
+    btn.title = 'Использование лимитов подписки: ' + info.worst + '%';
   }
 
   function usageCards(u) {
@@ -1747,15 +1764,47 @@
   }
 
   // ---------- admin: model sets ----------
+
+  // live cost estimate for a model: prices are $ per 1M tokens
+  function wireCostCalc(root, calcId, ids) {
+    const box = $('#' + calcId, root);
+    if (!box) return;
+    const get = (id) => { const n = $('#' + id, root); return n ? (parseFloat(n.value) || 0) : 0; };
+    const upd = () => {
+      const pin = get(ids.in), pout = get(ids.out), pcache = get(ids.cache);
+      const ctx = get(ids.ctx), mx = get(ids.max);
+      const full = (pin * ctx) / 1e6 + (pout * mx) / 1e6;
+      const short = (pin * 1000) / 1e6 + (pout * 500) / 1e6;
+      box.innerHTML =
+        '<div class="calc-line"><span>Вход</span><b>$' + pin + ' / 1M токенов</b></div>' +
+        '<div class="calc-line"><span>Выход</span><b>$' + pout + ' / 1M токенов</b></div>' +
+        '<div class="calc-line"><span>Кэш</span><b>$' + pcache + ' / 1M токенов</b></div>' +
+        '<div class="calc-line total"><span>Короткий ответ (1k контекст + 0.5k ответ)</span><b>≈ $' +
+          short.toFixed(5) + '</b></div>' +
+        '<div class="calc-line total"><span>Полный контекст ' + fmtNum(ctx) + ' + ответ ' +
+          fmtNum(mx) + '</span><b>≈ $' + full.toFixed(4) + '</b></div>' +
+        (pout ? '<div class="calc-line"><span>1000 таких ответов</span><b>≈ $' +
+          (full * 1000).toFixed(2) + '</b></div>' : '');
+    };
+    $$('input', root).forEach(i => {
+      i.addEventListener('input', upd);
+      i.addEventListener('change', upd);
+    });
+    upd();
+  }
+
   function adminForm(root, title, fields, onSubmit, done) {
-    root.innerHTML = '<div class="modal-back"><div class="modal"><h3>' + escapeHtml(title) + '</h3>' +
-      '<div class="modal-body">' + fields.map(f =>
+    root.innerHTML = '<div class="modal-back"><div class="modal wide"><h3>' + escapeHtml(title) + '</h3>' +
+      '<div class="modal-body lim-plans">' + fields.map(f =>
+        f.type === 'html' ? (f.html || '') :
         '<label>' + escapeHtml(f.label) +
         (f.type === 'select'
           ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
           : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
             (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
-            (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') + ' />') +
+            (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') +
+            (f.calc ? ' data-calc="1" inputmode="decimal"' : '') + ' />') +
+        (f.note ? '<span class="field-note">' + f.note + '</span>' : '') +
         '</label>').join('') + '</div>' +
       '<div class="row"><button class="ghost" data-cancel>Отмена</button>' +
       '<button class="solid" data-ok>Сохранить</button></div></div></div>';
@@ -1806,10 +1855,20 @@
         await api.patch('/api/admin/model-sets/' + b.dataset.toggle,
           { is_active: b.dataset.active !== '1' }); rerender();
       }));
-      $$('[data-del-entry]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-del-entry]', root).forEach(b => {
         const [sid, eid] = b.dataset.delEntry.split('|');
-        await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
-      }));
+        b.addEventListener('click', async () => {
+          await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
+        });
+        if (!b.parentNode.querySelector('[data-edit-entry="' + eid + '"]')) {
+          const edit = document.createElement('button');
+          edit.textContent = 'Изменить';
+          edit.title = 'Модель, цены, контекст, лимит ответа';
+          edit.dataset.editEntry = eid;
+          edit.addEventListener('click', () => editEntryForm(root, sid, eid, rerender));
+          b.parentNode.insertBefore(edit, b);
+        }
+      });
       $$('[data-add-entry]', root).forEach(b =>
         b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
     }
@@ -1836,8 +1895,12 @@
       { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
       { id: 'me-pos', label: 'Позиция', type: 'number', value: '0' },
       { id: 'me-temp', label: 'Temperature', type: 'number', value: '0.2' },
-      { id: 'me-max', label: 'Max tokens (ответ)', type: 'number', value: '32000' },
-      { id: 'me-ctx', label: 'Окно контекста, токенов (0 = общее)', type: 'number', value: '0' },
+      { id: 'me-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: '32000', calc: true },
+      { id: 'me-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: '0', calc: true },
+      { id: 'me-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: '0', calc: true },
+      { id: 'me-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: '0', calc: true },
+      { id: 'me-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: '0', calc: true },
+      { type: 'html', html: '<div id="me-calc" class="field-calc"></div>' },
     ], async () => {
       await api.post('/api/admin/model-sets/' + setId + '/entries', {
         base_url: $('#me-url').value.trim(),
@@ -1847,8 +1910,53 @@
         temperature: parseFloat($('#me-temp').value) || 0.2,
         max_tokens: parseInt($('#me-max').value, 10) || 32000,
         context_len: parseInt($('#me-ctx').value, 10) || 0,
+        price_in: parseFloat($('#me-pin').value) || 0,
+        price_out: parseFloat($('#me-pout').value) || 0,
+        price_cache: parseFloat($('#me-pcache').value) || 0,
       });
     }, done);
+    wireCostCalc(root, 'me-calc',
+      { in: 'me-pin', out: 'me-pout', cache: 'me-pcache', ctx: 'me-ctx', max: 'me-max' });
+  }
+
+  async function editEntryForm(root, setId, entryId, done) {
+    let entry = null;
+    try {
+      const sets = await api.get('/api/models/sets');
+      (sets || []).forEach(s => {
+        (s.entries || []).forEach(e => { if (e.id === entryId) entry = e; });
+      });
+    } catch (e) { /* ignore */ }
+    if (!entry) { toast('Модель не найдена', 'error'); return; }
+    adminForm(root, 'Модель: ' + (entry.model || ''), [
+      { id: 'ee-model', label: 'Модель', value: entry.model || '' },
+      { id: 'ee-url', label: 'Base URL', value: entry.base_url || '' },
+      { id: 'ee-key', label: 'API-ключ (пусто = не менять)', placeholder: 'sk-…' },
+      { id: 'ee-temp', label: 'Temperature', type: 'number', value: String(entry.temperature != null ? entry.temperature : 0.2) },
+      { id: 'ee-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: String(entry.max_tokens || 32000), calc: true },
+      { id: 'ee-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: String(entry.context_len || 0), calc: true },
+      { id: 'ee-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: String(entry.price_in || 0), calc: true },
+      { id: 'ee-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: String(entry.price_out || 0), calc: true },
+      { id: 'ee-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: String(entry.price_cache || 0), calc: true },
+      { type: 'html', html: '<div id="ee-calc" class="field-calc"></div>' },
+    ], async () => {
+      const body = {
+        model: $('#ee-model').value.trim(),
+        base_url: $('#ee-url').value.trim(),
+        temperature: parseFloat($('#ee-temp').value) || 0.2,
+        max_tokens: parseInt($('#ee-max').value, 10) || 32000,
+        context_len: parseInt($('#ee-ctx').value, 10) || 0,
+        price_in: parseFloat($('#ee-pin').value) || 0,
+        price_out: parseFloat($('#ee-pout').value) || 0,
+        price_cache: parseFloat($('#ee-pcache').value) || 0,
+      };
+      const key = $('#ee-key').value;
+      if (key) body.api_key = key;
+      await api.patch('/api/admin/model-sets/' + setId + '/entries/' + entryId, body);
+      toast('Модель обновлена');
+    }, done);
+    wireCostCalc(root, 'ee-calc',
+      { in: 'ee-pin', out: 'ee-pout', cache: 'ee-pcache', ctx: 'ee-ctx', max: 'ee-max' });
   }
 
   // ---------- sidebar ----------
@@ -2799,17 +2907,17 @@
     };
     const block = (plan) => {
       const lim = data.limits[plan] || {};
-      return '<h4 class="sec">Тариф ' + plan.toUpperCase() + '</h4>' +
+      return '<div class="lim-plan"><h5>Тариф ' + plan.toUpperCase() + '</h5>' +
         '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>' +
-        '<h4 class="sec">Модели тарифа ' + plan.toUpperCase() + '</h4>' + modelBoxes(plan);
+        '<h5>Доступ к моделям</h5>' + modelBoxes(plan) + '</div>';
     };
     openModal({
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в рублях. Настройка действует для всех действий: файлы, чаты, посты, ' +
+        'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, посты, ' +
         'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
-        (data.plans || ['free', 'pro']).map(block).join('') +
+        '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
         const grouped = {};

@@ -96,6 +96,11 @@ def extract_ask(text: str) -> tuple[str, str | None]:
     return clean, (matches[0] if matches else None)
 
 
+DOCGEN_HINT = (
+    "  • для документов и презентаций используй designs.docgen (см. скилл документов)\n"
+)
+
+
 def extract_run_blocks(text: str) -> list[str]:
     return [b.strip() for b in RUN_RE.findall(text or "") if b.strip()]
 
@@ -287,12 +292,85 @@ ROUTER_SYSTEM = (
     'Ответь строго JSON без пояснений: {"brief": "...", "cluster": "<id>"}'
 )
 
+DOC_SKILL = """
+Скилл документов и презентаций. Когда просят документ, презентацию, отчёт, таблицу,
+коммерческое предложение, резюме, PDF — НЕ выводи содержимое в чат текстом,
+а СОЗДАЙ ФАЙЛ через библиотеку designs.docgen.
+
+Порядок:
+1. Посмотри стили: designs.theme.catalog() — там 57 стилей (apple, stripe, consulting,
+   editorial, carbon, fluent, glass, neural, tufte, ...). Выбери подходящий теме.
+2. Собери spec (обычный dict) и вызови designs.docgen.build("/work/out", spec).
+3. Коротко напиши, что внутри файла. Файлы прикрепятся к ответу автоматически.
+
+Формат задаётся spec["format"]: "pptx" | "docx" | "xlsx" | "pdf".
+Общие поля: title, subtitle, author, date, style, cover, closing.
+
+Блоки для docx и pdf:
+  {"kind":"h1"|"h2"|"h3","text":...}          заголовок
+  {"kind":"text","text":...}                  абзац
+  {"kind":"bullets","items":[...]}            маркированный список
+  {"kind":"numbers","items":[...]}            нумерованный список
+  {"kind":"callout","text":...}               выделенная врезка
+  {"kind":"table","head":[...],"rows":[[...]]} таблица
+  {"kind":"image","image":"/work/out/x.png","caption":...}
+  {"kind":"pagebreak"}
+
+Блоки для pptx (каждый = отдельный слайд):
+  {"kind":"section","index":"01","title":...,"text":...}   разделитель
+  {"kind":"bullets","kicker":...,"title":...,"items":[...]}
+  {"kind":"two_col","title":...,"left":{"title","text"},"right":{...}}
+  {"kind":"metrics","title":...,"items":[{"value":"48,1","label":"млрд ₽"}]}
+  {"kind":"chart","title":...,"chart_id":"growth","note":...}
+  {"kind":"image","title":...,"image":"/work/out/pic.png","caption":...}
+  {"kind":"table","title":...,"head":[...],"rows":[[...]]}
+  {"kind":"quote","text":...,"author":...}
+
+Графики (PNG, рисуются заранее и вставляются в любые форматы):
+  spec["charts"] = [{"id":"growth","kind":"area","title":"Объём рынка, млрд ₽",
+                     "labels":["2022","2023"],"series":[{"name":"Рынок","values":[18.2,24.6]}]}]
+  kind: bar | hbar | line | area | pie | donut | scatter | stacked
+  В блоке ссылайся на него: {"kind":"chart","chart_id":"growth"}
+
+Таблицы Excel: spec["sheets"] = [{"name":"Лист","head":[...],"rows":[[...]],
+                                  "totals":True,"totals_label":"Итого"}]
+
+Пример (презентация):
+    import sys; sys.path.insert(0, "/srv")
+    from designs import docgen
+    spec = {
+        "format": "pptx", "style": "stripe",
+        "title": "Анализ рынка", "subtitle": "Казань, 2026", "author": "ChatStudio",
+        "charts": [{"id": "g", "kind": "area", "title": "Объём, млрд ₽",
+                    "labels": ["2024", "2025", "2026"],
+                    "series": [{"name": "Рынок", "values": [31.4, 39.8, 48.1]}]}],
+        "blocks": [
+            {"kind": "metrics", "kicker": "Срез", "title": "Главное",
+             "items": [{"value": "48,1", "label": "млрд ₽ рынок"},
+                       {"value": "+21%", "label": "рост за год"}]},
+            {"kind": "chart", "title": "Рынок растёт", "chart_id": "g",
+             "note": "Источник: открытые данные"},
+            {"kind": "bullets", "title": "Выводы",
+             "items": ["Ниша не насыщена", "Конкуренция скоростью"],
+             "kicker": "Итоги"},
+        ],
+    }
+    res = docgen.build("/work/out", spec)
+    print(res["files"])
+
+Правила оформления: 4–8 слайдов для презентации, 1–3 абзаца на слайд, цифры — в metrics,
+динамика — в chart, не дублируй одно и то же текстом и графиком. В документе Word
+обязательно используй h1/h2 и таблицы вместо длинных простыней текста.
+"""
+
+
 MAIN_SYSTEM = (
     IDENTITY
     + AGENT_MODE
     + DRAW_SKILL
     + RUN_SKILL
     + STYLE_SKILL
+    + DOC_SKILL
     + HTML_SKILL
     + ASK_SKILL
     + MEMORY_SKILL

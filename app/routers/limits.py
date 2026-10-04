@@ -50,6 +50,7 @@ async def my_limits(
         .where(Chat.user_id == user.id, Message.role == Role.assistant)
     )
     return {
+        "compare": await all_limits(db),
         "plan": user.plan or "free",
         "labels": LABELS,
         "limits": limits,

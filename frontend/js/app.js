@@ -1310,6 +1310,8 @@
       toast('Ошибка: ' + err.message, 'error');
     } finally {
       setStreaming(false);
+      // limits must move the moment the answer lands
+      setTimeout(() => { loadLimits().then(loadUsage); }, 250);
       if (state.genTimer) { clearInterval(state.genTimer); state.genTimer = null; }
       state.streamEl = null;
       await loadChats();
@@ -2978,7 +2980,7 @@
       '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
       ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
       ' · файлы: ' + formatSize(u.storage) +
-      ' · тариф ' + u.plan_price + ' ₽ · расход ' + u.cost + ' ₽</span></div>' +
+      ' · тариф $' + u.plan_price + ' · расход $' + u.cost + '</span></div>' +
       '<button class="chip-btn" data-uplan="' + u.id + '">' +
       (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
       '</div>';
@@ -3251,9 +3253,9 @@
       const e = (x.entries || [])[0] || {};
       const bits = ['контекст ' + fmtNum(e.context_len || 0),
                     'ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.'];
-      if (e.price_in) bits.push('вход ' + e.price_in + ' ₽/1M');
-      if (e.price_out) bits.push('выход ' + e.price_out + ' ₽/1M');
-      if (e.price_cache) bits.push('кэш ' + e.price_cache + ' ₽/1M');
+      if (e.price_in) bits.push('вход $' + e.price_in + '/1M');
+      if (e.price_out) bits.push('выход $' + e.price_out + '/1M');
+      if (e.price_cache) bits.push('кэш $' + e.price_cache + '/1M');
       return '<label class="mm-card' + (x.id === state.modelSetId ? ' on' : '') + '">' +
         '<input type="radio" name="mm" value="' + x.id + '"' +
         (x.id === state.modelSetId ? ' checked' : '') + '/>' +
@@ -3349,6 +3351,105 @@
     const el = $('#input');
     if (!el) return;
     el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+  }
+
+// ---------- subscription limits window ----------
+  function limitValueLabel(key, value) {
+    if (value === null || value === undefined) return 'без лимита';
+    if (key === 'user_storage' || key === 'file_size') return formatSize(value);
+    return fmtNum(value);
+  }
+
+  function planCompareHtml(lim, compare) {
+    const pro = (compare && compare.pro) || {};
+    const order = ['budget_usd', 'window_hours', 'file_size', 'user_storage', 'files_count',
+                   'chats_count', 'messages_per_day', 'posts', 'code_agents',
+                   'agent_steps', 'council_members', 'sandbox_seconds'];
+    const labels = {
+      budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
+      file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
+      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день', posts: 'Постов',
+      code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
+      council_members: 'Участников консилиума', sandbox_seconds: 'Секунд на код',
+    };
+    const rows = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
+      const mine = lim[k];
+      const theirs = pro[k];
+      let mult = '—';
+      if (theirs === null || theirs === undefined) mult = '∞';
+      else if (mine === null || mine === undefined) mult = '=';
+      else if (Number(mine) > 0) {
+        const m = Number(theirs) / Number(mine);
+        mult = m >= 1.05 ? '×' + (Math.round(m * 10) / 10) : '=';
+      }
+      return '<tr><td>' + (labels[k] || k) + '</td>' +
+        '<td>' + limitValueLabel(k, mine) + '</td>' +
+        '<td class="pro-col">' + limitValueLabel(k, theirs) + '</td>' +
+        '<td class="mult">' + mult + '</td></tr>';
+    }).join('');
+    return '<table class="cmp"><thead><tr><th>Лимит</th><th>Сейчас</th>' +
+      '<th>С подпиской</th><th>Больше в</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  async function openUsageModal() {
+    await loadLimits();
+    const data = state.limits || {};
+    const lim = data.limits || {};
+    const pro = (data.compare && data.compare.pro) || {};
+    const plan = data.plan || 'free';
+    const w = data.window || null;
+    const use = data.usage || {};
+    const proPrice = Number(pro.price || 0);
+
+    let money = '';
+    if (w && w.budget_usd) {
+      const left = Math.max(0, Number(w.budget_usd) - Number(w.spend_usd));
+      const pct = Math.min(100, Math.round(w.percent));
+      money = '<div class="lim-row ' + (pct >= 80 ? 'warn' : '') + '">' +
+        '<div class="lr-top"><b>Деньги за ' + w.hours + ' ч</b>' +
+        '<i>$' + Number(w.spend_usd).toFixed(2) + ' из $' + Number(w.budget_usd).toFixed(2) +
+        ' · осталось $' + left.toFixed(2) + ' (' + (100 - pct) + '%)</i></div>' +
+        '<div class="lr-bar"><i style="width:' + pct + '%"></i></div></div>';
+    }
+
+    const defs = [
+      ['files', 'files_count', 'Файлы'],
+      ['storage', 'user_storage', 'Хранилище'],
+      ['posts', 'posts', 'Посты'],
+      ['requests', 'messages_per_day', 'Сообщений в день'],
+    ];
+    const rows = defs.map(d => {
+      const used = Number(use[d[0]] || 0);
+      const cap = lim[d[1]];
+      const unlimited = cap === null || cap === undefined;
+      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
+      const right = unlimited
+        ? limitValueLabel(d[1], used) + ' · без лимита'
+        : limitValueLabel(d[1], used) + ' из ' + limitValueLabel(d[1], cap) +
+          ' · осталось ' + limitValueLabel(d[1], Math.max(0, cap - used));
+      return '<div class="lim-row ' + (unlimited ? 'unlimited' : (pct >= 80 ? 'warn' : '')) + '">' +
+        '<div class="lr-top"><b>' + d[2] + '</b><i>' + right + ' · ' +
+        (unlimited ? '∞' : pct + '%') + '</i></div>' +
+        '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
+    }).join('');
+
+    openModal({
+      title: 'Лимиты подписки',
+      okText: 'Понятно',
+      body:
+        '<div class="sub-head">' +
+          '<div class="sub-plan">Тариф «' + escapeHtml(String(plan).toUpperCase()) + '»' +
+          '<br><em>' + (w && w.budget_usd
+            ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
+            : 'лимит по минутам и файлам') + '</em></div>' +
+          '<div class="sub-price">' + (proPrice ? '$' + proPrice + '<br><small>с подпиской</small>' : '') + '</div>' +
+        '</div>' +
+        money + rows +
+        '<h4 class="sec">Что даёт подписка</h4>' +
+        planCompareHtml(lim, data.compare) +
+        '<p class="usage-note">Подписка оформляется у администратора — напишите ему в чат.</p>',
+      onOk: () => true,
+    });
   }
 
   // ---------- boot ----------

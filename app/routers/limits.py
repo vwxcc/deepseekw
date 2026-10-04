@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_current_user, get_db, require_csrf
-from ..models import Chat, File, Message, ModelSet, Post, Role, RouteType, User
+from ..models import Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, User
 from ..services.limits import (
     LABELS,
     PLANS,
@@ -223,6 +223,39 @@ async def users_overview(
             }
         )
     return out
+
+
+@router.post("/{plan}/reset")
+async def reset_plan_limits(
+    plan: str,
+    admin: User = Depends(get_current_admin),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Drop every stored override for a plan so the built-in defaults apply again."""
+    from sqlalchemy import delete as sa_delete
+
+    if plan not in PLANS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неизвестный тариф")
+    await db.execute(
+        sa_delete(PlanLimit).where(PlanLimit.plan == plan, PlanLimit.key != "models")
+    )
+    await db.commit()
+    return {"plan": plan, "limits": await get_limits(db, plan)}
+
+
+@router.post("/reset")
+async def reset_all_plans(
+    admin: User = Depends(get_current_admin),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Reset the limits of every plan at once (handy after experiments)."""
+    from sqlalchemy import delete as sa_delete
+
+    await db.execute(sa_delete(PlanLimit).where(PlanLimit.key != "models"))
+    await db.commit()
+    return {"plans": {p: await get_limits(db, p) for p in PLANS}}
 
 
 @router.put("/{plan}")

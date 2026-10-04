@@ -1445,23 +1445,32 @@
     return { rows: rows, worst: worst, plan: data.plan || 'free' };
   }
 
-  async function loadUsage() {
+  function paintUsage(pct, note) {
     const btn = $('#context-btn');
     if (!btn) return;
+    const label = $('#usage-pct');
+    const bar = $('#usage-bar');
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    if (label) label.textContent = p + '%';
+    if (bar) bar.style.width = p + '%';
+    btn.classList.toggle('warn', p >= 80);
+    btn.classList.toggle('full', p >= 100);
+    btn.title = note;
+  }
+
+  async function loadUsage() {
+    if (!$('#context-btn')) return;
     if (!state.limits) await loadLimits();
     const w = windowUsage();
     if (w) {
-      const pct = Math.round(w.percent);
-      btn.textContent = pct + '%';
-      btn.classList.toggle('warn', pct >= 80);
-      btn.title = 'Израсходовано $' + w.spend_usd.toFixed(2) + ' из $' + w.budget_usd +
-        ' за ' + w.hours + ' ч — это ' + pct + '% лимита тарифа';
+      paintUsage(w.percent,
+        'Израсходовано $' + Number(w.spend_usd).toFixed(2) + ' из $' + w.budget_usd +
+        ' за ' + w.hours + ' ч · осталось $' +
+        Math.max(0, w.budget_usd - w.spend_usd).toFixed(2));
       return;
     }
     const info = planUsage();
-    btn.textContent = info.worst + '%';
-    btn.classList.toggle('warn', info.worst >= 80);
-    btn.title = 'Использование лимитов подписки: ' + info.worst + '%';
+    paintUsage(info.worst, 'Использование лимитов подписки: ' + info.worst + '%');
   }
 
   function usageCards(u) {
@@ -2938,7 +2947,10 @@
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
         'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, посты, ' +
         'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
-        '<table class="lim-table"><thead><tr><th>Лимит</th><th>Free</th><th>Pro</th></tr></thead>' +
+        '<table class="lim-table"><thead><tr><th>Лимит</th>' +
+        '<th>Free<button class="reset-plan" data-reset-plan="free">сбросить</button></th>' +
+        '<th>Pro<button class="reset-plan" data-reset-plan="pro">сбросить</button></th>' +
+        '</tr></thead>' +
         '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table>' +
         '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
@@ -2968,6 +2980,17 @@
       },
     });
     loadLimitUsers();
+    $$('[data-reset-plan]', $('#modal-root')).forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Сбросить лимиты тарифа ' + b.dataset.resetPlan.toUpperCase() +
+                   ' к значениям по умолчанию?')) return;
+      try {
+        await api.post('/api/limits/' + b.dataset.resetPlan + '/reset', {});
+        toast('Лимиты ' + b.dataset.resetPlan.toUpperCase() + ' сброшены');
+        const root = $('#modal-root');
+        root.innerHTML = '';
+        await openLimits();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
   }
 
   async function loadLimitUsers() {
@@ -3387,8 +3410,12 @@
         '<td class="pro-col">' + limitValueLabel(k, theirs) + '</td>' +
         '<td class="mult">' + mult + '</td></tr>';
     }).join('');
-    return '<table class="cmp"><thead><tr><th>Лимит</th><th>Сейчас</th>' +
-      '<th>С подпиской</th><th>Больше в</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    const half = Math.ceil(rows.length / 2);
+    const head = '<thead><tr><th>Лимит</th><th>Сейчас</th><th>С подпиской</th><th>×</th></tr></thead>';
+    return '<div class="cmp-cols">' +
+      '<table class="cmp">' + head + '<tbody>' + rows.slice(0, half).join('') + '</tbody></table>' +
+      '<table class="cmp">' + head + '<tbody>' + rows.slice(half).join('') + '</tbody></table>' +
+      '</div>';
   }
 
   async function openUsageModal() {
@@ -3442,7 +3469,6 @@
           '<br><em>' + (w && w.budget_usd
             ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
             : 'лимит по минутам и файлам') + '</em></div>' +
-          '<div class="sub-price">' + (proPrice ? '$' + proPrice + '<br><small>с подпиской</small>' : '') + '</div>' +
         '</div>' +
         money + rows +
         '<h4 class="sec">Что даёт подписка</h4>' +

@@ -4,10 +4,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+import re
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai.router import router as ai_router
@@ -104,6 +105,15 @@ if _frontend.exists():
 async def index():
     idx = _frontend / "index.html"
     if idx.exists():
-        # never let the shell HTML go stale in the browser
-        return FileResponse(idx, headers={"Cache-Control": "no-cache, must-revalidate"})
+        # stamp the asset URLs with the real file mtimes, so a deploy can never be
+        # served from the browser cache (the shell itself is always revalidated)
+        try:
+            stamp = str(int(max(
+                (_frontend / "js" / "app.js").stat().st_mtime,
+                (_frontend / "css" / "app.css").stat().st_mtime,
+            )))
+        except OSError:
+            stamp = "0"
+        html = re.sub(r"\?v=\d+", "?v=" + stamp, idx.read_text(encoding="utf-8"))
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
     return JSONResponse({"app": settings.app_name, "status": "ok"})

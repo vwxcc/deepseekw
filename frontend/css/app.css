@@ -1664,3 +1664,48 @@ body { font-weight: 400; }
 .field-calc .calc-line b { margin-left: auto; font-variant-numeric: tabular-nums; }
 .field-calc .calc-line.total { border-top: 1px dashed var(--border-soft); margin-top: 4px; padding-top: 5px; }
 .lim-plan h5 { border-bottom: 1px solid var(--border-soft); padding-bottom: 7px; }
+
+
+/* footer row: compact icon buttons so the user name always fits */
+.side-row.foot { gap: 5px; }
+.side-row.foot .side-item.wide {
+  flex: 1 1 auto; min-width: 0; padding: 7px 9px; gap: 7px;
+}
+.side-row.foot .side-item.wide .ic { width: 15px; height: 15px; flex: 0 0 auto; }
+.side-row.foot .side-item.wide span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px;
+}
+.side-row.foot .side-item.icon-only {
+  flex: 0 0 auto; width: 30px; padding: 7px 0; justify-content: center;
+}
+.side-row.foot .side-item.icon-only .ic { width: 15px; height: 15px; }
+
+
+/* footer icons sit hard right, leaving the name all the room */
+.side-row.foot { gap: 4px; }
+.side-row.foot .side-item.icon-only { width: 28px; padding: 6px 0; }
+.side-row.foot .side-item.icon-only .ic { width: 14px; height: 14px; }
+.side-row.foot .side-item.icon-only:first-of-type { margin-left: auto; }
+
+/* compact horizontal tariff editor */
+.lim-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.lim-table th, .lim-table td { padding: 3px 6px; text-align: left; }
+.lim-table thead th {
+  font-size: 11px; color: var(--fg-muted); font-weight: 600;
+  border-bottom: 1px solid var(--border-soft); padding-bottom: 6px;
+}
+.lim-table td.lk { color: var(--fg-muted); white-space: nowrap; padding-right: 12px; }
+.lim-table td:nth-child(2), .lim-table td:nth-child(3) { width: 27%; }
+.lim-table .lim-field { display: block; margin: 0; }
+.lim-table .lim-field span { display: none; }
+.lim-table .lim-field input {
+  width: 100%; padding: 5px 8px; font-size: 12.5px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--bg-panel); color: var(--fg);
+}
+.lim-table tbody tr:hover { background: var(--bg-hover); }
+.ms-price { font-size: 11px; color: var(--fg-soft); min-width: 74px; font-variant-numeric: tabular-nums; }
+.ms-entry button[data-edit-entry] {
+  border: 1px solid var(--border); background: transparent; border-radius: 6px;
+  font-size: 11px; padding: 2px 7px; color: var(--accent); cursor: pointer;
+}
+.ms-entry button[data-edit-entry]:hover { background: var(--bg-hover); }

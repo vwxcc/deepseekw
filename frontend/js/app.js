@@ -1414,7 +1414,13 @@
     return String(n);
   }
 
-  // percent of the subscription limit that is used the most
+  // percent of the plan's dollar budget spent inside the rolling window
+  function windowUsage() {
+    const w = (state.limits && state.limits.window) || null;
+    if (!w || !w.budget_usd) return null;
+    return w;
+  }
+
   function planUsage() {
     const data = state.limits || {};
     const lim = data.limits || {};
@@ -1441,6 +1447,15 @@
     const btn = $('#context-btn');
     if (!btn) return;
     if (!state.limits) await loadLimits();
+    const w = windowUsage();
+    if (w) {
+      const pct = Math.round(w.percent);
+      btn.textContent = pct + '%';
+      btn.classList.toggle('warn', pct >= 80);
+      btn.title = 'Израсходовано $' + w.spend_usd.toFixed(2) + ' из $' + w.budget_usd +
+        ' за ' + w.hours + ' ч — это ' + pct + '% лимита тарифа';
+      return;
+    }
     const info = planUsage();
     btn.textContent = info.worst + '%';
     btn.classList.toggle('warn', info.worst >= 80);
@@ -1835,6 +1850,10 @@
               '<span class="ms-model">' + escapeHtml(e.model) + '</span>' +
               '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
               '<span class="ms-key">' + (e.has_api_key ? icon('check') : '—') + '</span>' +
+              '<span class="ms-price">' + (e.price_in || e.price_out
+                ? '$' + (e.price_in || 0) + ' / $' + (e.price_out || 0)
+                : '—') + '</span>' +
+              '<button data-edit-entry="' + s.id + '|' + e.id + '" title="Модель, цены, контекст, лимит ответа">Изменить</button>' +
               '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button>' +
             '</div>').join('') : '<div class="ms-empty">нет моделей</div>') +
           '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button>' +
@@ -1860,14 +1879,10 @@
         b.addEventListener('click', async () => {
           await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
         });
-        if (!b.parentNode.querySelector('[data-edit-entry="' + eid + '"]')) {
-          const edit = document.createElement('button');
-          edit.textContent = 'Изменить';
-          edit.title = 'Модель, цены, контекст, лимит ответа';
-          edit.dataset.editEntry = eid;
-          edit.addEventListener('click', () => editEntryForm(root, sid, eid, rerender));
-          b.parentNode.insertBefore(edit, b);
-        }
+      });
+      $$('[data-edit-entry]', root).forEach(b => {
+        const [sid, eid] = b.dataset.editEntry.split('|');
+        b.addEventListener('click', () => editEntryForm(root, sid, eid, rerender));
       });
       $$('[data-add-entry]', root).forEach(b =>
         b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
@@ -2905,18 +2920,24 @@
         '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
         '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';
     };
-    const block = (plan) => {
-      const lim = data.limits[plan] || {};
-      return '<div class="lim-plan"><h5>Тариф ' + plan.toUpperCase() + '</h5>' +
-        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>' +
-        '<h5>Доступ к моделям</h5>' + modelBoxes(plan) + '</div>';
-    };
+    const lf = data.limits.free || {};
+    const lp = data.limits.pro || {};
+    const tableKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp))));
+    const rowFor = (key) => '<tr><td class="lk">' + escapeHtml(labels[key] || key) +
+      (bytes[key] ? ' <em>МБ</em>' : '') + '</td>' +
+      '<td>' + field('free', key, lf[key]) + '</td>' +
+      '<td>' + field('pro', key, lp[key]) + '</td></tr>';
+    const block = (plan) =>
+      '<div class="lim-plan"><h5>Модели тарифа ' + plan.toUpperCase() + '</h5>' +
+      modelBoxes(plan) + '</div>';
     openModal({
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
         'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, посты, ' +
         'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
+        '<table class="lim-table"><thead><tr><th>Лимит</th><th>Free</th><th>Pro</th></tr></thead>' +
+        '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table>' +
         '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {

@@ -29,6 +29,7 @@ from ..services.files import detect_kind, sha256_bytes
 from ..services.sandbox import cleanup, run_python
 from . import model_sets as ms
 from . import prompts
+from ..services.usage import account, est
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -491,6 +492,15 @@ class AIRouter:
             log.warning("Router failed: %s", e)
         if chosen is None:
             chosen = candidates[0]
+        try:
+            async with SessionLocal() as db:
+                await account(
+                    db, job.chat_id, chosen.id,
+                    est(job.user_text) + est(listing), est(brief),
+                )
+                await db.commit()
+        except Exception as e:  # noqa: BLE001 - accounting must never break a chat
+            log.warning("Router accounting failed: %s", e)
         return chosen.id, chosen.name, brief
 
     async def _run_message(self, job: Job) -> None:
@@ -688,7 +698,14 @@ class AIRouter:
                         chat = await db.get(Chat, job.chat_id)
                         if chat is not None:
                             chat.title = title
-                            await db.commit()
+                        await account(
+                            db,
+                            job.chat_id,
+                            entry.model_set_id,
+                            est(prompts.TITLE_SYSTEM) + est((job.user_text or "")[:2000]),
+                            est(title),
+                        )
+                        await db.commit()
                     return
             except Exception as e:
                 log.warning("Title entry %s failed: %s", entry.model, e)
@@ -723,6 +740,14 @@ class AIRouter:
                 items = _parse_suggestions(raw)
                 if items:
                     async with SessionLocal() as db:
+                        await account(
+                            db,
+                            job.chat_id,
+                            entry.model_set_id,
+                            est(prompts.SUGGESTIONS_SYSTEM)
+                            + sum(est(m.get("content")) for m in dialogue[-8:]),
+                            est(raw),
+                        )
                         await db.execute(
                             delete(Suggestion).where(
                                 Suggestion.message_id == job.message_id

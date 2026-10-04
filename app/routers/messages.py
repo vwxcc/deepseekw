@@ -52,6 +52,7 @@ from ..services.chats import (
 )
 import logging
 
+from ..services.usage import account, est
 from ..services.websearch import format_context, web_search
 from ..services.limits import get_limits
 
@@ -346,10 +347,11 @@ async def _main_entry(db: AsyncSession, model_set_id: str | None):
 
 
 async def _smart_search(
-    message: str, db: AsyncSession, model_set_id: str | None
+    message: str, db: AsyncSession, model_set_id: str | None, chat_id: str | None = None
 ) -> list[dict]:
     """Let the model write the queries, then search with each of them."""
     queries: list[str] = []
+    answer = ""
     try:
         entry = await _main_entry(db, model_set_id)
         if entry is not None:
@@ -402,6 +404,12 @@ async def _smart_search(
         except Exception as e:  # noqa: BLE001
             log.warning("Search failed for %r: %s", q[:60], e)
     log.info("Search queries=%s results=%d", queries, len(out))
+    if chat_id and answer:
+        try:
+            await account(db, chat_id, model_set_id, est(message), est(answer))
+            await db.commit()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Search accounting failed: %s", e)
     return out[:6]
 
 
@@ -483,7 +491,7 @@ async def send_message(
     system_prompt += await _memory_block(db, user.id)
 
     # web search is always on: the model writes its own short queries first
-    results = await _smart_search(content, db, data.model_set_id)
+    results = await _smart_search(content, db, data.model_set_id, chat.id)
     ctx = format_context(results)
     if ctx:
         system_prompt = f"{system_prompt}\n\n{ctx}"
@@ -841,6 +849,11 @@ async def compress_chat(
     if not summary.strip():
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Модель вернула пустое резюме")
 
+    try:
+        _in_tokens = sum(est(m.content) for m in cut)
+    except Exception:
+        _in_tokens = 0
+    await account(db, chat.id, data.model_set_id, _in_tokens, est(summary))
     chat.summary = summary.strip()[:20000]
     chat.summary_upto = cut[-1].id
     chat.compress_count = (chat.compress_count or 0) + 1

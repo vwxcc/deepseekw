@@ -1747,3 +1747,11 @@ body { font-weight: 400; }
   font-size: 10.5px; padding: 1px 8px; cursor: pointer;
 }
 .lim-table thead th .reset-plan:hover { color: var(--danger); border-color: var(--danger); }
+
+
+/* composer row: memory, usage and model buttons share one height */
+.chip-btn.context, .model-btn, #mem-quick-btn, #context-btn {
+  height: 34px; display: inline-flex; align-items: center;
+}
+.chip-btn.usage-mini { padding: 0 10px; gap: 7px; }
+.chip-btn.usage-mini b { line-height: 1; }

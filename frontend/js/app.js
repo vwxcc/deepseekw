@@ -1192,6 +1192,17 @@
     state.lastEvent = Date.now();
     if (state.genTimer) clearInterval(state.genTimer);
     state.genTimer = setInterval(() => {
+      // the limit bar fills live while the answer is still streaming
+      const w = windowUsage();
+      if (w && w.budget_usd) {
+        const ms = currentModelSet();
+        const ent = (ms && ms.entries && ms.entries[0]) || {};
+        const outTokens = Math.round(((state.streamBuf || '').length) / 3.6);
+        const live = Number(w.spend_usd || 0) + outTokens / 1e6 * Number(ent.price_out || 0);
+        paintUsage(live / w.budget_usd * 100,
+          'Идёт генерация · $' + live.toFixed(4) + ' из $' + w.budget_usd +
+          ' за ' + w.hours + ' ч');
+      }
       const el = $('[data-gen]');
       const secs = Math.round((Date.now() - (state.genStart || Date.now())) / 1000);
       const idle = Math.round((Date.now() - (state.lastEvent || Date.now())) / 1000);

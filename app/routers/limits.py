@@ -197,7 +197,7 @@ async def plan_of_user(
     if plan not in PLANS:
         plan = "free"
     target.plan = plan
-    days_raw = (data or {}).get("days", 30)
+    days_raw = (data or {}).get("days") if "days" in (data or {}) else (await get_limits(db, plan)).get("subscription_days", 30)
     if plan == "free":
         target.subscription_until = None
     elif days_raw in (None, "", 0, "0"):

@@ -1945,6 +1945,7 @@
         + text('api_key', '', 'password', 'API-ключ')
         + text('temperature', entry.temperature, 'number', 'Temperature')
         + text('max_tokens', entry.max_tokens, 'number', 'Max tokens')
+        + text('context_len', entry.context_len || 0, 'number', 'Контекст, токены (0 = общий)')
         + text('timeout', entry.timeout, 'number', 'Timeout, сек')
         + '<label class="lim-field"><span>Активна</span><input type="checkbox" data-chain-entry="' + eid + '" data-chain-field="is_active"'
         + (entry.is_active ? ' checked' : '') + '/></label></div>'
@@ -1970,7 +1971,7 @@
           else {
             let val = input.value.trim();
             if (key === 'api_key' && val === '') return;
-            if (['position', 'max_tokens', 'timeout'].includes(key)) val = val === '' ? 0 : Number(val);
+            if (['position', 'max_tokens', 'context_len', 'timeout'].includes(key)) val = val === '' ? 0 : Number(val);
             if (key === 'temperature') val = val === '' ? 0.2 : Number(val);
             updates[id][key] = val;
           }

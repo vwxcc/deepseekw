@@ -85,5 +85,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "users": {
         "avatar": "INTEGER DEFAULT 0",
+        "subscription_until": "DATETIME",
+        "usage_reset_at": "DATETIME",
     },
 }

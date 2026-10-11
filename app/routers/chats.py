@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..deps import get_current_user, get_db, get_owned_chat, require_csrf
 from ..models import Chat, Message, User
 from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut, SharedChatOut
+from ..services.limits import allow, effective_plan, get_limits
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -65,6 +66,17 @@ async def create_chat(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    plan = await effective_plan(db, user)
+    limits = await get_limits(db, plan)
+    current = await db.scalar(
+        select(func.count()).select_from(Chat).where(
+            Chat.user_id == user.id, Chat.deleted_at.is_(None)
+        )
+    )
+    allowed, reason = allow(limits, "chats_count", int(current or 0))
+    if not allowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, reason)
+
     chat = Chat(user_id=user.id, title=data.title.strip() or "Новый чат")
     db.add(chat)
     await db.commit()

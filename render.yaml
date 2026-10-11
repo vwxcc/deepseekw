@@ -27,6 +27,10 @@ services:
         value: ""
       - key: WEB_SEARCH_TIMEOUT
         value: "6"
+      - key: ADMIN_EMAIL
+        value: admin@ai-ch.local
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: QWEN_API_KEY
         sync: false
       - key: QWEN_BASE_URL

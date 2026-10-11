@@ -25,7 +25,6 @@ from .routers import (
     messages,
     models,
     public,
-    streaming_ws,
     system,
 )
 from .security_middleware import SecurityMiddleware
@@ -88,7 +87,6 @@ app.include_router(memory.router)
 app.include_router(avatars.router)
 app.include_router(system.router)
 app.include_router(limits.router)
-app.include_router(streaming_ws.router)
 
 
 @app.get("/api/health")

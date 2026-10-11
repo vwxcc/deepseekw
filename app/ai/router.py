@@ -18,7 +18,6 @@ from ..models import (
     MessageStatus,
     ModelSet,
     RouteType,
-    Suggestion,
 )
 from . import model_sets as ms
 from . import prompts
@@ -52,9 +51,11 @@ class Job:
     message_id: str | None = None
     user_text: str = ""
     model_set_id: str | None = None
+    generate_title: bool = False
     effort: str | None = None
     user_id: str | None = None
     retried: bool = False
+    requeued: bool = False
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -215,8 +216,6 @@ class AIRouter:
             try:
                 if job.kind == "title":
                     await self._run_title(job)
-                elif job.kind == "suggestions":
-                    await self._run_suggestions(job)
                 else:
                     await self._run_message(job)
             except asyncio.CancelledError:
@@ -226,8 +225,9 @@ class AIRouter:
                 if job.kind == "message":
                     await job.output.put(("error", f"{type(e).__name__}: {e}"))
             finally:
-                if job.message_id:
+                if job.message_id and not job.requeued:
                     self.active.pop(job.message_id, None)
+                job.requeued = False
                 self.queue.task_done()
 
     async def _stream_once(self, job: Job, entry, messages: list[dict]):
@@ -372,7 +372,9 @@ class AIRouter:
                 mset_id, mset_name, entries = await self._resolve_entries(RouteType.MAIN, chosen_id)
         await self._set_status(job.message_id, MessageStatus.processing, mset_id, mset_name)
         last_error = "Генерация не удалась"
-        for entry in entries:
+        for index, entry in enumerate(entries):
+            if index:
+                await job.output.put(("step", json.dumps({"attempt": index + 1, "total": len(entries)}, ensure_ascii=False)))
             if job.cancel.is_set():
                 await self._finish(job.message_id, MessageStatus.cancelled, error="Остановлено пользователем")
                 await job.output.put(("cancelled", ""))
@@ -397,8 +399,18 @@ class AIRouter:
                 await self._finish(job.message_id, MessageStatus.completed, content=answer, error=None, usage=usage, thinking=thinking if thinking else None)
                 if ask:
                     await job.output.put(("ask", json.dumps({"question": ask}, ensure_ascii=False)))
+                # Queue the title only after a successful answer has been committed.
+                # With the single Render worker, a follow-up request is queued after title generation.
+                if job.generate_title:
+                    await self.enqueue(
+                        Job(
+                            kind="title",
+                            route_type=RouteType.TITLE,
+                            chat_id=job.chat_id,
+                            user_text=job.user_text,
+                        )
+                    )
                 await job.output.put(("done", answer))
-                await self.enqueue(Job(kind="suggestions", route_type=RouteType.SUGGESTIONS, chat_id=job.chat_id, message_id=job.message_id, history=[*job.history, {"role": "assistant", "content": answer}]))
                 return
             except ProviderError as e:
                 last_error = str(e)
@@ -412,7 +424,9 @@ class AIRouter:
                 log.warning("Model entry %s error: %s", entry.model, e)
         if not job.retried and not job.cancel.is_set():
             job.retried = True
-            log.warning("Retrying once: %s", last_error)
+            job.requeued = True
+            await job.output.put(("step", json.dumps({"attempt": 1, "total": len(entries), "retry": True}, ensure_ascii=False)))
+            log.warning("Retrying once after fallback chain failure: %s", last_error)
             await self.enqueue(job)
             return
         await self._finish(job.message_id, MessageStatus.failed, error=last_error)
@@ -453,53 +467,6 @@ class AIRouter:
                 log.warning("Title entry %s failed: %s", entry.model, e)
 
 
-    async def _run_suggestions(self, job: Job) -> None:
-        if not job.message_id:
-            return
-        try:
-            _, _, entries = await self._resolve_entries(RouteType.SUGGESTIONS)
-        except ProviderError as e:
-            log.warning("Suggestions skipped: %s", e)
-            return
-
-        dialogue = [m for m in job.history if m.get("role") != "system"]
-        messages = [
-            {"role": "system", "content": prompts.SUGGESTIONS_SYSTEM},
-            *dialogue[-8:],
-        ]
-        for entry in entries:
-            try:
-                raw = await complete_chat(
-                    messages=messages,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.6,
-                    max_tokens=220,
-                    timeout=min(entry.timeout, 60),
-                    disable_thinking=True,
-                )
-                items = _parse_suggestions(raw)
-                if items:
-                    async with SessionLocal() as db:
-                        await db.execute(
-                            delete(Suggestion).where(
-                                Suggestion.message_id == job.message_id
-                            )
-                        )
-                        for i, text in enumerate(items):
-                            db.add(
-                                Suggestion(
-                                    message_id=job.message_id,
-                                    chat_id=job.chat_id,
-                                    position=i,
-                                    text=text,
-                                )
-                            )
-                        await db.commit()
-                    return
-            except Exception as e:
-                log.warning("Suggestions entry %s failed: %s", entry.model, e)
 
 
 router = AIRouter(settings.global_ai_concurrency)

@@ -426,6 +426,7 @@
       const maxRetries = 2;
       let lastErr;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        let res;
         try {
           res = await fetch(path, {
             method, headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),
@@ -466,6 +467,8 @@
   // ---------- state ----------
   const state = {
     user: null,
+    limits: null,
+    planSettings: {},
     chats: [],
     query: '',
     currentChatId: null,
@@ -479,8 +482,6 @@
     streamStarted: false,
     activeAssistantId: null,
     thinkBody: null,
-    modelSets: [],
-    modelSetId: localStorage.getItem('cs_model') || '',
     effort: localStorage.getItem('cs_effort') || 'medium',
     draftTail: null,
     memories: [],
@@ -1023,50 +1024,15 @@
     $('#send-btn').classList.toggle('hidden', on);
     $('#stop-btn').classList.toggle('hidden', !on);
     $('#input').disabled = false;
+    updateQuotaControls();
   }
 
   // ---------- WebSocket streaming with SSE fallback ----------
   let wsConnection = null;
 
+  // Render-compatible streaming uses the session-authenticated HTTP endpoint.
   async function streamWebSocket(path, body) {
-    // Try WebSocket first
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = location.host;
-    const wsPath = '/api/ws/stream' + path.replace('/api/', '/');
-    const wsUrl = protocol + '//' + host + wsPath;
-    
-    return new Promise((resolve, reject) => {
-      try {
-        wsConnection = new WebSocket(wsUrl);
-        wsConnection.onopen = () => {
-          // Send initial request
-          wsConnection.send(JSON.stringify(body));
-        };
-        
-        wsConnection.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            handleWsEvent(data);
-          } catch (e) {
-            console.error('WebSocket message parse error:', e);
-          }
-        };
-        
-        wsConnection.onerror = (error) => {
-          console.warn('WebSocket error, falling back to SSE:', error);
-          wsConnection.close();
-          // Fallback to SSE
-          streamSSE(path, body).then(resolve).catch(reject);
-        };
-        
-        wsConnection.onclose = () => {
-          resolve();
-        };
-      } catch (e) {
-        console.warn('WebSocket not available, falling back to SSE:', e);
-        streamSSE(path, body).then(resolve).catch(reject);
-      }
-    });
+    return streamSSE(path, body);
   }
 
   function streamSSE(path, body) {
@@ -1076,11 +1042,16 @@
         const headers = { 'X-CSRF-Token': api.csrf() };
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         const res = await fetch(path, {
-          method: 'POST', headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),
+          method: 'POST', headers, credentials: 'same-origin', signal: AbortSignal.timeout(900000),
           body: body !== undefined ? JSON.stringify(body) : undefined,
         });
         if (res.status === 401) { showAuth(); reject(new Error('unauthorized')); return; }
-        if (!res.ok) { const t = await res.text(); reject(new Error(t)); return; }
+        if (!res.ok) {
+          let msg = res.status + ' ' + res.statusText;
+          try { const payload = await res.json(); msg = payload.detail || payload.error || JSON.stringify(payload); }
+          catch (e) { try { msg = await res.text(); } catch (_) { /* keep status */ } }
+          const failure = new Error(msg); failure.status = res.status; reject(failure); return;
+        }
         await consumeSse(res, (ev, data) => {
           state.lastEvent = Date.now();
           if (ev === 'user_message' || ev === 'assistant_message') {
@@ -1118,7 +1089,8 @@
           } else if (ev === 'step') {
             state.streamBuf = '';
             const n = findNode(state.tree, state.activeAssistantId);
-            if (n) n.draft = '';
+            if (n) { n.draft = ''; n.thinking = ''; }
+            state.streamStarted = false;
             renderMessages();
             bindStreamRefs();
           } else if (ev === 'ask') {
@@ -1225,6 +1197,7 @@
     } catch (err) {
       fetchFailed = true;
       fetchError = err && err.message ? String(err.message).slice(0, 300) : 'ошибка сети';
+      if (err && err.status === 403 && body && body.content) { const draft = $('#input'); if (draft) { draft.value = body.content; autoGrow(); } }
       console.error(err);
       toast('Ошибка: ' + fetchError, 'error');
     } finally {
@@ -1239,18 +1212,29 @@
       }
       state.streamEl = null;
       await loadChats();
-      // refresh title (generated in background)
+      await loadLimits();
+      // A title is generated after the answer; poll until it is saved or times out.
       if (state.currentChatId) {
-        setTimeout(async () => {
+        const chatId = state.currentChatId;
+        let attempts = 0;
+        const refreshTitle = async () => {
+          if (state.currentChatId !== chatId) return;
           try {
-            const chat = await api.get('/api/chats/' + state.currentChatId);
+            const chat = await api.get('/api/chats/' + chatId);
             const i = state.chats.findIndex(c => c.id === chat.id);
             if (i >= 0 && state.chats[i].title !== chat.title) {
               state.chats[i] = chat; renderChatList();
               $('#chat-title').textContent = chat.title;
             }
-          } catch (e) { /* noop */ }
-        }, 2500);
+            if (chat.title === 'Новый чат' && attempts < 12) {
+              attempts += 1;
+              setTimeout(refreshTitle, 1500);
+            }
+          } catch (e) {
+            if (attempts < 12) { attempts += 1; setTimeout(refreshTitle, 1500); }
+          }
+        };
+        setTimeout(refreshTitle, 1000);
       }
     }
   }
@@ -1259,6 +1243,12 @@
     const input = $('#input');
     const content = input.value.trim();
     if (!content || state.streaming) return;
+    if (!state.limits) await loadLimits();
+    if (quotaBlocked()) {
+      toast('Дневной лимит запросов исчерпан. Обратитесь к администратору ai-ch для сброса счётчика или выдачи подписки.', 'error');
+      updateQuotaControls();
+      return;
+    }
     if (!state.currentChatId) {
       const chat = await api.post('/api/chats', { title: 'Новый чат' });
       state.chats.unshift(chat);
@@ -1278,7 +1268,6 @@
         content,
         parent_message_id: parentId,
         attachment_ids: attachments,
-        model_set_id: state.modelSetId || null,
         web_search: true,
         effort: state.effort,
         style: state.style,
@@ -1353,9 +1342,9 @@
     const input = $('#input');
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent().catch(err => toast('Ошибка отправки: ' + err.message, 'error')); }
     });
-    $('#send-btn').addEventListener('click', sendCurrent);
+    $('#send-btn').addEventListener('click', () => sendCurrent().catch(err => toast('Ошибка отправки: ' + err.message, 'error')));
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
@@ -1365,12 +1354,6 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
-    $('#model-select').addEventListener('change', (e) => {
-      state.modelSetId = e.target.value;
-      localStorage.setItem('cs_model', state.modelSetId);
-    });
-    $('#model-btn').addEventListener('click', openModelMenu);
-    updateModelButton();
   }
 
   function fmtNum(n) {
@@ -1380,9 +1363,28 @@
     return String(n);
   }
 
+  function quotaBlocked() {
+    if (!state.user || state.user.is_admin) return false;
+    const usage = (state.limits && state.limits.usage) || {};
+    const cap = usage.messages_daily_limit;
+    return cap != null && Number(usage.messages_today || 0) >= Number(cap);
+  }
+
+  function updateQuotaControls() {
+    const blocked = quotaBlocked();
+    const send = $('#send-btn');
+    if (send) {
+      send.disabled = blocked || state.streaming;
+      send.title = blocked ? 'Лимит исчерпан. Обратитесь к администратору ai-ch.' : 'Отправить';
+    }
+    const input = $('#input');
+    if (input) input.title = blocked ? 'Дневной лимит исчерпан. Обратитесь к администратору ai-ch.' : '';
+  }
+
   async function loadLimits() {
     try { state.limits = await api.get('/api/limits'); }
     catch (e) { state.limits = null; }
+    updateQuotaControls();
   }
 
   async function openLinks() {
@@ -1407,125 +1409,6 @@
     }));
     $$('[data-open-link]').forEach(b => b.addEventListener('click', () =>
       window.open('/?share=' + b.dataset.openLink, '_blank')));
-  }
-
-  async function loadModelSets() {
-    try {
-      state.modelSets = await api.get('/api/models/sets');
-    } catch (e) {
-      state.modelSets = [];
-    }
-    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    if (!mains.length) return;
-    if (!state.modelSetId || !mains.some(s => s.id === state.modelSetId)) {
-      state.modelSetId = mains[0].id;
-      localStorage.setItem('cs_model', state.modelSetId);
-    }
-    updateModelButton();
-  }
-
-  function currentModelSet() {
-    return (state.modelSets || []).find(s => s.id === state.modelSetId) || null;
-  }
-
-  function updateModelButton() {
-    const label = $('#model-btn-label');
-    if (!label) return;
-    const ms = currentModelSet();
-    label.textContent = ms ? ms.name : 'Модель';
-  }
-
-  async function openModelMenu() {
-    await loadModelSets();
-    if (!state.limits) await loadLimits();
-    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    const lim = (state.limits && state.limits.limits) || {};
-    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
-    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
-    const cdef = Math.max(cmin, Math.min(cmax, 50));
-    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
-
-    const cards = mains.map(s => {
-      const e = (s.entries || [])[0] || {};
-      const bits = [];
-      bits.push('контекст ' + fmtNum(e.context_len || 0));
-      bits.push('ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.');
-      if (e.price_in) bits.push('вход ' + e.price_in + ' ₽/1M');
-      if (e.price_out) bits.push('выход ' + e.price_out + ' ₽/1M');
-      if (e.price_cache) bits.push('кэш ' + e.price_cache + ' ₽/1M');
-      return '<label class="mm-card' + (s.id === state.modelSetId ? ' on' : '') + '">' +
-        '<input type="radio" name="mm" value="' + s.id + '"' +
-        (s.id === state.modelSetId ? ' checked' : '') + '/>' +
-        '<span class="mm-body"><b>' + escapeHtml(s.name) +
-        (s.is_router ? ' · auto' : '') + '</b>' +
-        '<em>' + escapeHtml(e.model || '—') + '</em>' +
-        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
-    }).join('');
-
-    openModal({
-      title: 'Модель и параметры',
-      okText: 'Готово',
-      body:
-        '<h4 class="sec">Кластер</h4><div class="mm-list">' +
-        (cards || '<p>Моделей нет</p>') + '</div>' +
-        '<h4 class="sec">Усилие модели</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
-        (EFFORTS.length - 1) + '" step="1" value="' + idx +
-        '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
-        '<h4 class="sec">Температура</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
-        state.temperature + '"/><b id="mm-temp-label">' +
-        Number(state.temperature).toFixed(1) + '</b></div>' +
-        '<h4 class="sec">Сжатие истории</h4>' +
-        '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме и освободит контекст. ' +
-        'Ваш тариф: от ' + cmin + '% до ' + cmax + '%' +
-        (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
-        '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
-        '" max="' + cmax + '" step="5" value="' + cdef +
-        '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
-        '<div style="margin-top:10px"><button class="chip-btn" id="mm-comp-go">' +
-        icon('sparkle') + 'Сжать историю</button></div>',
-      onOk: (root) => {
-        const picked = $('input[name=mm]:checked', root);
-        if (picked) {
-          state.modelSetId = picked.value;
-          localStorage.setItem('cs_model', state.modelSetId);
-        }
-        updateModelButton();
-        return true;
-      },
-    });
-
-    const eff = $('#mm-effort');
-    eff.addEventListener('input', () => {
-      const i = parseInt(eff.value, 10) || 0;
-      state.effort = EFFORTS[i];
-      localStorage.setItem('cs_effort', state.effort);
-      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
-    });
-    const tmp = $('#mm-temp');
-    tmp.addEventListener('input', () => {
-      state.temperature = parseFloat(tmp.value) || 0;
-      localStorage.setItem('cs_temp', String(state.temperature));
-      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
-    });
-    const cmp = $('#mm-comp');
-    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
-    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
-      $$('.mm-card').forEach(c => c.classList.remove('on'));
-      const card = r.closest('.mm-card');
-      if (r.checked && card) card.classList.add('on');
-    }));
-    $('#mm-comp-go').addEventListener('click', async () => {
-      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-      toast('Сжимаю историю…');
-      try {
-        await api.post('/api/chats/' + state.currentChatId + '/compress',
-          { target_percent: parseInt(cmp.value, 10) || 50 });
-        toast('История сжата');
-
-      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
-    });
   }
 
   // ---------- local file generation ----------
@@ -1938,43 +1821,33 @@
     try { data = await api.get('/api/limits/all'); }
     catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
     const labels = data.labels || {};
+    state.planSettings = data.limits || {};
     const bytes = { file_size: 1, user_storage: 1 };
     const field = (plan, key, value) => {
       const isBytes = bytes[key];
-      const shown = isBytes ? Math.round((value || 0) / (1024 * 1024)) : (value === null ? '' : value);
+      const shown = isBytes ? (value == null ? '' : Math.round(value / (1024 * 1024))) : (value == null ? '' : value);
       return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
         (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
         '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
-        shown + '" placeholder="∞" /></label>';
+        escapeHtml(shown) + '" placeholder="∞" /></label>';
     };
-    const modelBoxes = (plan) => {
-      const allowed = data.allowed[plan] || [];
-      const open = allowed.length === 0;
-      return '<div class="lim-models">' + (data.models || []).map(m =>
-        '<label class="limit-model-row"><input type="checkbox" data-mplan="' + plan +
-        '" data-mid="' + m.id + '"' + (open || allowed.indexOf(m.id) >= 0 ? ' checked' : '') +
-        '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
-        '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';
-    };
-    const block = (plan) => {
+    const planBlock = (plan) => {
       const lim = data.limits[plan] || {};
-      return '<h4 class="sec">Тариф ' + plan.toUpperCase() + '</h4>' +
-        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>' +
-        '<h4 class="sec">Модели тарифа ' + plan.toUpperCase() + '</h4>' + modelBoxes(plan);
+      return '<h4 class="sec">Тариф ' + escapeHtml(plan.toUpperCase()) + '</h4>' +
+        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>';
     };
     openModal({
-      title: 'Тарифы, лимиты и деньги',
-      okText: 'Сохранить',
-      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в рублях. Настройка применяется к файлам, хранилищу, запросам, стоимости тарифа и токенов.</p>' +
-        (data.plans || ['free', 'pro']).map(block).join('') +
-        '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
+      title: 'Админ-панель · тарифы и пользователи',
+      okText: 'Сохранить лимиты',
+      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, деньги в рублях. '
+        + 'Лимит запросов проверяется на сервере до отправки модели. Пользователь после исчерпания увидит сообщение обратиться к администратору.</p>'
+        + (data.plans || ['free', 'pro', 'max']).map(planBlock).join('')
+        + '<div class="settings-grid" style="margin:12px 0"><button class="chip-btn" id="admin-model-chains">Цепочки моделей и API</button></div>'
+        + '<h4 class="sec">Пользователи · подписки и сброс счётчиков</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
         const grouped = {};
         $$('[data-plan]', root).forEach(inp => {
-          const plan = inp.dataset.plan;
-          const key = inp.dataset.key;
-          const raw = inp.value.trim();
+          const plan = inp.dataset.plan, key = inp.dataset.key, raw = inp.value.trim();
           let val = raw === '' ? null : Number(raw);
           if (val !== null && bytes[key]) val = Math.round(val * 1024 * 1024);
           grouped[plan] = grouped[plan] || {};
@@ -1983,16 +1856,14 @@
         for (const plan of Object.keys(grouped)) {
           await api.put('/api/limits/' + plan, grouped[plan]);
         }
-        for (const plan of (data.plans || [])) {
-          const ids = $$('[data-mplan="' + plan + '"]', root)
-            .filter(c => c.checked).map(c => c.dataset.mid);
-          const all = (data.models || []).map(m => m.id);
-          await api.put('/api/limits/' + plan + '/models',
-            { ids: ids.length === all.length ? [] : ids });
-        }
-        toast('Тарифы сохранены');
+        toast('Лимиты сохранены');
         return true;
       },
+    });
+    const chains = $('#admin-model-chains');
+    if (chains) chains.addEventListener('click', () => {
+      $('#modal-root').innerHTML = '';
+      openModelChains();
     });
     loadLimitUsers();
   }
@@ -2001,21 +1872,144 @@
     const box = $('#lim-users');
     if (!box) return;
     let rows = [];
-    try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
-    box.innerHTML = '<div class="link-list">' + rows.map(u =>
-      '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
-      '<span>' + escapeHtml(u.email) + ' · тариф ' + escapeHtml(u.plan || 'free') + '</span></div>' +
-      '<button class="chip-btn" data-uplan="' + u.id + '">' +
-      (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
-      '</div>';
-    $$('[data-uplan]').forEach(b => b.addEventListener('click', async () => {
-      const cur = rows.find(x => x.id === b.dataset.uplan);
-      const next = cur && cur.plan === 'pro' ? 'free' : 'pro';
+    try { rows = await api.get('/api/limits/users'); }
+    catch (e) { box.textContent = 'Не удалось загрузить пользователей: ' + e.message; return; }
+    box.innerHTML = '<div class="link-list">' + rows.map(u => {
+      const expiry = u.subscription_until ? new Date(u.subscription_until).toLocaleString('ru-RU') : (u.plan === 'free' ? 'нет подписки' : 'бессрочно');
+      const details = 'тариф ' + (u.plan || 'free') + ' · запросов после сброса: ' + u.requests
+        + ' · токены: ' + fmtAdminNumber((Number(u.tokens_in) || 0) + (Number(u.tokens_out) || 0))
+        + ' · расход: ' + u.cost + ' ₽ · подписка: ' + expiry;
+      if (u.is_admin) {
+        return '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b><span>'
+          + escapeHtml(u.email) + ' · администратор · ' + escapeHtml(details) + '</span></div></div>';
+      }
+      return '<div class="link-row" style="align-items:flex-start"><div class="link-info"><b>'
+        + escapeHtml(u.name || u.email) + '</b><span>' + escapeHtml(u.email) + ' · ' + escapeHtml(details) + '</span>'
+        + '<div class="settings-grid" style="margin-top:8px">'
+        + '<select data-user-plan="' + u.id + '" aria-label="Тариф">'
+        + '<option value="free"' + (u.plan === 'free' ? ' selected' : '') + '>Free</option>'
+        + '<option value="pro"' + (u.plan === 'pro' ? ' selected' : '') + '>Pro</option>'
+        + '<option value="max"' + (u.plan === 'max' ? ' selected' : '') + '>Max</option></select>'
+        + '<input type="number" min="1" max="3650" data-user-days="' + u.id + '" value="' + escapeHtml(state.planSettings[u.plan] && state.planSettings[u.plan].subscription_days != null ? state.planSettings[u.plan].subscription_days : '') + '" placeholder="Дней; пусто = навсегда" aria-label="Длительность подписки в днях"/>'
+        + '<button class="chip-btn" data-user-save="' + u.id + '">Применить тариф</button>'
+        + '<button class="chip-btn" data-user-reset="' + u.id + '">Обнулить счётчики</button>'
+        + '</div></div></div>';
+    }).join('') + '</div>';
+
+    $('[data-user-plan]', box).forEach(select => select.addEventListener('change', () => {
+      const target = $('[data-user-days="' + select.dataset.userPlan + '"]', box);
+      const defaultDays = state.planSettings[select.value] ? state.planSettings[select.value].subscription_days : null;
+      if (target) target.value = defaultDays == null ? '' : String(defaultDays);
+    }));
+    $('[data-user-save]', box).forEach(button => button.addEventListener('click', async () => {
+      const id = button.dataset.userSave;
+      const plan = $('[data-user-plan="' + id + '"]', box).value;
+      const rawDays = $('[data-user-days="' + id + '"]', box).value.trim();
+      const days = rawDays === '' ? null : Math.max(1, Math.min(3650, Number(rawDays) || 30));
       try {
-        await api.put('/api/limits/user/' + b.dataset.uplan, { plan: next });
-        toast('Тариф изменён: ' + next);
-        loadLimitUsers();
+        await api.put('/api/limits/user/' + id, { plan, days });
+        toast(plan === 'free' ? 'Тариф Free установлен' : 'Подписка сохранена');
+        await loadLimitUsers();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+    $$('[data-user-reset]', box).forEach(button => button.addEventListener('click', async () => {
+      try {
+        await api.post('/api/limits/user/' + button.dataset.userReset + '/reset');
+        toast('Счётчики обнулены');
+        await loadLimitUsers();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+  }
+
+  function fmtAdminNumber(n) {
+    n = Number(n) || 0;
+    return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+  }
+
+  async function openModelChains() {
+    let all;
+    try { all = await api.get('/api/admin/model-sets'); }
+    catch (e) { toast('Не удалось загрузить цепочки: ' + e.message, 'error'); return; }
+    const labels = { MAIN: 'Основной ответ', TITLE: 'Заголовок чата', CONTINUE: 'Продолжение ответа' };
+    const wanted = { MAIN: 'qwen-main', TITLE: 'qwen-title', CONTINUE: 'qwen-continue' };
+    const sets = all.filter(s => labels[s.route_type] && s.slug === wanted[s.route_type] && !s.is_router);
+    const entryHtml = (set, entry) => {
+      const eid = entry.id;
+      const text = (key, value, type, hint) => '<label class="lim-field"><span>' + escapeHtml(hint)
+        + '</span><input type="' + (type || 'text') + '" data-chain-entry="' + eid + '" data-chain-field="' + key
+        + '" value="' + escapeHtml(value == null ? '' : value) + '" placeholder="' + (key === 'api_key' ? (entry.has_api_key ? 'Ключ сохранён; пустое поле оставит его' : 'API-ключ') : '') + '"/></label>';
+      return '<div style="border:1px solid var(--border,#ddd);border-radius:10px;padding:10px;margin:8px 0">'
+        + '<b>Резерв №</b> ' + text('position', entry.position, 'number', 'Порядок')
+        + '<div class="lim-grid">' + text('model', entry.model, 'text', 'Имя модели')
+        + text('base_url', entry.base_url, 'url', 'Base URL')
+        + text('api_key', '', 'password', 'API-ключ')
+        + text('temperature', entry.temperature, 'number', 'Temperature')
+        + text('max_tokens', entry.max_tokens, 'number', 'Max tokens')
+        + text('context_len', entry.context_len || 0, 'number', 'Контекст, токены (0 = общий)')
+        + text('timeout', entry.timeout, 'number', 'Timeout, сек')
+        + '<label class="lim-field"><span>Активна</span><input type="checkbox" data-chain-entry="' + eid + '" data-chain-field="is_active"'
+        + (entry.is_active ? ' checked' : '') + '/></label></div>'
+        + '<button class="chip-btn" data-delete-entry="' + eid + '" data-delete-set="' + set.id + '">Удалить модель</button></div>';
+    };
+    openModal({
+      title: 'Цепочки моделей и API',
+      okText: 'Сохранить цепочки',
+      body: '<p class="usage-note">У каждого задания своя последовательность резервов. Установите порядок 0, 1, 2…: ai-ch пробует сверху вниз и переходит к следующему API при ошибке или пустом ответе. Ключи не показываются; пустой ключ оставляет сохранённый.</p>'
+        + sets.map(set => '<h4 class="sec">' + escapeHtml(labels[set.route_type]) + '</h4><p class="usage-note">Цепочка: ' + escapeHtml(set.name) + '</p>'
+          + (set.entries || []).slice().sort((a,b) => a.position - b.position).map(e => entryHtml(set,e)).join('')
+          + '<div class="lim-grid" style="margin:8px 0">'
+          + '<label class="lim-field"><span>Новая модель</span><input data-new-model="' + set.id + '" placeholder="model-id"/></label>'
+          + '<label class="lim-field"><span>Base URL</span><input data-new-base="' + set.id + '" type="url" value="' + escapeHtml((set.entries[0] || {}).base_url || '') + '"/></label>'
+          + '<label class="lim-field"><span>API-ключ</span><input data-new-key="' + set.id + '" type="password" placeholder="ключ для резервной модели"/></label>'
+          + '</div><button class="chip-btn" data-add-entry="' + set.id + '">Добавить резервную модель</button>').join(''),
+      onOk: async (root) => {
+        const updates = {};
+        $$('[data-chain-entry]', root).forEach(input => {
+          const id = input.dataset.chainEntry, key = input.dataset.chainField;
+          updates[id] = updates[id] || {};
+          if (key === 'is_active') updates[id][key] = input.checked;
+          else {
+            let val = input.value.trim();
+            if (key === 'api_key' && val === '') return;
+            if (['position', 'max_tokens', 'context_len', 'timeout'].includes(key)) val = val === '' ? 0 : Number(val);
+            if (key === 'temperature') val = val === '' ? 0.2 : Number(val);
+            updates[id][key] = val;
+          }
+        });
+        for (const [id, values] of Object.entries(updates)) {
+          await api.patch('/api/admin/model-sets/' + setForEntry(id, sets) + '/entries/' + id, values);
+        }
+        toast('Цепочки моделей сохранены');
+        return true;
+      },
+    });
+    function setForEntry(entryId, allSets) {
+      const parent = allSets.find(s => (s.entries || []).some(e => e.id === entryId));
+      return parent ? parent.id : '';
+    }
+    $$('[data-delete-entry]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        await api.del('/api/admin/model-sets/' + button.dataset.deleteSet + '/entries/' + button.dataset.deleteEntry);
+        $('#modal-root').innerHTML = '';
+        await openModelChains();
+      } catch (e) { toast('Не удалось удалить: ' + e.message, 'error'); }
+    }));
+    $$('[data-add-entry]').forEach(button => button.addEventListener('click', async () => {
+      const set = sets.find(s => s.id === button.dataset.addEntry);
+      const base = $('[data-new-base="' + set.id + '"]')?.value.trim() || '';
+      const model = $('[data-new-model="' + set.id + '"]')?.value.trim() || '';
+      const key = $('[data-new-key="' + set.id + '"]')?.value.trim() || '';
+      if (!base || !model || !key) { toast('Для новой модели нужны Base URL, model-id и API-ключ', 'error'); return; }
+      const maxPosition = Math.max(-1, ...(set.entries || []).map(e => Number(e.position) || 0));
+      try {
+        await api.post('/api/admin/model-sets/' + set.id + '/entries', {
+          provider: 'openai', base_url: base, model, api_key: key,
+          position: maxPosition + 1, temperature: 0.2, max_tokens: 12000, timeout: 180,
+          context_len: 0, price_in: 0, price_out: 0, price_cache: 0, is_active: true,
+        });
+        $('#modal-root').innerHTML = '';
+        await openModelChains();
+      } catch (e) { toast('Не удалось добавить: ' + e.message, 'error'); }
     }));
   }
 
@@ -2090,10 +2084,16 @@
         '<div class="settings-grid" style="margin-top:12px">' +
         '<button class="chip-btn" id="settings-memory">Память</button>' +
         '<button class="chip-btn" id="settings-links">Мои ссылки</button>' +
+        (user.is_admin ? '<button class="chip-btn" id="settings-admin">Админ-панель</button>' : '') +
         '<button class="chip-btn" id="settings-logout">Выйти</button></div>',
       onOk: () => true,
     });
     const memory = $('#settings-memory'), links = $('#settings-links'), logout = $('#settings-logout');
+    const adminButton = $('#settings-admin');
+    if (adminButton) adminButton.addEventListener('click', () => {
+      $('#modal-root').innerHTML = '';
+      openLimits();
+    });
     if (memory) memory.addEventListener('click', () => openMemory());
     if (links) links.addEventListener('click', () => openLinks());
     if (logout) logout.addEventListener('click', async () => {
@@ -2174,7 +2174,6 @@
     try {
       await loadChats();
       await loadFiles();
-      await loadModelSets();
       await loadMemory();
 
       await loadLimits();

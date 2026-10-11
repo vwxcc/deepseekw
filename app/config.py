@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     qwen_max_tokens: int = 32000
 
     # --- Admin bootstrap (optional) ---
-    admin_email: str = ""
+    admin_email: str = "admin@ai-ch.local"
     admin_password: str = ""
 
     # --- HTTPS / SSL ---

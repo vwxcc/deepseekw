@@ -19,14 +19,11 @@ from .routers import (
     auth,
     avatars,
     chats,
-    council,
     files,
-    github,
     limits,
     memory,
     messages,
     models,
-    posts,
     public,
     streaming_ws,
     system,
@@ -34,7 +31,7 @@ from .routers import (
 from .security_middleware import SecurityMiddleware
 from .services.storage import disk_free, enforce_disk_floor
 
-log = logging.getLogger("chatstudio")
+log = logging.getLogger("ai-ch")
 
 CLEANUP_INTERVAL = 600  # seconds
 
@@ -62,6 +59,8 @@ async def lifespan(app: FastAPI):
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s"
     )
+    settings.data_path.mkdir(parents=True, exist_ok=True)
+    settings.upload_path.mkdir(parents=True, exist_ok=True)
     await init_db()
     await bootstrap()
     await ai_router.start()
@@ -86,12 +85,9 @@ app.include_router(models.router)
 app.include_router(admin.router)
 app.include_router(public.router)
 app.include_router(memory.router)
-app.include_router(council.router)
-app.include_router(posts.router)
 app.include_router(avatars.router)
 app.include_router(system.router)
 app.include_router(limits.router)
-app.include_router(github.router)
 app.include_router(streaming_ws.router)
 
 

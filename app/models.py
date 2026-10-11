@@ -130,6 +130,7 @@ class Message(Base):
     )
     role: Mapped[Role] = mapped_column(Enum(Role), nullable=False, default=Role.user)
     content: Mapped[str] = mapped_column(Text, default="")
+    thinking: Mapped[str | None] = mapped_column(Text, nullable=True)
     parent_message_id: Mapped[str | None] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
     )

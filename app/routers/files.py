@@ -1,6 +1,7 @@
 """File library endpoints: upload, list, download, delete."""
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
@@ -21,13 +22,109 @@ from ..config import settings
 from ..deps import get_current_user, get_db, require_csrf
 from ..models import File, User
 from ..schemas import FileOut
+from ..security_middleware import (
+    _ALLOWED_EXTENSIONS,
+    _FORBIDDEN_MIME_TYPES,
+    _MIME_TO_EXT,
+)
 from ..services.files import detect_kind, extract_text, sha256_bytes
 from ..services.limits import allow, get_limits
 from ..services.storage import user_usage
 
 router = APIRouter(prefix="/api/files", tags=["files"])
-
 MAX_EXTRACTED = 500_000
+
+# Magic bytes для валидации MIME
+_MAGIC_BYTES = {
+    b"%PDF": "application/pdf",
+    b"\x89PNG\r\n\x1a\n": "image/png",
+    b"\xff\xd8\xff": "image/jpeg",
+    b"GIF87a": "image/gif",
+    b"GIF89a": "image/gif",
+    b"PK\x03\x04": "application/zip",
+    b"BM": "image/bmp",
+    b"\x1f\x8b": "application/gzip",
+}
+
+# Regex для защиты от path traversal
+_FILENAME_SAFE_REGEX = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+
+
+# ============================================================
+# File validation helpers
+# ============================================================
+
+def _detect_mime_from_magic(data: bytes) -> str:
+    """Определяет MIME-тип из magic bytes."""
+    for magic, mime in _MAGIC_BYTES.items():
+        if data.startswith(magic):
+            return mime
+    return ""
+
+
+def _validate_filename(filename: str) -> tuple[str, str]:
+    """Валидирует имя файла. Возвращает (safe_name, extension)."""
+    # Убираем path traversal
+    safe_name = Path(filename).name
+    
+    # Проверяем на безопасные символы
+    if not _FILENAME_SAFE_REGEX.match(safe_name):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Недопустимые символы в имени файла: {safe_name}"
+        )
+    
+    # Получаем расширение
+    ext = Path(safe_name).suffix.lower()
+    
+    if not ext:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Файл должен иметь расширение"
+        )
+    
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Расширение {ext} запрещено"
+        )
+    
+    return safe_name, ext
+
+
+def _validate_file_content(data: bytes, mime: str | None, ext: str) -> str:
+    """Валидирует содержимое файла. Возвращает финальный MIME."""
+    if not mime:
+        # Определяем из magic bytes
+        magic_mime = _detect_mime_from_magic(data[:_MAGIC_CHECK_SIZE])
+        if magic_mime:
+            mime = magic_mime
+        else:
+            # Не смогли определить — проверяем по расширению
+            allowed_for_ext = _MIME_TO_EXT.get(ext, [])
+            if not allowed_for_ext:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Неизвестный тип файла"
+                )
+            mime = allowed_for_ext[0]
+    else:
+        # Проверяем, что MIME соответствует расширению
+        allowed_for_ext = _MIME_TO_EXT.get(ext, [])
+        if allowed_for_ext and mime not in allowed_for_ext:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"MIME-тип '{mime}' не соответствует расширению '{ext}'"
+            )
+    
+    # Блокируем вредоносные MIME
+    if mime in _FORBIDDEN_MIME_TYPES:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Файлы этого типа запрещены"
+        )
+    
+    return mime
 
 
 def _user_dir(user_id: str) -> Path:
@@ -65,21 +162,29 @@ async def upload_files(
     total = 0
 
     # 1) read + validate everything BEFORE touching the disk
-    payloads: list[tuple[str, str, bytes]] = []
+    payloads: list[tuple[str, str, str, bytes]] = []
     for uf in files:
         data = await uf.read()
         if len(data) > settings.max_file_size:
             raise HTTPException(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                f"Файл «{uf.filename}» превышает лимит {settings.max_file_size} байт",
+                f"Файл превышает лимит {settings.max_file_size} байт",
             )
+        
+        # Validate filename
+        raw_name = uf.filename or "file"
+        safe_name, ext = _validate_filename(raw_name)
+        
+        # Validate MIME type and content
+        final_mime = _validate_file_content(data, uf.content_type, ext)
+        
         total += len(data)
         if total > settings.max_total_file_size:
             raise HTTPException(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 "Превышен общий лимит размера загрузки",
             )
-        payloads.append((Path(uf.filename or "file").name, uf.content_type or "", data))
+        payloads.append((safe_name, ext, final_mime, data))
 
     # per-plan storage quota
     limits = await get_limits(db, user.plan or "free")
@@ -104,13 +209,12 @@ async def upload_files(
         if len(data) > per_file:
             raise HTTPException(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                f"Файл «{name}» больше лимита тарифа ({per_file // (1024 * 1024)} МБ)",
+                f"Файл больше лимита тарифа ({per_file // (1024 * 1024)} МБ)",
             )
 
     # 2) only now write to disk and persist
-    for name, mime, data in payloads:
+    for name, ext, mime, data in payloads:
         fid = str(uuid.uuid4())
-        ext = Path(name).suffix
         dest = _user_dir(user.id) / f"{fid}{ext}"
         dest.write_bytes(data)
 

@@ -87,6 +87,7 @@ class MessageOut(ORMModel):
     chat_id: str
     role: str
     content: str
+    thinking: str = ""
     parent_message_id: str | None = None
     status: str
     error: str | None = None

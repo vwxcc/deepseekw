@@ -32,6 +32,21 @@ def _headers(api_key: str) -> dict[str, str]:
     return headers
 
 
+def _no_think_fields(no_think_param: str, *, enabled: bool) -> dict:
+    """Build the provider-specific "thinking" switch.
+
+    Providers disagree about how thinking is toggled: vLLM/Qwen read
+    ``chat_template_kwargs``, the OpenAI API reads ``reasoning_effort``, and
+    some reject both. Sending the wrong one used to fail silently.
+    """
+    mode = (no_think_param or "chat_template_kwargs").strip().lower()
+    if mode in ("none", "off", "no", "false"):
+        return {}
+    if mode == "reasoning_effort":
+        return {"reasoning_effort": "none" if enabled is False else "medium"}
+    return {"chat_template_kwargs": {"enable_thinking": bool(enabled)}}
+
+
 def _build_payload(
     *,
     messages: list[dict],
@@ -41,6 +56,7 @@ def _build_payload(
     stream: bool,
     disable_thinking: bool,
     effort: str | None = None,
+    no_think_param: str = "chat_template_kwargs",
 ) -> dict:
     payload: dict = {
         "model": model,
@@ -54,12 +70,12 @@ def _build_payload(
 
     e = (effort or "").lower()
     if e in ("none", "off"):
-        payload["chat_template_kwargs"] = {"enable_thinking": False}
+        payload.update(_no_think_fields(no_think_param, enabled=False))
     elif e and e not in ("recommended", "default", "auto"):
         # low / medium / high / extra / max (backend falls back if unsupported)
         payload["reasoning_effort"] = e
     elif disable_thinking:
-        payload["chat_template_kwargs"] = {"enable_thinking": False}
+        payload.update(_no_think_fields(no_think_param, enabled=False))
     return payload
 
 
@@ -119,12 +135,14 @@ async def stream_chat(
     timeout: float,
     disable_thinking: bool = True,
     effort: str | None = None,
+    no_think_param: str = "chat_template_kwargs",
 ) -> AsyncIterator[tuple[str, str]]:
     """Yield ("thinking"|"content"|"usage", text) chunks."""
     url = _endpoint(base_url)
     payload = _build_payload(
         messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
         stream=True, disable_thinking=disable_thinking, effort=effort,
+        no_think_param=no_think_param,
     )
     try:
         async for item in _stream_once(url, payload, api_key, timeout):
@@ -133,7 +151,7 @@ async def stream_chat(
         # some backends reject reasoning_effort -> retry once without it
         if "reasoning_effort" in payload and "400" in str(e):
             payload.pop("reasoning_effort", None)
-            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            payload.pop("chat_template_kwargs", None)
             async for item in _stream_once(url, payload, api_key, timeout):
                 yield item
         else:
@@ -151,11 +169,13 @@ async def complete_chat(
     timeout: float,
     disable_thinking: bool = True,
     effort: str | None = None,
+    no_think_param: str = "chat_template_kwargs",
 ) -> str:
     url = _endpoint(base_url)
     payload = _build_payload(
         messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
         stream=False, disable_thinking=disable_thinking, effort=effort,
+        no_think_param=no_think_param,
     )
 
     async def _once(pl: dict) -> str:
@@ -174,6 +194,6 @@ async def complete_chat(
     except ProviderError as e:
         if "reasoning_effort" in payload and "400" in str(e):
             payload.pop("reasoning_effort", None)
-            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            payload.pop("chat_template_kwargs", None)
             return await _once(payload)
         raise

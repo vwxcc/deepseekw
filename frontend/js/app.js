@@ -423,18 +423,37 @@
       const headers = {};
       if (!isForm && body !== undefined) headers['Content-Type'] = 'application/json';
       if (method !== 'GET') headers['X-CSRF-Token'] = api.csrf();
-      const res = await fetch(path, {
-        method, headers, credentials: 'same-origin',
-        body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
-      });
-      if (res.status === 401) { showAuth(); throw new Error('unauthorized'); }
-      if (res.status === 204) return null;
-      if (!res.ok) {
-        let msg = res.status + '';
-        try { const j = await res.json(); msg = j.detail || JSON.stringify(j); } catch (e) { /* noop */ }
-        throw new Error(msg);
+      const maxRetries = 2;
+      let lastErr;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const res = await fetch(path, {
+            method, headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),
+            body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+          });
+          console.log('API:', method, path, res.status, res.statusText);
+          if (res.status === 401) { showAuth(); throw new Error('unauthorized'); }
+          if (res.status === 204) return null;
+          if (!res.ok) {
+            let msg = res.status + '';
+            try { const j = await res.json(); msg = j.detail || JSON.stringify(j); } catch (e) { /* noop */ }
+            throw new Error(msg);
+          }
+          return res.json();
+        } catch (e) {
+          console.warn('API request failed (attempt ' + (attempt+1) + '):', method, path, e.message);
+          lastErr = e;
+          // Retry on network errors, timeouts, and 5xx
+          const isRetryable = e.name === 'TimeoutError'
+            || e.message.includes('Failed to fetch')
+            || e.code === 'FETCH_ERROR'
+            || (res && res.status >= 500);
+          if (!isRetryable || attempt >= maxRetries) throw e;
+          // Exponential backoff: 500ms, 1000ms
+          await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+        }
       }
-      return res.json();
+      throw lastErr;
     },
     get(p) { return api.req('GET', p); },
     post(p, b) { return api.req('POST', p, b === undefined ? {} : b); },
@@ -467,12 +486,14 @@
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
+    temperature: parseFloat(localStorage.getItem('cs_temp')) || 0.2,
     readonly: false,
     publicToken: null,
     greetTimer: null,
     greetIdx: Math.floor(Math.random() * 100),
     suggIdx: Math.floor(Math.random() * 50),
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
+    theme: localStorage.getItem('cs_theme') || 'auto', // 'auto' | 'light' | 'dark'
   };
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
@@ -782,7 +803,9 @@
     const isUser = n.role === 'user';
     let inner;
     if (isUser) {
-      inner = attsHtml(n.attachments) + '<div class="bubble">' + escapeHtml(n.content) + '</div>';
+      const hasAtt = n.attachments && n.attachments.length;
+      inner = (hasAtt ? attsHtml(n.attachments) : '') +
+        '<div class="bubble">' + (n.content ? escapeHtml(n.content) : '(файл)') + '</div>';
     } else {
       const failed = n.status === 'failed';
       const generating = n.status === 'queued' || n.status === 'processing';
@@ -867,6 +890,15 @@
         '<span>Запомнил: ' + escapeHtml(n.memories.join('; ').slice(0, 140)) + '</span></div>';
     }
 
+    let thinkBox = '';
+    if (!isUser && !generating && n.status !== 'failed' && n.thinking && String(n.thinking).trim()) {
+      thinkBox = '<div class="think-box">' +
+        '<div class="think-head">' + thinkAnim() +
+          '<span class="label">Размышления</span></div>' +
+        '<div class="think-body">' + escapeHtml(n.thinking) + '</div>' +
+        '</div>';
+    }
+
     let tools = '';
     if (!isUser && n.tool_runs && n.tool_runs.length) {
       tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
@@ -891,7 +923,7 @@
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      routeLine + tools + inner + askCard + branch + meta + sugg + memLine + '</div>';
+      routeLine + thinkBox + tools + inner + askCard + branch + meta + sugg + memLine + '</div>';
   }
 
   function toolRunHtml(r, i) {
@@ -944,7 +976,6 @@
     renderTiles();
     bindTiles();
     renderSuggestionChips();
-    rollPlaceholder();
     startRotation();
   }
 
@@ -1183,6 +1214,210 @@
     $('#input').disabled = false;
   }
 
+  // ---------- WebSocket streaming with SSE fallback ----------
+  let wsConnection = null;
+
+  async function streamWebSocket(path, body) {
+    // Try WebSocket first
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = location.host;
+    const wsPath = '/api/ws/stream' + path.replace('/api/', '/');
+    const wsUrl = protocol + '//' + host + wsPath;
+    
+    return new Promise((resolve, reject) => {
+      try {
+        wsConnection = new WebSocket(wsUrl);
+        wsConnection.onopen = () => {
+          // Send initial request
+          wsConnection.send(JSON.stringify(body));
+        };
+        
+        wsConnection.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            handleWsEvent(data);
+          } catch (e) {
+            console.error('WebSocket message parse error:', e);
+          }
+        };
+        
+        wsConnection.onerror = (error) => {
+          console.warn('WebSocket error, falling back to SSE:', error);
+          wsConnection.close();
+          // Fallback to SSE
+          streamSSE(path, body).then(resolve).catch(reject);
+        };
+        
+        wsConnection.onclose = () => {
+          resolve();
+        };
+      } catch (e) {
+        console.warn('WebSocket not available, falling back to SSE:', e);
+        streamSSE(path, body).then(resolve).catch(reject);
+      }
+    });
+  }
+
+  function streamSSE(path, body) {
+    // SSE fallback — uses original consumeSSE
+    return new Promise(async (resolve, reject) => {
+      try {
+        const headers = { 'X-CSRF-Token': api.csrf() };
+        if (body !== undefined) headers['Content-Type'] = 'application/json';
+        const res = await fetch(path, {
+          method: 'POST', headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        if (res.status === 401) { showAuth(); reject(new Error('unauthorized')); return; }
+        if (!res.ok) { const t = await res.text(); reject(new Error(t)); return; }
+        await consumeSse(res, (ev, data) => {
+          state.lastEvent = Date.now();
+          if (ev === 'user_message' || ev === 'assistant_message') {
+            const node = insertMessage(state.tree, data);
+            renderMessages();
+            if (ev === 'assistant_message') {
+              state.activeAssistantId = data.id;
+              bindStreamRefs();
+            }
+          } else if (ev === 'thinking') {
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) n.thinking = (n.thinking || '') + (data.text || '');
+            if (state.thinkBody) {
+              state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
+              const head = state.thinkBody.parentElement;
+              const lbl = head ? head.querySelector('.label') : null;
+              if (lbl) lbl.textContent = 'Размышления';
+            }
+          } else if (ev === 'delta') {
+            state.streamBuf += data.text || '';
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
+            if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
+            maybeScroll();
+          } else if (ev === 'memory') {
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) n.memories = (n.memories || []).concat(data.items || []);
+            loadMemory();
+          } else if (ev === 'route') {
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) { n.route = data.name; n.routeBrief = data.brief || ''; }
+            renderMessages();
+            bindStreamRefs();
+            toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
+          } else if (ev === 'tool_start') {
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) {
+              n.tool_runs = (n.tool_runs || []).concat([
+                { code: data.code || '', running: true, ok: true, files: [] },
+              ]);
+            }
+            renderMessages();
+            bindStreamRefs();
+            appendLog('▶ запуск кода…');
+          } else if (ev === 'tool') {
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) {
+              const runs = n.tool_runs || [];
+              const idx = runs.findIndex(r => r.running);
+              if (idx >= 0) runs[idx] = data; else runs.push(data);
+              n.tool_runs = runs;
+              if (data.files && data.files.length) {
+                n.attachments = (n.attachments || []).concat(data.files.map(f => ({
+                  id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
+                })));
+              }
+            }
+            renderMessages();
+            bindStreamRefs();
+            if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
+            if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
+            if (data.files && data.files.length) {
+              appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
+            }
+            loadProject(false);
+          } else if (ev === 'step') {
+            state.streamBuf = '';
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) n.draft = '';
+            renderMessages();
+            bindStreamRefs();
+          } else if (ev === 'ask') {
+            const n = findNode(state.tree, state.activeAssistantId);
+            if (n) n.ask = data.question;
+            renderMessages();
+            bindStreamRefs();
+          } else if (ev === 'done') {
+            const n = findNode(state.tree, data.message_id);
+            if (n) {
+              n.status = 'completed';
+              n.content = data.text || state.streamBuf;
+              n.draft = '';
+            }
+            renderMessages();
+            loadUsage();
+          } else if (ev === 'error') {
+            const n = findNode(state.tree, data.message_id);
+            if (n) { n.status = 'failed'; n.error = data.error; }
+            renderMessages();
+          } else if (ev === 'cancelled') {
+            const n = findNode(state.tree, data.message_id);
+            if (n) { n.status = 'cancelled'; if (data.text) n.content = data.text; }
+            renderMessages();
+          }
+        });
+        resolve();
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  function handleWsEvent(data) {
+    if (data.type === 'delta') {
+      state.streamBuf += data.text || '';
+      const n = findNode(state.tree, state.activeAssistantId);
+      if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
+      if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
+      maybeScroll();
+    } else if (data.type === 'thinking') {
+      const n = findNode(state.tree, state.activeAssistantId);
+      if (n) n.thinking = (n.thinking || '') + (data.text || '');
+      if (state.thinkBody) {
+        state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
+        const head = state.thinkBody.parentElement;
+        const lbl = head ? head.querySelector('.label') : null;
+        if (lbl) lbl.textContent = 'Размышления';
+      }
+    } else if (data.type === 'done') {
+      const n = findNode(state.tree, data.message_id);
+      if (n) {
+        n.status = 'completed';
+        n.content = data.text || state.streamBuf;
+        n.draft = '';
+      }
+      renderMessages();
+      loadUsage();
+    } else if (data.type === 'error') {
+      const n = findNode(state.tree, data.message_id);
+      if (n) { n.status = 'failed'; n.error = data.error; }
+      renderMessages();
+      toast('Ошибка: ' + data.error, 'error');
+    } else if (data.type === 'cancelled') {
+      const n = findNode(state.tree, data.message_id);
+      if (n) { n.status = 'cancelled'; if (data.text) n.content = data.text; }
+      renderMessages();
+    } else if (data.type === 'final') {
+      // Final update with complete message data
+      if (data.data && data.data.id) {
+        const existing = findNode(state.tree, data.data.id);
+        if (existing) {
+          Object.assign(existing, data.data);
+          renderMessages();
+        }
+      }
+    }
+  }
+
   async function streamRequest(path, body) {
     if (state.streaming) return;
     setStreaming(true);
@@ -1192,17 +1427,6 @@
     state.lastEvent = Date.now();
     if (state.genTimer) clearInterval(state.genTimer);
     state.genTimer = setInterval(() => {
-      // the limit bar fills live while the answer is still streaming
-      const w = windowUsage();
-      if (w && w.budget_usd) {
-        const ms = currentModelSet();
-        const ent = (ms && ms.entries && ms.entries[0]) || {};
-        const outTokens = Math.round(((state.streamBuf || '').length) / 3.6);
-        const live = Number(w.spend_usd || 0) + outTokens / 1e6 * Number(ent.price_out || 0);
-        paintUsage(live / w.budget_usd * 100,
-          'Идёт генерация · $' + live.toFixed(4) + ' из $' + w.budget_usd +
-          ' за ' + w.hours + ' ч');
-      }
       const el = $('[data-gen]');
       const secs = Math.round((Date.now() - (state.genStart || Date.now())) / 1000);
       const idle = Math.round((Date.now() - (state.lastEvent || Date.now())) / 1000);
@@ -1211,119 +1435,28 @@
         (idle > 45 ? ' · модель долго думает…' : '');
       el.classList.toggle('warn', idle > 45);
     }, 1000);
+    
+    let fetchFailed = false;
+    let fetchError = '';
+    
     try {
-      const headers = { 'X-CSRF-Token': api.csrf() };
-      if (body !== undefined) headers['Content-Type'] = 'application/json';
-      const res = await fetch(path, {
-        method: 'POST', headers, credentials: 'same-origin',
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
-      if (res.status === 401) { showAuth(); return; }
-      if (!res.ok) { const t = await res.text(); throw new Error(t); }
-
-      await consumeSse(res, (ev, data) => {
-        state.lastEvent = Date.now();
-        if (ev === 'user_message' || ev === 'assistant_message') {
-          const node = insertMessage(state.tree, data);
-          renderMessages();
-          if (ev === 'assistant_message') {
-            state.activeAssistantId = data.id;
-            bindStreamRefs();
-          }
-        } else if (ev === 'thinking') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.thinking = (n.thinking || '') + (data.text || '');
-          if (state.thinkBody) {
-            state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
-            const head = state.thinkBody.parentElement;
-            const lbl = head ? head.querySelector('.label') : null;
-            if (lbl) lbl.textContent = 'Размышления';
-          }
-        } else if (ev === 'delta') {
-          state.streamBuf += data.text || '';
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
-          if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
-          maybeScroll();
-        } else if (ev === 'memory') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.memories = (n.memories || []).concat(data.items || []);
-          loadMemory();
-        } else if (ev === 'route') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) { n.route = data.name; n.routeBrief = data.brief || ''; }
-          renderMessages();
-          bindStreamRefs();
-          toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
-        } else if (ev === 'tool_start') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) {
-            n.tool_runs = (n.tool_runs || []).concat([
-              { code: data.code || '', running: true, ok: true, files: [] },
-            ]);
-          }
-          renderMessages();
-          bindStreamRefs();
-          appendLog('▶ запуск кода…');
-        } else if (ev === 'tool') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) {
-            const runs = n.tool_runs || [];
-            const idx = runs.findIndex(r => r.running);
-            if (idx >= 0) runs[idx] = data; else runs.push(data);
-            n.tool_runs = runs;
-            if (data.files && data.files.length) {
-              n.attachments = (n.attachments || []).concat(data.files.map(f => ({
-                id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
-              })));
-            }
-          }
-          renderMessages();
-          bindStreamRefs();
-          if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
-          if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
-          if (data.files && data.files.length) {
-            appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
-          }
-          loadProject(false);
-        } else if (ev === 'step') {
-          state.streamBuf = '';
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.draft = '';
-          renderMessages();
-          bindStreamRefs();
-        } else if (ev === 'ask') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.ask = data.question;
-          renderMessages();
-          bindStreamRefs();
-        } else if (ev === 'done') {
-          const n = findNode(state.tree, data.message_id);
-          if (n) {
-            n.status = 'completed';
-            n.content = data.text || state.streamBuf;
-            n.draft = '';
-          }
-          renderMessages();
-          loadUsage();
-        } else if (ev === 'error') {
-          const n = findNode(state.tree, data.message_id);
-          if (n) { n.status = 'failed'; n.error = data.error; }
-          renderMessages();
-        } else if (ev === 'cancelled') {
-          const n = findNode(state.tree, data.message_id);
-          if (n) { n.status = 'cancelled'; if (data.text) n.content = data.text; }
-          renderMessages();
-        }
-      });
+      // Try WebSocket first, fallback to SSE with retry
+      await streamWebSocket(path, body);
     } catch (err) {
+      fetchFailed = true;
+      fetchError = err && err.message ? String(err.message).slice(0, 300) : 'ошибка сети';
       console.error(err);
-      toast('Ошибка: ' + err.message, 'error');
+      toast('Ошибка: ' + fetchError, 'error');
     } finally {
       setStreaming(false);
-      // limits must move the moment the answer lands
-      setTimeout(() => { loadLimits().then(loadUsage); }, 250);
       if (state.genTimer) { clearInterval(state.genTimer); state.genTimer = null; }
+      // never leave a message stuck in "generating" — that keeps the animation alive
+      const stuck = findNode(state.tree, state.activeAssistantId);
+      if (stuck && (stuck.status === 'queued' || stuck.status === 'processing')) {
+        stuck.status = fetchFailed ? 'failed' : 'cancelled';
+        if (fetchFailed && !stuck.error) stuck.error = fetchError || 'генерация прервана';
+        renderMessages();
+      }
       state.streamEl = null;
       await loadChats();
       // refresh title (generated in background)
@@ -1372,6 +1505,52 @@
       });
   }
 
+  // ---------- file upload ----------
+  async function uploadFiles(fileList) {
+    const fd = new FormData();
+    for (const f of fileList) fd.append('files', f);
+    try {
+      const files = await api.postForm('/api/files', fd);
+      // Add to pending attachments and local file list
+      state.pendingAttachments = state.pendingAttachments.concat(files.map(f => ({
+        id: f.id, original_name: f.original_name, kind: f.kind, size: f.size, mime_type: f.mime_type,
+      })));
+      state.files = (state.files || []).concat(files);
+      renderAttachments();
+      if ($('#file-list')) renderFileList();
+      toast('Файлы загружены: ' + fileList.length);
+    } catch (e) {
+      toast('Ошибка загрузки: ' + e.message, 'error');
+    }
+  }
+
+  // ---------- file list rendering ----------
+  function renderFileList() {
+    const box = $('#file-list');
+    if (!box || !state.files || !state.files.length) {
+      if (box) box.innerHTML = '<div class="empty-note">Нет загруженных файлов</div>';
+      return;
+    }
+    const q = ($('#file-search')?.value || '').toLowerCase();
+    const typeFilter = ($('#file-filter')?.value || 'all');
+    let filtered = state.files;
+    if (q) filtered = filtered.filter(f => (f.original_name || '').toLowerCase().includes(q));
+    if (typeFilter !== 'all') {
+      const typeMap = { image: 'image', doc: 'doc', table: 'sheet', slide: 'slide', other: 'other' };
+      const t = typeMap[typeFilter] || typeFilter;
+      filtered = filtered.filter(f => f.kind === t);
+    }
+    box.innerHTML = filtered.map(f =>
+      '<a class="msg-att" href="/api/files/' + f.id + '/download" target="_blank" rel="noopener" title="' + escapeHtml(f.original_name) + '">' +
+        '<span class="att-icon">' + icon('file') + '</span>' +
+        '<span class="att-name">' + escapeHtml(f.original_name) + '</span>' +
+        '<span class="att-size">' + formatSize(f.size) + '</span></a>'
+    ).join('');
+    if (!filtered.length) {
+      box.innerHTML = '<div class="empty-note">Ничего не найдено</div>';
+    }
+  }
+
   // ---------- composer ----------
   function autoGrow() {
     const t = $('#input');
@@ -1406,18 +1585,17 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
-    const legacySelect = $('#model-select');
-    if (legacySelect) legacySelect.addEventListener('change', (e) => {
+    $('#model-select').addEventListener('change', (e) => {
       state.modelSetId = e.target.value;
       localStorage.setItem('cs_model', state.modelSetId);
     });
-    if ($('#model-btn')) $('#model-btn').addEventListener('click', openModelMenu);
+    $('#model-btn').addEventListener('click', openModelMenu);
     updateModelButton();
-    if ($('#context-btn')) $('#context-btn').addEventListener('click', openUsageModal);
-    if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
-    if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
-    if ($('#pp-refresh')) $('#pp-refresh').addEventListener('click', () => loadProject(true));
-    if ($('#pp-git')) $('#pp-git').addEventListener('click', openGit);
+    $('#context-btn').addEventListener('click', openContextMenu);
+    $('#project-btn').addEventListener('click', () => toggleProjectPanel());
+    $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
+    $('#pp-refresh').addEventListener('click', () => loadProject(true));
+    $('#pp-git').addEventListener('click', openGit);
   }
 
   function fmtNum(n) {
@@ -1427,61 +1605,25 @@
     return String(n);
   }
 
-  // percent of the plan's dollar budget spent inside the rolling window
-  function windowUsage() {
-    const w = (state.limits && state.limits.window) || null;
-    if (!w || !w.budget_usd) return null;
-    return w;
-  }
-
-  function planUsage() {
-    const data = state.limits || {};
-    const lim = data.limits || {};
-    const use = data.usage || {};
-    const defs = [
-      ['files', 'files_count', 'Файлы', 'шт'],
-      ['storage', 'user_storage', 'Хранилище', ' Б'],
-      ['posts', 'posts', 'Посты', 'шт'],
-      ['requests', 'messages_per_day', 'Запросы в день', 'шт'],
-    ];
-    const rows = [];
-    defs.forEach(d => {
-      const used = Number(use[d[0]] || 0);
-      const cap = lim[d[1]];
-      const unlimited = (cap === null || cap === undefined);
-      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
-      rows.push({ key: d[0], label: d[2], unit: d[3], used: used, cap: cap, unlimited: unlimited, pct: pct });
-    });
-    const worst = rows.reduce((m, r) => (r.unlimited ? m : Math.max(m, r.pct)), 0);
-    return { rows: rows, worst: worst, plan: data.plan || 'free' };
-  }
-
-  function paintUsage(pct, note) {
+  async function loadUsage() {
     const btn = $('#context-btn');
     if (!btn) return;
-    const label = $('#usage-pct');
-    const bar = $('#usage-bar');
-    const p = Math.max(0, Math.min(100, Math.round(pct)));
-    if (label) label.textContent = p + '%';
-    if (bar) bar.style.width = p + '%';
-    btn.classList.toggle('warn', p >= 80);
-    btn.classList.toggle('full', p >= 100);
-    btn.title = note;
-  }
-
-  async function loadUsage() {
-    if (!$('#context-btn')) return;
-    if (!state.limits) await loadLimits();
-    const w = windowUsage();
-    if (w) {
-      paintUsage(w.percent,
-        'Израсходовано $' + Number(w.spend_usd).toFixed(2) + ' из $' + w.budget_usd +
-        ' за ' + w.hours + ' ч · осталось $' +
-        Math.max(0, w.budget_usd - w.spend_usd).toFixed(2));
-      return;
+    try {
+      if (!state.limits) await loadLimits();
+      const lim = (state.limits && state.limits.limits) || {};
+      const use = (state.limits && state.limits.usage) || {};
+      const cap = lim.messages_per_day;
+      const reqs = use.requests || 0;
+      btn.textContent = cap == null
+        ? (reqs + ' запр.')
+        : (reqs + ' / ' + cap);
+      btn.classList.toggle('warn', cap != null && reqs >= cap);
+      btn.title = 'Расход по тарифу: запросов ' + reqs +
+        (cap != null ? ' из ' + cap : '') +
+        ' · токенов ' + fmtNum(use.tokens || 0);
+    } catch (e) {
+      btn.textContent = '—';
     }
-    const info = planUsage();
-    paintUsage(info.worst, 'Использование лимитов подписки: ' + info.worst + '%');
   }
 
   function usageCards(u) {
@@ -1654,553 +1796,116 @@
       state.modelSets = [];
     }
     const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    if (!mains.length) { updateModelButton(); return; }
-
-    // one-time switch to Auto as the default for everyone
-    if (!localStorage.getItem('cs_model_default_v2')) {
-      localStorage.setItem('cs_model_default_v2', '1');
-      const auto = mains.find(s => s.is_router);
-      if (auto) {
-        state.modelSetId = auto.id;
-        localStorage.setItem('cs_model', auto.id);
-      }
-    }
+    if (!mains.length) return;
     if (!state.modelSetId || !mains.some(s => s.id === state.modelSetId)) {
-      const pick = mains.find(s => s.is_router) || mains[0];
-      state.modelSetId = pick.id;
+      state.modelSetId = mains[0].id;
       localStorage.setItem('cs_model', state.modelSetId);
     }
     updateModelButton();
   }
 
-  // ---------- files ----------
-  async function loadFiles() {
-    state.files = await api.get('/api/files');
-    renderFiles();
+  function currentModelSet() {
+    return (state.modelSets || []).find(s => s.id === state.modelSetId) || null;
   }
 
-  function kindIcon() {
-    return icon('file');
+  function updateModelButton() {
+    const label = $('#model-btn-label');
+    if (!label) return;
+    const ms = currentModelSet();
+    label.textContent = ms ? ms.name : 'Модель';
   }
 
-  function renderFiles() {
-    const box = $('#file-list');
-    const q = (state.fileQuery || '').toLowerCase();
-    const kind = state.fileKind || 'all';
-    let items = state.files || [];
-    if (q) items = items.filter(f => (f.original_name || '').toLowerCase().includes(q));
-    if (kind !== 'all') {
-      items = items.filter(f => {
-        const k = f.kind || 'other';
-        if (kind === 'image') return k === 'image';
-        if (kind === 'doc') return ['pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text'].includes(k);
-        if (kind === 'table') return ['sheet', 'csv', 'xlsx'].includes(k);
-        if (kind === 'slide') return k === 'slide' || k === 'presentation';
-        return !['image', 'pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text', 'sheet', 'csv', 'xlsx', 'slide'].includes(k);
-      });
-    }
-    if (!items.length) {
-      box.innerHTML = '<div class="side-empty">' +
-        (state.files.length ? 'Ничего не найдено' : 'Файлов пока нет') + '</div>';
-      return;
-    }
-    box.innerHTML = items.map(f =>
-      '<div class="file-item">' +
-        '<span class="fi-kind">' + kindIcon(f.kind) + '</span>' +
-        '<span class="fi-name" title="' + escapeHtml(f.original_name) + '">' + escapeHtml(f.original_name) + '</span>' +
-        '<span class="fi-size">' + formatSize(f.size) + '</span>' +
-        '<a class="fi-btn" href="/api/files/' + f.id + '/download" title="Скачать" download>' +
-        icon('download') + '</a>' +
-        '<button data-attach="' + f.id + '" title="Прикрепить">' + icon('plus') + '</button>' +
-        '<button data-del="' + f.id + '" title="Удалить">' + icon('trash') + '</button>' +
-      '</div>').join('');
-    $$('[data-del]', box).forEach(b => b.addEventListener('click', async () => {
-      await api.del('/api/files/' + b.dataset.del);
-      state.files = state.files.filter(x => x.id !== b.dataset.del);
-      renderFiles();
-    }));
-    $$('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
-      const f = state.files.find(x => x.id === b.dataset.attach);
-      if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
-        state.pendingAttachments.push(f);
-        renderAttachments();
-      }
-      toggleFiles(false);
-    }));
-  }
+  async function openModelMenu() {
+    await loadModelSets();
+    if (!state.limits) await loadLimits();
+    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
+    const lim = (state.limits && state.limits.limits) || {};
+    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
+    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
+    const cdef = Math.max(cmin, Math.min(cmax, 50));
+    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
 
-  async function uploadFiles(files) {
-    const fd = new FormData();
-    files.forEach(f => fd.append('files', f));
-    try {
-      const out = await api.postForm('/api/files', fd);
-      state.files = out.concat(state.files);
-      renderFiles();
-      out.forEach(f => state.pendingAttachments.push(f));
-      renderAttachments();
-    } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }
-  }
+    const cards = mains.map(s => {
+      const e = (s.entries || [])[0] || {};
+      const bits = [];
+      bits.push('контекст ' + fmtNum(e.context_len || 0));
+      bits.push('ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.');
+      if (e.price_in) bits.push('вход ' + e.price_in + ' ₽/1M');
+      if (e.price_out) bits.push('выход ' + e.price_out + ' ₽/1M');
+      if (e.price_cache) bits.push('кэш ' + e.price_cache + ' ₽/1M');
+      return '<label class="mm-card' + (s.id === state.modelSetId ? ' on' : '') + '">' +
+        '<input type="radio" name="mm" value="' + s.id + '"' +
+        (s.id === state.modelSetId ? ' checked' : '') + '/>' +
+        '<span class="mm-body"><b>' + escapeHtml(s.name) +
+        (s.is_router ? ' · auto' : '') + '</b>' +
+        '<em>' + escapeHtml(e.model || '—') + '</em>' +
+        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
+    }).join('');
 
-  function toggleFiles(force) {
-    const p = $('#files-panel');
-    const show = force === undefined ? p.classList.contains('hidden') : force;
-    p.classList.toggle('hidden', !show);
-    if (show) loadFiles();
-  }
-
-  function bindFiles() {
-    $('#models-btn').addEventListener('click', openModelStats);
-    $('#wall-btn').addEventListener('click', openWall);
-    $('#publish-btn').addEventListener('click', publishCurrentChat);
-    $('#mem-quick-btn').addEventListener('click', () => openMemory());
-    $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
-    $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
-    $('#upload-btn').addEventListener('click', () => $('#file-input').click());
-    $('#file-search').addEventListener('input', (e) => {
-      state.fileQuery = e.target.value.trim();
-      renderFiles();
-    });
-    $('#file-filter').addEventListener('change', (e) => {
-      state.fileKind = e.target.value;
-      renderFiles();
-    });
-    const dz = $('#drop-zone');
-    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
-    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
-    dz.addEventListener('drop', async (e) => {
-      const files = Array.from(e.dataTransfer.files || []);
-      if (files.length) await uploadFiles(files);
-    });
-  }
-
-  // ---------- modal ----------
-  function closeModal() {
-    $('#modal-root').innerHTML = '';
-  }
-
-  function openModal({ title, body, onOk, okText }) {
-    const root = $('#modal-root');
-    const infoOnly = (okText || '') === 'Закрыть';
-    root.innerHTML = '<div class="modal-back"><div class="modal' + (infoOnly ? ' wide' : '') +
-      '"><h3>' + escapeHtml(title) + '</h3>' +
-      '<div class="modal-body">' + body + '</div>' +
-      '<div class="row">' +
-      (infoOnly ? '' : '<button class="ghost" data-cancel>Отмена</button>') +
-      '<button class="solid" data-ok>' + escapeHtml(okText || 'Сохранить') + '</button></div></div></div>';
-    const back = $('.modal-back', root);
-    const close = () => { root.innerHTML = ''; };
-    const cancel = $('[data-cancel]', root);
-    if (cancel) cancel.addEventListener('click', close);
-    back.addEventListener('click', (e) => { if (e.target === back) close(); });
-    $('[data-ok]', root).addEventListener('click', async () => {
-      try { const ok = onOk ? await onOk(root) : true; if (ok !== false) close(); }
-      catch (err) { toast('Ошибка: ' + err.message, 'error'); }
-    });
-    const inp = $('input, textarea', root);
-    if (inp) { inp.focus(); inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('[data-ok]', root).click(); } }); }
-  }
-
-  // ---------- admin: model sets ----------
-
-  // live cost estimate for a model: prices are $ per 1M tokens
-  function wireCostCalc(root, calcId, ids) {
-    const box = $('#' + calcId, root);
-    if (!box) return;
-    const get = (id) => { const n = $('#' + id, root); return n ? (parseFloat(n.value) || 0) : 0; };
-    const upd = () => {
-      const pin = get(ids.in), pout = get(ids.out), pcache = get(ids.cache);
-      const ctx = get(ids.ctx), mx = get(ids.max);
-      const full = (pin * ctx) / 1e6 + (pout * mx) / 1e6;
-      const short = (pin * 1000) / 1e6 + (pout * 500) / 1e6;
-      box.innerHTML =
-        '<div class="calc-line"><span>Вход</span><b>$' + pin + ' / 1M токенов</b></div>' +
-        '<div class="calc-line"><span>Выход</span><b>$' + pout + ' / 1M токенов</b></div>' +
-        '<div class="calc-line"><span>Кэш</span><b>$' + pcache + ' / 1M токенов</b></div>' +
-        '<div class="calc-line total"><span>Короткий ответ (1k контекст + 0.5k ответ)</span><b>≈ $' +
-          short.toFixed(5) + '</b></div>' +
-        '<div class="calc-line total"><span>Полный контекст ' + fmtNum(ctx) + ' + ответ ' +
-          fmtNum(mx) + '</span><b>≈ $' + full.toFixed(4) + '</b></div>' +
-        (pout ? '<div class="calc-line"><span>1000 таких ответов</span><b>≈ $' +
-          (full * 1000).toFixed(2) + '</b></div>' : '');
-    };
-    $$('input', root).forEach(i => {
-      i.addEventListener('input', upd);
-      i.addEventListener('change', upd);
-    });
-    upd();
-  }
-
-  function adminForm(root, title, fields, onSubmit, done) {
-    root.innerHTML = '<div class="modal-back"><div class="modal wide"><h3>' + escapeHtml(title) + '</h3>' +
-      '<div class="modal-body lim-plans">' + fields.map(f =>
-        f.type === 'html' ? (f.html || '') :
-        '<label>' + escapeHtml(f.label) +
-        (f.type === 'select'
-          ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
-          : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
-            (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
-            (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') +
-            (f.calc ? ' data-calc="1" inputmode="decimal"' : '') + ' />') +
-        (f.note ? '<span class="field-note">' + f.note + '</span>' : '') +
-        '</label>').join('') + '</div>' +
-      '<div class="row"><button class="ghost" data-cancel>Отмена</button>' +
-      '<button class="solid" data-ok>Сохранить</button></div></div></div>';
-    $('[data-cancel]', root).addEventListener('click', done);
-    $('[data-ok]', root).addEventListener('click', async () => {
-      try { await onSubmit(); done(); } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    });
-  }
-
-  async function openModelSetsAdmin() {
-    const root = $('#modal-root');
-
-    async function rerender() {
-      const sets = await api.get('/api/admin/model-sets');
-      const body = sets.length ? sets.map(s =>
-        '<div class="ms-set"><div class="ms-head">' +
-          '<span class="ms-route">' + escapeHtml(s.route_type) + '</span>' +
-          '<b>' + escapeHtml(s.name) + '</b>' +
-          '<span class="ms-slug">' + escapeHtml(s.slug) + '</span>' +
-          '<span class="spacer" style="flex:1"></span>' +
-          '<button data-toggle="' + s.id + '" data-active="' + (s.is_active ? 1 : 0) + '">' +
-            (s.is_active ? 'вкл' : 'выкл') + '</button>' +
-          '<button data-del-set="' + s.id + '" title="Удалить набор">' + icon('trash') + '</button>' +
-        '</div><div class="ms-entries">' +
-          (s.entries.length ? s.entries.map(e =>
-            '<div class="ms-entry">' +
-              '<span class="ms-pos">' + e.position + '</span>' +
-              '<span class="ms-model">' + escapeHtml(e.model) + '</span>' +
-              '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
-              '<span class="ms-key">' + (e.has_api_key ? icon('check') : '—') + '</span>' +
-              '<span class="ms-price">' + (e.price_in || e.price_out
-                ? '$' + (e.price_in || 0) + ' / $' + (e.price_out || 0)
-                : '—') + '</span>' +
-              '<button data-edit-entry="' + s.id + '|' + e.id + '" title="Модель, цены, контекст, лимит ответа">Изменить</button>' +
-              '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button>' +
-            '</div>').join('') : '<div class="ms-empty">нет моделей</div>') +
-          '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button>' +
-        '</div></div>').join('') : '<p>Наборов нет.</p>';
-
-      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px">' +
-        '<h3>Model Sets</h3><div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div>' +
-        '<div class="row"><button class="ghost" data-add-set>' + icon('plus') + 'Набор</button>' +
-        '<span style="flex:1"></span><button class="solid" data-close>Закрыть</button></div></div></div>';
-
-      $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
-      $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
-      $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => {
-        if (!confirm('Удалить набор и все его модели?')) return;
-        await api.del('/api/admin/model-sets/' + b.dataset.delSet); rerender();
-      }));
-      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => {
-        await api.patch('/api/admin/model-sets/' + b.dataset.toggle,
-          { is_active: b.dataset.active !== '1' }); rerender();
-      }));
-      $$('[data-del-entry]', root).forEach(b => {
-        const [sid, eid] = b.dataset.delEntry.split('|');
-        b.addEventListener('click', async () => {
-          await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
-        });
-      });
-      $$('[data-edit-entry]', root).forEach(b => {
-        const [sid, eid] = b.dataset.editEntry.split('|');
-        b.addEventListener('click', () => editEntryForm(root, sid, eid, rerender));
-      });
-      $$('[data-add-entry]', root).forEach(b =>
-        b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
-    }
-
-    await rerender();
-  }
-
-  function addSetForm(root, done) {
-    adminForm(root, 'Новый Model Set', [
-      { id: 'ms-name', label: 'Название', placeholder: 'Например: Qwen Fast' },
-      { id: 'ms-route', label: 'Маршрут', type: 'select', options: ['MAIN', 'TITLE', 'SUGGESTIONS'] },
-    ], async () => {
-      await api.post('/api/admin/model-sets', {
-        name: $('#ms-name').value.trim(),
-        route_type: $('#ms-route').value,
-      });
-    }, done);
-  }
-
-  function addEntryForm(root, setId, done) {
-    adminForm(root, 'Новая модель (шаг fallback)', [
-      { id: 'me-url', label: 'Base URL', placeholder: 'https://…/v1' },
-      { id: 'me-model', label: 'Модель', placeholder: 'qwen36-35b' },
-      { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
-      { id: 'me-pos', label: 'Позиция', type: 'number', value: '0' },
-      { id: 'me-temp', label: 'Temperature', type: 'number', value: '0.2' },
-      { id: 'me-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: '32000', calc: true },
-      { id: 'me-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: '0', calc: true },
-      { id: 'me-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: '0', calc: true },
-      { id: 'me-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: '0', calc: true },
-      { id: 'me-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: '0', calc: true },
-      { type: 'html', html: '<div id="me-calc" class="field-calc"></div>' },
-    ], async () => {
-      await api.post('/api/admin/model-sets/' + setId + '/entries', {
-        base_url: $('#me-url').value.trim(),
-        model: $('#me-model').value.trim(),
-        api_key: $('#me-key').value,
-        position: parseInt($('#me-pos').value, 10) || 0,
-        temperature: parseFloat($('#me-temp').value) || 0.2,
-        max_tokens: parseInt($('#me-max').value, 10) || 32000,
-        context_len: parseInt($('#me-ctx').value, 10) || 0,
-        price_in: parseFloat($('#me-pin').value) || 0,
-        price_out: parseFloat($('#me-pout').value) || 0,
-        price_cache: parseFloat($('#me-pcache').value) || 0,
-      });
-    }, done);
-    wireCostCalc(root, 'me-calc',
-      { in: 'me-pin', out: 'me-pout', cache: 'me-pcache', ctx: 'me-ctx', max: 'me-max' });
-  }
-
-  async function editEntryForm(root, setId, entryId, done) {
-    let entry = null;
-    try {
-      const sets = await api.get('/api/models/sets');
-      (sets || []).forEach(s => {
-        (s.entries || []).forEach(e => { if (e.id === entryId) entry = e; });
-      });
-    } catch (e) { /* ignore */ }
-    if (!entry) { toast('Модель не найдена', 'error'); return; }
-    adminForm(root, 'Модель: ' + (entry.model || ''), [
-      { id: 'ee-model', label: 'Модель', value: entry.model || '' },
-      { id: 'ee-url', label: 'Base URL', value: entry.base_url || '' },
-      { id: 'ee-key', label: 'API-ключ (пусто = не менять)', placeholder: 'sk-…' },
-      { id: 'ee-temp', label: 'Temperature', type: 'number', value: String(entry.temperature != null ? entry.temperature : 0.2) },
-      { id: 'ee-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: String(entry.max_tokens || 32000), calc: true },
-      { id: 'ee-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: String(entry.context_len || 0), calc: true },
-      { id: 'ee-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: String(entry.price_in || 0), calc: true },
-      { id: 'ee-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: String(entry.price_out || 0), calc: true },
-      { id: 'ee-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: String(entry.price_cache || 0), calc: true },
-      { type: 'html', html: '<div id="ee-calc" class="field-calc"></div>' },
-    ], async () => {
-      const body = {
-        model: $('#ee-model').value.trim(),
-        base_url: $('#ee-url').value.trim(),
-        temperature: parseFloat($('#ee-temp').value) || 0.2,
-        max_tokens: parseInt($('#ee-max').value, 10) || 32000,
-        context_len: parseInt($('#ee-ctx').value, 10) || 0,
-        price_in: parseFloat($('#ee-pin').value) || 0,
-        price_out: parseFloat($('#ee-pout').value) || 0,
-        price_cache: parseFloat($('#ee-pcache').value) || 0,
-      };
-      const key = $('#ee-key').value;
-      if (key) body.api_key = key;
-      await api.patch('/api/admin/model-sets/' + setId + '/entries/' + entryId, body);
-      toast('Модель обновлена');
-    }, done);
-    wireCostCalc(root, 'ee-calc',
-      { in: 'ee-pin', out: 'ee-pout', cache: 'ee-pcache', ctx: 'ee-ctx', max: 'ee-max' });
-  }
-
-  // ---------- sidebar ----------
-  function applySidebar() {
-    const sb = $('#sidebar');
-    const collapsed = state.sidebarCollapsed && window.innerWidth > 860;
-    sb.classList.toggle('collapsed', collapsed);
-    const openBtn = $('#sidebar-open-btn');
-    if (openBtn) openBtn.classList.toggle('hidden', !collapsed);
-  }
-  function closeMobileSidebar() {
-    if (window.innerWidth <= 860) {
-      $('#sidebar').classList.remove('open');
-      $('#sidebar-overlay').classList.remove('show');
-    }
-  }
-  function bindSidebar() {
-    $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
-    $('#new-code-btn').addEventListener('click', () => toastSoon('Код-агент'));
-    $('#new-council-btn').addEventListener('click', () => toastSoon('Консилиум'));
-    $('#collapse-btn').addEventListener('click', () => {
-      state.sidebarCollapsed = true;
-      localStorage.setItem('cs_sidebar', '1');
-      applySidebar();
-    });
-    $('#sidebar-open-btn').addEventListener('click', () => {
-      state.sidebarCollapsed = false;
-      localStorage.setItem('cs_sidebar', '0');
-      applySidebar();
-    });
-    $('#share-btn').addEventListener('click', openShare);
-    $('#menu-btn').addEventListener('click', () => {
-      $('#sidebar').classList.add('open'); $('#sidebar-overlay').classList.add('show');
-    });
-    $('#sidebar-overlay').addEventListener('click', closeMobileSidebar);
-    let t = null;
-    $('#search-input').addEventListener('input', (e) => {
-      clearTimeout(t);
-      t = setTimeout(() => { state.query = e.target.value.trim(); loadChats(); }, 250);
-    });
-    $('#chat-title').addEventListener('click', renameCurrentChat);
-    $('#messages').addEventListener('scroll', () => {
-      const box = $('#messages');
-      state.stickBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 70;
-    });
-    $('#settings-btn').addEventListener('click', () => {
-      const u = state.user || {};
-      const isAdmin = !!u.is_admin;
-      const who = u.name || u.email || 'Аккаунт';
-      openModal({
-        title: 'Настройки и профиль',
-        okText: 'Закрыть',
-        body:
-          '<div class="profile-box">' +
-          '<img class="profile-ava" src="/api/avatars/' + (u.avatar || 0) + '.svg" alt="" />' +
-          '<div class="profile-info"><b>' + escapeHtml(who) + '</b>' +
-          '<span>' + escapeHtml(u.email || '') + '</span>' +
-          '<span class="role-chip">' + (isAdmin ? 'администратор' : 'пользователь') + '</span></div>' +
-          '</div>' +
-          '<h4 class="sec">Параметры</h4>' +
-          '<p class="usage-note">Поиск в интернете: всегда включён · Усилие: ' +
-          escapeHtml(state.effort) + ' · Память: ' +
-          ((state.memories || []).length) + ' записей<br/>' +
-          'Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
-          '<h4 class="sec">Состояние сервера</h4>' +
-          '<div id="sys-block">' + systemRowsHtml() + '</div>' +
-          '<h4 class="sec">Разделы</h4>' +
-          '<div class="settings-grid">' +
-          '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' +
-          '<button class="chip-btn" id="set-wall">' + icon('globe-box') + 'Стенка постов</button>' +
-          '<button class="chip-btn" id="set-memory">' + icon('sparkle') + 'Память</button>' +
-          '<button class="chip-btn" id="set-links">' + icon('link') + 'Мои ссылки</button>' +
-          '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
-          (isAdmin
-            ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
-              '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
-              '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>' +
-              '<button class="chip-btn" id="open-limits">' + icon('gauge') + 'Тарифы и лимиты</button>'
-            : '') +
-          '</div>' +
-          '<div style="margin-top:18px"><button class="chip-btn danger" id="set-logout">' +
-          icon('logout') + 'Выйти из аккаунта</button></div>',
-        onOk: () => true,
-      });
-      const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
-      on('#set-models', () => { closeModal(); openModelStats(); });
-      on('#set-wall', () => { closeModal(); openWall(); });
-      on('#set-memory', () => { closeModal(); openMemory(); });
-      on('#set-links', () => { closeModal(); openLinks(); });
-      on('#set-files', () => { closeModal(); toggleFiles(true); });
-      on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
-      on('#open-stats', () => { closeModal(); openAdminStats(); });
-      on('#open-allchats', () => { closeModal(); openAdminChats(); });
-      on('#open-limits', () => { closeModal(); openLimits(); });
-      on('#set-logout', async () => {
-        try { await api.post('/api/auth/logout'); } catch (e) { /* noop */ }
-        location.reload();
-      });
-    });
-    window.addEventListener('resize', () => {
-      applySidebar();
-      $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    });
-  }
-
-  // ---------- share / public ----------
-  async function openShare() {
-    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-    let st;
-    try { st = await api.get('/api/chats/' + state.currentChatId + '/share'); }
-    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-
-    const url = st.share_token ? (location.origin + '/?share=' + st.share_token) : '';
     openModal({
-      title: 'Поделиться чатом',
-      okText: 'Закрыть',
-      body: st.is_public
-        ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
-          '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
-          '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button class="chip-btn" id="copy-link">' + icon('copy') + 'Копировать</button>' +
-          '<button class="chip-btn" id="open-link">' + icon('link') + 'Открыть</button>' +
-          '<button class="chip-btn" id="stop-share">' + icon('x') + 'Отключить</button></div>'
-        : '<p>Создать публичную ссылку на этот чат? Доступ будет только на чтение.</p>' +
-          '<div style="margin-top:12px"><button class="chip-btn" id="start-share">' +
-          icon('link') + 'Создать ссылку</button></div>',
-      onOk: () => true,
+      title: 'Модель и параметры',
+      okText: 'Готово',
+      body:
+        '<h4 class="sec">Кластер</h4><div class="mm-list">' +
+        (cards || '<p>Моделей нет</p>') + '</div>' +
+        '<h4 class="sec">Усилие модели</h4>' +
+        '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
+        (EFFORTS.length - 1) + '" step="1" value="' + idx +
+        '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
+        '<h4 class="sec">Температура</h4>' +
+        '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
+        state.temperature + '"/><b id="mm-temp-label">' +
+        Number(state.temperature).toFixed(1) + '</b></div>' +
+        '<h4 class="sec">Сжатие истории</h4>' +
+        '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме и освободит контекст. ' +
+        'Ваш тариф: от ' + cmin + '% до ' + cmax + '%' +
+        (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
+        '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
+        '" max="' + cmax + '" step="5" value="' + cdef +
+        '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
+        '<div style="margin-top:10px"><button class="chip-btn" id="mm-comp-go">' +
+        icon('sparkle') + 'Сжать историю</button></div>',
+      onOk: (root) => {
+        const picked = $('input[name=mm]:checked', root);
+        if (picked) {
+          state.modelSetId = picked.value;
+          localStorage.setItem('cs_model', state.modelSetId);
+        }
+        updateModelButton();
+        return true;
+      },
     });
 
-    const start = $('#start-share');
-    if (start) start.addEventListener('click', async () => {
-      try { await api.post('/api/chats/' + state.currentChatId + '/share'); }
-      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-      $('#modal-root').innerHTML = ''; openShare();
+    const eff = $('#mm-effort');
+    eff.addEventListener('input', () => {
+      const i = parseInt(eff.value, 10) || 0;
+      state.effort = EFFORTS[i];
+      localStorage.setItem('cs_effort', state.effort);
+      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
     });
-    const copy = $('#copy-link');
-    if (copy) copy.addEventListener('click', async () => {
-      const ok = await copyText(url);
-      toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
+    const tmp = $('#mm-temp');
+    tmp.addEventListener('input', () => {
+      state.temperature = parseFloat(tmp.value) || 0;
+      localStorage.setItem('cs_temp', String(state.temperature));
+      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
     });
-    const open = $('#open-link');
-    if (open) open.addEventListener('click', () => window.open(url, '_blank'));
-    const stop = $('#stop-share');
-    if (stop) stop.addEventListener('click', async () => {
-      try { await api.del('/api/chats/' + state.currentChatId + '/share'); }
-      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-      $('#modal-root').innerHTML = ''; openShare();
-    });
-  }
-
-  async function currentUserOrNull() {
-    try {
-      const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
-      if (!r.ok) return null;
-      return await r.json();
-    } catch (e) { return null; }
-  }
-
-  async function showPublicView(token) {
-    let data;
-    try {
-      const r = await fetch('/api/public/chats/' + encodeURIComponent(token),
-        { credentials: 'same-origin' });
-      if (!r.ok) {
-        throw new Error(r.status === 404 ? 'ссылка недействительна или отключена' : 'HTTP ' + r.status);
-      }
-      data = await r.json();
-    } catch (e) {
-      showAuth();
-      $('#auth-error').textContent = 'Не удалось открыть ссылку: ' + e.message;
-      return;
-    }
-
-    state.user = await currentUserOrNull();
-    state.publicToken = token;
-    state.readonly = true;
-    state.tree = data.messages || [];
-    state.currentChatId = null;
-    state.choices = {};
-
-    $('#auth-screen').classList.add('hidden');
-    $('#main-screen').classList.remove('hidden');
-    $('#sidebar').classList.add('collapsed');
-    $('#chat-title').textContent = data.title || 'Публичный чат';
-    $('#composer').classList.add('hidden');
-    $('#share-btn').classList.add('hidden');
-
-    const banner = document.createElement('div');
-    banner.className = 'public-banner';
-    banner.innerHTML = '<span>' + icon('link') + ' Публичный чат' +
-      (data.author ? ' · ' + escapeHtml(data.author) : '') + ' — только чтение</span>' +
-      (state.user
-        ? '<button id="fork-btn">Продолжить у себя</button>'
-        : '<button id="login-btn">Войти, чтобы продолжить</button>');
-    $('#chat-area').insertBefore(banner, $('#messages'));
-
-    const fb = $('#fork-btn');
-    if (fb) fb.addEventListener('click', async () => {
+    const cmp = $('#mm-comp');
+    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
+    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
+      $$('.mm-card').forEach(c => c.classList.remove('on'));
+      const card = r.closest('.mm-card');
+      if (r.checked && card) card.classList.add('on');
+    }));
+    $('#mm-comp-go').addEventListener('click', async () => {
+      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+      toast('Сжимаю историю…');
       try {
-        await api.post('/api/public/chats/' + encodeURIComponent(token) + '/fork');
-        location.href = '/';
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+        await api.post('/api/chats/' + state.currentChatId + '/compress',
+          { target_percent: parseInt(cmp.value, 10) || 50 });
+        toast('История сжата');
+        await loadUsage();
+      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
     });
-    const lb = $('#login-btn');
-    if (lb) lb.addEventListener('click', () => { location.href = '/'; });
-
-    renderMessages();
   }
 
   // ---------- local file generation ----------
@@ -2894,6 +2599,53 @@
     }));
   }
 
+  // ---------- load uploaded files list ----------
+  async function loadFiles() {
+    try {
+      state.files = await api.get('/api/files');
+      renderFileList();
+    } catch (e) {
+      state.files = [];
+      renderFileList();
+    }
+  }
+
+  // ---------- bind file search/filter ----------
+  function bindFileControls() {
+    const search = $('#file-search');
+    if (search) {
+      search.addEventListener('input', () => renderFileList());
+    }
+    const filter = $('#file-filter');
+    if (filter) {
+      filter.addEventListener('change', () => renderFileList());
+    }
+    const uploadBtn = $('#upload-btn');
+    if (uploadBtn) {
+      uploadBtn.addEventListener('click', () => $('#file-input').click());
+    }
+    const pickBtn = $('#pick-file-btn');
+    if (pickBtn) {
+      pickBtn.addEventListener('click', openFilePicker);
+    }
+    const dropZone = $('#drop-zone');
+    if (dropZone) {
+      dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = 'var(--accent)'; });
+      dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
+      dropZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = '';
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length) await uploadFiles(files);
+      });
+    }
+  }
+
+  // Alias for existing boot call
+  function bindFiles() {
+    bindFileControls();
+  }
+
   // ---------- server load ----------
   async function loadSystem() {
     try { state.system = await api.get('/api/system'); }
@@ -2942,28 +2694,19 @@
         '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
         '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';
     };
-    const lf = data.limits.free || {};
-    const lp = data.limits.pro || {};
-    const tableKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp))));
-    const rowFor = (key) => '<tr><td class="lk">' + escapeHtml(labels[key] || key) +
-      (bytes[key] ? ' <em>МБ</em>' : '') + '</td>' +
-      '<td>' + field('free', key, lf[key]) + '</td>' +
-      '<td>' + field('pro', key, lp[key]) + '</td></tr>';
-    const block = (plan) =>
-      '<div class="lim-plan"><h5>Модели тарифа ' + plan.toUpperCase() + '</h5>' +
-      modelBoxes(plan) + '</div>';
+    const block = (plan) => {
+      const lim = data.limits[plan] || {};
+      return '<h4 class="sec">Тариф ' + plan.toUpperCase() + '</h4>' +
+        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>' +
+        '<h4 class="sec">Модели тарифа ' + plan.toUpperCase() + '</h4>' + modelBoxes(plan);
+    };
     openModal({
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, посты, ' +
+        'деньги в рублях. Настройка действует для всех действий: файлы, чаты, посты, ' +
         'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
-        '<table class="lim-table"><thead><tr><th>Лимит</th>' +
-        '<th>Free<button class="reset-plan" data-reset-plan="free">сбросить</button></th>' +
-        '<th>Pro<button class="reset-plan" data-reset-plan="pro">сбросить</button></th>' +
-        '</tr></thead>' +
-        '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table>' +
-        '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
+        (data.plans || ['free', 'pro']).map(block).join('') +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
         const grouped = {};
@@ -2991,17 +2734,6 @@
       },
     });
     loadLimitUsers();
-    $$('[data-reset-plan]', $('#modal-root')).forEach(b => b.addEventListener('click', async () => {
-      if (!confirm('Сбросить лимиты тарифа ' + b.dataset.resetPlan.toUpperCase() +
-                   ' к значениям по умолчанию?')) return;
-      try {
-        await api.post('/api/limits/' + b.dataset.resetPlan + '/reset', {});
-        toast('Лимиты ' + b.dataset.resetPlan.toUpperCase() + ' сброшены');
-        const root = $('#modal-root');
-        root.innerHTML = '';
-        await openLimits();
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    }));
   }
 
   async function loadLimitUsers() {
@@ -3014,7 +2746,7 @@
       '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
       ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
       ' · файлы: ' + formatSize(u.storage) +
-      ' · тариф $' + u.plan_price + ' · расход $' + u.cost + '</span></div>' +
+      ' · тариф ' + u.plan_price + ' ₽ · расход ' + u.cost + ' ₽</span></div>' +
       '<button class="chip-btn" data-uplan="' + u.id + '">' +
       (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
       '</div>';
@@ -3101,7 +2833,7 @@
   // ---------- main page: action tiles + rotating showcase ----------
   const ACTION_TILES = [
     {
-      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',
+      id: 'essay', label: 'Написать сочинение', icon: 'pencil', color: '#f2c14e',
       title: 'Сочинение',
       questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
         '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +
@@ -3109,7 +2841,7 @@
         'Можно ответить одной строкой — остальное подберу сам.',
     },
     {
-      id: 'doc', label: 'Документ Word', icon: 'i-doc', color: '#2f6fb0',
+      id: 'doc', label: 'Документ Word', icon: 'doc', color: '#2f6fb0',
       title: 'Документ Word',
       questions: '**Документ Word.** Чтобы получилось то, что нужно, уточните:\n\n' +
         '1. Тема и назначение документа?\n2. Какие разделы должны быть?\n' +
@@ -3117,7 +2849,7 @@
         'Ответьте одной строкой — оформлю в лучшем виде.',
     },
     {
-      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#e8834f',
+      id: 'slides', label: 'Презентация', icon: 'slides', color: '#e8834f',
       title: 'Презентация',
       questions: '**Презентация.** Расскажите:\n\n' +
         '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
@@ -3125,7 +2857,7 @@
         'Достаточно одной строки.',
     },
     {
-      id: 'sheet', label: 'Таблица Excel', icon: 'i-sheet', color: '#2f8f6f',
+      id: 'sheet', label: 'Таблица Excel', icon: 'sheet', color: '#2f8f6f',
       title: 'Таблица Excel',
       questions: '**Таблица Excel.** Уточните:\n\n' +
         '1. Какие данные и по какой теме?\n2. Какие колонки нужны?\n' +
@@ -3133,7 +2865,7 @@
         'Ответьте одной строкой.',
     },
     {
-      id: 'code', label: 'Написать код', icon: 'i-terminal', color: '#7c5cbf',
+      id: 'code', label: 'Написать код', icon: 'terminal', color: '#7c5cbf',
       title: 'Код',
       questions: '**Код.** Что нужно написать?\n\n' +
         '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
@@ -3141,34 +2873,34 @@
         'Или переключитесь в режим **Код-агента** — там будет полноценный проект с файлами.',
     },
     {
-      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#c0563f',
+      id: 'draw', label: 'Нарисовать схему', icon: 'sparkle', color: '#c0563f',
       title: 'Схема',
       questions: '**Схема.** Опишите:\n\n' +
         '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
         '2. Какие элементы и связи между ними?\n3. Нужны ли размеры и подписи?\n\n' +
         'Нарисую в SVG — можно будет скачать.',
     },
-    { id: 'image', label: 'Сделать график', icon: 'i-chart', color: '#0e7c9b', title: 'График',
+    { id: 'image', label: 'Сделать график', icon: 'chart', color: '#0e7c9b', title: 'График',
       questions: '**График.** Какие данные построить? Пришлите числа или опишите, откуда их взять, и укажите тип графика (линия, столбцы, круговая).' },
-    { id: 'research', label: 'Найти в интернете', icon: 'i-globe', color: '#3f7a3f', title: 'Поиск',
+    { id: 'research', label: 'Найти в интернете', icon: 'globe', color: '#3f7a3f', title: 'Поиск',
       questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
-    { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#a03f6f', title: 'Объяснение',
+    { id: 'explain', label: 'Объяснить простыми словами', icon: 'brain', color: '#a03f6f', title: 'Объяснение',
       questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
-    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#8a4a2f', title: 'План',
+    { id: 'plan', label: 'Составить план', icon: 'file', color: '#8a4a2f', title: 'План',
       questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
-    { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
+    { id: 'translate', label: 'Перевести', icon: 'globe', color: '#4a5568', title: 'Перевод',
       questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
-    { id: 'wall', label: 'Посмотреть посты', icon: 'i-globe-box', color: '#b8862f', action: 'wall' },
+    { id: 'wall', label: 'Посмотреть посты', icon: 'globe', color: '#b8862f', action: 'wall' },
   ];
 
-  // inline tile icon paths — drawn directly, so they render everywhere
+  // inline icon paths for the tiles — no sprite lookup, so they always render
   const TILE_PATHS = {
     pencil: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>',
     doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
     slides: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/><path d="M7 8h6M7 11h4"/>',
     sheet: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/>',
     terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
-    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18 16l.7 1.8L20.5 18.5l-1.8.7L18 21l-.7-1.8L15.5 18.5l1.8-.7z"/>',
+    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/>',
     chart: '<path d="M4 20V4M4 20h16"/><path d="M8 17v-6M12.5 17V8M17 17v-9"/>',
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
     brain: '<path d="M9.6 4.6A2.6 2.6 0 0 0 7 7.2v.4A2.8 2.8 0 0 0 5.3 12.4 2.8 2.8 0 0 0 7 17.1v.3a2.6 2.6 0 0 0 5.2 0V5.9a2.6 2.6 0 0 0-2.6-1.3Z"/><path d="M14.4 4.6A2.6 2.6 0 0 1 17 7.2v.4a2.8 2.8 0 0 1 1.7 4.8A2.8 2.8 0 0 1 17 17.1v.3a2.6 2.6 0 0 1-5.2 0"/><path d="M12 4.6v15"/>',
@@ -3176,17 +2908,8 @@
     link: '<path d="M9.5 14.5l5-5"/><path d="M11 7l1.5-1.5a3.5 3.5 0 1 1 5 5L16 12M13 17l-1.5 1.5a3.5 3.5 0 1 1-5-5L8 12"/>',
   };
 
-  // maps old sprite ids (and bare names) onto the inline set
-  const TILE_ALIAS = {
-    'i-pencil': 'pencil', 'i-doc': 'doc', 'i-slides': 'slides', 'i-sheet': 'sheet',
-    'i-terminal': 'terminal', 'i-sparkle': 'sparkle', 'i-chart': 'chart',
-    'i-globe': 'globe', 'i-globe-box': 'globe', 'i-brain': 'brain',
-    'i-file': 'file', 'i-link': 'link', 'i-search': 'globe',
-  };
-
   function tileIcon(name) {
-    const key = TILE_ALIAS[name] || name;
-    const path = TILE_PATHS[key] || TILE_PATHS.sparkle;
+    const path = TILE_PATHS[name] || TILE_PATHS.sparkle;
     return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffffff" ' +
       'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
   }
@@ -3232,13 +2955,21 @@
     renderChatList();
     await openChat(chat.id);
     if (t.questions) {
+      // Send the tile prompt through the normal AI flow so the model actually processes it
       try {
-        await api.post('/api/chats/' + chat.id + '/seed', { text: t.questions });
+        const chat2 = await api.post('/api/chats/' + chat.id + '/messages', {
+          content: t.questions,
+          parent_message_id: null,
+        });
+        // Replace tree with real messages
         state.tree = await api.get('/api/chats/' + chat.id + '/messages');
         renderMessages();
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-      toast('Ответьте на вопросы — и я приступлю');
-      $('#input').focus();
+        toast('Получаю ответы…');
+      } catch (e) {
+        toast('Ошибка: ' + e.message, 'error');
+        // Still focus the input for manual use
+        $('#input').focus();
+      }
     } else {
       $('#input').focus();
     }
@@ -3259,255 +2990,63 @@
     toast('🔒 ' + what + ' скоро появится — уже в работе. Пока доступен обычный чат.', 'error');
   }
 
-
-  // ---------- rich model menu (clusters + effort + temperature + compression) ----------
-  function currentModelSet() {
-    return (state.modelSets || []).find(x => x.id === state.modelSetId) || null;
+  // ---------- theme toggle ----------
+  function applyTheme() {
+    const cls = state.theme === 'light' ? 'cs-theme-light'
+              : state.theme === 'dark' ? 'cs-theme-dark'
+              : '';
+    document.documentElement.className = cls;
+    updateThemeIcon();
   }
 
-  function updateModelButton() {
-    const label = $('#model-btn-label');
-    if (!label) return;
-    const ms = currentModelSet();
-    label.textContent = ms ? ms.name : 'Модель';
-  }
-
-  async function openModelMenu() {
-    await loadModelSets();
-    if (!state.limits) await loadLimits();
-    const mains = (state.modelSets || []).filter(x => x.route_type === 'MAIN')
-      .sort((a, b) => (b.is_router ? 1 : 0) - (a.is_router ? 1 : 0));
-    const lim = (state.limits && state.limits.limits) || {};
-    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
-    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
-    const cdef = Math.max(cmin, Math.min(cmax, 50));
-    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
-
-    const cards = mains.map(x => {
-      const e = (x.entries || [])[0] || {};
-      const bits = ['контекст ' + fmtNum(e.context_len || 0),
-                    'ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.'];
-      if (e.price_in) bits.push('вход $' + e.price_in + '/1M');
-      if (e.price_out) bits.push('выход $' + e.price_out + '/1M');
-      if (e.price_cache) bits.push('кэш $' + e.price_cache + '/1M');
-      return '<label class="mm-card' + (x.id === state.modelSetId ? ' on' : '') + '">' +
-        '<input type="radio" name="mm" value="' + x.id + '"' +
-        (x.id === state.modelSetId ? ' checked' : '') + '/>' +
-        '<span class="mm-body"><b>' + escapeHtml(x.name) + (x.is_router ? ' · авто по умолчанию' : '') + '</b>' +
-        '<em>' + escapeHtml(e.model || '—') + '</em>' +
-        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
-    }).join('');
-
-    openModal({
-      title: 'Модель и параметры',
-      okText: 'Готово',
-      body:
-        '<div class="mm-grid">' +
-          '<div class="mm-col">' +
-            '<h4 class="sec">Кластер</h4>' +
-            '<div class="mm-list">' + (cards || '<p>Моделей нет</p>') + '</div>' +
-          '</div>' +
-          '<div class="mm-col">' +
-            '<h4 class="sec">Усилие модели</h4>' +
-            '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
-            (EFFORTS.length - 1) + '" step="1" value="' + idx +
-            '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
-            '<h4 class="sec">Температура</h4>' +
-            '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
-            (state.temperature != null ? state.temperature : 0.2) +
-            '"/><b id="mm-temp-label">' +
-            Number(state.temperature != null ? state.temperature : 0.2).toFixed(1) + '</b></div>' +
-            '<h4 class="sec">Сжатие истории</h4>' +
-            '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме. ' +
-            'Тариф: от ' + cmin + '% до ' + cmax + '%' +
-            (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
-            '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
-            '" max="' + cmax + '" step="5" value="' + cdef +
-            '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
-            '<div style="margin-top:10px">' +
-            '<button class="chip-btn" id="mm-comp-go">Сжать историю</button></div>' +
-          '</div>' +
-        '</div>',
-      onOk: (root) => {
-        const picked = $('input[name=mm]:checked', root);
-        if (picked) {
-          state.modelSetId = picked.value;
-          localStorage.setItem('cs_model', state.modelSetId);
-        }
-        updateModelButton();
-        return true;
-      },
-    });
-
-    const mmBox = document.querySelector('#modal-root .modal');
-    if (mmBox) mmBox.classList.add('wide');
-    const eff = $('#mm-effort');
-    eff.addEventListener('input', () => {
-      const i = parseInt(eff.value, 10) || 0;
-      state.effort = EFFORTS[i];
-      localStorage.setItem('cs_effort', state.effort);
-      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
-    });
-    const tmp = $('#mm-temp');
-    tmp.addEventListener('input', () => {
-      state.temperature = parseFloat(tmp.value) || 0;
-      localStorage.setItem('cs_temp', String(state.temperature));
-      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
-    });
-    const cmp = $('#mm-comp');
-    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
-    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
-      $$('.mm-card').forEach(c => c.classList.remove('on'));
-      const card = r.closest('.mm-card');
-      if (r.checked && card) card.classList.add('on');
-    }));
-    $('#mm-comp-go').addEventListener('click', async () => {
-      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-      toast('Сжимаю историю…');
-      try {
-        await api.post('/api/chats/' + state.currentChatId + '/compress',
-          { target_percent: parseInt(cmp.value, 10) || 50 });
-        toast('История сжата');
-        await loadUsage();
-      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
-    });
-  }
-
-  // playful composer placeholders
-  const PLACEHOLDERS = [
-    'Жду указаний…', 'Слушаю, мой повелитель…', 'Что изволите?', 'Приказывайте…',
-    'Готов служить…', 'Ваше слово?', 'Я весь внимание…', 'Жду вашу мудрую мысль…',
-    'Повелевайте…', 'Скажите слово — и я начну…', 'Ваш ход, господин…',
-    'Куда направим усилия?', 'Слушаю и повинуюсь…', 'Излагайте, я записываю…',
-  ];
-
-  function rollPlaceholder() {
-    const el = $('#input');
+  function updateThemeIcon() {
+    const el = $('#theme-toggle');
     if (!el) return;
-    el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+    const isDark = state.theme === 'dark'
+      || (state.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    el.title = isDark ? 'Светлая тема' : 'Тёмная тема';
+    // Replace icon: sun in light mode, moon in dark mode
+    const useId = isDark ? 'i-moon' : 'i-sun';
+    el.innerHTML = '<svg class="ic"><use href="#' + useId + '"/></svg>';
   }
 
-// ---------- subscription limits window ----------
-  function limitValueLabel(key, value) {
-    if (value === null || value === undefined) return 'без лимита';
-    if (key === 'user_storage' || key === 'file_size') return formatSize(value);
-    return fmtNum(value);
-  }
-
-  function planCompareHtml(lim, compare) {
-    const pro = (compare && compare.pro) || {};
-    const order = ['budget_usd', 'window_hours', 'file_size', 'user_storage', 'files_count',
-                   'chats_count', 'messages_per_day', 'posts', 'code_agents',
-                   'agent_steps', 'council_members', 'sandbox_seconds'];
-    const labels = {
-      budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
-      file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
-      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день', posts: 'Постов',
-      code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
-      council_members: 'Участников консилиума', sandbox_seconds: 'Секунд на код',
-    };
-    const rows = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
-      const mine = lim[k];
-      const theirs = pro[k];
-      let mult = '—';
-      if (theirs === null || theirs === undefined) mult = '∞';
-      else if (mine === null || mine === undefined) mult = '=';
-      else if (Number(mine) > 0) {
-        const m = Number(theirs) / Number(mine);
-        mult = m >= 1.05 ? '×' + (Math.round(m * 10) / 10) : '=';
-      }
-      return '<tr><td>' + (labels[k] || k) + '</td>' +
-        '<td>' + limitValueLabel(k, mine) + '</td>' +
-        '<td class="pro-col">' + limitValueLabel(k, theirs) + '</td>' +
-        '<td class="mult">' + mult + '</td></tr>';
-    }).join('');
-    const half = Math.ceil(rows.length / 2);
-    const head = '<thead><tr><th>Лимит</th><th>Сейчас</th><th>С подпиской</th><th>×</th></tr></thead>';
-    return '<div class="cmp-cols">' +
-      '<table class="cmp">' + head + '<tbody>' + rows.slice(0, half).join('') + '</tbody></table>' +
-      '<table class="cmp">' + head + '<tbody>' + rows.slice(half).join('') + '</tbody></table>' +
-      '</div>';
-  }
-
-  async function openUsageModal() {
-    await loadLimits();
-    const data = state.limits || {};
-    const lim = data.limits || {};
-    const pro = (data.compare && data.compare.pro) || {};
-    const plan = data.plan || 'free';
-    const w = data.window || null;
-    const use = data.usage || {};
-    const proPrice = Number(pro.price || 0);
-
-    let money = '';
-    if (w && w.budget_usd) {
-      const left = Math.max(0, Number(w.budget_usd) - Number(w.spend_usd));
-      const pct = Math.min(100, Math.round(w.percent));
-      money = '<div class="lim-row ' + (pct >= 80 ? 'warn' : '') + '">' +
-        '<div class="lr-top"><b>Деньги за ' + w.hours + ' ч</b>' +
-        '<i>$' + Number(w.spend_usd).toFixed(2) + ' из $' + Number(w.budget_usd).toFixed(2) +
-        ' · осталось $' + left.toFixed(2) + ' (' + (100 - pct) + '%)</i></div>' +
-        '<div class="lr-bar"><i style="width:' + pct + '%"></i></div></div>';
-    }
-
-    const defs = [
-      ['files', 'files_count', 'Файлы'],
-      ['storage', 'user_storage', 'Хранилище'],
-      ['posts', 'posts', 'Посты'],
-      ['requests', 'messages_per_day', 'Сообщений в день'],
-    ];
-    const rows = defs.map(d => {
-      const used = Number(use[d[0]] || 0);
-      const cap = lim[d[1]];
-      const unlimited = cap === null || cap === undefined;
-      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
-      const right = unlimited
-        ? limitValueLabel(d[1], used) + ' · без лимита'
-        : limitValueLabel(d[1], used) + ' из ' + limitValueLabel(d[1], cap) +
-          ' · осталось ' + limitValueLabel(d[1], Math.max(0, cap - used));
-      return '<div class="lim-row ' + (unlimited ? 'unlimited' : (pct >= 80 ? 'warn' : '')) + '">' +
-        '<div class="lr-top"><b>' + d[2] + '</b><i>' + right + ' · ' +
-        (unlimited ? '∞' : pct + '%') + '</i></div>' +
-        '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
-    }).join('');
-
-    openModal({
-      title: 'Лимиты подписки',
-      okText: 'Понятно',
-      body:
-        '<div class="sub-head">' +
-          '<div class="sub-plan">Тариф «' + escapeHtml(String(plan).toUpperCase()) + '»' +
-          '<br><em>' + (w && w.budget_usd
-            ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
-            : 'лимит по минутам и файлам') + '</em></div>' +
-        '</div>' +
-        money + rows +
-        '<h4 class="sec">Что даёт подписка</h4>' +
-        planCompareHtml(lim, data.compare) +
-        '<p class="usage-note">Подписка оформляется у администратора — напишите ему в чат.</p>',
-      onOk: () => true,
-    });
+  function cycleTheme() {
+    // auto → light → dark → auto
+    const cycle = ['auto', 'light', 'dark'];
+    const idx = cycle.indexOf(state.theme);
+    state.theme = cycle[(idx + 1) % 3];
+    localStorage.setItem('cs_theme', state.theme);
+    applyTheme();
+    const labels = { auto: 'Системная', light: 'Светлая', dark: 'Тёмная' };
+    toast('Тема: ' + labels[state.theme], 'success');
   }
 
   // ---------- boot ----------
   async function boot() {
     showApp();
+    applyTheme();
     applySidebar();
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    await loadChats();
-    await loadFiles();
-    await loadModelSets();
-    await loadMemory();
-    await loadWallCount();
-    await loadLimits();
-    await loadUsage();
-    renderMessages();
-    await loadSystem();
-    setInterval(loadSystem, 20000);
+    try {
+      await loadChats();
+      await loadFiles();
+      await loadModelSets();
+      await loadMemory();
+      await loadWallCount();
+      await loadLimits();
+      await loadUsage();
+      renderMessages();
+      await loadSystem();
+      setInterval(loadSystem, 20000);
+    } catch (e) {
+      console.error('Boot error:', e.message, e.stack);
+      toast('Ошибка загрузки: ' + e.message, 'error');
+    }
   }
 
   async function init() {
     bindAuth(); bindSidebar(); bindComposer(); bindFiles();
+    $('#theme-toggle').addEventListener('click', cycleTheme);
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {
@@ -3520,6 +3059,11 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // Listen for system theme changes when in auto mode
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (state.theme === 'auto') updateThemeIcon();
+  });
 
   // KaTeX loads with defer: re-render math once it is available
   window.addEventListener('load', () => {

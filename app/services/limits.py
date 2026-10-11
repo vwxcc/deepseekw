@@ -27,8 +27,6 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "compress_per_day": 5,
         "price": 0,
         "cost_per_1k": 0,
-        "budget_usd": 1,
-        "window_hours": 5,
     },
     "pro": {
         "file_size": 100 * MB,
@@ -44,10 +42,8 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "compress_min": 5,
         "compress_max": 85,
         "compress_per_day": None,
-        "price": 19,
+        "price": 990,
         "cost_per_1k": 2,
-        "budget_usd": 20,
-        "window_hours": 5,
     },
 }
 
@@ -65,14 +61,12 @@ LABELS: dict[str, str] = {
     "compress_min": "Сжатие: минимум %",
     "compress_max": "Сжатие: максимум %",
     "compress_per_day": "Сжатий в день",
-    "price": "Цена тарифа, $/мес",
-    "cost_per_1k": "Цена за 1k токенов (запасная), $",
-    "budget_usd": "Бюджет на окно, $",
-    "window_hours": "Окно, часов",
+    "price": "Цена тарифа, ₽/мес",
+    "cost_per_1k": "Цена за 1k токенов, ₽",
 }
 
 BYTE_KEYS = {"file_size", "user_storage"}
-MONEY_KEYS = {"price", "cost_per_1k", "budget_usd"}
+MONEY_KEYS = {"price", "cost_per_1k"}
 TEXT_KEYS = {"models"}
 
 PLANS = ("free", "pro")

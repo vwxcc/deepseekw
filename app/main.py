@@ -4,11 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-import re
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai.router import router as ai_router
@@ -29,8 +28,10 @@ from .routers import (
     models,
     posts,
     public,
+    streaming_ws,
     system,
 )
+from .security_middleware import SecurityMiddleware
 from .services.storage import disk_free, enforce_disk_floor
 
 log = logging.getLogger("chatstudio")
@@ -74,6 +75,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
+# --- Security middleware ---
+app.add_middleware(SecurityMiddleware)
+
 app.include_router(auth.router)
 app.include_router(chats.router)
 app.include_router(messages.router)
@@ -88,6 +92,7 @@ app.include_router(avatars.router)
 app.include_router(system.router)
 app.include_router(limits.router)
 app.include_router(github.router)
+app.include_router(streaming_ws.router)
 
 
 @app.get("/api/health")
@@ -105,15 +110,6 @@ if _frontend.exists():
 async def index():
     idx = _frontend / "index.html"
     if idx.exists():
-        # stamp the asset URLs with the real file mtimes, so a deploy can never be
-        # served from the browser cache (the shell itself is always revalidated)
-        try:
-            stamp = str(int(max(
-                (_frontend / "js" / "app.js").stat().st_mtime,
-                (_frontend / "css" / "app.css").stat().st_mtime,
-            )))
-        except OSError:
-            stamp = "0"
-        html = re.sub(r"\?v=\d+", "?v=" + stamp, idx.read_text(encoding="utf-8"))
-        return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
+        # never let the shell HTML go stale in the browser
+        return FileResponse(idx, headers={"Cache-Control": "no-cache, must-revalidate"})
     return JSONResponse({"app": settings.app_name, "status": "ok"})

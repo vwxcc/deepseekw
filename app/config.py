@@ -63,7 +63,9 @@ class Settings(BaseSettings):
     max_user_storage: int = 4 * 1024 * 1024 * 1024
     disk_min_free: int = 3 * 1024 * 1024 * 1024
     # how many characters of an extracted document are sent to the model
-    max_attachment_chars: int = 40000
+    max_attachment_chars: int = 8000
+    # per-file, per-message cap for extracted text (hard limit even before DB)
+    max_extracted_per_message: int = 24000
 
     # --- Default model set seed (Qwen) ---
     qwen_api_key: str = ""
@@ -75,6 +77,18 @@ class Settings(BaseSettings):
     # --- Admin bootstrap (optional) ---
     admin_email: str = ""
     admin_password: str = ""
+
+    # --- HTTPS / SSL ---
+    ssl_certfile: str = ""
+    ssl_keyfile: str = ""
+    ssl_cafile: str = ""
+    ssl_verify_client: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+    @property
+    def is_https(self) -> bool:
+        return bool(self.ssl_certfile and self.ssl_keyfile)
 
     @property
     def database_url(self) -> str:

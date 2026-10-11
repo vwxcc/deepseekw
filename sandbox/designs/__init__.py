@@ -10,5 +10,3 @@
 from . import theme  # noqa: F401
 
 __all__ = ["theme"]
-
-from . import docgen  # noqa: E402,F401

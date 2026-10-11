@@ -52,6 +52,7 @@ class Job:
     message_id: str | None = None
     user_text: str = ""
     model_set_id: str | None = None
+    generate_title: bool = False
     effort: str | None = None
     user_id: str | None = None
     retried: bool = False
@@ -372,7 +373,9 @@ class AIRouter:
                 mset_id, mset_name, entries = await self._resolve_entries(RouteType.MAIN, chosen_id)
         await self._set_status(job.message_id, MessageStatus.processing, mset_id, mset_name)
         last_error = "Генерация не удалась"
-        for entry in entries:
+        for index, entry in enumerate(entries):
+            if index:
+                await job.output.put(("step", json.dumps({"attempt": index + 1, "total": len(entries)}, ensure_ascii=False)))
             if job.cancel.is_set():
                 await self._finish(job.message_id, MessageStatus.cancelled, error="Остановлено пользователем")
                 await job.output.put(("cancelled", ""))
@@ -398,6 +401,16 @@ class AIRouter:
                 if ask:
                     await job.output.put(("ask", json.dumps({"question": ask}, ensure_ascii=False)))
                 await job.output.put(("done", answer))
+                # A title is a dependent task: only queue it after the answer succeeded.
+                if job.generate_title:
+                    await self.enqueue(
+                        Job(
+                            kind="title",
+                            route_type=RouteType.TITLE,
+                            chat_id=job.chat_id,
+                            user_text=job.user_text,
+                        )
+                    )
                 await self.enqueue(Job(kind="suggestions", route_type=RouteType.SUGGESTIONS, chat_id=job.chat_id, message_id=job.message_id, history=[*job.history, {"role": "assistant", "content": answer}]))
                 return
             except ProviderError as e:

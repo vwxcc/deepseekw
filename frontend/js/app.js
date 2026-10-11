@@ -1043,7 +1043,12 @@
           body: body !== undefined ? JSON.stringify(body) : undefined,
         });
         if (res.status === 401) { showAuth(); reject(new Error('unauthorized')); return; }
-        if (!res.ok) { const t = await res.text(); reject(new Error(t)); return; }
+        if (!res.ok) {
+          let msg = res.status + ' ' + res.statusText;
+          try { const payload = await res.json(); msg = payload.detail || payload.error || JSON.stringify(payload); }
+          catch (e) { try { msg = await res.text(); } catch (_) { /* keep status */ } }
+          reject(new Error(msg)); return;
+        }
         await consumeSse(res, (ev, data) => {
           state.lastEvent = Date.now();
           if (ev === 'user_message' || ev === 'assistant_message') {
@@ -1315,9 +1320,9 @@
     const input = $('#input');
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent().catch(err => toast('Ошибка отправки: ' + err.message, 'error')); }
     });
-    $('#send-btn').addEventListener('click', sendCurrent);
+    $('#send-btn').addEventListener('click', () => sendCurrent().catch(err => toast('Ошибка отправки: ' + err.message, 'error')));
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });

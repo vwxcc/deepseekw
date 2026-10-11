@@ -61,6 +61,13 @@ async def _seed_admin(db: AsyncSession) -> None:
 
 
 async def _seed_model_sets(db: AsyncSession) -> None:
+    # Remove the legacy automatic router: task chains are now configured explicitly.
+    legacy = await db.execute(select(ModelSet).where(ModelSet.slug == "auto-router"))
+    old_router = legacy.scalar_one_or_none()
+    if old_router is not None:
+        await db.delete(old_router)
+        await db.flush()
+
     defaults = {
         RouteType.MAIN: ("Qwen Main", "qwen-main"),
         RouteType.TITLE: ("Qwen Title", "qwen-title"),

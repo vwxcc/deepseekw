@@ -158,17 +158,25 @@ async def upload_files(
             f"Слишком много файлов (максимум {settings.max_files_per_request})",
         )
 
+    plan = await effective_plan(db, user)
+    limits = await get_limits(db, plan)
+    plan_file_limit = limits.get("file_size")
+    per_file = min(
+        int(plan_file_limit) if plan_file_limit is not None else settings.max_total_file_size,
+        settings.max_total_file_size,
+    )
+
     saved: list[File] = []
     total = 0
 
-    # 1) read + validate everything BEFORE touching the disk
+    # 1) read + validate everything BEFORE touching the disk, honoring the account tier.
     payloads: list[tuple[str, str, str, bytes]] = []
     for uf in files:
         data = await uf.read()
-        if len(data) > settings.max_file_size:
+        if len(data) > per_file:
             raise HTTPException(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                f"Файл превышает лимит {settings.max_file_size} байт",
+                f"Файл превышает лимит тарифа ({per_file // (1024 * 1024)} МБ)",
             )
         
         # Validate filename
@@ -187,7 +195,6 @@ async def upload_files(
         payloads.append((safe_name, ext, final_mime, data))
 
     # per-plan storage quota
-    limits = await get_limits(db, await effective_plan(db, user))
     used = await user_usage(db, user.id)
     count = (
         await db.scalar(
@@ -204,14 +211,6 @@ async def upload_files(
             status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             f"{message}. Занято {used / (1024 ** 3):.2f} ГБ.",
         )
-    per_file = int(limits["file_size"]) if limits.get("file_size") is not None else settings.max_total_file_size
-    for name, _ext, _mime, data in payloads:
-        if len(data) > per_file:
-            raise HTTPException(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                f"Файл больше лимита тарифа ({per_file // (1024 * 1024)} МБ)",
-            )
-
     # 2) only now write to disk and persist
     for name, ext, mime, data in payloads:
         fid = str(uuid.uuid4())

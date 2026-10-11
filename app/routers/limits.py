@@ -48,8 +48,6 @@ async def my_limits(
         "usage": {
             "files": files or 0,
             "storage": int(used or 0),
-            "posts": posts or 0,
-            "code_agents": agents or 0,
             "tokens": int(spent or 0),
             "requests": int(reqs or 0),
         },

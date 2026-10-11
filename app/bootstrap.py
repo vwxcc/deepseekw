@@ -4,6 +4,9 @@ from __future__ import annotations
 import logging
 import secrets
 
+import logging
+import secrets
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +15,8 @@ from .database import SessionLocal
 from .models import ModelSet, ModelSetEntry, RouteType, Session, User, utcnow
 from .security import hash_password
 from .services.memory_cleanup import clean_noisy_memories
+
+log = logging.getLogger("ai-ch.bootstrap")
 
 log = logging.getLogger("ai-ch.bootstrap")
 
@@ -30,7 +35,7 @@ async def _purge_expired_sessions(db: AsyncSession) -> None:
 
 
 async def _seed_admin(db: AsyncSession) -> None:
-    """Create the first administrator without a public default password."""
+    """Create a first admin on an empty database without a public default password."""
     email = (settings.admin_email or "admin@ai-ch.local").strip().lower()
     result = await db.execute(select(User).where(User.email == email))
     existing = result.scalar_one_or_none()
@@ -53,8 +58,8 @@ async def _seed_admin(db: AsyncSession) -> None:
     await db.flush()
     if not settings.admin_password:
         log.warning(
-            "Первичный администратор создан: email=%s, первичный пароль=%s. "
-            "Сохраните его и задайте ADMIN_PASSWORD в Render.",
+            "Первичный администратор создан: email=%s, одноразовый пароль=%s. "
+            "Задайте ADMIN_PASSWORD в Render после первого входа.",
             email,
             password,
         )

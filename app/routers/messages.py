@@ -391,7 +391,8 @@ async def send_message(
     history_messages = await ancestor_chain(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
-    main_set = await model_sets_service.get_model_set(db, RouteType.MAIN)
+    task_route = RouteType.FILE_ANALYSIS if attached else RouteType.MAIN
+    main_set = await model_sets_service.get_model_set(db, task_route)
     main_set_id = main_set.id if main_set else None
     history_messages, trimmed = _trim_history(
         history_messages, await _model_context(db, main_set_id)
@@ -431,7 +432,7 @@ async def send_message(
 
     job = Job(
         kind="message",
-        route_type=RouteType.MAIN,
+        route_type=task_route,
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
@@ -442,7 +443,7 @@ async def send_message(
     )
     # Generate a title only once a main answer succeeds. If an earlier first turn failed,
     # a later successful turn can still generate the missing title from the first user prompt.
-    job.generate_title = chat.title == "Новый чат"
+    job.generate_title = chat.title == "Новый чат" and task_route in (RouteType.MAIN, RouteType.FILE_ANALYSIS)
     if job.generate_title:
         first_query = await db.scalar(
             select(Message.content)
@@ -713,36 +714,46 @@ async def compress_chat(
     if len(cut) < 2:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего сжимать")
 
-    from ..ai import model_sets as ms_mod
     from ..ai.providers import ProviderError, complete_chat
 
-    mset = await ms_mod.get_model_set(db, RouteType.MAIN)
-    entries = await ms_mod.get_active_entries(db, mset.id) if mset else []
-    if not entries:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Нет активной модели для сжатия"
-        )
-    entry = entries[0]
-
+    _, _, entries = await ai_router._resolve_entries(RouteType.SUMMARY)
     transcript = "\n".join(
         f"{m.role.value}: {(m.content or '')[:1500]}" for m in cut if m.content
     )[:60000]
-    try:
-        summary = await complete_chat(
-            messages=[
-                {"role": "system", "content": prompts.COMPRESS_SYSTEM},
-                {"role": "user", "content": transcript},
-            ],
-            base_url=entry.base_url,
-            api_key=entry.api_key,
-            model=entry.model,
-            temperature=0.3,
-            max_tokens=1200,
-            timeout=150,
-            disable_thinking=True,
-        )
-    except ProviderError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {e}")
+    summary = ""
+    last_error = "Нет доступной модели для сжатия"
+    summary_messages = [
+        {"role": "system", "content": prompts.COMPRESS_SYSTEM},
+        {"role": "user", "content": transcript},
+    ]
+    for entry in entries:
+        available, quota_reason = await ai_router.entry_available(user.id, entry)
+        if not available:
+            last_error = quota_reason
+            continue
+        try:
+            async with ai_router.model_slot(entry):
+                candidate = await complete_chat(
+                    messages=summary_messages,
+                    base_url=entry.base_url,
+                    api_key=entry.api_key,
+                    model=entry.model,
+                    temperature=0.3,
+                    max_tokens=1200,
+                    timeout=min(entry.timeout, 150),
+                    disable_thinking=True,
+                )
+            if not (candidate or "").strip():
+                last_error = f"Модель {entry.model} вернула пустое резюме"
+                continue
+            summary = candidate.strip()
+            await ai_router.record_model_usage(user.id, entry, RouteType.SUMMARY, None, summary_messages, summary)
+            break
+        except ProviderError as e:
+            last_error = f"{entry.model}: {e}"
+            continue
+    if not summary:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {last_error}")
 
     if not summary.strip():
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Модель вернула пустое резюме")

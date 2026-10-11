@@ -246,6 +246,7 @@ class ModelUsage(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     model_entry_id: Mapped[str | None] = mapped_column(ForeignKey("model_set_entries.id", ondelete="SET NULL"), nullable=True, index=True)
     model_id: Mapped[str] = mapped_column(String(255), default="")
+    base_url: Mapped[str] = mapped_column(String(512), default="")
     route_type: Mapped[str] = mapped_column(String(32), default="MAIN")
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)

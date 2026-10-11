@@ -8,12 +8,28 @@ from ..models import ModelSet, ModelSetEntry, RouteType
 
 
 async def get_model_set(db: AsyncSession, route_type: RouteType) -> ModelSet | None:
+    """Resolve one deterministic fallback chain for a task, never an auto-router."""
+    preferred_slug = {
+        RouteType.MAIN: "qwen-main",
+        RouteType.TITLE: "qwen-title",
+        RouteType.CONTINUE: "qwen-continue",
+        RouteType.SUGGESTIONS: "qwen-suggestions",
+    }.get(route_type)
     result = await db.execute(
-        select(ModelSet).where(
-            ModelSet.route_type == route_type, ModelSet.is_active.is_(True)
+        select(ModelSet)
+        .where(
+            ModelSet.route_type == route_type,
+            ModelSet.is_active.is_(True),
+            ModelSet.is_router.is_(False),
         )
+        .order_by(ModelSet.slug)
     )
-    return result.scalars().first()
+    model_sets = list(result.scalars().all())
+    if preferred_slug:
+        preferred = next((item for item in model_sets if item.slug == preferred_slug), None)
+        if preferred is not None:
+            return preferred
+    return model_sets[0] if model_sets else None
 
 
 async def get_active_entries(

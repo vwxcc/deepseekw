@@ -966,24 +966,16 @@ input[type="range"].orange-range { width: 100%; }
 
 
 
-.tool-code { background: #1f1e1d; color: #e8e5dd; }
 
 
-.tool-files {
-  display: flex; flex-wrap: wrap; gap: 7px; padding: 9px 12px;
-  border-top: 1px solid var(--border-soft);
-}
-.tool-file {
-  display: inline-flex; align-items: center; gap: 7px; text-decoration: none;
-  border: 1px solid var(--border); background: var(--bg-panel); border-radius: 9px;
-  padding: 6px 10px; font-size: 12.5px; color: var(--fg);
-  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
-}
-.tool-file em { font-style: normal; color: var(--fg-soft); font-size: 11px; }
-.tool-file .ic { width: 14px; height: 14px; color: var(--accent); }
-.tool-file:hover { border-color: #e2b96a; box-shadow: 0 2px 10px rgba(226, 185, 106, .35); transform: translateY(-1px); }
-.tool-file.img { padding: 4px; }
-.tool-file.img img { max-width: 240px; max-height: 180px; border-radius: 7px; display: block; }
+
+
+
+
+
+
+
+
 
 .msg .meta .cnt {
   background: var(--accent-soft); color: var(--accent); border-radius: 999px;

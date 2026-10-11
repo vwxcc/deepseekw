@@ -1027,45 +1027,9 @@
   // ---------- WebSocket streaming with SSE fallback ----------
   let wsConnection = null;
 
+  // Render-compatible streaming uses the session-authenticated HTTP endpoint.
   async function streamWebSocket(path, body) {
-    // Try WebSocket first
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = location.host;
-    const wsPath = '/api/ws/stream' + path.replace('/api/', '/');
-    const wsUrl = protocol + '//' + host + wsPath;
-    
-    return new Promise((resolve, reject) => {
-      try {
-        wsConnection = new WebSocket(wsUrl);
-        wsConnection.onopen = () => {
-          // Send initial request
-          wsConnection.send(JSON.stringify(body));
-        };
-        
-        wsConnection.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            handleWsEvent(data);
-          } catch (e) {
-            console.error('WebSocket message parse error:', e);
-          }
-        };
-        
-        wsConnection.onerror = (error) => {
-          console.warn('WebSocket error, falling back to SSE:', error);
-          wsConnection.close();
-          // Fallback to SSE
-          streamSSE(path, body).then(resolve).catch(reject);
-        };
-        
-        wsConnection.onclose = () => {
-          resolve();
-        };
-      } catch (e) {
-        console.warn('WebSocket not available, falling back to SSE:', e);
-        streamSSE(path, body).then(resolve).catch(reject);
-      }
-    });
+    return streamSSE(path, body);
   }
 
   function streamSSE(path, body) {

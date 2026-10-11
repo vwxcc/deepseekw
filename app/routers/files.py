@@ -205,7 +205,7 @@ async def upload_files(
             f"{message}. Занято {used / (1024 ** 3):.2f} ГБ.",
         )
     per_file = int(limits.get("file_size") or settings.max_file_size)
-    for name, _mime, data in payloads:
+    for name, _ext, _mime, data in payloads:
         if len(data) > per_file:
             raise HTTPException(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,

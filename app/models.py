@@ -1,4 +1,4 @@
-"""ORM models for ChatStudio."""
+"""ORM models for ai-ch."""
 from __future__ import annotations
 
 import enum
@@ -58,8 +58,6 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), default="")
     plan: Mapped[str] = mapped_column(String(32), default="free")
     avatar: Mapped[int] = mapped_column(Integer, default=0)
-    github_user: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    github_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -106,9 +104,7 @@ class Chat(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_upto: Mapped[str | None] = mapped_column(String(36), nullable=True)
     effort: Mapped[str] = mapped_column(String(16), default="recommended")
-    mode: Mapped[str] = mapped_column(String(16), default="chat")
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    bundle_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     compress_count: Mapped[int] = mapped_column(Integer, default=0)
     compress_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
@@ -146,7 +142,6 @@ class Message(Base):
     tokens_cached: Mapped[int] = mapped_column(Integer, default=0)
     rating: Mapped[int] = mapped_column(Integer, default=0)
     sources: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tool_runs: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")
@@ -258,50 +253,6 @@ class Memory(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     kind: Mapped[str] = mapped_column(String(16), default="fact")
     message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class Post(Base):
-    __tablename__ = "posts"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    chat_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    title: Mapped[str] = mapped_column(String(300), default="")
-    preview: Mapped[str] = mapped_column(Text, default="")
-    image_file_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    views: Mapped[int] = mapped_column(Integer, default=0)
-    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class PostVote(Base):
-    __tablename__ = "post_votes"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    post_id: Mapped[str] = mapped_column(
-        ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    value: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class PostComment(Base):
-    __tablename__ = "post_comments"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    post_id: Mapped[str] = mapped_column(
-        ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

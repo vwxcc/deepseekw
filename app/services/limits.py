@@ -4,7 +4,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import PlanLimit
+from ..models import PlanLimit, User, utcnow
 
 GB = 1024 ** 3
 MB = 1024 ** 2
@@ -22,6 +22,7 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "compress_per_day": 5,
         "price": 0,
         "cost_per_1k": 0,
+        "subscription_days": None,
     },
     "pro": {
         "file_size": 100 * MB,
@@ -34,6 +35,20 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "compress_per_day": None,
         "price": 990,
         "cost_per_1k": 2,
+        "subscription_days": 30,
+    },
+    "max": {
+        "file_size": None,
+        "user_storage": None,
+        "files_count": None,
+        "chats_count": None,
+        "messages_per_day": None,
+        "compress_min": 5,
+        "compress_max": 85,
+        "compress_per_day": None,
+        "price": 0,
+        "cost_per_1k": 0,
+        "subscription_days": 30,
     },
 }
 
@@ -48,17 +63,36 @@ LABELS: dict[str, str] = {
     "compress_per_day": "Сжатий в день",
     "price": "Цена тарифа, ₽/мес",
     "cost_per_1k": "Цена за 1k токенов, ₽",
+    "subscription_days": "Срок подписки, дней (пусто = бессрочно)",
 }
 
 BYTE_KEYS = {"file_size", "user_storage"}
 MONEY_KEYS = {"price", "cost_per_1k"}
 TEXT_KEYS = {"models"}
 
-PLANS = ("free", "pro")
+PLANS = ("free", "pro", "max")
 
 
 def default_limits(plan: str) -> dict[str, int | None]:
     return dict(DEFAULTS.get(plan, DEFAULTS["free"]))
+
+
+async def effective_plan(db: AsyncSession, user: User) -> str:
+    """Normalize expired subscriptions; administrators always get unrestricted limits."""
+    if user.is_admin:
+        return "max"
+    if (
+        user.plan not in {"free", "pro", "max"}
+        or (
+            user.plan != "free"
+            and user.subscription_until is not None
+            and user.subscription_until <= utcnow()
+        )
+    ):
+        user.plan = "free"
+        user.subscription_until = None
+        await db.commit()
+    return user.plan or "free"
 
 
 async def get_limits(db: AsyncSession, plan: str) -> dict[str, int | None]:
@@ -133,5 +167,5 @@ def allow(limits: dict, key: str, current: int, adding: int = 1) -> tuple[bool, 
     if cap is None:
         return True, ""
     if current + adding > int(cap):
-        return False, f"Лимит тарифа исчерпан: {LABELS.get(key, key)} — {cap}"
+        return False, f"Лимит тарифа исчерпан: {LABELS.get(key, key)} — {cap}. Обратитесь к администратору ai-ch."
     return True, ""

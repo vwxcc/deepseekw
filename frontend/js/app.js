@@ -468,6 +468,7 @@
   const state = {
     user: null,
     limits: null,
+    planSettings: {},
     chats: [],
     query: '',
     currentChatId: null,
@@ -1809,6 +1810,7 @@
     try { data = await api.get('/api/limits/all'); }
     catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
     const labels = data.labels || {};
+    state.planSettings = data.limits || {};
     const bytes = { file_size: 1, user_storage: 1 };
     const field = (plan, key, value) => {
       const isBytes = bytes[key];
@@ -1862,7 +1864,7 @@
     try { rows = await api.get('/api/limits/users'); }
     catch (e) { box.textContent = 'Не удалось загрузить пользователей: ' + e.message; return; }
     box.innerHTML = '<div class="link-list">' + rows.map(u => {
-      const expiry = u.subscription_until ? new Date(u.subscription_until).toLocaleString('ru-RU') : 'бессрочно / нет срока';
+      const expiry = u.subscription_until ? new Date(u.subscription_until).toLocaleString('ru-RU') : (u.plan === 'free' ? 'нет подписки' : 'бессрочно');
       const details = 'тариф ' + (u.plan || 'free') + ' · запросов после сброса: ' + u.requests
         + ' · токены: ' + fmtAdminNumber((Number(u.tokens_in) || 0) + (Number(u.tokens_out) || 0))
         + ' · расход: ' + u.cost + ' ₽ · подписка: ' + expiry;
@@ -1877,13 +1879,18 @@
         + '<option value="free"' + (u.plan === 'free' ? ' selected' : '') + '>Free</option>'
         + '<option value="pro"' + (u.plan === 'pro' ? ' selected' : '') + '>Pro</option>'
         + '<option value="max"' + (u.plan === 'max' ? ' selected' : '') + '>Max</option></select>'
-        + '<input type="number" min="1" max="3650" data-user-days="' + u.id + '" value="30" placeholder="Дней; пусто = навсегда" aria-label="Длительность подписки в днях"/>'
+        + '<input type="number" min="1" max="3650" data-user-days="' + u.id + '" value="' + escapeHtml(state.planSettings[u.plan] && state.planSettings[u.plan].subscription_days != null ? state.planSettings[u.plan].subscription_days : '') + '" placeholder="Дней; пусто = навсегда" aria-label="Длительность подписки в днях"/>'
         + '<button class="chip-btn" data-user-save="' + u.id + '">Применить тариф</button>'
         + '<button class="chip-btn" data-user-reset="' + u.id + '">Обнулить счётчики</button>'
         + '</div></div></div>';
     }).join('') + '</div>';
 
-    $$('[data-user-save]', box).forEach(button => button.addEventListener('click', async () => {
+    $('[data-user-plan]', box).forEach(select => select.addEventListener('change', () => {
+      const target = $('[data-user-days="' + select.dataset.userPlan + '"]', box);
+      const defaultDays = state.planSettings[select.value] ? state.planSettings[select.value].subscription_days : null;
+      if (target) target.value = defaultDays == null ? '' : String(defaultDays);
+    }));
+    $('[data-user-save]', box).forEach(button => button.addEventListener('click', async () => {
       const id = button.dataset.userSave;
       const plan = $('[data-user-plan="' + id + '"]', box).value;
       const rawDays = $('[data-user-days="' + id + '"]', box).value.trim();

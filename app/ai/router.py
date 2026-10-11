@@ -6,8 +6,9 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from ..config import settings
 from ..database import SessionLocal
@@ -17,7 +18,10 @@ from ..models import (
     Message,
     MessageStatus,
     ModelSet,
+    ModelUsage,
     RouteType,
+    User,
+    utcnow,
 )
 from . import model_sets as ms
 from . import prompts
@@ -27,12 +31,14 @@ from .prompts import (
     strip_cot,
 )
 from .providers import ProviderError, complete_chat, stream_chat
+from ..services.limits import effective_plan
 
 log = logging.getLogger("ai-ch.ai")
 
 
 @dataclass
 class EntryConfig:
+    id: str
     provider: str
     base_url: str
     api_key: str
@@ -40,6 +46,11 @@ class EntryConfig:
     temperature: float
     max_tokens: int
     timeout: int
+    context_len: int = 0
+    free_token_limit: int | None = None
+    pro_token_limit: int | None = None
+    quota_reset_hours: int = 6
+    max_concurrency: int = 1
 
 
 @dataclass
@@ -91,6 +102,7 @@ class AIRouter:
         self.queue: asyncio.Queue[Job] = asyncio.Queue()
         self.workers: list[asyncio.Task] = []
         self.active: dict[str, Job] = {}
+        self.model_semaphores: dict[str, tuple[int, asyncio.Semaphore]] = {}
 
     async def start(self) -> None:
         for i in range(self.concurrency):
@@ -127,6 +139,96 @@ class AIRouter:
 
     # --- internals ---------------------------------------------------------
 
+    @staticmethod
+    def _model_key(entry) -> tuple[str, str]:
+        return (str(getattr(entry, "base_url", "") or "").rstrip("/"), str(getattr(entry, "model", "") or ""))
+
+    def model_slot(self, entry) -> asyncio.Semaphore:
+        """Share a concurrency cap across duplicate instances of a provider/model."""
+        base_url, model = self._model_key(entry)
+        key = base_url + "|" + model
+        cap = max(1, int(getattr(entry, "max_concurrency", 1) or 1))
+        cached = self.model_semaphores.get(key)
+        if cached is None or cached[0] != cap:
+            sem = asyncio.Semaphore(cap)
+            self.model_semaphores[key] = (cap, sem)
+            return sem
+        return cached[1]
+
+    @staticmethod
+    def _estimate_tokens(value) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, str):
+            length = len(value)
+        else:
+            try:
+                length = len(json.dumps(value, ensure_ascii=False, default=str))
+            except Exception:
+                length = len(str(value))
+        return max(0, (length + 3) // 4)
+
+    async def entry_available(self, user_id: str | None, entry) -> tuple[bool, str]:
+        """Enforce the per-model token quota over its configured rolling reset window."""
+        if not user_id:
+            return True, ""
+        base_url, model = self._model_key(entry)
+        async with SessionLocal() as db:
+            user = await db.get(User, user_id)
+            if user is None or user.is_admin:
+                return True, ""
+            plan = await effective_plan(db, user)
+            cap = getattr(entry, "free_token_limit", None) if plan == "free" else getattr(entry, "pro_token_limit", None)
+            if cap is None:
+                return True, ""
+            reset_hours = max(1, int(getattr(entry, "quota_reset_hours", 6) or 6))
+            since = utcnow() - timedelta(hours=reset_hours)
+            used = await db.scalar(
+                select(func.coalesce(func.sum(ModelUsage.tokens_in + ModelUsage.tokens_out), 0)).where(
+                    ModelUsage.user_id == user_id,
+                    ModelUsage.model_id == model,
+                    ModelUsage.base_url == base_url,
+                    ModelUsage.created_at >= since,
+                )
+            )
+            if int(used or 0) >= int(cap):
+                return False, (
+                    f"Лимит модели {model} исчерпан: {int(used or 0)} из {int(cap)} токенов "
+                    f"за последние {reset_hours} ч. Сервис попробует следующую модель в цепочке."
+                )
+            return True, ""
+
+    async def record_model_usage(
+        self,
+        user_id: str | None,
+        entry,
+        route_type: RouteType | str,
+        usage: dict | None,
+        messages: list[dict],
+        answer: str,
+    ) -> None:
+        """Prefer token counts reported by the API; estimate only when usage is absent."""
+        if not user_id:
+            return
+        has_prompt = bool(usage is not None and usage.get("prompt_tokens") is not None)
+        has_completion = bool(usage is not None and usage.get("completion_tokens") is not None)
+        tokens_in = int(usage.get("prompt_tokens") or 0) if has_prompt else self._estimate_tokens(messages)
+        tokens_out = int(usage.get("completion_tokens") or 0) if has_completion else self._estimate_tokens(answer)
+        route_name = route_type.value if isinstance(route_type, RouteType) else str(route_type)
+        base_url, model = self._model_key(entry)
+        async with SessionLocal() as db:
+            db.add(ModelUsage(
+                user_id=user_id,
+                model_entry_id=getattr(entry, "id", None),
+                model_id=model,
+                base_url=base_url,
+                route_type=route_name,
+                tokens_in=max(0, tokens_in),
+                tokens_out=max(0, tokens_out),
+                estimated=not (has_prompt and has_completion),
+            ))
+            await db.commit()
+
     async def _resolve_entries(
         self, route_type: RouteType, model_set_id: str | None = None
     ) -> tuple[str, str, list[EntryConfig]]:
@@ -149,6 +251,7 @@ class AIRouter:
                 )
             configs = [
                 EntryConfig(
+                    id=e.id,
                     provider=e.provider,
                     base_url=e.base_url,
                     api_key=e.api_key,
@@ -156,6 +259,11 @@ class AIRouter:
                     temperature=e.temperature,
                     max_tokens=e.max_tokens,
                     timeout=e.timeout,
+                    context_len=getattr(e, "context_len", 0) or 0,
+                    free_token_limit=getattr(e, "free_token_limit", None),
+                    pro_token_limit=getattr(e, "pro_token_limit", None),
+                    quota_reset_hours=getattr(e, "quota_reset_hours", 6) or 6,
+                    max_concurrency=getattr(e, "max_concurrency", 1) or 1,
                 )
                 for e in entries
             ]
@@ -373,6 +481,11 @@ class AIRouter:
         await self._set_status(job.message_id, MessageStatus.processing, mset_id, mset_name)
         last_error = "Генерация не удалась"
         for index, entry in enumerate(entries):
+            available, quota_reason = await self.entry_available(job.user_id, entry)
+            if not available:
+                last_error = quota_reason
+                await job.output.put(("step", json.dumps({"attempt": index + 1, "total": len(entries), "model": entry.model, "skipped": quota_reason}, ensure_ascii=False)))
+                continue
             if index:
                 await job.output.put(("step", json.dumps({"attempt": index + 1, "total": len(entries)}, ensure_ascii=False)))
             if job.cancel.is_set():
@@ -380,7 +493,8 @@ class AIRouter:
                 await job.output.put(("cancelled", ""))
                 return
             try:
-                result = await self._stream_once(job, entry, list(job.history))
+                async with self.model_slot(entry):
+                    result = await self._stream_once(job, entry, list(job.history))
                 if result is None:
                     return
                 full, thinking, usage = result
@@ -396,6 +510,7 @@ class AIRouter:
                             db.add(Memory(user_id=job.user_id, content=value[:2000], kind=kind, message_id=job.message_id))
                         await db.commit()
                     await job.output.put(("memory", json.dumps([value for _, value in memories], ensure_ascii=False)))
+                await self.record_model_usage(job.user_id, entry, job.route_type, usage, job.history, answer)
                 await self._finish(job.message_id, MessageStatus.completed, content=answer, error=None, usage=usage, thinking=thinking if thinking else None)
                 if ask:
                     await job.output.put(("ask", json.dumps({"question": ask}, ensure_ascii=False)))
@@ -408,6 +523,7 @@ class AIRouter:
                             route_type=RouteType.TITLE,
                             chat_id=job.chat_id,
                             user_text=job.user_text,
+                            user_id=job.user_id,
                         )
                     )
                 await job.output.put(("done", answer))
@@ -444,17 +560,23 @@ class AIRouter:
             {"role": "user", "content": job.user_text[:2000]},
         ]
         for entry in entries:
+            available, quota_reason = await self.entry_available(job.user_id, entry)
+            if not available:
+                log.info("Title model skipped: %s", quota_reason)
+                continue
             try:
-                raw = await complete_chat(
-                    messages=messages,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.3,
-                    max_tokens=96,
-                    timeout=min(entry.timeout, 60),
-                    disable_thinking=True,
-                )
+                async with self.model_slot(entry):
+                    raw = await complete_chat(
+                        messages=messages,
+                        base_url=entry.base_url,
+                        api_key=entry.api_key,
+                        model=entry.model,
+                        temperature=0.3,
+                        max_tokens=96,
+                        timeout=min(entry.timeout, 60),
+                        disable_thinking=True,
+                    )
+                await self.record_model_usage(job.user_id, entry, RouteType.TITLE, None, messages, raw)
                 title = _clean_title(raw)
                 if title:
                     async with SessionLocal() as db:

@@ -1,8 +1,6 @@
 """Message endpoints: tree retrieval, streaming generation, retry/branch/continue/stop."""
 from __future__ import annotations
 
-import json
-
 import asyncio
 import json
 

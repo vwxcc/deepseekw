@@ -34,6 +34,14 @@ jobs:
           ADMIN_EMAIL: ci-admin@ai-ch.local
           ADMIN_PASSWORD: ci-only-test-password
         run: python -c "from app.ai import prompts; from app.main import app; assert prompts.MAIN_SYSTEM; assert app.title == 'ai-ch'"
+      - name: Runtime smoke tests (admin, fallback chains, quota)
+        env:
+          DATA_DIR: /tmp/ai-ch-ci-data
+          UPLOAD_DIR: /tmp/ai-ch-ci-uploads
+          ADMIN_EMAIL: ci-admin@ai-ch.local
+          ADMIN_PASSWORD: CIOnlyStrongPass1
+          SESSION_SECRET: ci-only-secret
+        run: python tests/runtime_smoke.py
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

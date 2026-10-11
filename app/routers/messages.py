@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..ai import prompts
+from ..ai import model_sets as model_sets_service, prompts
 from ..ai.router import Job, router as ai_router
 from ..deps import (
     get_current_user,
@@ -269,8 +269,10 @@ async def _spawn(
     user_text: str = "",
 ) -> StreamingResponse:
     system_prompt = prompts.MAIN_SYSTEM
+    task_set = await model_sets_service.get_model_set(db, route_type)
+    task_set_id = task_set.id if task_set else None
     history_messages, trimmed = _trim_history(
-        history_messages, settings.model_context_len
+        history_messages, await _model_context(db, task_set_id)
     )
     if trimmed:
         system_prompt += prompts.CONTEXT_LIMIT_NOTE
@@ -301,6 +303,7 @@ async def _spawn(
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
+        model_set_id=task_set_id,
         effort=effort or chat.effort,
         user_id=user_id,
         user_text=user_text,
@@ -387,8 +390,10 @@ async def send_message(
     history_messages = await ancestor_chain(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
+    main_set = await model_sets_service.get_model_set(db, RouteType.MAIN)
+    main_set_id = main_set.id if main_set else None
     history_messages, trimmed = _trim_history(
-        history_messages, await _model_context(db, None)
+        history_messages, await _model_context(db, main_set_id)
     )
     system_prompt = prompts.MAIN_SYSTEM
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
@@ -429,6 +434,7 @@ async def send_message(
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
+        model_set_id=main_set_id,
         effort=chat.effort,
         user_id=user.id,
         user_text=content,

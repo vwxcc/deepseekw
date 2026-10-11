@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_current_user, get_db, require_csrf
-from ..models import Chat, File, Message, ModelSet, Post, Role, RouteType, User
+from ..models import Chat, File, Message, ModelSet, Role, RouteType, User
 from ..services.limits import (
     LABELS,
     PLANS,
@@ -31,14 +31,6 @@ async def my_limits(
     )
     used = await db.scalar(
         select(func.coalesce(func.sum(File.size), 0)).where(File.user_id == user.id)
-    )
-    posts = await db.scalar(
-        select(func.count()).select_from(Post).where(Post.user_id == user.id)
-    )
-    agents = await db.scalar(
-        select(func.count())
-        .select_from(Chat)
-        .where(Chat.user_id == user.id, Chat.mode == "code", Chat.deleted_at.is_(None))
     )
     spent = await db.scalar(
         select(func.coalesce(func.sum(Message.tokens_in), 0) + func.coalesce(func.sum(Message.tokens_out), 0))

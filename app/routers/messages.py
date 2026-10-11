@@ -494,6 +494,7 @@ async def branch_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
+        user_text=next((str(m.get("content") or "") for m in reversed(history_messages) if m.get("role") == "user"), ""),
     )
 
 

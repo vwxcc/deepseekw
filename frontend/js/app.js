@@ -426,6 +426,7 @@
       const maxRetries = 2;
       let lastErr;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        let res;
         try {
           res = await fetch(path, {
             method, headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),

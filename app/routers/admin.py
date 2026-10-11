@@ -69,7 +69,7 @@ async def create_model_set(
         route = RouteType(data.route_type.upper())
     except ValueError:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "route_type: MAIN / TITLE / SUGGESTIONS"
+            status.HTTP_400_BAD_REQUEST, "route_type: MAIN / TITLE / CONTINUE / SUGGESTIONS"
         )
     slug = (data.slug or _slugify(data.name)).strip()
     exists = await db.execute(select(ModelSet).where(ModelSet.slug == slug))
@@ -159,6 +159,18 @@ async def update_entry(
     e = await db.get(ModelSetEntry, entry_id)
     if e is None or e.model_set_id != set_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Модель не найдена")
+    if data.is_active is False and e.is_active:
+        active_count = await db.scalar(
+            select(func.count()).select_from(ModelSetEntry).where(
+                ModelSetEntry.model_set_id == set_id,
+                ModelSetEntry.is_active.is_(True),
+            )
+        )
+        if int(active_count or 0) <= 1:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "В цепочке должна оставаться хотя бы одна активная модель",
+            )
     for field in (
         "provider",
         "base_url",
@@ -195,6 +207,28 @@ async def delete_entry(
     e = await db.get(ModelSetEntry, entry_id)
     if e is None or e.model_set_id != set_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Модель не найдена")
+    count = await db.scalar(
+        select(func.count()).select_from(ModelSetEntry).where(
+            ModelSetEntry.model_set_id == set_id
+        )
+    )
+    if int(count or 0) <= 1:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Нельзя удалить последнюю модель в цепочке. Добавьте резерв или отключите цепочку отдельно.",
+        )
+    if e.is_active:
+        active_count = await db.scalar(
+            select(func.count()).select_from(ModelSetEntry).where(
+                ModelSetEntry.model_set_id == set_id,
+                ModelSetEntry.is_active.is_(True),
+            )
+        )
+        if int(active_count or 0) <= 1:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Нельзя удалить единственную активную модель",
+            )
     await db.delete(e)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

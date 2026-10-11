@@ -5,19 +5,14 @@ import asyncio
 import json
 import logging
 import re
-import time
-import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from sqlalchemy import delete, select
 
 from ..config import settings
 from ..database import SessionLocal
 from ..models import (
-    Attachment,
     Chat,
-    File,
     Memory,
     Message,
     MessageStatus,
@@ -25,70 +20,16 @@ from ..models import (
     RouteType,
     Suggestion,
 )
-from ..services.files import detect_kind, sha256_bytes
-from ..services.sandbox import cleanup, run_python
 from . import model_sets as ms
 from . import prompts
 from .prompts import (
     extract_ask,
     extract_memories,
-    extract_run_blocks,
     strip_cot,
-    strip_run_blocks,
-    strip_sandbox_paths,
 )
 from .providers import ProviderError, complete_chat, stream_chat
 
-log = logging.getLogger("chatstudio.ai")
-
-
-def _tool_feedback(run: dict) -> str:
-    """What the model sees after its code has run — very explicit."""
-    parts = []
-    ok = run.get("ok", False)
-    timed_out = run.get("timed_out", False)
-    stderr = run.get("stderr", "")
-    stdout = run.get("stdout", "")
-    files = run.get("files", [])
-
-    parts.append("=" * 60)
-    parts.append("РЕЗУЛЬТАТ ВЫПОЛНЕНИЯ ТВОЕГО КОДА:")
-    parts.append("=" * 60)
-
-    if ok and not timed_out:
-        parts.append("✅ Код выполнен успешно.")
-        if stdout:
-            parts.append("")
-            parts.append("Вывод (stdout):")
-            parts.append(stdout)
-        if files:
-            parts.append("")
-            parts.append("Созданные файлы (уже отправлены пользователю в чат):")
-            for f in files:
-                parts.append(f"  • {f['name']} ({f.get('size', 0)} байт)")
-        parts.append("")
-        parts.append("→ Если задача решена, дай ФИНАЛЬНЫЙ ответ пользователю без блока run.")
-        parts.append("→ Не нужно запускать ещё один run, если результат уже хороший.")
-        parts.append("→ Если хочешь проверить или улучшить — можешь написать новый run.")
-    else:
-        parts.append("❌ Код завершился с ОШИБКОЙ.")
-        if stderr:
-            parts.append("")
-            parts.append("Ошибка (stderr):")
-            parts.append(stderr)
-        if timed_out:
-            parts.append("")
-            parts.append("⚠️ Код был остановлен по таймауту — сделай его быстрее или упрости.")
-        parts.append("")
-        if files:
-            parts.append("Файлы созданы (но код не завершён успешно):")
-            for f in files:
-                parts.append(f"  • {f['name']}")
-        parts.append("")
-        parts.append("→ ИСПРАВЬ ОШИБКУ и напиши НОВЫЙ run-блок с исправленным кодом.")
-        parts.append("→ Посмотри на stderr и исправь конкретную проблему.")
-        parts.append("→ Можно переписать файл целиком или изменить только часть.")
-    return "\n".join(parts)
+log = logging.getLogger("ai-ch.ai")
 
 
 @dataclass
@@ -113,10 +54,6 @@ class Job:
     model_set_id: str | None = None
     effort: str | None = None
     user_id: str | None = None
-    mode: str = "chat"
-    project: str | None = None
-    depends_on: list[str] = field(default_factory=list)
-    max_steps: int | None = None
     retried: bool = False
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
@@ -134,155 +71,6 @@ def _clean_title(text: str) -> str:
     if len(t) > 80:
         return ""
     return t[:120]
-
-
-def _agent_history_budget() -> tuple[int, int]:
-    """Return (max_steps_kept, max_chars_per_step) for agent message trimming."""
-    return (4, 2400)  # keep last 4 step pairs, each ≤ 2.4K chars
-
-
-def _compress_step_messages(
-    old_assistant_content: str, old_feedback_content: str, step_number: int
-) -> tuple[str, str]:
-    """Compress one completed agent step to a short summary."""
-    # Summarize the assistant's last answer (not the code, but the result)
-    summary_parts = []
-    # Take first meaningful paragraph (skip code blocks)
-    for line in old_assistant_content.split("\n"):
-        stripped = line.strip()
-        if stripped.startswith("```"):
-            continue
-        if stripped:
-            summary_parts.append(stripped)
-            if len(summary_parts) >= 2:
-                break
-    brief = "\n".join(summary_parts)[:600]
-    if not brief:
-        brief = f"Шаг {step_number}: ответ получен (обрезан для экономии контекста)"
-    # Compress feedback too
-    fb_lines = old_feedback_content.split("\n")
-    fb_summary = "ok" if "успешно" in old_feedback_content.lower() else "error"
-    for line in fb_lines[:2]:
-        ls = line.strip()
-        if ls and not ls.startswith("=") and not ls.startswith("→"):
-            fb_summary += " | " + ls[:80]
-            break
-    return brief, fb_summary
-
-
-def _trim_agent_history(
-    messages: list[dict],
-    max_steps_kept: int = 4,
-    max_chars_per_step: int = 2400,
-) -> list[dict]:
-    """Keep agent history under budget by compressing old steps.
-
-    The messages list looks like:
-      [system, user_msg, assistant(full+code), user(feedback),
-       assistant(full+code), user(feedback), ...]
-
-    We keep the system + original user request + last N step-pairs.
-    Older step-pairs are replaced with 1-2 line summaries.
-    """
-    if not messages:
-        return messages
-
-    # Find the system message index (should be index 0)
-    # Everything after the first user message that isn't system/assistant/feedback is
-    # part of the conversation context.
-    # For agent jobs, the structure is predictable:
-    #   msg[0] = system
-    #   msg[1] = user (original request)
-    #   msg[2..n] = alternating assistant, user(feedback) pairs
-
-    if len(messages) <= 2 + 2 * max_steps_kept:
-        # Small enough, just truncate oversized content
-        return _truncate_agent_content(messages, max_chars_per_step)
-
-    # We have more steps than we can keep — compress old ones
-    system_msg = messages[0]
-    original_user = messages[1] if len(messages) > 1 else None
-
-    # Collect all step pairs (assistant + feedback)
-    all_pairs = []
-    i = 2
-    while i + 1 < len(messages):
-        assistant_msg = messages[i]
-        feedback_msg = messages[i + 1]
-        if (
-            assistant_msg.get("role") == "assistant"
-            and feedback_msg.get("role") == "user"
-        ):
-            all_pairs.append((i // 2, assistant_msg, feedback_msg))
-            i += 2
-        else:
-            # Non-step message (e.g., original user message in a different format)
-            all_pairs.append((i // 2, assistant_msg, None))
-            i += 1
-
-    if not all_pairs:
-        return _truncate_agent_content(messages, max_chars_per_step)
-
-    # Keep last N pairs intact, compress the rest
-    n_total = len(all_pairs)
-    n_keep = min(max_steps_kept, n_total)
-    n_compress = n_total - n_keep
-
-    compressed = []
-    if n_compress > 0:
-        # Summarize all old steps into a single compact block
-        summaries = []
-        for idx in range(n_compress):
-            _, old_assistant, old_feedback = all_pairs[idx]
-            if old_assistant and old_feedback:
-                brief, fb = _compress_step_messages(
-                    old_assistant.get("content", ""),
-                    old_feedback.get("content", ""),
-                    idx + 1,
-                )
-                summaries.append(
-                    f"Шаг {idx + 1}: {fb} — «{brief[:100]}»"
-                )
-        if summaries:
-            compressed.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "[Резюме предыдущих шагов]\n"
-                        + "\n".join(summaries[:20])  # max 20 summaries
-                        + "\n[Продолжаю с места, где остановился.]"
-                    ),
-                }
-            )
-
-    # Keep last N pairs
-    kept_pairs = all_pairs[n_compress:]
-
-    result = [system_msg]
-    if original_user:
-        result.append(original_user)
-    result.extend(compressed)
-    for _, assistant, feedback in kept_pairs:
-        result.append(assistant)
-        if feedback:
-            result.append(feedback)
-
-    return result
-
-
-def _truncate_agent_content(
-    messages: list[dict], max_chars_per_step: int = 2400
-) -> list[dict]:
-    """Truncate oversized content in messages (when no compression needed)."""
-    import copy
-
-    result = []
-    for msg in messages:
-        content = msg.get("content", "")
-        if isinstance(content, str) and len(content) > max_chars_per_step:
-            content = content[:max_chars_per_step] + "\n\n[… контент обрезан, подробности ниже]"
-        result.append({**msg, "content": content})
-    return result
 
 
 def _parse_suggestions(text: str) -> list[str]:
@@ -401,7 +189,6 @@ class AIRouter:
         content: str | None = None,
         error: str | None = None,
         usage: dict | None = None,
-        tool_runs: list[dict] | None = None,
         thinking: str | None = None,
     ) -> None:
         if not message_id:
@@ -413,8 +200,6 @@ class AIRouter:
                     msg.content = content
                 msg.status = status
                 msg.error = error
-                if tool_runs:
-                    msg.tool_runs = json.dumps(tool_runs, ensure_ascii=False)
                 if thinking:
                     msg.thinking = thinking[:50000]
                 if usage:
@@ -432,8 +217,6 @@ class AIRouter:
                     await self._run_title(job)
                 elif job.kind == "suggestions":
                     await self._run_suggestions(job)
-                elif job.kind == "merge":
-                    await self._run_merge(job)
                 else:
                     await self._run_message(job)
             except asyncio.CancelledError:
@@ -487,121 +270,6 @@ class AIRouter:
                 full += piece
                 await job.output.put(("delta", piece))
         return full, thinking, usage
-
-    async def _attach_run_files(self, job: Job, result: dict) -> list[dict]:
-        """Persist files produced by sandboxed code and attach them to the message."""
-        items = result.get("files") or []
-        if not items or not job.chat_id or not job.message_id:
-            return []
-        out: list[dict] = []
-        async with SessionLocal() as db:
-            chat = await db.get(Chat, job.chat_id)
-            if chat is None:
-                return []
-            base = settings.upload_path / chat.user_id
-            base.mkdir(parents=True, exist_ok=True)
-            for item in items:
-                try:
-                    data = Path(item["abs"]).read_bytes()
-                except OSError:
-                    continue
-                fid = str(uuid.uuid4())
-                ext = Path(item["name"]).suffix
-                dest = base / f"{fid}{ext}"
-                try:
-                    dest.write_bytes(data)
-                except OSError:
-                    continue
-                kind = detect_kind(item["name"], "")
-                db.add(
-                    File(
-                        id=fid,
-                        user_id=chat.user_id,
-                        storage_path=str(dest),
-                        original_name=item["name"],
-                        mime_type="",
-                        size=len(data),
-                        sha256=sha256_bytes(data),
-                        extracted_text=None,
-                        kind=kind,
-                    )
-                )
-                db.add(Attachment(message_id=job.message_id, file_id=fid))
-                out.append(
-                    {
-                        "id": fid,
-                        "file_id": fid,
-                        "name": item["name"],
-                        "kind": kind,
-                        "size": len(data),
-                    }
-                )
-            await db.commit()
-        return out
-
-    async def _run_merge(self, job: Job) -> None:
-        """Council: wait for every variant, then synthesise one answer."""
-        deadline = time.time() + 300
-        while time.time() < deadline:
-            pending = False
-            async with SessionLocal() as db:
-                for mid in job.depends_on:
-                    m = await db.get(Message, mid)
-                    if m is None or m.status in (
-                        MessageStatus.queued,
-                        MessageStatus.processing,
-                    ):
-                        pending = True
-                        break
-            if not pending:
-                break
-            if job.cancel.is_set():
-                await self._finish(
-                    job.message_id, MessageStatus.cancelled, error="Остановлено"
-                )
-                await job.output.put(("cancelled", ""))
-                return
-            await asyncio.sleep(1.5)
-
-        parts: list[str] = []
-        question = job.user_text
-        async with SessionLocal() as db:
-            for i, mid in enumerate(job.depends_on, 1):
-                m = await db.get(Message, mid)
-                if m is not None and (m.content or "").strip():
-                    parts.append(f"### Вариант {i}\n{m.content.strip()[:6000]}")
-            if not question:
-                res = await db.execute(
-                    select(Message)
-                    .where(Message.chat_id == job.chat_id, Message.role == Role.user)
-                    .order_by(Message.created_at)
-                    .limit(1)
-                )
-                first = res.scalars().first()
-                question = first.content if first else ""
-
-        if not parts:
-            await self._finish(
-                job.message_id, MessageStatus.failed, error="Варианты не получены"
-            )
-            await job.output.put(("error", "Варианты не получены"))
-            return
-
-        job.history = prompts.with_system(
-            [
-                {
-                    "role": "user",
-                    "content": prompts.COUNCIL_MERGE_TEMPLATE.format(
-                        question=question, variants="\n\n".join(parts)
-                    ),
-                }
-            ],
-            prompts.MAIN_SYSTEM,
-        )
-        await job.output.put(
-            ("step", json.dumps({"n": 0, "variants": len(parts)}))
-        )
-        await self._run_message(job)
 
     async def _is_router_set(self, mset_id: str | None) -> bool:
         if not mset_id:
@@ -691,174 +359,60 @@ class AIRouter:
 
     async def _run_message(self, job: Job) -> None:
         try:
-            mset_id, mset_name, entries = await self._resolve_entries(
-                job.route_type, job.model_set_id
-            )
+            mset_id, mset_name, entries = await self._resolve_entries(job.route_type, job.model_set_id)
         except ProviderError as e:
             await self._finish(job.message_id, MessageStatus.failed, error=str(e))
             await job.output.put(("error", str(e)))
             return
-
-        # Auto (Routing): let the router cluster pick a concrete model set first
         if await self._is_router_set(mset_id):
             chosen_id, chosen_name, brief = await self._route(job, entries[0])
             if chosen_id:
-                await job.output.put(
-                    ("route", json.dumps(
-                        {"id": chosen_id, "name": chosen_name, "brief": brief},
-                        ensure_ascii=False,
-                    ))
-                )
+                await job.output.put(("route", json.dumps({"id": chosen_id, "name": chosen_name, "brief": brief}, ensure_ascii=False)))
                 job.model_set_id = chosen_id
-                mset_id, mset_name, entries = await self._resolve_entries(
-                    RouteType.MAIN, chosen_id
-                )
-
-        await self._set_status(
-            job.message_id, MessageStatus.processing, mset_id, mset_name
-        )
-
-        agent_on = bool(settings.agent_enabled)
-        code_mode = job.mode == "code"
-        plan_steps = job.max_steps
-        base_steps = plan_steps or (
-            settings.code_agent_max_steps if code_mode else settings.agent_max_steps
-        )
-        steps_limit = base_steps
-        max_steps = max(1, steps_limit) if agent_on else 1
-        run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
+                mset_id, mset_name, entries = await self._resolve_entries(RouteType.MAIN, chosen_id)
+        await self._set_status(job.message_id, MessageStatus.processing, mset_id, mset_name)
         last_error = "Генерация не удалась"
         for entry in entries:
             if job.cancel.is_set():
-                await self._finish(
-                    job.message_id, MessageStatus.cancelled, error="Остановлено пользователем"
-                )
+                await self._finish(job.message_id, MessageStatus.cancelled, error="Остановлено пользователем")
                 await job.output.put(("cancelled", ""))
                 return
             try:
-                messages = list(job.history)
-                answer = ""
-                all_thinking = []
-                usage: dict | None = None
-                all_runs: list[dict] = []
-                step_counter = 0
-                for step in range(max_steps):
-                    # Trim history before sending to model (keep it sane)
-                    messages = _trim_agent_history(messages)
-                    got = await self._stream_once(job, entry, messages)
-                    if got is None:
-                        return
-                    full, thinking, usage = got
-                    if thinking:
-                        all_thinking.append(thinking)
-                    runs = extract_run_blocks(full) if agent_on else []
-                    if not runs:
-                        answer = full if full.strip() else thinking
-                        break
-                    for code in runs:
-                        await job.output.put(
-                            ("tool_start", json.dumps({"code": code}, ensure_ascii=False))
-                        )
-                        result = await run_python(
-                            code, timeout=run_timeout, project=job.project
-                        )
-                        attached = await self._attach_run_files(job, result)
-                        run = {
-                            "code": code,
-                            "ok": bool(result.get("ok")),
-                            "stdout": result.get("stdout", ""),
-                            "stderr": result.get("stderr", ""),
-                            "timed_out": bool(result.get("timed_out")),
-                            "files": attached,
-                        }
-                        await job.output.put(("tool", json.dumps(run, ensure_ascii=False)))
-                        all_runs.append(run)
-                        step_counter += 1
-                        messages = [
-                            *messages,
-                            {"role": "assistant", "content": full},
-                            {"role": "user", "content": _tool_feedback(run)},
-                        ]
-                        # Trim after adding new step — keep history bounded
-                        messages = _trim_agent_history(messages)
-                        cleanup(result.get("workdir"))
-                    answer = strip_run_blocks(full)
-                    if step + 1 < max_steps:
-                        await job.output.put(("step", json.dumps({"n": step + 1})))
-
-                if extract_run_blocks(answer):
-                    answer = strip_run_blocks(answer)
-                answer = strip_sandbox_paths(answer)
-                if not answer.strip():
-                    raise ProviderError("Пустой ответ модели")
-
-                # pull [[memory: ...]] commands out of the visible answer
+                result = await self._stream_once(job, entry, list(job.history))
+                if result is None:
+                    return
+                full, thinking, usage = result
+                answer = full if full.strip() else thinking
                 answer, memories = extract_memories(answer)
                 answer, ask = extract_ask(answer)
                 answer = strip_cot(answer)
-                if not ask and len(answer) <= 500:
-                    # fallback: a short answer that ends with a question is a clarification
-                    tail = answer.strip().split("\n")[-1].strip()
-                    if tail.endswith("?") and 12 < len(tail) < 260:
-                        ask = tail
+                if not answer.strip():
+                    raise ProviderError("Пустой ответ модели")
                 if memories and job.user_id:
                     async with SessionLocal() as db:
                         for kind, value in memories:
-                            db.add(
-                                Memory(
-                                    user_id=job.user_id,
-                                    content=value[:2000],
-                                    kind=kind,
-                                    message_id=job.message_id,
-                                )
-                            )
+                            db.add(Memory(user_id=job.user_id, content=value[:2000], kind=kind, message_id=job.message_id))
                         await db.commit()
-                    await job.output.put(
-                        ("memory", json.dumps([v for _, v in memories], ensure_ascii=False))
-                    )
-
-                await self._finish(
-                    job.message_id,
-                    MessageStatus.completed,
-                    content=answer,
-                    error=None,
-                    usage=usage,
-                    tool_runs=all_runs or None,
-                    thinking="\n".join(all_thinking) if all_thinking else None,
-                )
+                    await job.output.put(("memory", json.dumps([value for _, value in memories], ensure_ascii=False)))
+                await self._finish(job.message_id, MessageStatus.completed, content=answer, error=None, usage=usage, thinking=thinking if thinking else None)
                 if ask:
-                    await job.output.put(
-                        ("ask", json.dumps({"question": ask}, ensure_ascii=False))
-                    )
+                    await job.output.put(("ask", json.dumps({"question": ask}, ensure_ascii=False)))
                 await job.output.put(("done", answer))
-                await self.enqueue(
-                    Job(
-                        kind="suggestions",
-                        route_type=RouteType.SUGGESTIONS,
-                        chat_id=job.chat_id,
-                        message_id=job.message_id,
-                        history=[*messages, {"role": "assistant", "content": answer}],
-                    )
-                )
+                await self.enqueue(Job(kind="suggestions", route_type=RouteType.SUGGESTIONS, chat_id=job.chat_id, message_id=job.message_id, history=[*job.history, {"role": "assistant", "content": answer}]))
                 return
             except ProviderError as e:
                 last_error = str(e)
                 log.warning("Model entry %s failed: %s", entry.model, e)
             except asyncio.CancelledError:
-                await self._finish(
-                    job.message_id, MessageStatus.cancelled, error="Остановлено"
-                )
+                await self._finish(job.message_id, MessageStatus.cancelled, error="Остановлено")
                 await job.output.put(("cancelled", ""))
                 return
             except Exception as e:
                 last_error = f"{type(e).__name__}: {e}"
                 log.warning("Model entry %s error: %s", entry.model, e)
-
-        # one automatic retry with the same model (matters for Auto routing)
         if not job.retried and not job.cancel.is_set():
             job.retried = True
             log.warning("Retrying once: %s", last_error)
-            await job.output.put(("step", json.dumps({"n": 0, "retry": True})))
             await self.enqueue(job)
             return
         await self._finish(job.message_id, MessageStatus.failed, error=last_error)

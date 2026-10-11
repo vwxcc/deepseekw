@@ -1974,6 +1974,7 @@
     };
     const routes = Object.keys(labels);
     const sets = (all || []).filter(s => !s.is_router);
+    const missingRoutes = routes.filter(route => !sets.some(set => set.route_type === route));
     const routeName = route => labels[route] || route;
     const escapeValue = value => escapeHtml(value == null ? '' : value);
 
@@ -2035,10 +2036,12 @@
       title: 'Модели, задачи и лимиты',
       okText: 'Сохранить настройки',
       body: '<p class="usage-note">Для каждой задачи настрой отдельную цепочку. Порядок 0, 1, 2… означает приоритет резерва: при ошибке или исчерпании квоты сервис перейдёт к следующей модели. Лимиты считаются в токенах за скользящее окно (по умолчанию 6 часов). Пустой лимит означает отсутствие пользовательского ограничения. Вводи реальные Model ID, Base URL и ключи своего API-провайдера.</p>' +
-        '<div class="settings-grid" style="margin:12px 0"><label class="lim-field"><span>Новая задача</span><input id="new-task-name" placeholder="например, Анализ кода"/></label>' +
-        '<label class="lim-field"><span>Тип задачи</span><select id="new-task-type">' + routes.map(r => '<option value="' + r + '">' + escapeHtml(routeName(r)) + '</option>').join('') + '</select></label>' +
-        '<label class="lim-field"><span>Slug (необязательно)</span><input id="new-task-slug" placeholder="auto-generated"/></label>' +
-        '<button class="chip-btn" id="create-task-chain">Создать цепочку задачи</button></div>' +
+        (missingRoutes.length
+          ? '<div class="settings-grid" style="margin:12px 0"><label class="lim-field"><span>Новая задача</span><input id="new-task-name" placeholder="название задачи"/></label>' +
+            '<label class="lim-field"><span>Тип задачи</span><select id="new-task-type">' + missingRoutes.map(r => '<option value="' + r + '">' + escapeHtml(routeName(r)) + '</option>').join('') + '</select></label>' +
+            '<label class="lim-field"><span>Slug (необязательно)</span><input id="new-task-slug" placeholder="auto-generated"/></label>' +
+            '<button class="chip-btn" id="create-task-chain">Создать цепочку задачи</button></div>'
+          : '<p class="usage-note">Все типы задач уже заведены. Чтобы добавить модель, используй «Добавить модель / резерв» внутри нужной задачи — новые дубли цепочек создавать не нужно.</p>') +
         (routes.map(route => {
           const group = sets.filter(s => s.route_type === route);
           return '<h3 style="margin:18px 0 8px">' + escapeHtml(routeName(route)) + '</h3>' +

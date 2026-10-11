@@ -1104,6 +1104,21 @@
               n.draft = '';
             }
             renderMessages();
+            if (n && n.role === 'assistant' && !(n.suggestions && n.suggestions.length) && !n.suggestionsLoading) {
+              n.suggestionsLoading = true;
+              api.post('/api/messages/' + encodeURIComponent(data.message_id) + '/suggestions', {})
+                .then(result => {
+                  const current = findNode(state.tree, data.message_id);
+                  if (!current) return;
+                  current.suggestions = result.suggestions || [];
+                  current.suggestionsLoading = false;
+                  renderMessages();
+                })
+                .catch(() => {
+                  const current = findNode(state.tree, data.message_id);
+                  if (current) current.suggestionsLoading = false;
+                });
+            }
 
           } else if (ev === 'error') {
             const n = findNode(state.tree, data.message_id);

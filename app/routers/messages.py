@@ -664,7 +664,7 @@ async def compress_chat(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    limits = await get_limits(db, user.plan or "free")
+    limits = await get_limits(db, await effective_plan(db, user))
     cmin = int(limits.get("compress_min") or 5)
     cmax = int(limits.get("compress_max") or 85)
     if cmin > cmax:
@@ -680,7 +680,7 @@ async def compress_chat(
     if per_day is not None and (chat.compress_count or 0) >= int(per_day):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            f"Лимит тарифа: сжатий в день — {int(per_day)}. Оформите Pro для снятия лимита.",
+            f"Лимит сжатий на сегодня исчерпан. Обратитесь к администратору ai-ch для сброса счётчика или подписки.",
         )
 
     res = await db.execute(

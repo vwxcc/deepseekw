@@ -46,6 +46,7 @@ class Role(str, enum.Enum):
 class RouteType(str, enum.Enum):
     MAIN = "MAIN"
     TITLE = "TITLE"
+    CONTINUE = "CONTINUE"
     SUGGESTIONS = "SUGGESTIONS"
 
 
@@ -59,6 +60,8 @@ class User(Base):
     plan: Mapped[str] = mapped_column(String(32), default="free")
     avatar: Mapped[int] = mapped_column(Integer, default=0)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    subscription_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    usage_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     chats: Mapped[list["Chat"]] = relationship(

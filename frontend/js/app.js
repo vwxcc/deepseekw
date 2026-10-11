@@ -482,29 +482,18 @@
     modelSets: [],
     modelSetId: localStorage.getItem('cs_model') || '',
     effort: localStorage.getItem('cs_effort') || 'medium',
-    usage: null,
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
     temperature: parseFloat(localStorage.getItem('cs_temp')) || 0.2,
     readonly: false,
     publicToken: null,
-    greetTimer: null,
-    greetIdx: Math.floor(Math.random() * 100),
-    suggIdx: Math.floor(Math.random() * 50),
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
     theme: localStorage.getItem('cs_theme') || 'auto', // 'auto' | 'light' | 'dark'
   };
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
   const EFFORT_LABELS = ['Low', 'Medium', 'High', 'Extra', 'Max'];
-
-  const TARIFFS = [
-    { name: 'Free', ctx: 10, out: 20, files: 5, note: 'знакомство и лёгкие задачи' },
-    { name: 'Plus', ctx: 30, out: 45, files: 25, note: 'ежедневная работа' },
-    { name: 'Pro', ctx: 60, out: 70, files: 100, note: 'длинные диалоги и файлы' },
-    { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
-  ];
 
   // ---------- auth ----------
   function showAuth() {
@@ -1981,8 +1970,7 @@
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в рублях. Настройка действует для всех действий: файлы, чаты, посты, ' +
-        'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
+        'деньги в рублях. Настройка применяется к файлам, хранилищу, запросам, стоимости тарифа и токенов.</p>' +
         (data.plans || ['free', 'pro']).map(block).join('') +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
@@ -2020,10 +2008,7 @@
     try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
     box.innerHTML = '<div class="link-list">' + rows.map(u =>
       '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
-      '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
-      ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
-      ' · файлы: ' + formatSize(u.storage) +
-      ' · тариф ' + u.plan_price + ' ₽ · расход ' + u.cost + ' ₽</span></div>' +
+      '<span>' + escapeHtml(u.email) + ' · тариф ' + escapeHtml(u.plan || 'free') + '</span></div>' +
       '<button class="chip-btn" data-uplan="' + u.id + '">' +
       (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
       '</div>';
@@ -2038,7 +2023,7 @@
     }));
   }
 
-  // ---------- GitHub for the code agent ----------
+  // ---------- Sidebar and account navigation ----------
 
   function applySidebar() {
     const sidebar = $('#sidebar');

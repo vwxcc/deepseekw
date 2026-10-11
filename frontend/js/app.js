@@ -562,9 +562,6 @@
       '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
         '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
         '<span class="chat-meta">' +
-          (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
-          (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
-          (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
           (c.model_name ? '<em class="model-tag">' + escapeHtml(c.model_name) + '</em>' : '') +
         '</span>' +
         '<span class="acts">' +
@@ -843,8 +840,7 @@
     const box = $('#messages');
     const path = activePath(state.tree, state.choices);
     if (!path.length) { renderEmptyState(); return; }
-    stopRotation();
-    stopShowcase();
+
     box.innerHTML = '<div class="msg-wrap">' +
       path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
     bindMessageEvents();
@@ -1955,7 +1951,7 @@
       const allowed = data.allowed[plan] || [];
       const open = allowed.length === 0;
       return '<div class="lim-models">' + (data.models || []).map(m =>
-        '<label class="council-row"><input type="checkbox" data-mplan="' + plan +
+        '<label class="limit-model-row"><input type="checkbox" data-mplan="' + plan +
         '" data-mid="' + m.id + '"' + (open || allowed.indexOf(m.id) >= 0 ? ' checked' : '') +
         '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
         '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';

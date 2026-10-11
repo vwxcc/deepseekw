@@ -16,6 +16,8 @@ from app.services.limits import check_message_quota, set_limits
 
 
 async def main() -> None:
+    settings.data_path.mkdir(parents=True, exist_ok=True)
+    settings.upload_path.mkdir(parents=True, exist_ok=True)
     await init_db()
     await bootstrap()
 

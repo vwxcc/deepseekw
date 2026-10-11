@@ -229,6 +229,10 @@ class ModelSetEntryOut(ORMModel):
     price_in: float = 0.0
     price_out: float = 0.0
     price_cache: float = 0.0
+    free_token_limit: int | None = None
+    pro_token_limit: int | None = None
+    quota_reset_hours: int = 6
+    max_concurrency: int = 1
     timeout: int
     is_active: bool
     has_api_key: bool = False
@@ -269,6 +273,10 @@ class ModelSetEntryIn(BaseModel):
     price_in: float = 0.0
     price_out: float = 0.0
     price_cache: float = 0.0
+    free_token_limit: int | None = None
+    pro_token_limit: int | None = None
+    quota_reset_hours: int = 6
+    max_concurrency: int = 1
     is_active: bool = True
 
 
@@ -284,6 +292,10 @@ class ModelSetEntryUpdate(BaseModel):
     price_in: float | None = None
     price_out: float | None = None
     price_cache: float | None = None
+    free_token_limit: int | None = None
+    pro_token_limit: int | None = None
+    quota_reset_hours: int | None = None
+    max_concurrency: int | None = None
     timeout: int | None = None
     is_active: bool | None = None
 

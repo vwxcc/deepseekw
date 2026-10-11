@@ -1813,40 +1813,29 @@
     const bytes = { file_size: 1, user_storage: 1 };
     const field = (plan, key, value) => {
       const isBytes = bytes[key];
-      const shown = isBytes ? Math.round((value || 0) / (1024 * 1024)) : (value === null ? '' : value);
+      const shown = isBytes ? (value == null ? '' : Math.round(value / (1024 * 1024))) : (value == null ? '' : value);
       return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
         (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
         '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
-        shown + '" placeholder="∞" /></label>';
+        escapeHtml(shown) + '" placeholder="∞" /></label>';
     };
-    const modelBoxes = (plan) => {
-      const allowed = data.allowed[plan] || [];
-      const open = allowed.length === 0;
-      return '<div class="lim-models">' + (data.models || []).map(m =>
-        '<label class="limit-model-row"><input type="checkbox" data-mplan="' + plan +
-        '" data-mid="' + m.id + '"' + (open || allowed.indexOf(m.id) >= 0 ? ' checked' : '') +
-        '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
-        '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';
-    };
-    const block = (plan) => {
+    const planBlock = (plan) => {
       const lim = data.limits[plan] || {};
-      return '<h4 class="sec">Тариф ' + plan.toUpperCase() + '</h4>' +
-        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>' +
-        '<h4 class="sec">Модели тарифа ' + plan.toUpperCase() + '</h4>' + modelBoxes(plan);
+      return '<h4 class="sec">Тариф ' + escapeHtml(plan.toUpperCase()) + '</h4>' +
+        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>';
     };
     openModal({
-      title: 'Тарифы, лимиты и деньги',
-      okText: 'Сохранить',
-      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в рублях. Настройка применяется к файлам, хранилищу, запросам, стоимости тарифа и токенов.</p>' +
-        (data.plans || ['free', 'pro']).map(block).join('') +
-        '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
+      title: 'Админ-панель · тарифы и пользователи',
+      okText: 'Сохранить лимиты',
+      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, деньги в рублях. '
+        + 'Лимит запросов проверяется на сервере до отправки модели. Пользователь после исчерпания увидит сообщение обратиться к администратору.</p>'
+        + (data.plans || ['free', 'pro', 'max']).map(planBlock).join('')
+        + '<div class="settings-grid" style="margin:12px 0"><button class="chip-btn" id="admin-model-chains">Цепочки моделей и API</button></div>'
+        + '<h4 class="sec">Пользователи · подписки и сброс счётчиков</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
         const grouped = {};
         $$('[data-plan]', root).forEach(inp => {
-          const plan = inp.dataset.plan;
-          const key = inp.dataset.key;
-          const raw = inp.value.trim();
+          const plan = inp.dataset.plan, key = inp.dataset.key, raw = inp.value.trim();
           let val = raw === '' ? null : Number(raw);
           if (val !== null && bytes[key]) val = Math.round(val * 1024 * 1024);
           grouped[plan] = grouped[plan] || {};
@@ -1855,16 +1844,14 @@
         for (const plan of Object.keys(grouped)) {
           await api.put('/api/limits/' + plan, grouped[plan]);
         }
-        for (const plan of (data.plans || [])) {
-          const ids = $$('[data-mplan="' + plan + '"]', root)
-            .filter(c => c.checked).map(c => c.dataset.mid);
-          const all = (data.models || []).map(m => m.id);
-          await api.put('/api/limits/' + plan + '/models',
-            { ids: ids.length === all.length ? [] : ids });
-        }
-        toast('Тарифы сохранены');
+        toast('Лимиты сохранены');
         return true;
       },
+    });
+    const chains = $('#admin-model-chains');
+    if (chains) chains.addEventListener('click', () => {
+      $('#modal-root').innerHTML = '';
+      openModelChains();
     });
     loadLimitUsers();
   }
@@ -1873,21 +1860,138 @@
     const box = $('#lim-users');
     if (!box) return;
     let rows = [];
-    try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
-    box.innerHTML = '<div class="link-list">' + rows.map(u =>
-      '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
-      '<span>' + escapeHtml(u.email) + ' · тариф ' + escapeHtml(u.plan || 'free') + '</span></div>' +
-      '<button class="chip-btn" data-uplan="' + u.id + '">' +
-      (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
-      '</div>';
-    $$('[data-uplan]').forEach(b => b.addEventListener('click', async () => {
-      const cur = rows.find(x => x.id === b.dataset.uplan);
-      const next = cur && cur.plan === 'pro' ? 'free' : 'pro';
+    try { rows = await api.get('/api/limits/users'); }
+    catch (e) { box.textContent = 'Не удалось загрузить пользователей: ' + e.message; return; }
+    box.innerHTML = '<div class="link-list">' + rows.map(u => {
+      const expiry = u.subscription_until ? new Date(u.subscription_until).toLocaleString('ru-RU') : 'бессрочно / нет срока';
+      const details = 'тариф ' + (u.plan || 'free') + ' · запросов после сброса: ' + u.requests
+        + ' · токены: ' + fmtAdminNumber((Number(u.tokens_in) || 0) + (Number(u.tokens_out) || 0))
+        + ' · расход: ' + u.cost + ' ₽ · подписка: ' + expiry;
+      if (u.is_admin) {
+        return '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b><span>'
+          + escapeHtml(u.email) + ' · администратор · ' + escapeHtml(details) + '</span></div></div>';
+      }
+      return '<div class="link-row" style="align-items:flex-start"><div class="link-info"><b>'
+        + escapeHtml(u.name || u.email) + '</b><span>' + escapeHtml(u.email) + ' · ' + escapeHtml(details) + '</span>'
+        + '<div class="settings-grid" style="margin-top:8px">'
+        + '<select data-user-plan="' + u.id + '" aria-label="Тариф">'
+        + '<option value="free"' + (u.plan === 'free' ? ' selected' : '') + '>Free</option>'
+        + '<option value="pro"' + (u.plan === 'pro' ? ' selected' : '') + '>Pro</option>'
+        + '<option value="max"' + (u.plan === 'max' ? ' selected' : '') + '>Max</option></select>'
+        + '<input type="number" min="1" max="3650" data-user-days="' + u.id + '" value="30" placeholder="Дней; пусто = навсегда" aria-label="Длительность подписки в днях"/>'
+        + '<button class="chip-btn" data-user-save="' + u.id + '">Применить тариф</button>'
+        + '<button class="chip-btn" data-user-reset="' + u.id + '">Обнулить счётчики</button>'
+        + '</div></div></div>';
+    }).join('') + '</div>';
+
+    $$('[data-user-save]', box).forEach(button => button.addEventListener('click', async () => {
+      const id = button.dataset.userSave;
+      const plan = $('[data-user-plan="' + id + '"]', box).value;
+      const rawDays = $('[data-user-days="' + id + '"]', box).value.trim();
+      const days = rawDays === '' ? null : Math.max(1, Math.min(3650, Number(rawDays) || 30));
       try {
-        await api.put('/api/limits/user/' + b.dataset.uplan, { plan: next });
-        toast('Тариф изменён: ' + next);
-        loadLimitUsers();
+        await api.put('/api/limits/user/' + id, { plan, days });
+        toast(plan === 'free' ? 'Тариф Free установлен' : 'Подписка сохранена');
+        await loadLimitUsers();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+    $$('[data-user-reset]', box).forEach(button => button.addEventListener('click', async () => {
+      try {
+        await api.post('/api/limits/user/' + button.dataset.userReset + '/reset');
+        toast('Счётчики обнулены');
+        await loadLimitUsers();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+  }
+
+  function fmtAdminNumber(n) {
+    n = Number(n) || 0;
+    return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+  }
+
+  async function openModelChains() {
+    let all;
+    try { all = await api.get('/api/admin/model-sets'); }
+    catch (e) { toast('Не удалось загрузить цепочки: ' + e.message, 'error'); return; }
+    const labels = { MAIN: 'Основной ответ', TITLE: 'Заголовок чата', CONTINUE: 'Продолжение ответа' };
+    const wanted = { MAIN: 'qwen-main', TITLE: 'qwen-title', CONTINUE: 'qwen-continue' };
+    const sets = all.filter(s => labels[s.route_type] && s.slug === wanted[s.route_type] && !s.is_router);
+    const entryHtml = (set, entry) => {
+      const eid = entry.id;
+      const text = (key, value, type, hint) => '<label class="lim-field"><span>' + escapeHtml(hint)
+        + '</span><input type="' + (type || 'text') + '" data-chain-entry="' + eid + '" data-chain-field="' + key
+        + '" value="' + escapeHtml(value == null ? '' : value) + '" placeholder="' + (key === 'api_key' ? (entry.has_api_key ? 'Ключ сохранён; пустое поле оставит его' : 'API-ключ') : '') + '"/></label>';
+      return '<div style="border:1px solid var(--border,#ddd);border-radius:10px;padding:10px;margin:8px 0">'
+        + '<b>Резерв №</b> ' + text('position', entry.position, 'number', 'Порядок')
+        + '<div class="lim-grid">' + text('model', entry.model, 'text', 'Имя модели')
+        + text('base_url', entry.base_url, 'url', 'Base URL')
+        + text('api_key', '', 'password', 'API-ключ')
+        + text('temperature', entry.temperature, 'number', 'Temperature')
+        + text('max_tokens', entry.max_tokens, 'number', 'Max tokens')
+        + text('timeout', entry.timeout, 'number', 'Timeout, сек')
+        + '<label class="lim-field"><span>Активна</span><input type="checkbox" data-chain-entry="' + eid + '" data-chain-field="is_active"'
+        + (entry.is_active ? ' checked' : '') + '/></label></div>'
+        + '<button class="chip-btn" data-delete-entry="' + eid + '" data-delete-set="' + set.id + '">Удалить модель</button></div>';
+    };
+    openModal({
+      title: 'Цепочки моделей и API',
+      okText: 'Сохранить цепочки',
+      body: '<p class="usage-note">У каждого задания своя последовательность резервов. Установите порядок 0, 1, 2…: ai-ch пробует сверху вниз и переходит к следующему API при ошибке или пустом ответе. Ключи не показываются; пустой ключ оставляет сохранённый.</p>'
+        + sets.map(set => '<h4 class="sec">' + escapeHtml(labels[set.route_type]) + '</h4><p class="usage-note">Цепочка: ' + escapeHtml(set.name) + '</p>'
+          + (set.entries || []).slice().sort((a,b) => a.position - b.position).map(e => entryHtml(set,e)).join('')
+          + '<div class="lim-grid" style="margin:8px 0">'
+          + '<label class="lim-field"><span>Новая модель</span><input data-new-model="' + set.id + '" placeholder="model-id"/></label>'
+          + '<label class="lim-field"><span>Base URL</span><input data-new-base="' + set.id + '" type="url" value="' + escapeHtml((set.entries[0] || {}).base_url || '') + '"/></label>'
+          + '<label class="lim-field"><span>API-ключ</span><input data-new-key="' + set.id + '" type="password" placeholder="ключ для резервной модели"/></label>'
+          + '</div><button class="chip-btn" data-add-entry="' + set.id + '">Добавить резервную модель</button>').join(''),
+      onOk: async (root) => {
+        const updates = {};
+        $$('[data-chain-entry]', root).forEach(input => {
+          const id = input.dataset.chainEntry, key = input.dataset.chainField;
+          updates[id] = updates[id] || {};
+          if (key === 'is_active') updates[id][key] = input.checked;
+          else {
+            let val = input.value.trim();
+            if (key === 'api_key' && val === '') return;
+            if (['position', 'max_tokens', 'timeout'].includes(key)) val = val === '' ? 0 : Number(val);
+            if (key === 'temperature') val = val === '' ? 0.2 : Number(val);
+            updates[id][key] = val;
+          }
+        });
+        for (const [id, values] of Object.entries(updates)) {
+          await api.patch('/api/admin/model-sets/' + setForEntry(id, sets) + '/entries/' + id, values);
+        }
+        toast('Цепочки моделей сохранены');
+        return true;
+      },
+    });
+    function setForEntry(entryId, allSets) {
+      const parent = allSets.find(s => (s.entries || []).some(e => e.id === entryId));
+      return parent ? parent.id : '';
+    }
+    $$('[data-delete-entry]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        await api.del('/api/admin/model-sets/' + button.dataset.deleteSet + '/entries/' + button.dataset.deleteEntry);
+        $('#modal-root').innerHTML = '';
+        await openModelChains();
+      } catch (e) { toast('Не удалось удалить: ' + e.message, 'error'); }
+    }));
+    $$('[data-add-entry]').forEach(button => button.addEventListener('click', async () => {
+      const set = sets.find(s => s.id === button.dataset.addEntry);
+      const base = $('[data-new-base="' + set.id + '"]')?.value.trim() || '';
+      const model = $('[data-new-model="' + set.id + '"]')?.value.trim() || '';
+      const key = $('[data-new-key="' + set.id + '"]')?.value.trim() || '';
+      if (!base || !model || !key) { toast('Для новой модели нужны Base URL, model-id и API-ключ', 'error'); return; }
+      const maxPosition = Math.max(-1, ...(set.entries || []).map(e => Number(e.position) || 0));
+      try {
+        await api.post('/api/admin/model-sets/' + set.id + '/entries', {
+          provider: 'openai', base_url: base, model, api_key: key,
+          position: maxPosition + 1, temperature: 0.2, max_tokens: 12000, timeout: 180,
+          context_len: 0, price_in: 0, price_out: 0, price_cache: 0, is_active: true,
+        });
+        $('#modal-root').innerHTML = '';
+        await openModelChains();
+      } catch (e) { toast('Не удалось добавить: ' + e.message, 'error'); }
     }));
   }
 

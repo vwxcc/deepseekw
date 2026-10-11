@@ -1,0 +1,35 @@
+name: Validate ai-ch
+
+on:
+  push:
+    branches:
+      - render-ai-ch
+  pull_request:
+    branches:
+      - main
+      - render-ai-ch
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python source
+        run: python -m compileall -q app
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check frontend JavaScript syntax
+        run: node --check frontend/js/app.js
+      - name: Verify Render configuration
+        run: python -c "import pathlib; d=pathlib.Path('Dockerfile').read_text(); r=pathlib.Path('render.yaml').read_text(); assert 'PORT:-8000' in d; assert 'QWEN_API_KEY' in r; assert '/api/health' in r"

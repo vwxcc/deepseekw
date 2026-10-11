@@ -304,6 +304,7 @@ async def _spawn(
         history=history,
         message_id=assistant.id,
         model_set_id=task_set_id,
+        generate_title=(route_type == RouteType.MAIN and chat.title == "Новый чат"),
         effort=effort or chat.effort,
         user_id=user_id,
         user_text=user_text,
@@ -439,10 +440,17 @@ async def send_message(
         user_id=user.id,
         user_text=content,
     )
-    total = await db.scalar(
-        select(func.count()).select_from(Message).where(Message.chat_id == chat.id)
-    )
-    job.generate_title = total == 2
+    # Generate a title only once a main answer succeeds. If an earlier first turn failed,
+    # a later successful turn can still generate the missing title from the first user prompt.
+    job.generate_title = chat.title == "Новый чат"
+    if job.generate_title:
+        first_query = await db.scalar(
+            select(Message.content)
+            .where(Message.chat_id == chat.id, Message.role == Role.user)
+            .order_by(Message.created_at, Message.id)
+            .limit(1)
+        )
+        job.user_text = str(first_query or content)[:2000]
     await ai_router.enqueue(job)
 
     return StreamingResponse(

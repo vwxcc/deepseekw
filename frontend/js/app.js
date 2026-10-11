@@ -467,6 +467,7 @@
   // ---------- state ----------
   const state = {
     user: null,
+    limits: null,
     chats: [],
     query: '',
     currentChatId: null,
@@ -1022,6 +1023,7 @@
     $('#send-btn').classList.toggle('hidden', on);
     $('#stop-btn').classList.toggle('hidden', !on);
     $('#input').disabled = false;
+    updateQuotaControls();
   }
 
   // ---------- WebSocket streaming with SSE fallback ----------
@@ -1047,7 +1049,7 @@
           let msg = res.status + ' ' + res.statusText;
           try { const payload = await res.json(); msg = payload.detail || payload.error || JSON.stringify(payload); }
           catch (e) { try { msg = await res.text(); } catch (_) { /* keep status */ } }
-          reject(new Error(msg)); return;
+          const failure = new Error(msg); failure.status = res.status; reject(failure); return;
         }
         await consumeSse(res, (ev, data) => {
           state.lastEvent = Date.now();
@@ -1193,6 +1195,7 @@
     } catch (err) {
       fetchFailed = true;
       fetchError = err && err.message ? String(err.message).slice(0, 300) : 'ошибка сети';
+      if (err && err.status === 403 && body && body.content) { const draft = $('#input'); if (draft) { draft.value = body.content; autoGrow(); } }
       console.error(err);
       toast('Ошибка: ' + fetchError, 'error');
     } finally {
@@ -1207,6 +1210,7 @@
       }
       state.streamEl = null;
       await loadChats();
+      await loadLimits();
       // refresh title (generated in background)
       if (state.currentChatId) {
         setTimeout(async () => {
@@ -1227,6 +1231,12 @@
     const input = $('#input');
     const content = input.value.trim();
     if (!content || state.streaming) return;
+    if (!state.limits) await loadLimits();
+    if (quotaBlocked()) {
+      toast('Дневной лимит запросов исчерпан. Обратитесь к администратору ai-ch для сброса счётчика или выдачи подписки.', 'error');
+      updateQuotaControls();
+      return;
+    }
     if (!state.currentChatId) {
       const chat = await api.post('/api/chats', { title: 'Новый чат' });
       state.chats.unshift(chat);
@@ -1341,9 +1351,28 @@
     return String(n);
   }
 
+  function quotaBlocked() {
+    if (!state.user || state.user.is_admin) return false;
+    const usage = (state.limits && state.limits.usage) || {};
+    const cap = usage.messages_daily_limit;
+    return cap != null && Number(usage.messages_today || 0) >= Number(cap);
+  }
+
+  function updateQuotaControls() {
+    const blocked = quotaBlocked();
+    const send = $('#send-btn');
+    if (send) {
+      send.disabled = blocked || state.streaming;
+      send.title = blocked ? 'Лимит исчерпан. Обратитесь к администратору ai-ch.' : 'Отправить';
+    }
+    const input = $('#input');
+    if (input) input.title = blocked ? 'Дневной лимит исчерпан. Обратитесь к администратору ai-ch.' : '';
+  }
+
   async function loadLimits() {
     try { state.limits = await api.get('/api/limits'); }
     catch (e) { state.limits = null; }
+    updateQuotaControls();
   }
 
   async function openLinks() {

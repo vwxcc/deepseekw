@@ -55,7 +55,6 @@ def message_out(
         suggestions=suggestions or [],
         attachments=attachments or [],
         sources=_json_list(m.sources),
-        tool_runs=_json_list(m.tool_runs),
     )
 
 

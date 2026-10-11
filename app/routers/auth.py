@@ -54,7 +54,7 @@ def _set_cookies(response: Response, token: str) -> None:
         path="/",
     )
     response.set_cookie(
-        "chatstudio_csrf",
+        "ai-ch_csrf",
         csrf_token_for(token),
         max_age=settings.session_max_age,
         httponly=False,  # Нужен для JS (CSRF-токен)
@@ -211,7 +211,7 @@ async def logout(
             await db.delete(sess)
             await db.commit()
     response.delete_cookie(COOKIE_NAME, path="/")
-    response.delete_cookie("chatstudio_csrf", path="/")
+    response.delete_cookie("ai-ch_csrf", path="/")
     return {"ok": True}
 
 

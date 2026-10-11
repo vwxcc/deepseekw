@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     # --- App ---
-    app_name: str = "ChatStudio"
+    app_name: str = "ai-ch"
     app_version: str = "0.1.0"
 
     # --- Auth / sessions ---
@@ -37,31 +37,18 @@ class Settings(BaseSettings):
 
     # --- Web search (SearXNG) ---
     web_search_enabled: bool = True
-    searxng_url: str = "http://searxng-web:8080"
+    searxng_url: str = ""
     web_search_results: int = 5
-    web_search_timeout: int = 12
+    web_search_timeout: int = 6
     # context window of the default model, used for the "usage %" widget
     model_context_len: int = 262144
-    # --- Agent (sandboxed code execution) ---
-    agent_enabled: bool = True
-    agent_max_steps: int = 6
-    agent_timeout: int = 40
-    # isolated runner (separate container, internal network, no internet)
-    sandbox_url: str = "http://chatstudio-sandbox:8000"
-    sandbox_work_dir: str = "/app/data/sandbox"
-    sandbox_concurrency: int = 2
-    sandbox_queue_limit: int = 12
-    # code-agent mode: persistent project per chat, more steps
-    code_agent_max_steps: int = 10
-    code_agent_timeout: int = 60
-
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file
     max_total_file_size: int = 100 * 1024 * 1024  # 100 MB per request
     max_files_per_request: int = 10
-    # per-user storage quota (4 GB) and the free-space floor below which we prune
-    max_user_storage: int = 4 * 1024 * 1024 * 1024
-    disk_min_free: int = 3 * 1024 * 1024 * 1024
+    # Conservative limits for small hosted instances.
+    max_user_storage: int = 250 * 1024 * 1024
+    disk_min_free: int = 100 * 1024 * 1024
     # how many characters of an extracted document are sent to the model
     max_attachment_chars: int = 8000
     # per-file, per-message cap for extracted text (hard limit even before DB)
@@ -92,7 +79,7 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        db_path = (Path(self.data_dir).expanduser().resolve() / "chatstudio.db")
+        db_path = (Path(self.data_dir).expanduser().resolve() / "ai-ch.db")
         return f"sqlite+aiosqlite:///{db_path}"
 
     @property
@@ -102,11 +89,5 @@ class Settings(BaseSettings):
     @property
     def upload_path(self) -> Path:
         return Path(self.upload_dir).expanduser().resolve()
-
-    @property
-    def sandbox_path(self) -> Path:
-        """Directory shared with the sandbox container (read-only for us)."""
-        return Path(self.sandbox_work_dir).expanduser().resolve()
-
 
 settings = Settings()

@@ -1,4 +1,4 @@
-/* ChatStudio — SPA (vanilla JS) */
+/* ai-ch — SPA (vanilla JS) */
 (() => {
   'use strict';
 
@@ -418,7 +418,7 @@
 
   // ---------- api ----------
   const api = {
-    csrf() { return window.__csrf || getCookie('chatstudio_csrf') || ''; },
+    csrf() { return window.__csrf || getCookie('ai-ch_csrf') || ''; },
     async req(method, path, body, isForm) {
       const headers = {};
       if (!isForm && body !== undefined) headers['Content-Type'] = 'application/json';
@@ -427,7 +427,7 @@
       let lastErr;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-          const res = await fetch(path, {
+          res = await fetch(path, {
             method, headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),
             body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
           });
@@ -482,109 +482,18 @@
     modelSets: [],
     modelSetId: localStorage.getItem('cs_model') || '',
     effort: localStorage.getItem('cs_effort') || 'medium',
-    usage: null,
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
     temperature: parseFloat(localStorage.getItem('cs_temp')) || 0.2,
     readonly: false,
     publicToken: null,
-    greetTimer: null,
-    greetIdx: Math.floor(Math.random() * 100),
-    suggIdx: Math.floor(Math.random() * 50),
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
     theme: localStorage.getItem('cs_theme') || 'auto', // 'auto' | 'light' | 'dark'
   };
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
   const EFFORT_LABELS = ['Low', 'Medium', 'High', 'Extra', 'Max'];
-
-  const TARIFFS = [
-    { name: 'Free', ctx: 10, out: 20, files: 5, note: 'знакомство и лёгкие задачи' },
-    { name: 'Plus', ctx: 30, out: 45, files: 25, note: 'ежедневная работа' },
-    { name: 'Pro', ctx: 60, out: 70, files: 100, note: 'длинные диалоги и файлы' },
-    { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
-  ];
-
-  const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
-    'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
-    'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
-    'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
-    'О чём поговорим?', 'Что разберём?', 'Какая идея?', 'Что придумаем?',
-    'Чем помочь?', 'Что подскажем?', 'Какой план?', 'Что изучим?',
-    'Куда двигаемся?', 'Что создадим?', 'Какую проблему решаем?', 'Что анализируем?',
-    'О чём поразмышляем?', 'Что объяснить?', 'Какой текст разберём?', 'Что написать?',
-    'Какую тему раскроем?', 'Что посчитать?', 'Какой код нужен?', 'Что спроектируем?',
-    'О чём расскажу?', 'Что найдём?', 'Какую задачу решим?', 'Что улучшим?',
-    'С чего начать?', 'Какой вопрос у вас?', 'Что уточнить?', 'Как помочь?',
-    'О чём речь?', 'Что разложим по полочкам?', 'Какую идею обсудим?', 'Что проверим?',
-    'Куда копаем?', 'Что переведём?', 'Какой документ разберём?', 'Что суммируем?',
-    'О чём спросить?', 'Что построим?', 'Какой план составим?', 'Что оптимизируем?',
-    'Какую тему разберём?', 'Что изобретём?', 'О чём подумать?', 'Что настроим?',
-    'Какую статью разберём?', 'Что напишем?', 'О чём мечтаем?', 'Что решаем?',
-    'Какую мысль разовьём?', 'Что подытожим?', 'О чём поговорим сегодня?', 'Что найдём вместе?',
-    'Какая цель?', 'Что нужно объяснить?', 'Какой вопрос на повестке?', 'Что разгадаем?',
-    'О чём поспорим?', 'Что посоветовать?', 'Какую задачу разберём?', 'Что сравним?',
-    'Какой пример нужен?', 'Что расскажем?', 'О чём почитать?', 'Что запланируем?',
-    'Какую идею проверим?', 'Что упростим?', 'О чём подумаем вместе?', 'Что посмотрим?',
-    'Какой вопрос решаем?', 'Что подправим?', 'О чём расскажете?', 'Что придумаем вместе?',
-    'Какую проблему разберём?', 'Что нарисуем?', 'О чём поговорим?', 'Что сделаем?',
-    'Какой текст напишем?', 'Что разберём подробно?', 'О чём подумаем сейчас?', 'Что принесёте?',
-  ];
-
-  const SUGGESTIONS = [
-    'Помоги с Python — пример кода',
-    'Объясни, что такое API',
-    'Составь план на неделю',
-    'Напиши SQL-запрос с JOIN',
-    'Как работает Docker?',
-    'Переведи текст на английский',
-    'Сократи этот текст',
-    'Сравни React и Vue',
-    'Напиши регулярное выражение',
-    'Объясни async/await простыми словами',
-    'Составь резюме для junior-разработчика',
-    'Как настроить CI/CD?',
-    'Разбери ошибку в коде',
-    'Придумай название для проекта',
-    'Напиши письмо клиенту',
-    'Сделай конспект статьи',
-    'Как ускорить запрос к базе?',
-    'Объясни разницу между TCP и UDP',
-    'Составь бюджет на месяц',
-    'Напиши bash-скрипт для бэкапа',
-    'Что такое векторная база данных?',
-    'Придумай 10 идей для стартапа',
-    'Как работает JWT?',
-    'Оптимизируй этот алгоритм',
-    'Напиши тесты на pytest',
-    'Объясни принципы SOLID',
-    'Как развернуть приложение на сервере?',
-    'Составь чек-лист для релиза',
-    'Придумай вопросы для собеседования',
-    'Как работает HTTPS?',
-    'Напиши Dockerfile для Python',
-    'Разбери JSON на части',
-    'Объясни, что такое REST',
-    'Составь план изучения ML',
-    'Напиши функцию сортировки',
-    'Как чистить данные в pandas?',
-    'Придумай структуру базы данных',
-    'Объясни git rebase',
-    'Как работает Redis?',
-    'Составь договор простыми словами',
-    'Напиши HTML-страницу с формой',
-    'Объясни, что такое WebSocket',
-    'Как защитить API?',
-    'Придумай метрики для продукта',
-    'Напиши текст для лендинга',
-    'Объясни разницу между процессами и потоками',
-    'Как настроить nginx?',
-    'Составь roadmap проекта',
-    'Напиши SQL для отчёта',
-    'Что почитать про архитектуру?',
-  ];
-
 
   // ---------- auth ----------
   function showAuth() {
@@ -653,9 +562,6 @@
       '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
         '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
         '<span class="chat-meta">' +
-          (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
-          (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
-          (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
           (c.model_name ? '<em class="model-tag">' + escapeHtml(c.model_name) + '</em>' : '') +
         '</span>' +
         '<span class="acts">' +
@@ -678,18 +584,13 @@
     });
   }
 
-  async function newChat(mode) {
-    const chat = await api.post('/api/chats', {
-      title: mode === 'code' ? 'Код-проект' : 'Новый чат',
-      mode: mode || 'chat',
-    });
+  async function newChat() {
+    const chat = await api.post('/api/chats', { title: 'Новый чат' });
     state.chats.unshift(chat);
     renderChatList();
     await openChat(chat.id);
-    $('#input').focus();
-    if (mode === 'code') {
-      toast('Код-агент: файлы проекта сохраняются между сообщениями');
-    }
+    const input = $('#input');
+    if (input) input.focus();
   }
 
   function openRename(id) {
@@ -716,7 +617,7 @@
     state.chats = state.chats.filter(c => c.id !== id);
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
-      $('#chat-title').textContent = 'ChatStudio';
+      $('#chat-title').textContent = 'ai-ch';
       renderMessages();
     }
     renderChatList();
@@ -730,11 +631,7 @@
     state.tree = await api.get('/api/chats/' + id + '/messages');
     renderChatList();
     renderMessages();
-    await loadUsage();
-    const meta = state.chats.find(c => c.id === id) || {};
-    const isCode = meta.mode === 'code';
-    $('#project-btn').classList.toggle('hidden', !isCode);
-    if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
+
     closeMobileSidebar();
   }
 
@@ -899,11 +796,6 @@
         '</div>';
     }
 
-    let tools = '';
-    if (!isUser && n.tool_runs && n.tool_runs.length) {
-      tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
-    }
-
     let routeLine = '';
     if (!isUser && n.route) {
       routeLine = '<div class="route-line">' + icon('sparkle') +
@@ -922,33 +814,8 @@
     }
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
-      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      routeLine + thinkBox + tools + inner + askCard + branch + meta + sugg + memLine + '</div>';
-  }
-
-  function toolRunHtml(r, i) {
-    const running = !!r.running;
-    const files = (r.files || []).map(f => {
-      const url = '/api/files/' + f.file_id + '/download';
-      if (f.kind === 'image') {
-        return '<a class="tool-file img" href="' + url + '" target="_blank" rel="noopener">' +
-          '<img src="' + url + '?inline=1" alt="' + escapeHtml(f.name) + '" loading="lazy" /></a>';
-      }
-      return '<a class="tool-file" href="' + url + '" target="_blank" rel="noopener">' +
-        icon('download') + '<span>' + escapeHtml(f.name) + '</span>' +
-        '<em>' + formatSize(f.size) + '</em></a>';
-    }).join('');
-    return '<div class="tool-box' + (r.ok ? '' : ' err') + '">' +
-      '<div class="tool-head">' +
-      (running ? thinkAnim() : icon('terminal')) +
-      '<span>Шаг ' + (i + 1) + ' — ' +
-      (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
-      (r.timed_out ? '<em class="warn">таймаут</em>' : '') + '</div>' +
-      '<pre class="tool-code">' + escapeHtml(r.code || '') + '</pre>' +
-      (r.stdout ? '<pre class="tool-out">' + escapeHtml(r.stdout) + '</pre>' : '') +
-      (r.stderr ? '<pre class="tool-err">' + escapeHtml(r.stderr) + '</pre>' : '') +
-      (files ? '<div class="tool-files">' + files + '</div>' : '') +
-      '</div>';
+      '<div class="role">' + (isUser ? 'Вы' : 'ai-ch') + '</div>' +
+      routeLine + thinkBox + inner + askCard + branch + meta + sugg + memLine + '</div>';
   }
 
   function openSources(list) {
@@ -966,70 +833,14 @@
 
   function renderEmptyState() {
     const box = $('#messages');
-    box.innerHTML =
-      '<div class="empty-state">' +
-        '<h2 class="greet" id="greet-text">' +
-          escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
-        '<div class="tiles" id="tiles"></div>' +
-        '<div class="chips" id="sugg-chips"></div>' +
-      '</div>';
-    renderTiles();
-    bindTiles();
-    renderSuggestionChips();
-    startRotation();
-  }
-
-  function renderSuggestionChips() {
-    const box = $('#sugg-chips');
-    if (!box) return;
-    const total = SUGGESTIONS.length, n = 4;
-    const picks = [];
-    for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
-    state.suggIdx = (state.suggIdx + n) % total;
-    box.innerHTML = picks.map((p, i) =>
-      '<button class="chip-in" style="animation-delay:' + (i * 70) +
-      'ms" data-prompt="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>').join('');
-    $$('button[data-prompt]', box).forEach(b => b.addEventListener('click', () => {
-      $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
-    }));
-  }
-
-  function rotateGreeting() {
-    state.greetIdx = (state.greetIdx + 1) % GREETINGS.length;
-    const el = $('#greet-text');
-    if (!el) return;
-    el.textContent = GREETINGS[state.greetIdx];
-    el.classList.remove('greet');
-    void el.offsetWidth;   // restart the CSS animation
-    el.classList.add('greet');
-  }
-
-  function startRotation() {
-    stopRotation();
-    let tick = 0;
-    state.greetTimer = setInterval(() => {
-      if (!$('#greet-text')) { stopRotation(); return; }
-      tick += 1;
-      if (tick % 2 === 0) rotateGreeting();
-      renderSuggestionChips();
-    }, 11000);
-    state.tileTimer = setInterval(() => {
-      if (!$('#tiles')) { if (state.tileTimer) clearInterval(state.tileTimer); return; }
-      rotateTiles();
-    }, 15000);
-  }
-
-  function stopRotation() {
-    if (state.greetTimer) { clearInterval(state.greetTimer); state.greetTimer = null; }
-    if (state.tileTimer) { clearInterval(state.tileTimer); state.tileTimer = null; }
+    if (box) box.innerHTML = '';
   }
 
   function renderMessages() {
     const box = $('#messages');
     const path = activePath(state.tree, state.choices);
     if (!path.length) { renderEmptyState(); return; }
-    stopRotation();
-    stopShowcase();
+
     box.innerHTML = '<div class="msg-wrap">' +
       path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
     bindMessageEvents();
@@ -1083,7 +894,7 @@
         if (n) {
           const el = $('.msg[data-mid="' + id + '"] .content');
           openSaveMenu({
-            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'ChatStudio',
+            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'ai-ch',
             text: n.content || '',
             html: el ? el.innerHTML : '',
           });
@@ -1178,7 +989,7 @@
       await api.del('/api/messages/' + id);
       removeFromTree(state.tree, id);
       renderMessages();
-      loadUsage();
+
       toast('Удалено');
     } catch (e) {
       toast('Ошибка: ' + e.message, 'error');
@@ -1304,37 +1115,6 @@
             renderMessages();
             bindStreamRefs();
             toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
-          } else if (ev === 'tool_start') {
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) {
-              n.tool_runs = (n.tool_runs || []).concat([
-                { code: data.code || '', running: true, ok: true, files: [] },
-              ]);
-            }
-            renderMessages();
-            bindStreamRefs();
-            appendLog('▶ запуск кода…');
-          } else if (ev === 'tool') {
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) {
-              const runs = n.tool_runs || [];
-              const idx = runs.findIndex(r => r.running);
-              if (idx >= 0) runs[idx] = data; else runs.push(data);
-              n.tool_runs = runs;
-              if (data.files && data.files.length) {
-                n.attachments = (n.attachments || []).concat(data.files.map(f => ({
-                  id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
-                })));
-              }
-            }
-            renderMessages();
-            bindStreamRefs();
-            if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
-            if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
-            if (data.files && data.files.length) {
-              appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
-            }
-            loadProject(false);
           } else if (ev === 'step') {
             state.streamBuf = '';
             const n = findNode(state.tree, state.activeAssistantId);
@@ -1354,7 +1134,7 @@
               n.draft = '';
             }
             renderMessages();
-            loadUsage();
+
           } else if (ev === 'error') {
             const n = findNode(state.tree, data.message_id);
             if (n) { n.status = 'failed'; n.error = data.error; }
@@ -1396,7 +1176,7 @@
         n.draft = '';
       }
       renderMessages();
-      loadUsage();
+
     } else if (data.type === 'error') {
       const n = findNode(state.tree, data.message_id);
       if (n) { n.status = 'failed'; n.error = data.error; }
@@ -1591,11 +1371,6 @@
     });
     $('#model-btn').addEventListener('click', openModelMenu);
     updateModelButton();
-    $('#context-btn').addEventListener('click', openContextMenu);
-    $('#project-btn').addEventListener('click', () => toggleProjectPanel());
-    $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
-    $('#pp-refresh').addEventListener('click', () => loadProject(true));
-    $('#pp-git').addEventListener('click', openGit);
   }
 
   function fmtNum(n) {
@@ -1605,106 +1380,9 @@
     return String(n);
   }
 
-  async function loadUsage() {
-    const btn = $('#context-btn');
-    if (!btn) return;
-    try {
-      if (!state.limits) await loadLimits();
-      const lim = (state.limits && state.limits.limits) || {};
-      const use = (state.limits && state.limits.usage) || {};
-      const cap = lim.messages_per_day;
-      const reqs = use.requests || 0;
-      btn.textContent = cap == null
-        ? (reqs + ' запр.')
-        : (reqs + ' / ' + cap);
-      btn.classList.toggle('warn', cap != null && reqs >= cap);
-      btn.title = 'Расход по тарифу: запросов ' + reqs +
-        (cap != null ? ' из ' + cap : '') +
-        ' · токенов ' + fmtNum(use.tokens || 0);
-    } catch (e) {
-      btn.textContent = '—';
-    }
-  }
-
-  function usageCards(u) {
-    const card = (label, val) =>
-      '<div class="usage-card"><span>' + label + '</span><b>' + val + '</b></div>';
-    return '<div class="usage-grid">' +
-      card('Вход', fmtNum(u.tokens_in)) +
-      card('Выход', fmtNum(u.tokens_out)) +
-      card('Из кэша', fmtNum(u.tokens_cached)) +
-      card('Сообщений', u.messages) +
-      card('Средний вход', fmtNum(u.avg_in)) +
-      card('Занято', (u.percent || 0).toFixed(2) + '%') +
-      '</div>';
-  }
-
-  function limitsHtml(plan) {
-    const mine = String(plan || '').toLowerCase();
-    return '<h4 class="sec">Лимиты по тарифам (в % от окна модели)</h4>' +
-      '<div class="tariffs">' + TARIFFS.map(t => {
-        const isMine = t.name.toLowerCase() === mine;
-        return '<div class="tariff' + (isMine ? ' me' : '') + '">' +
-          '<div class="tariff-head"><b>' + t.name + '</b>' +
-          (isMine ? '<span class="badge">ваш тариф</span>' : '') + '</div>' +
-          '<div class="tariff-row"><span>Контекст</span><i><b style="width:' + t.ctx + '%"></b></i><u>' + t.ctx + '%</u></div>' +
-          '<div class="tariff-row"><span>Ответ</span><i><b style="width:' + t.out + '%"></b></i><u>' + t.out + '%</u></div>' +
-          '<div class="tariff-note">' + t.note + ' · файлов: ' + t.files + '</div>' +
-          '</div>';
-      }).join('') + '</div>';
-  }
-
   async function loadLimits() {
     try { state.limits = await api.get('/api/limits'); }
     catch (e) { state.limits = null; }
-  }
-
-  async function openContextMenu() {
-    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-    let u;
-    try { u = await api.get('/api/chats/' + state.currentChatId + '/usage'); }
-    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    state.usage = u;
-    const barW = Math.min(100, Math.max(0, u.percent || 0));
-    const lim = (state.limits && state.limits.limits) || {};
-    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
-    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
-    const cdef = Math.max(cmin, Math.min(cmax, Math.round((cmin + cmax) / 2 / 5) * 5));
-    const perDay = lim.compress_per_day;
-    openModal({
-      title: 'Контекст и проценты',
-      okText: 'Закрыть',
-      body: '<h4 class="sec">Контекст и проценты</h4>' +
-        usageCards(u) +
-        '<div class="usage-bar"><i style="width:' + barW + '%"></i></div>' +
-        '<p class="usage-note">Окно модели — ' + fmtNum(u.context_len) + ' токенов. ' +
-        'Резюме истории: ' + (u.summary_chars ? fmtNum(u.summary_chars) + ' симв.' : 'нет') + '. ' +
-        'Усилие: ' + escapeHtml(u.effort || 'recommended') + '.</p>' +
-        '<label style="margin-top:14px">Сжать историю до <b id="cmp-val">' + cdef + '</b>%</label>' +
-        '<input type="range" id="cmp-range" class="orange-range" min="' + cmin + '" max="' + cmax +
-        '" step="5" value="' + cdef + '" />' +
-        '<p class="usage-note">Ваш тариф («' + escapeHtml((state.limits && state.limits.plan) || 'free') +
-        '»): сжатие от ' + cmin + '% до ' + cmax + '%' +
-        (perDay != null ? ' · до ' + perDay + ' сжатий в день' : ' · без лимита сжатий') + '.</p>' +
-        '<p class="usage-note">Сжатие делает та же модель: старое сворачивается в краткое резюме.</p>' +
-        '<div style="margin-top:10px"><button class="chip-btn" id="cmp-go">' +
-        icon('sparkle') + 'Сжать историю</button></div>' +
-        limitsHtml(state.user && state.user.plan),
-      onOk: () => true,
-    });
-    const r = $('#cmp-range');
-    if (r) r.addEventListener('input', () => { $('#cmp-val').textContent = r.value; });
-    const go = $('#cmp-go');
-    if (go) go.addEventListener('click', async () => {
-      const p = parseInt(r.value, 10) || 50;
-      toast('Сжимаю историю…');
-      try {
-        await api.post('/api/chats/' + state.currentChatId + '/compress', { target_percent: p });
-        toast('История сжата');
-        $('#modal-root').innerHTML = '';
-        await loadUsage();
-      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
-    });
   }
 
   async function openLinks() {
@@ -1729,64 +1407,6 @@
     }));
     $$('[data-open-link]').forEach(b => b.addEventListener('click', () =>
       window.open('/?share=' + b.dataset.openLink, '_blank')));
-  }
-
-  async function openAdminStats() {
-    let s;
-    try { s = await api.get('/api/admin/stats'); }
-    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    const maxH = Math.max(1, ...s.hourly.map(h => h.messages));
-    const bars = s.hourly.length
-      ? s.hourly.map(h =>
-          '<div class="bar" title="' + escapeHtml(h.hour) + ' — ' + h.messages + ' сообщ.">' +
-          '<i style="height:' + Math.round((h.messages / maxH) * 100) + '%"></i>' +
-          '<span>' + escapeHtml((h.hour || '').slice(11, 13)) + '</span></div>').join('')
-      : '<p class="usage-note">Нет данных за 24 часа</p>';
-    const card = (label, val) =>
-      '<div class="usage-card"><span>' + label + '</span><b>' + val + '</b></div>';
-    openModal({
-      title: 'Статистика использования',
-      okText: 'Закрыть',
-      body: '<div class="usage-grid">' +
-        card('Пользователи', s.users) + card('Чаты', s.chats) +
-        card('Сообщения', s.messages) + card('Файлы', s.files) +
-        card('Токенов вход', fmtNum(s.tokens_in)) + card('Токенов выход', fmtNum(s.tokens_out)) +
-        card('Из кэша', fmtNum(s.tokens_cached)) +
-        card('Оценки', '👍 ' + s.rating_up + ' · 👎 ' + s.rating_down) +
-        '</div>' +
-        '<h4 class="sec">Активность за 24 часа</h4><div class="chart">' + bars + '</div>' +
-        '<h4 class="sec">Модели</h4>' +
-        (s.top_models.length
-          ? s.top_models.map(m => '<div class="kv"><span>' + escapeHtml(m.name) + '</span><b>' + m.count + '</b></div>').join('')
-          : '<p class="usage-note">—</p>'),
-      onOk: () => true,
-    });
-  }
-
-  async function openAdminChats() {
-    let items = [];
-    try { items = await api.get('/api/admin/chats?limit=200'); }
-    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    openModal({
-      title: 'Все чаты',
-      okText: 'Закрыть',
-      body: items.length
-        ? '<div class="link-list">' + items.map(c =>
-            '<div class="link-row"><div class="link-info"><b>' + escapeHtml(c.title) + '</b>' +
-            '<span>' + escapeHtml(c.owner) + ' · ' + c.messages + ' сообщ. · ' +
-            fmtNum(c.tokens_in) + '/' + fmtNum(c.tokens_out) + ' ток. · 👍' + c.rating_up +
-            ' 👎' + c.rating_down + '</span></div>' +
-            '<button class="chip-btn" data-open-chat="' + c.id + '">' + icon('link') + 'Открыть</button>' +
-            '</div>').join('') + '</div>'
-        : '<p>Чатов нет.</p>',
-      onOk: () => true,
-    });
-    $$('[data-open-chat]').forEach(b => b.addEventListener('click', async () => {
-      try {
-        const sh = await api.post('/api/admin/chats/' + b.dataset.openChat + '/share');
-        window.open('/?share=' + sh.share_token, '_blank');
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    }));
   }
 
   async function loadModelSets() {
@@ -1903,7 +1523,7 @@
         await api.post('/api/chats/' + state.currentChatId + '/compress',
           { target_percent: parseInt(cmp.value, 10) || 50 });
         toast('История сжата');
-        await loadUsage();
+
       } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
     });
   }
@@ -2091,7 +1711,7 @@
   }
 
   function openSaveMenu(p) {
-    const base = (p.title || 'chatstudio').replace(/[^\wа-яА-ЯёЁ\- ]+/g, '').trim().slice(0, 40) || 'chatstudio';
+    const base = (p.title || 'ai-ch').replace(/[^\wа-яА-ЯёЁ\- ]+/g, '').trim().slice(0, 40) || 'ai-ch';
     const items = [
       { id: 'txt', label: 'TXT', hint: 'обычный текст' },
       { id: 'md', label: 'Markdown', hint: '.md' },
@@ -2114,7 +1734,7 @@
         if (f === 'txt') downloadBlob(base + '.txt', new Blob([text], { type: 'text/plain;charset=utf-8' }));
         else if (f === 'md') downloadBlob(base + '.md', new Blob([text], { type: 'text/markdown;charset=utf-8' }));
         else if (f === 'docx') downloadBlob(base + '.docx', textToDocx(text));
-        else if (f === 'pdf') printPdf(p.title || 'ChatStudio', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
+        else if (f === 'pdf') printPdf(p.title || 'ai-ch', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
         else if (f === 'svg' && p.svg) downloadBlob(base + '.svg', new Blob([p.svg], { type: 'image/svg+xml' }));
         $('#modal-root').innerHTML = '';
         toast('Файл сохранён');
@@ -2159,101 +1779,6 @@
       const counts = document.querySelectorAll('.mem-count');
       counts.forEach((el) => { el.textContent = items.length ? String(items.length) : ''; });
     } catch (e) { state.memories = []; }
-  }
-
-  async function openMemory(filterMessageId) {
-    let items = [];
-    try { items = await api.get('/api/memory'); } catch (e) { items = []; }
-    if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
-    openModal({
-      title: filterMessageId ? 'Что запомнил по этому ответу' : 'Память о вас',
-      okText: 'Закрыть',
-      body: (items.length
-        ? '<div class="mem-list">' + items.map(m =>
-            '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
-            '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>').join('') +
-          '</div>'
-        : '<p>Пока ничего не записано.</p>') +
-        '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить</button>' +
-        (items.length && !filterMessageId
-          ? '<button class="chip-btn" id="mem-clear">' + icon('trash') + 'Очистить всё</button>' : '') +
-        '</div>',
-      onOk: () => true,
-    });
-    $$('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
-      try {
-        await api.del('/api/memory/' + b.dataset.delMem);
-        $('#modal-root').innerHTML = '';
-        await loadMemory();
-        openMemory(filterMessageId);
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    }));
-    const add = $('#mem-add');
-    if (add) add.addEventListener('click', () => {
-      openModal({
-        title: 'Добавить в память',
-        body: '<textarea id="mem-text" rows="4" placeholder="Что запомнить о вас?"></textarea>',
-        onOk: async (root) => {
-          const val = $('#mem-text', root).value.trim();
-          if (!val) return false;
-          await api.post('/api/memory', { content: val });
-          await loadMemory();
-          $('#modal-root').innerHTML = '';
-          openMemory();
-          toast('Записано в память');
-          return true;
-        },
-      });
-    });
-    const clr = $('#mem-clear');
-    if (clr) clr.addEventListener('click', async () => {
-      if (!confirm('Очистить всю память о вас?')) return;
-      try {
-        await api.del('/api/memory');
-        await loadMemory();
-        $('#modal-root').innerHTML = '';
-        openMemory();
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    });
-  }
-
-  async function openCouncil() {
-    let models = [];
-    try { models = await api.get('/api/council/models'); } catch (e) { models = []; }
-    if (models.length < 2) {
-      toast('Совет недоступен', 'error');
-      return;
-    }
-    openModal({
-      title: 'Совет моделей · бета',
-      okText: 'Запустить',
-      body: '<p class="usage-note">Все участники отвечают <b>в этом же чате</b> и параллельно. ' +
-        'Переключай ответы стрелками ‹ › под сообщением — последний вариант «Совет» ' +
-        'сводит их в один общий ответ.</p>' +
-        '<textarea id="council-q" rows="3" placeholder="Ваш вопрос для совета..."></textarea>' +
-        '<div class="council-models">' + models.map((m, i) =>
-          '<label class="council-row"><input type="checkbox" data-ms="' + m.id + '"' +
-          (i < 3 ? ' checked' : '') + '/><span><b>' + escapeHtml(m.name) + '</b>' +
-          (m.hint ? '<em>' + escapeHtml(m.hint) + '</em>' : '') + '</span></label>').join('') +
-        '</div>',
-      onOk: async (root) => {
-        const q = ($('#council-q', root) || {}).value ? $('#council-q', root).value.trim() : '';
-        if (!q) { toast('Введите вопрос', 'error'); return false; }
-        const ids = $$('[data-ms]', root).filter(c => c.checked).map(c => c.dataset.ms);
-        if (ids.length < 1) { toast('Выберите хотя бы одного участника', 'error'); return false; }
-        try {
-          const res = await api.post('/api/council', { question: q, personas: ids });
-          await loadChats();
-          await openChat(res.merge_chat_id);
-          toast('Совет запущен: ' + ids.length + ' участников');
-          return true;
-        } catch (e) {
-          toast('Ошибка: ' + e.message, 'error');
-          return false;
-        }
-      },
-    });
   }
 
   async function openMemory(filterMessageId) {
@@ -2332,245 +1857,6 @@
     });
   }
 
-  // ---------- models & status ----------
-  async function openModelStats() {
-    let stats = [];
-    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
-    const card = (s) => {
-      const total = (s.rating_up + s.rating_down) || 0;
-      const good = total ? Math.round((s.rating_up / total) * 100) : 0;
-      return '<div class="model-card">' +
-        '<div class="mc-head"><b>' + escapeHtml(s.name) + '</b>' +
-        '<em class="route">' + escapeHtml(s.route_type) + '</em></div>' +
-        '<div class="mc-model">' + escapeHtml(s.model || '—') + '</div>' +
-        '<div class="mc-bar"><i style="width:' + Math.min(100, s.share) + '%"></i></div>' +
-        '<div class="mc-rows">' +
-        '<span>Доля запросов: <b>' + s.share + '%</b></span>' +
-        '<span>Запросов: <b>' + s.messages + '</b></span>' +
-        '<span>Вход: <b>' + fmtNum(s.tokens_in) + '</b></span>' +
-        '<span>Выход: <b>' + fmtNum(s.tokens_out) + '</b></span>' +
-        '<span>Из кэша: <b>' + fmtNum(s.tokens_cached) + '</b></span>' +
-        '<span>Оценки: 👍 <b>' + s.rating_up + '</b> · 👎 <b>' + s.rating_down + '</b></span>' +
-        '<span>Входов: <b>' + s.active_entries + '/' + s.entries + '</b></span>' +
-        '</div>' +
-        (total ? '<div class="mc-good">Довольных ответами: <b>' + good + '%</b></div>' : '') +
-        '</div>';
-    };
-    openModal({
-      title: 'Модели и статус',
-      okText: 'Закрыть',
-      body: '<p class="usage-note">Общая статистика по всем моделям — доступна всем пользователям.</p>' +
-        (stats.length ? '<div class="model-grid">' + stats.map(card).join('') + '</div>'
-                      : '<p>Моделей пока нет.</p>'),
-      onOk: () => true,
-    });
-  }
-
-  // ---------- wall of posts ----------
-  function postCard(p, compact) {
-    const img = p.image_file_id
-      ? '<img class="post-img" src="/api/files/' + p.image_file_id + '/download?inline=1" alt="" loading="lazy" />'
-      : '';
-    return '<div class="post-card" data-post="' + p.id + '">' +
-      img +
-      '<div class="post-body">' +
-      '<div class="post-head"><b>' + escapeHtml(p.title || 'Пост') + '</b>' +
-      '<em>' + escapeHtml(p.author || '') + ' · ' + timeAgo(p.created_at) + '</em></div>' +
-      '<p class="post-preview">' + escapeHtml((p.preview || '').slice(0, compact ? 180 : 420)) + '</p>' +
-      '<div class="post-foot">' +
-      '<button class="pv" data-vote="1" data-id="' + p.id + '"' + (p.my_vote > 0 ? ' class="on"' : '') + '>👍 <b>' + p.likes + '</b></button>' +
-      '<button class="pv" data-vote="-1" data-id="' + p.id + '"' + (p.my_vote < 0 ? ' class="on"' : '') + '>👎 <b>' + p.dislikes + '</b></button>' +
-      '<span class="pv-ro">💬 <b>' + p.comments + '</b></span>' +
-      '<span class="pv-ro">👁 <b>' + p.views + '</b></span>' +
-      '<span class="pv-ro" data-open-post="' + p.id + '">Открыть</span>' +
-      (p.can_delete ? '<button class="pv del" data-del-post="' + p.id + '">Удалить</button>' : '') +
-      '</div></div></div>';
-  }
-
-  function bindPostCards(root) {
-    $$('[data-vote]', root).forEach(b => b.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = b.dataset.id;
-      const value = parseInt(b.dataset.vote, 10);
-      const cards = $$('.post-card[data-post="' + id + '"]');
-      const cur = cards[0] && cards[0].querySelector('.pv.on[data-vote]');
-      const next = cur && parseInt(cur.dataset.vote, 10) === value ? 0 : value;
-      try {
-        const upd = await api.post('/api/posts/' + id + '/vote', { value: next });
-        cards.forEach(card => card.outerHTML = postCard(upd, card.classList.contains('compact')));
-        bindPostCards(root);
-      } catch (err) { toast('Ошибка: ' + err.message, 'error'); }
-    }));
-    $$('[data-open-post]', root).forEach(b => b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openPost(b.dataset.openPost);
-    }));
-    $$('[data-del-post]', root).forEach(b => b.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!confirm('Удалить пост со стенки?')) return;
-      try {
-        await api.del('/api/posts/' + b.dataset.delPost);
-        toast('Пост удалён');
-        closeModal();
-        openWall();
-      } catch (err) { toast('Ошибка: ' + err.message, 'error'); }
-    }));
-  }
-
-  async function openWall() {
-    let items = [];
-    try { items = await api.get('/api/posts?limit=60'); } catch (e) { items = []; }
-    openModal({
-      title: 'Стенка постов',
-      okText: 'Закрыть',
-      body: '<div class="wall-top">' +
-        '<span class="usage-note">Публичные ответы. Лайки, дизлайки и комментарии — для авторизованных.</span>' +
-        '<button class="chip-btn" id="wall-publish">' + icon('share') + 'Опубликовать чат</button>' +
-        '</div>' +
-        (items.length ? '<div class="wall-grid">' + items.map(p => postCard(p, true)).join('') + '</div>'
-                      : '<p>Пока постов нет. Открой чат и нажми «Опубликовать».</p>'),
-      onOk: () => true,
-    });
-    bindPostCards($('#modal-root'));
-    const pub = $('#wall-publish');
-    if (pub) pub.addEventListener('click', () => publishCurrentChat());
-  }
-
-  async function openPost(id) {
-    let p;
-    try { p = await api.get('/api/posts/' + id); }
-    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    if (!p.chat_id) {
-      toast('Чат недоступен', 'error');
-      return;
-    }
-    // viewing a post counts a view and opens the full chat read-only
-    api.post('/api/posts/' + id + '/view').catch(() => {});
-    const chat = await api.get('/api/chats/' + p.chat_id).catch(() => null);
-    const token = chat && chat.share_token;
-    if (!token) { toast('Ссылка недоступна', 'error'); return; }
-    window.open('/?share=' + token, '_blank');
-  }
-
-  async function publishCurrentChat() {
-    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-    const chat = state.chats.find(c => c.id === state.currentChatId) || {};
-    openModal({
-      title: 'Опубликовать на стенке',
-      okText: 'Опубликовать',
-      body: '<p class="usage-note">Чат станет публичным (ссылка только для чтения), ' +
-        'а его последний ответ появится на стенке с превью.</p>' +
-        '<input id="post-title" value="' + escapeHtml(chat.title || 'Пост') + '" placeholder="Заголовок" />',
-      onOk: async (root) => {
-        const title = ($('#post-title', root) || {}).value ? $('#post-title', root).value.trim() : '';
-        try {
-          await api.post('/api/posts', { chat_id: state.currentChatId, title });
-          await loadWallCount();
-          toast('Опубликовано на стенке');
-          return true;
-        } catch (e) { toast('Ошибка: ' + e.message, 'error'); return false; }
-      },
-    });
-  }
-
-  async function loadWallCount() {
-    try {
-      const items = await api.get('/api/posts?limit=100');
-      const btn = $('#wall-btn');
-      const badge = btn && btn.querySelector('.wall-count');
-      if (badge) badge.textContent = items.length ? String(items.length) : '';
-    } catch (e) { /* noop */ }
-  }
-
-  // ---------- main page showcase: model + top post, both visible, refreshed ----------
-  let showcaseTimer = null;
-
-  function modelCardHtml(s) {
-    if (!s) return '<div class="show-empty">Модели недоступны</div>';
-    const total = (s.rating_up + s.rating_down) || 0;
-    const good = total ? Math.round((s.rating_up / total) * 100) : 0;
-    return '<div class="model-card compact">' +
-      '<div class="mc-head"><b>' + escapeHtml(s.name) + '</b>' +
-      '<em class="route">' + escapeHtml(s.route_type) + '</em></div>' +
-      '<div class="mc-model">' + escapeHtml(s.model || '—') + '</div>' +
-      '<div class="mc-bar"><i style="width:' + Math.min(100, s.share) + '%"></i></div>' +
-      '<div class="mc-rows"><span>Запросов: <b>' + s.messages + '</b></span>' +
-      '<span>Доля: <b>' + s.share + '%</b></span>' +
-      '<span>Вход/выход: <b>' + fmtNum(s.tokens_in) + ' / ' + fmtNum(s.tokens_out) + '</b></span>' +
-      '<span>Оценки: 👍 <b>' + s.rating_up + '</b> · 👎 <b>' + s.rating_down + '</b></span>' +
-      (total ? '<span>Довольных: <b>' + good + '%</b></span>' : '') +
-      '</div></div>';
-  }
-
-  async function startShowcase() {
-    stopShowcase();
-    let posts = [];
-    let stats = [];
-    try { posts = await api.get('/api/posts?limit=6'); } catch (e) { posts = []; }
-    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
-    const top = stats.length ? stats[Math.floor(Math.random() * stats.length)] : null;
-
-    const slides = (posts || []).slice(0, 5);
-    const track = slides.length
-      ? '<div class="carousel"><div class="car-track" id="car-track">' +
-        slides.map(p => '<div class="car-item">' +
-          postCard(Object.assign({}, p, { can_delete: false }), true) + '</div>').join('') +
-        '</div></div>'
-      : '<div class="show-empty">Постов пока нет — нажми «Опубликовать» в чате</div>';
-
-    const box = $('#empty-showcase');
-    if (!box) return;
-    box.innerHTML =
-      '<div class="show-col"><div class="show-label">Модель дня</div>' + modelCardHtml(top) + '</div>' +
-      '<div class="show-col"><div class="show-label">Стенка постов</div>' + track + '</div>';
-    bindPostCards(box);
-
-    if (slides.length > 1) {
-      let i = 0;
-      showcaseTimer = setInterval(() => {
-        const el = $('#car-track');
-        if (!el) { stopShowcase(); return; }
-        i = (i + 1) % slides.length;
-        el.style.transform = 'translateX(' + (-i * 100) + '%)';
-      }, 8000);
-    }
-  }
-
-  function stopShowcase() {
-    if (showcaseTimer) { clearInterval(showcaseTimer); showcaseTimer = null; }
-  }
-
-  // ---------- code-agent project panel ----------
-  function toggleProjectPanel(show) {
-    const panel = $('#project-panel');
-    if (!panel) return;
-    const visible = show === undefined ? panel.classList.contains('hidden') : !!show;
-    panel.classList.toggle('hidden', !visible);
-    if (visible) loadProject(true);
-  }
-
-  async function loadProject(resetLogs) {
-    if (!state.currentChatId) return;
-    try {
-      const data = await api.get('/api/chats/' + state.currentChatId + '/project');
-      const files = data.files || [];
-      const tree = $('#pp-tree');
-      tree.innerHTML = files.length
-        ? files.map(f =>
-            '<div class="pp-file" title="' + escapeHtml(f.path) + '">' + icon('file') +
-            '<span>' + escapeHtml(f.path) + '</span><em>' + formatSize(f.size) + '</em></div>').join('')
-        : '<div class="pp-empty">Файлов пока нет — попроси агента создать проект.</div>';
-      if (resetLogs) $('#pp-logs').textContent = '';
-    } catch (e) { /* noop */ }
-  }
-
-  function appendLog(text) {
-    const box = $('#pp-logs');
-    if (!box || !text) return;
-    box.textContent = (box.textContent + '\n' + text).slice(-20000);
-    box.scrollTop = box.scrollHeight;
-  }
-
   // ---------- pick from already uploaded files ----------
   async function openFilePicker() {
     if (!state.files || !state.files.length) {
@@ -2647,30 +1933,6 @@
   }
 
   // ---------- server load ----------
-  async function loadSystem() {
-    try { state.system = await api.get('/api/system'); }
-    catch (e) { /* noop */ }
-  }
-
-  function systemRowsHtml() {
-    const s = state.system;
-    if (!s) return '<p class="usage-note">Загрузка…</p>';
-    const row = (label, pct, note) =>
-      '<div class="sys-row"><span>' + label + '</span>' +
-      '<i><b style="width:' + Math.min(100, Math.max(0, pct)) + '%"></b></i>' +
-      '<u>' + pct + '%</u></div>' +
-      '<div class="sys-note">' + note + '</div>';
-    return row('Процессор', s.cpu, 'load average: ' + s.load.map(v => v.toFixed(2)).join(' · ') +
-        ' · ядер: ' + s.cpus) +
-      row('Оперативная память', s.ram_pct, 'занято ' + formatSize(s.ram_used) +
-        ' из ' + formatSize(s.ram_total)) +
-      row('Диск', s.disk_pct, 'занято ' + formatSize(s.disk_used) +
-        ' из ' + formatSize(s.disk_total) + ' · свободно ' + formatSize(s.disk_free)) +
-      '<p class="usage-note">Квота на пользователя: ' + formatSize(s.quota) +
-      '. При нехватке места самые старые файлы удаляются автоматически.</p>';
-  }
-
-  // ---------- plan limits ----------
   async function openLimits() {
     let data;
     try { data = await api.get('/api/limits/all'); }
@@ -2689,7 +1951,7 @@
       const allowed = data.allowed[plan] || [];
       const open = allowed.length === 0;
       return '<div class="lim-models">' + (data.models || []).map(m =>
-        '<label class="council-row"><input type="checkbox" data-mplan="' + plan +
+        '<label class="limit-model-row"><input type="checkbox" data-mplan="' + plan +
         '" data-mid="' + m.id + '"' + (open || allowed.indexOf(m.id) >= 0 ? ' checked' : '') +
         '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
         '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';
@@ -2704,8 +1966,7 @@
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в рублях. Настройка действует для всех действий: файлы, чаты, посты, ' +
-        'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
+        'деньги в рублях. Настройка применяется к файлам, хранилищу, запросам, стоимости тарифа и токенов.</p>' +
         (data.plans || ['free', 'pro']).map(block).join('') +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
@@ -2743,10 +2004,7 @@
     try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
     box.innerHTML = '<div class="link-list">' + rows.map(u =>
       '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
-      '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
-      ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
-      ' · файлы: ' + formatSize(u.storage) +
-      ' · тариф ' + u.plan_price + ' ₽ · расход ' + u.cost + ' ₽</span></div>' +
+      '<span>' + escapeHtml(u.email) + ' · тариф ' + escapeHtml(u.plan || 'free') + '</span></div>' +
       '<button class="chip-btn" data-uplan="' + u.id + '">' +
       (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
       '</div>';
@@ -2761,233 +2019,119 @@
     }));
   }
 
-  // ---------- GitHub for the code agent ----------
-  async function openGit() {
-    if (!state.currentChatId) { toast('Откройте проект', 'error'); return; }
-    let me = { connected: false, login: '' };
-    try { me = await api.get('/api/github/me'); } catch (e) { /* noop */ }
-    let st = { initialized: false };
-    try { st = await api.get('/api/github/chats/' + state.currentChatId + '/status'); }
-    catch (e) { /* noop */ }
+  // ---------- Sidebar and account navigation ----------
+
+  function applySidebar() {
+    const sidebar = $('#sidebar');
+    if (!sidebar) return;
+    const mobile = window.innerWidth <= 860;
+    if (mobile) sidebar.classList.remove('collapsed');
+    else {
+      sidebar.classList.toggle('collapsed', !!state.sidebarCollapsed);
+      sidebar.classList.remove('open');
+    }
+    const overlay = $('#sidebar-overlay');
+    if (overlay && !mobile) overlay.classList.remove('show');
+    const openButton = $('#sidebar-open-btn');
+    if (openButton) openButton.classList.toggle('hidden', mobile || !state.sidebarCollapsed);
+  }
+  function openMobileSidebar() {
+    const sidebar = $('#sidebar'), overlay = $('#sidebar-overlay');
+    if (sidebar) sidebar.classList.add('open');
+    if (overlay) overlay.classList.add('show');
+  }
+  function closeMobileSidebar() {
+    const sidebar = $('#sidebar'), overlay = $('#sidebar-overlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('show');
+  }
+  function bindSidebar() {
+    const newButton = $('#new-chat-btn');
+    if (newButton) newButton.addEventListener('click', async () => {
+      try { await newChat(); } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    const collapse = $('#collapse-btn');
+    if (collapse) collapse.addEventListener('click', () => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      localStorage.setItem('cs_sidebar', state.sidebarCollapsed ? '1' : '0');
+      applySidebar();
+    });
+    const openSidebar = $('#sidebar-open-btn');
+    if (openSidebar) openSidebar.addEventListener('click', () => {
+      state.sidebarCollapsed = false; localStorage.setItem('cs_sidebar', '0'); applySidebar();
+    });
+    const menu = $('#menu-btn');
+    if (menu) menu.addEventListener('click', () => {
+      const sidebar = $('#sidebar');
+      if (sidebar && sidebar.classList.contains('open')) closeMobileSidebar();
+      else openMobileSidebar();
+    });
+    const overlay = $('#sidebar-overlay');
+    if (overlay) overlay.addEventListener('click', closeMobileSidebar);
+    const search = $('#search-input');
+    if (search) search.addEventListener('input', () => {
+      state.query = search.value.trim();
+      loadChats().catch(e => toast('Ошибка поиска: ' + e.message, 'error'));
+    });
+    const settingsButton = $('#settings-btn');
+    if (settingsButton) settingsButton.addEventListener('click', openSettings);
+    const shareButton = $('#share-btn');
+    if (shareButton) shareButton.addEventListener('click', shareCurrentChat);
+    window.addEventListener('resize', applySidebar);
+    applySidebar();
+  }
+  async function openSettings() {
+    const user = state.user || {};
     openModal({
-      title: 'GitHub · ' + (st.initialized ? 'репозиторий готов' : 'не подключён'),
-      okText: 'Закрыть',
-      body:
-        '<h4 class="sec">Аккаунт</h4>' +
-        '<div class="lim-grid">' +
-        '<label class="lim-field"><span>Логин GitHub</span>' +
-        '<input id="gh-login" value="' + escapeHtml(me.login || '') + '" placeholder="username" /></label>' +
-        '<label class="lim-field"><span>Токен (repo)</span>' +
-        '<input id="gh-token" type="password" placeholder="' +
-        (me.connected ? '•••••••• (сохранён)' : 'ghp_...') + '" /></label>' +
-        '</div>' +
-        '<div class="settings-grid" style="margin-top:10px">' +
-        '<button class="chip-btn" id="gh-save">Сохранить доступ</button>' +
-        (me.connected ? '<button class="chip-btn danger" id="gh-forget">Отключить</button>' : '') +
-        '</div>' +
-        '<h4 class="sec">Проект</h4>' +
-        '<label class="lim-field"><span>Репозиторий (owner/repo)</span>' +
-        '<input id="gh-repo" placeholder="user/my-project" /></label>' +
-        '<div class="settings-grid" style="margin-top:10px">' +
-        '<button class="chip-btn" id="gh-init">init</button>' +
-        '<button class="chip-btn" id="gh-commit">commit</button>' +
-        '<button class="chip-btn" id="gh-push">push</button>' +
-        '<button class="chip-btn" id="gh-sync">commit + push</button>' +
-        '</div>' +
-        (st.initialized ? '<p class="usage-note">Ветка: <b>' + escapeHtml(st.branch || '') +
-          '</b> · remote: ' + escapeHtml(st.remote || '—') + '<br/>' +
-          escapeHtml((st.changes || 'нет изменений').slice(0, 400)) + '</p>' : '') +
-        '<pre class="pp-logs" id="gh-log" style="margin-top:10px"></pre>',
+      title: 'Настройки и профиль', okText: 'Закрыть',
+      body: '<div class="kv"><span>Аккаунт</span><b>' + escapeHtml(user.email || '') + '</b></div>' +
+        '<div class="kv"><span>Имя</span><b>' + escapeHtml(user.name || '—') + '</b></div>' +
+        '<div class="kv"><span>Тариф</span><b>' + escapeHtml(user.plan || 'free') + '</b></div>' +
+        '<div class="settings-grid" style="margin-top:12px">' +
+        '<button class="chip-btn" id="settings-memory">Память</button>' +
+        '<button class="chip-btn" id="settings-links">Мои ссылки</button>' +
+        '<button class="chip-btn" id="settings-logout">Выйти</button></div>',
       onOk: () => true,
     });
-    const log = (t) => { const el = $('#gh-log'); if (el) el.textContent = String(t || '').slice(-4000); };
-    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
-    on('#gh-save', async () => {
+    const memory = $('#settings-memory'), links = $('#settings-links'), logout = $('#settings-logout');
+    if (memory) memory.addEventListener('click', () => openMemory());
+    if (links) links.addEventListener('click', () => openLinks());
+    if (logout) logout.addEventListener('click', async () => {
       try {
-        await api.post('/api/github/me', {
-          login: $('#gh-login').value.trim(), token: $('#gh-token').value.trim(),
-        });
-        toast('Доступ сохранён');
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    });
-    on('#gh-forget', async () => {
-      try { await api.del('/api/github/me'); closeModal(); openGit(); }
-      catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    });
-    ['init', 'commit', 'push', 'sync'].forEach(act => {
-      on('#gh-' + act, async () => {
-        log('выполняется ' + act + '…');
-        try {
-          const res = await api.post('/api/github/chats/' + state.currentChatId + '/git', {
-            action: act,
-            repo: ($('#gh-repo') || {}).value ? $('#gh-repo').value.trim() : '',
-            message: 'Update from ChatStudio',
-          });
-          log((res.log || '') + (res.ok ? '\n✓ готово' : '\n✗ ошибка'));
-          loadProject(false);
-        } catch (e) { log('Ошибка: ' + e.message); }
-      });
+        await api.post('/api/auth/logout');
+        state.user = null; state.chats = []; state.tree = []; window.__csrf = '';
+        $('#modal-root').innerHTML = ''; showAuth();
+      } catch (e) { toast('Не удалось выйти: ' + e.message, 'error'); }
     });
   }
-
-  // ---------- main page: action tiles + rotating showcase ----------
-  const ACTION_TILES = [
-    {
-      id: 'essay', label: 'Написать сочинение', icon: 'pencil', color: '#f2c14e',
-      title: 'Сочинение',
-      questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
-        '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +
-        '3. Класс, курс или аудитория?\n4. Нужны аргументы из литературы или можно своими словами?\n\n' +
-        'Можно ответить одной строкой — остальное подберу сам.',
-    },
-    {
-      id: 'doc', label: 'Документ Word', icon: 'doc', color: '#2f6fb0',
-      title: 'Документ Word',
-      questions: '**Документ Word.** Чтобы получилось то, что нужно, уточните:\n\n' +
-        '1. Тема и назначение документа?\n2. Какие разделы должны быть?\n' +
-        '3. Примерный объём (страниц)?\n4. Нужен ли титульный лист и оглавление?\n5. Стиль оформления (деловой, научный, отчёт)?\n\n' +
-        'Ответьте одной строкой — оформлю в лучшем виде.',
-    },
-    {
-      id: 'slides', label: 'Презентация', icon: 'slides', color: '#e8834f',
-      title: 'Презентация',
-      questions: '**Презентация.** Расскажите:\n\n' +
-        '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
-        '3. Сколько слайдов?\n4. Нужны ли графики и цифры?\n5. Стиль: Apple, Fluent, Glass, Neural, Minimal?\n\n' +
-        'Достаточно одной строки.',
-    },
-    {
-      id: 'sheet', label: 'Таблица Excel', icon: 'sheet', color: '#2f8f6f',
-      title: 'Таблица Excel',
-      questions: '**Таблица Excel.** Уточните:\n\n' +
-        '1. Какие данные и по какой теме?\n2. Какие колонки нужны?\n' +
-        '3. Нужны ли формулы, итоги и графики?\n4. Данные дадите вы или их надо придумать/собрать?\n\n' +
-        'Ответьте одной строкой.',
-    },
-    {
-      id: 'code', label: 'Написать код', icon: 'terminal', color: '#7c5cbf',
-      title: 'Код',
-      questions: '**Код.** Что нужно написать?\n\n' +
-        '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
-        '3. Нужны ли тесты и комментарии?\n\n' +
-        'Или переключитесь в режим **Код-агента** — там будет полноценный проект с файлами.',
-    },
-    {
-      id: 'draw', label: 'Нарисовать схему', icon: 'sparkle', color: '#c0563f',
-      title: 'Схема',
-      questions: '**Схема.** Опишите:\n\n' +
-        '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
-        '2. Какие элементы и связи между ними?\n3. Нужны ли размеры и подписи?\n\n' +
-        'Нарисую в SVG — можно будет скачать.',
-    },
-    { id: 'image', label: 'Сделать график', icon: 'chart', color: '#0e7c9b', title: 'График',
-      questions: '**График.** Какие данные построить? Пришлите числа или опишите, откуда их взять, и укажите тип графика (линия, столбцы, круговая).' },
-    { id: 'research', label: 'Найти в интернете', icon: 'globe', color: '#3f7a3f', title: 'Поиск',
-      questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
-    { id: 'explain', label: 'Объяснить простыми словами', icon: 'brain', color: '#a03f6f', title: 'Объяснение',
-      questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
-    { id: 'plan', label: 'Составить план', icon: 'file', color: '#8a4a2f', title: 'План',
-      questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
-    { id: 'translate', label: 'Перевести', icon: 'globe', color: '#4a5568', title: 'Перевод',
-      questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
-    { id: 'wall', label: 'Посмотреть посты', icon: 'globe', color: '#b8862f', action: 'wall' },
-  ];
-
-  // inline icon paths for the tiles — no sprite lookup, so they always render
-  const TILE_PATHS = {
-    pencil: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>',
-    doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
-    slides: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/><path d="M7 8h6M7 11h4"/>',
-    sheet: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/>',
-    terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
-    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/>',
-    chart: '<path d="M4 20V4M4 20h16"/><path d="M8 17v-6M12.5 17V8M17 17v-9"/>',
-    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
-    brain: '<path d="M9.6 4.6A2.6 2.6 0 0 0 7 7.2v.4A2.8 2.8 0 0 0 5.3 12.4 2.8 2.8 0 0 0 7 17.1v.3a2.6 2.6 0 0 0 5.2 0V5.9a2.6 2.6 0 0 0-2.6-1.3Z"/><path d="M14.4 4.6A2.6 2.6 0 0 1 17 7.2v.4a2.8 2.8 0 0 1 1.7 4.8A2.8 2.8 0 0 1 17 17.1v.3a2.6 2.6 0 0 1-5.2 0"/><path d="M12 4.6v15"/>',
-    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
-    link: '<path d="M9.5 14.5l5-5"/><path d="M11 7l1.5-1.5a3.5 3.5 0 1 1 5 5L16 12M13 17l-1.5 1.5a3.5 3.5 0 1 1-5-5L8 12"/>',
-  };
-
-  function tileIcon(name) {
-    const path = TILE_PATHS[name] || TILE_PATHS.sparkle;
-    return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffffff" ' +
-      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
-  }
-
-  function tileHtml(t) {
-    return '<button class="tile' + (t.locked ? ' locked' : '') + '" data-tile="' + t.id +
-      '" style="--tile:' + t.color + '">' +
-      '<span class="tile-ico">' + tileIcon(t.icon) + '</span>' +
-      '<span class="tile-label">' + escapeHtml(t.label) + '</span>' +
-      (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</button>';
-  }
-
-  function renderTiles() {
-    const box = $('#tiles');
-    if (!box) return;
-    const picks = [];
-    const pool = ACTION_TILES.slice();
-    for (let i = 0; i < 6 && pool.length; i++) {
-      picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-    }
-    box.innerHTML = picks.map(tileHtml).join('');
-  }
-
-  function bindTiles() {
-    $$('[data-tile]').forEach(b => b.addEventListener('click', () => {
-      const t = ACTION_TILES.find(x => x.id === b.dataset.tile);
-      if (!t) return;
-      if (t.locked) {
-        toast('«' + t.label + '» появится в ближайшем обновлении — уже пишем', 'error');
-        return;
-      }
-      useTile(t);
-    }));
-  }
-
-  async function useTile(t) {
-    if (t.action === 'wall') { openWall(); return; }
-    let chat;
+  async function shareCurrentChat() {
+    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
     try {
-      chat = await api.post('/api/chats', { title: t.title || t.label });
-    } catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    state.chats.unshift(chat);
-    renderChatList();
-    await openChat(chat.id);
-    if (t.questions) {
-      // Send the tile prompt through the normal AI flow so the model actually processes it
-      try {
-        const chat2 = await api.post('/api/chats/' + chat.id + '/messages', {
-          content: t.questions,
-          parent_message_id: null,
-        });
-        // Replace tree with real messages
-        state.tree = await api.get('/api/chats/' + chat.id + '/messages');
-        renderMessages();
-        toast('Получаю ответы…');
-      } catch (e) {
-        toast('Ошибка: ' + e.message, 'error');
-        // Still focus the input for manual use
-        $('#input').focus();
-      }
-    } else {
-      $('#input').focus();
-    }
+      const res = await api.post('/api/chats/' + state.currentChatId + '/share');
+      const url = location.origin + (res.url || ('/?share=' + res.share_token));
+      if (await copyText(url)) toast('Ссылка на чат скопирована');
+      else openModal({
+        title: 'Ссылка на чат', okText: 'Закрыть',
+        body: '<input id="share-url" readonly value="' + escapeHtml(url) + '" />',
+        onOk: () => true,
+      });
+    } catch (e) { toast('Не удалось поделиться: ' + e.message, 'error'); }
   }
-
-  function rotateTiles() {
-    const box = $('#tiles');
-    if (!box) return;
-    box.classList.add('swap');
-    setTimeout(() => {
-      renderTiles();
-      bindTiles();
-      box.classList.remove('swap');
-    }, 420);
-  }
-
-  function toastSoon(what) {
-    toast('🔒 ' + what + ' скоро появится — уже в работе. Пока доступен обычный чат.', 'error');
+  async function showPublicView(token) {
+    try {
+      const data = await api.get('/api/public/chats/' + encodeURIComponent(token));
+      state.readonly = true; state.publicToken = token; state.user = null;
+      state.currentChatId = null; state.tree = data.messages || [];
+      showApp(); closeMobileSidebar();
+      const sidebar = $('#sidebar'); if (sidebar) sidebar.classList.add('collapsed');
+      const title = $('#chat-title'); if (title) title.textContent = data.title || 'Чат';
+      const who = $('#who'); if (who) who.textContent = data.author ? 'Общий доступ · ' + data.author : 'Общий доступ';
+      const composer = $('#composer'); if (composer) composer.classList.add('hidden');
+      const files = $('#files-panel'); if (files) files.classList.add('hidden');
+      const share = $('#share-btn'); if (share) share.classList.add('hidden');
+      const fileButton = $('#toggle-files-btn'); if (fileButton) fileButton.classList.add('hidden');
+      renderMessages();
+    } catch (e) { showAuth(); toast('Ссылка недоступна: ' + e.message, 'error'); }
   }
 
   // ---------- theme toggle ----------
@@ -3032,12 +2176,11 @@
       await loadFiles();
       await loadModelSets();
       await loadMemory();
-      await loadWallCount();
+
       await loadLimits();
-      await loadUsage();
+
       renderMessages();
-      await loadSystem();
-      setInterval(loadSystem, 20000);
+
     } catch (e) {
       console.error('Boot error:', e.message, e.stack);
       toast('Ошибка загрузки: ' + e.message, 'error');

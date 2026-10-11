@@ -52,9 +52,7 @@ class ChatOut(ORMModel):
     updated_at: datetime
     is_public: bool = False
     share_token: str | None = None
-    mode: str = "chat"
     model_name: str | None = None
-    bundle_id: str | None = None
 
 
 class ChatCreate(BaseModel):
@@ -99,7 +97,6 @@ class MessageOut(ORMModel):
     suggestions: list[str] = Field(default_factory=list)
     attachments: list[AttachmentOut] = Field(default_factory=list)
     sources: list[dict] = Field(default_factory=list)
-    tool_runs: list[dict] = Field(default_factory=list)
     memories: list[str] = Field(default_factory=list)
     children: list["MessageOut"] = Field(default_factory=list)
 
@@ -200,70 +197,6 @@ class ModelStatOut(BaseModel):
     rating_up: int = 0
     rating_down: int = 0
     share: float = 0.0
-
-
-# --- Wall of posts ---
-class PostIn(BaseModel):
-    chat_id: str | None = None
-    message_id: str | None = None
-    title: str = ""
-
-
-class PostVoteIn(BaseModel):
-    value: int = 0
-
-
-class PostCommentIn(BaseModel):
-    text: str
-
-
-class PostCommentOut(ORMModel):
-    id: str
-    post_id: str
-    user_id: str
-    author: str = ""
-    text: str
-    created_at: datetime
-
-
-class PostOut(BaseModel):
-    id: str
-    user_id: str
-    author: str = ""
-    title: str
-    preview: str
-    chat_id: str | None = None
-    message_id: str | None = None
-    image_file_id: str | None = None
-    views: int = 0
-    likes: int = 0
-    dislikes: int = 0
-    comments: int = 0
-    my_vote: int = 0
-    can_delete: bool = False
-    created_at: datetime
-
-
-class PostDetailOut(PostOut):
-    comment_list: list[PostCommentOut] = Field(default_factory=list)
-
-
-# --- Council of models (beta) ---
-class CouncilIn(BaseModel):
-    question: str
-    personas: list[str] = Field(default_factory=list)
-
-
-class CouncilOut(BaseModel):
-    bundle_id: str
-    merge_chat_id: str
-    chat_ids: list[str] = Field(default_factory=list)
-
-
-class CouncilModelOut(BaseModel):
-    id: str
-    name: str
-    hint: str = ""
 
 
 class PublicChatOut(BaseModel):

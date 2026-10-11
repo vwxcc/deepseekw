@@ -58,9 +58,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "summary": "TEXT",
         "summary_upto": "VARCHAR(36)",
         "effort": "VARCHAR(16) DEFAULT 'recommended'",
-        "mode": "VARCHAR(16) DEFAULT 'chat'",
         "model_name": "VARCHAR(200)",
-        "bundle_id": "VARCHAR(36)",
         "compress_count": "INTEGER DEFAULT 0",
         "compress_date": "VARCHAR(10)",
     },
@@ -68,7 +66,6 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "tokens_cached": "INTEGER DEFAULT 0",
         "rating": "INTEGER DEFAULT 0",
         "sources": "TEXT",
-        "tool_runs": "TEXT",
         "thinking": "TEXT",
     },
     "memories": {
@@ -88,7 +85,5 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "users": {
         "avatar": "INTEGER DEFAULT 0",
-        "github_user": "VARCHAR(120)",
-        "github_token": "VARCHAR(255)",
     },
 }

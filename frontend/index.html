@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>ChatStudio</title>
+  <title>ai-ch</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=37" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=38" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -56,7 +56,7 @@
   <div id="auth-screen" class="screen">
     <div class="auth-card">
       <div class="auth-logo"><svg class="ic ic-lg"><use href="#i-logo"/></svg></div>
-      <h1>ChatStudio</h1>
+      <h1>ai-ch</h1>
       <p class="sub">Приватное AI-пространство</p>
 
       <form id="login-form">
@@ -89,24 +89,16 @@
 
     <aside id="sidebar">
       <div class="side-head">
-        <span class="brand"><svg class="ic"><use href="#i-logo"/></svg> ChatStudio</span>
+        <span class="brand"><svg class="ic"><use href="#i-logo"/></svg> ai-ch</span>
         <button class="icon-btn" id="collapse-btn" title="Свернуть панель"><svg class="ic"><use href="#i-panel"/></svg></button>
       </div>
 
       <div class="side-top">
-        <div class="side-row three">
+        <div class="side-row">
           <button class="new-chat" id="new-chat-btn" title="Новый чат">
             <svg class="ic"><use href="#i-plus"/></svg><span>Новый</span>
           </button>
-          <button class="new-chat code-mode locked" id="new-code-btn" title="Код-агент — скоро">
-            <svg class="ic"><use href="#i-terminal"/></svg><span>Код</span>
-            <svg class="ic lock"><use href="#i-lock"/></svg>
-          </button>
-          <button class="new-chat council-mode locked" id="new-council-btn" title="Консилиум — скоро">
-            <svg class="ic"><use href="#i-sparkle"/></svg><span>Консилиум</span>
-            <svg class="ic lock"><use href="#i-lock"/></svg>
-          </button>
-        </div>
+          </div>
         <div class="search-box">
           <svg class="ic"><use href="#i-search"/></svg>
           <input id="search-input" type="search" placeholder="Поиск по чатам" />
@@ -120,8 +112,6 @@
 
       <div class="side-foot">
         <div id="theme-toggle" class="theme-toggle" title="Сменить тему"><svg class="ic"><use href="#i-sun"/></svg></div>
-        <button class="side-item" id="models-btn"><svg class="ic"><use href="#i-chart"/></svg><span>Модели и статус</span></button>
-        <button class="side-item" id="wall-btn"><svg class="ic"><use href="#i-globe-box"/></svg><span>Стенка постов</span><em class="wall-count"></em></button>
         <button class="side-item" id="settings-btn"><svg class="ic"><use href="#i-user"/></svg><span id="who">Настройки и профиль</span><em class="mem-count"></em></button>
       </div>
     </aside>
@@ -133,27 +123,13 @@
           <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-menu"/></svg></button>
           <button class="icon-btn small" id="toggle-files-btn" title="Файлы"><svg class="ic"><use href="#i-folder"/></svg></button>
         </div>
-        <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
+        <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ai-ch</div>
         <div class="head-right">
-          <button class="icon-btn hidden" id="project-btn" title="Панель проекта"><svg class="ic"><use href="#i-terminal"/></svg></button>
-          <button class="icon-btn" id="publish-btn" title="Опубликовать чат на стенке"><svg class="ic"><use href="#i-share"/></svg><span class="pub-label">Опубликовать</span></button>
           <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-link"/></svg><span class="pub-label">Поделиться</span></button>
         </div>
       </header>
 
       <div id="messages"></div>
-
-      <aside id="project-panel" class="project-panel hidden">
-        <div class="pp-head">
-          <b>Проект</b>
-          <button class="icon-btn" id="pp-git" title="GitHub"><svg class="ic"><use href="#i-link"/></svg></button>
-          <button class="icon-btn" id="pp-refresh" title="Обновить"><svg class="ic"><use href="#i-refresh"/></svg></button>
-          <button class="icon-btn" id="pp-close" title="Скрыть"><svg class="ic"><use href="#i-x"/></svg></button>
-        </div>
-        <div class="pp-tree" id="pp-tree"></div>
-        <div class="pp-logs-head">Логи выполнения</div>
-        <pre class="pp-logs" id="pp-logs"></pre>
-      </aside>
 
       <div id="composer">
         <div class="composer-inner">
@@ -166,13 +142,11 @@
             <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">
               <svg class="ic"><use href="#i-brain"/></svg><b class="mem-count"></b>
             </button>
-            <button class="chip-btn context" id="context-btn" title="Расход по тарифу">—</button>
             <button class="model-btn" id="model-btn" title="Модель и параметры"><svg class="ic"><use href="#i-sparkle"/></svg><span id="model-btn-label">Модель</span></button>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
           </div>
         </div>
-        <p class="composer-hint">ChatStudio всегда прав.</p>
       </div>
     </main>
 
@@ -212,6 +186,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=37"></script>
+  <script src="/assets/js/app.js?v=40"></script>
 </body>
 </html>

@@ -56,8 +56,6 @@ async def _handle_stream(websocket: WebSocket, chat_id: str, user_text: str,
             model_set_id=model_set_id,
             effort=effort or chat.effort,
             user_id=user_id,
-            mode=chat.mode or "chat",
-            project=chat.id if chat.mode == "code" else None,
             user_text=user_text,
         )
 

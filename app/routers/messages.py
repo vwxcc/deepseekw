@@ -103,20 +103,6 @@ async def _stream_job(
                     items = []
                 if items:
                     yield _sse("memory", {"items": items})
-            elif kind == "tool_start":
-                try:
-                    start = json.loads(payload)
-                except Exception:
-                    start = None
-                if start:
-                    yield _sse("tool_start", start)
-            elif kind == "tool":
-                try:
-                    run = json.loads(payload)
-                except Exception:
-                    run = None
-                if run:
-                    yield _sse("tool", run)
             elif kind == "step":
                 try:
                     meta = json.loads(payload)
@@ -282,8 +268,7 @@ async def _spawn(
     user_id: str | None = None,
     effort: str | None = None,
 ) -> StreamingResponse:
-    mode = chat.mode or "chat"
-    system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
+    system_prompt = prompts.MAIN_SYSTEM
     history_messages, trimmed = _trim_history(
         history_messages, settings.model_context_len
     )
@@ -318,8 +303,6 @@ async def _spawn(
         message_id=assistant.id,
         effort=effort or chat.effort,
         user_id=user_id,
-        mode=mode,
-        project=chat.id if mode == "code" else None,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -405,9 +388,7 @@ async def send_message(
     history_messages, trimmed = _trim_history(
         history_messages, await _model_context(db, data.model_set_id)
     )
-
-    code_mode = (chat.mode or "chat") == "code"
-    system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
+    system_prompt = prompts.MAIN_SYSTEM
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     if trimmed:
         system_prompt += prompts.CONTEXT_LIMIT_NOTE
@@ -449,11 +430,7 @@ async def send_message(
         model_set_id=data.model_set_id,
         effort=chat.effort,
         user_id=user.id,
-        mode=chat.mode or "chat",
-        project=chat.id if code_mode else None,
         user_text=content,
-        max_steps=int((await get_limits(db, user.plan or "free")).get("agent_steps") or 0)
-        or None,
     )
     await ai_router.enqueue(job)
     total = await db.scalar(
@@ -616,32 +593,6 @@ async def seed_chat(
     await db.commit()
     await db.refresh(msg)
     return message_out(msg)
-
-
-@router.get("/chats/{chat_id}/project")
-async def chat_project(
-    chat: Chat = Depends(get_owned_chat), db: AsyncSession = Depends(get_db)
-) -> dict:
-    """File tree of a code-agent project (lives in the shared sandbox directory)."""
-    root = settings.sandbox_path / "projects" / chat.id
-    files: list[dict] = []
-    if root.is_dir():
-        for path in sorted(root.rglob("*")):
-            if not path.is_file():
-                continue
-            rel = path.relative_to(root)
-            if any(part in {"__pycache__", ".git"} for part in rel.parts):
-                continue
-            try:
-                size = path.stat().st_size
-            except OSError:
-                continue
-            files.append(
-                {"path": str(rel).replace("\\", "/"), "name": path.name, "size": size}
-            )
-            if len(files) >= 400:
-                break
-    return {"chat_id": chat.id, "mode": chat.mode or "chat", "files": files}
 
 
 @router.get("/chats/{chat_id}/usage", response_model=UsageOut)

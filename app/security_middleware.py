@@ -14,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
 
-log = logging.getLogger("chatstudio.security")
+log = logging.getLogger("ai-ch.security")
 
 # ============================================================
 # Security Headers

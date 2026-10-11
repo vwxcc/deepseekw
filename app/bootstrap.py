@@ -31,11 +31,20 @@ async def _purge_expired_sessions(db: AsyncSession) -> None:
 
 async def _seed_admin(db: AsyncSession) -> None:
     """Ensure there is an administrator without promoting an arbitrary account."""
+    email = (settings.admin_email or "admin@ai-ch.local").strip().lower()
+    if settings.admin_password:
+        configured_admin = await db.scalar(
+            select(User).where(User.email == email, User.is_admin.is_(True))
+        )
+        if configured_admin is not None:
+            configured_admin.password_hash = hash_password(settings.admin_password)
+            configured_admin.plan = "max"
+            return
+
     admin_exists = await db.scalar(select(User.id).where(User.is_admin.is_(True)).limit(1))
     if admin_exists:
         return
 
-    email = (settings.admin_email or "admin@ai-ch.local").strip().lower()
     result = await db.execute(select(User).where(User.email == email))
     existing = result.scalar_one_or_none()
     if existing is not None:

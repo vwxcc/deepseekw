@@ -490,7 +490,6 @@
     readonly: false,
     publicToken: null,
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
-    theme: localStorage.getItem('cs_theme') || 'auto', // 'auto' | 'light' | 'dark'
   };
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
@@ -1105,6 +1104,21 @@
               n.draft = '';
             }
             renderMessages();
+            if (n && n.role === 'assistant' && !(n.suggestions && n.suggestions.length) && !n.suggestionsLoading) {
+              n.suggestionsLoading = true;
+              api.post('/api/messages/' + encodeURIComponent(data.message_id) + '/suggestions', {})
+                .then(result => {
+                  const current = findNode(state.tree, data.message_id);
+                  if (!current) return;
+                  current.suggestions = result.suggestions || [];
+                  current.suggestionsLoading = false;
+                  renderMessages();
+                })
+                .catch(() => {
+                  const current = findNode(state.tree, data.message_id);
+                  if (current) current.suggestionsLoading = false;
+                });
+            }
 
           } else if (ev === 'error') {
             const n = findNode(state.tree, data.message_id);
@@ -1348,6 +1362,8 @@
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());
+    const memoryButton = $('#mem-quick-btn');
+    if (memoryButton) memoryButton.addEventListener('click', () => openMemory());
     $('#file-input').addEventListener('change', async (e) => {
       const files = Array.from(e.target.files || []);
       if (files.length) await uploadFiles(files);
@@ -1779,7 +1795,25 @@
   }
 
   // ---------- bind file search/filter ----------
+  function setFilesPanelOpen(open) {
+    const panel = $('#files-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !open);
+    const toggle = $('#toggle-files-btn');
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
   function bindFileControls() {
+    const filesToggle = $('#toggle-files-btn');
+    if (filesToggle) filesToggle.addEventListener('click', async () => {
+      const panel = $('#files-panel');
+      const opening = !!panel && panel.classList.contains('hidden');
+      setFilesPanelOpen(opening);
+      if (opening) await loadFiles();
+    });
+    const filesClose = $('#close-files-btn');
+    if (filesClose) filesClose.addEventListener('click', () => setFilesPanelOpen(false));
+
     const search = $('#file-search');
     if (search) {
       search.addEventListener('input', () => renderFileList());
@@ -1928,87 +1962,179 @@
   async function openModelChains() {
     let all;
     try { all = await api.get('/api/admin/model-sets'); }
-    catch (e) { toast('Не удалось загрузить цепочки: ' + e.message, 'error'); return; }
-    const labels = { MAIN: 'Основной ответ', TITLE: 'Заголовок чата', CONTINUE: 'Продолжение ответа' };
-    const wanted = { MAIN: 'qwen-main', TITLE: 'qwen-title', CONTINUE: 'qwen-continue' };
-    const sets = all.filter(s => labels[s.route_type] && s.slug === wanted[s.route_type] && !s.is_router);
+    catch (e) { toast('Не удалось загрузить модели: ' + e.message, 'error'); return; }
+
+    const labels = {
+      MAIN: 'Основной ответ',
+      TITLE: 'Заголовок чата',
+      CONTINUE: 'Продолжение ответа',
+      SUGGESTIONS: 'Предлагаемые вопросы',
+      SUMMARY: 'Сжатие истории / summary',
+      FILE_ANALYSIS: 'Анализ файлов'
+    };
+    const routes = Object.keys(labels);
+    const sets = (all || []).filter(s => !s.is_router);
+    const missingRoutes = routes.filter(route => !sets.some(set => set.route_type === route));
+    const routeName = route => labels[route] || route;
+    const escapeValue = value => escapeHtml(value == null ? '' : value);
+
     const entryHtml = (set, entry) => {
       const eid = entry.id;
-      const text = (key, value, type, hint) => '<label class="lim-field"><span>' + escapeHtml(hint)
-        + '</span><input type="' + (type || 'text') + '" data-chain-entry="' + eid + '" data-chain-field="' + key
-        + '" value="' + escapeHtml(value == null ? '' : value) + '" placeholder="' + (key === 'api_key' ? (entry.has_api_key ? 'Ключ сохранён; пустое поле оставит его' : 'API-ключ') : '') + '"/></label>';
-      return '<div style="border:1px solid var(--border,#ddd);border-radius:10px;padding:10px;margin:8px 0">'
-        + '<b>Резерв №</b> ' + text('position', entry.position, 'number', 'Порядок')
-        + '<div class="lim-grid">' + text('model', entry.model, 'text', 'Имя модели')
-        + text('base_url', entry.base_url, 'url', 'Base URL')
-        + text('api_key', '', 'password', 'API-ключ')
-        + text('temperature', entry.temperature, 'number', 'Temperature')
-        + text('max_tokens', entry.max_tokens, 'number', 'Max tokens')
-        + text('context_len', entry.context_len || 0, 'number', 'Контекст, токены (0 = общий)')
-        + text('timeout', entry.timeout, 'number', 'Timeout, сек')
-        + '<label class="lim-field"><span>Активна</span><input type="checkbox" data-chain-entry="' + eid + '" data-chain-field="is_active"'
-        + (entry.is_active ? ' checked' : '') + '/></label></div>'
-        + '<button class="chip-btn" data-delete-entry="' + eid + '" data-delete-set="' + set.id + '">Удалить модель</button></div>';
+      const field = (key, value, type, label, extra) =>
+        '<label class="lim-field"><span>' + escapeHtml(label) + '</span><input type="' + (type || 'text') +
+        '" data-chain-entry="' + eid + '" data-chain-field="' + key + '"' +
+        (extra || '') + ' value="' + escapeValue(value) + '"' +
+        (key === 'api_key' ? ' placeholder="' + (entry.has_api_key ? 'Ключ сохранён; пустое поле оставит его' : 'API-ключ') + '"' : '') +
+        '/></label>';
+      return '<div class="model-editor-entry" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin:10px 0">' +
+        '<b>Модель / резерв</b><div class="lim-grid" style="margin-top:8px">' +
+        field('position', entry.position, 'number', 'Порядок (0 — первый)') +
+        field('provider', entry.provider || 'openai', 'text', 'Формат API / provider') +
+        field('model', entry.model, 'text', 'Model ID') +
+        field('base_url', entry.base_url, 'url', 'Base URL') +
+        field('api_key', '', 'password', 'API-ключ') +
+        field('context_len', entry.context_len || 0, 'number', 'Контекст, токены (0 — общий)') +
+        field('max_tokens', entry.max_tokens, 'number', 'Максимум выходных токенов') +
+        field('temperature', entry.temperature, 'number', 'Temperature') +
+        field('timeout', entry.timeout, 'number', 'Таймаут, сек') +
+        field('free_token_limit', entry.free_token_limit, 'number', 'Лимит токенов Free / окно', ' placeholder="∞"') +
+        field('pro_token_limit', entry.pro_token_limit, 'number', 'Лимит токенов Pro/Max / окно', ' placeholder="∞"') +
+        field('quota_reset_hours', entry.quota_reset_hours || 6, 'number', 'Сброс квоты, часов') +
+        field('max_concurrency', entry.max_concurrency || 1, 'number', 'Макс. одновременных запросов') +
+        field('price_in', entry.price_in || 0, 'number', 'Цена input за 1M токенов') +
+        field('price_out', entry.price_out || 0, 'number', 'Цена output за 1M токенов') +
+        field('price_cache', entry.price_cache || 0, 'number', 'Цена cache за 1M токенов') +
+        '<label class="lim-field"><span>Модель включена</span><input type="checkbox" data-chain-entry="' + eid +
+        '" data-chain-field="is_active"' + (entry.is_active ? ' checked' : '') + '/></label>' +
+        '</div><button class="chip-btn" data-delete-entry="' + eid + '" data-delete-set="' + set.id + '">Удалить из цепочки</button></div>';
     };
+
+    const renderSet = set => {
+      const entries = (set.entries || []).slice().sort((a,b) => Number(a.position) - Number(b.position));
+      return '<section style="border:1px solid var(--border);border-radius:12px;padding:12px;margin:14px 0">' +
+        '<h4 class="sec">' + escapeHtml(routeName(set.route_type)) + '</h4>' +
+        '<div class="lim-grid">' +
+        '<label class="lim-field"><span>Название цепочки / задачи</span><input data-set-name="' + set.id + '" value="' + escapeValue(set.name) + '"/></label>' +
+        '<label class="lim-field"><span>Slug</span><input value="' + escapeValue(set.slug) + '" disabled/></label>' +
+        '<label class="lim-field"><span>Цепочка включена</span><input type="checkbox" data-set-active="' + set.id + '"' + (set.is_active ? ' checked' : '') + '/></label>' +
+        '</div>' +
+        (entries.length ? entries.map(e => entryHtml(set,e)).join('') : '<p class="usage-note">Пока нет моделей. Добавь первую ниже.</p>') +
+        '<h5 style="margin:14px 0 6px">Добавить модель в задачу</h5>' +
+        '<div class="lim-grid">' +
+        '<label class="lim-field"><span>Model ID</span><input data-new-model="' + set.id + '" placeholder="точный model-id провайдера"/></label>' +
+        '<label class="lim-field"><span>Base URL</span><input data-new-base="' + set.id + '" type="url" value="' + escapeValue((entries[0] || {}).base_url || '') + '"/></label>' +
+        '<label class="lim-field"><span>API-ключ</span><input data-new-key="' + set.id + '" type="password" placeholder="ключ именно этого API"/></label>' +
+        '<label class="lim-field"><span>Формат API</span><input data-new-provider="' + set.id + '" value="openai" placeholder="openai"/></label>' +
+        '<label class="lim-field"><span>Лимит Free (токены за окно)</span><input data-new-free="' + set.id + '" type="number" placeholder="пусто = без лимита"/></label>' +
+        '<label class="lim-field"><span>Лимит Pro/Max (токены за окно)</span><input data-new-pro="' + set.id + '" type="number" placeholder="пусто = без лимита"/></label>' +
+        '<label class="lim-field"><span>Окно сброса, часов</span><input data-new-reset="' + set.id + '" type="number" value="6"/></label>' +
+        '<label class="lim-field"><span>Параллельность API</span><input data-new-concurrency="' + set.id + '" type="number" value="1"/></label>' +
+        '</div><button class="chip-btn" data-add-entry="' + set.id + '">Добавить модель / резерв</button></section>';
+    };
+
     openModal({
-      title: 'Цепочки моделей и API',
-      okText: 'Сохранить цепочки',
-      body: '<p class="usage-note">У каждого задания своя последовательность резервов. Установите порядок 0, 1, 2…: ai-ch пробует сверху вниз и переходит к следующему API при ошибке или пустом ответе. Ключи не показываются; пустой ключ оставляет сохранённый.</p>'
-        + sets.map(set => '<h4 class="sec">' + escapeHtml(labels[set.route_type]) + '</h4><p class="usage-note">Цепочка: ' + escapeHtml(set.name) + '</p>'
-          + (set.entries || []).slice().sort((a,b) => a.position - b.position).map(e => entryHtml(set,e)).join('')
-          + '<div class="lim-grid" style="margin:8px 0">'
-          + '<label class="lim-field"><span>Новая модель</span><input data-new-model="' + set.id + '" placeholder="model-id"/></label>'
-          + '<label class="lim-field"><span>Base URL</span><input data-new-base="' + set.id + '" type="url" value="' + escapeHtml((set.entries[0] || {}).base_url || '') + '"/></label>'
-          + '<label class="lim-field"><span>API-ключ</span><input data-new-key="' + set.id + '" type="password" placeholder="ключ для резервной модели"/></label>'
-          + '</div><button class="chip-btn" data-add-entry="' + set.id + '">Добавить резервную модель</button>').join(''),
-      onOk: async (root) => {
+      title: 'Модели, задачи и лимиты',
+      okText: 'Сохранить настройки',
+      body: '<p class="usage-note">Для каждой задачи настрой отдельную цепочку. Порядок 0, 1, 2… означает приоритет резерва: при ошибке или исчерпании квоты сервис перейдёт к следующей модели. Лимиты считаются в токенах за скользящее окно (по умолчанию 6 часов). Пустой лимит означает отсутствие пользовательского ограничения. Вводи реальные Model ID, Base URL и ключи своего API-провайдера.</p>' +
+        (missingRoutes.length
+          ? '<div class="settings-grid" style="margin:12px 0"><label class="lim-field"><span>Новая задача</span><input id="new-task-name" placeholder="название задачи"/></label>' +
+            '<label class="lim-field"><span>Тип задачи</span><select id="new-task-type">' + missingRoutes.map(r => '<option value="' + r + '">' + escapeHtml(routeName(r)) + '</option>').join('') + '</select></label>' +
+            '<label class="lim-field"><span>Slug (необязательно)</span><input id="new-task-slug" placeholder="auto-generated"/></label>' +
+            '<button class="chip-btn" id="create-task-chain">Создать цепочку задачи</button></div>'
+          : '<p class="usage-note">Все типы задач уже заведены. Чтобы добавить модель, используй «Добавить модель / резерв» внутри нужной задачи — новые дубли цепочек создавать не нужно.</p>') +
+        (routes.map(route => {
+          const group = sets.filter(s => s.route_type === route);
+          return '<h3 style="margin:18px 0 8px">' + escapeHtml(routeName(route)) + '</h3>' +
+            (group.length ? group.map(renderSet).join('') : '<p class="usage-note">Нет цепочек этого типа. Создай выше.</p>');
+        }).join('')),
+      onOk: async root => {
+        const setUpdates = {};
+        $$('[data-set-name]', root).forEach(input => {
+          setUpdates[input.dataset.setName] = setUpdates[input.dataset.setName] || {};
+          setUpdates[input.dataset.setName].name = input.value.trim();
+        });
+        $$('[data-set-active]', root).forEach(input => {
+          setUpdates[input.dataset.setActive] = setUpdates[input.dataset.setActive] || {};
+          setUpdates[input.dataset.setActive].is_active = input.checked;
+        });
+        for (const [id, values] of Object.entries(setUpdates)) {
+          if (values.name || values.is_active !== undefined) await api.patch('/api/admin/model-sets/' + id, values);
+        }
+
         const updates = {};
         $$('[data-chain-entry]', root).forEach(input => {
           const id = input.dataset.chainEntry, key = input.dataset.chainField;
           updates[id] = updates[id] || {};
-          if (key === 'is_active') updates[id][key] = input.checked;
-          else {
-            let val = input.value.trim();
-            if (key === 'api_key' && val === '') return;
-            if (['position', 'max_tokens', 'context_len', 'timeout'].includes(key)) val = val === '' ? 0 : Number(val);
-            if (key === 'temperature') val = val === '' ? 0.2 : Number(val);
-            updates[id][key] = val;
-          }
+          if (key === 'is_active') { updates[id][key] = input.checked; return; }
+          const raw = input.value.trim();
+          if (key === 'api_key' && !raw) return;
+          if (key === 'free_token_limit' || key === 'pro_token_limit') {
+            updates[id][key] = raw === '' ? null : Number(raw);
+          } else if (['position','context_len','max_tokens','timeout','quota_reset_hours','max_concurrency'].includes(key)) {
+            updates[id][key] = raw === '' ? 0 : Number(raw);
+          } else if (['temperature','price_in','price_out','price_cache'].includes(key)) {
+            updates[id][key] = raw === '' ? 0 : Number(raw);
+          } else updates[id][key] = raw;
         });
         for (const [id, values] of Object.entries(updates)) {
-          await api.patch('/api/admin/model-sets/' + setForEntry(id, sets) + '/entries/' + id, values);
+          const parent = sets.find(s => (s.entries || []).some(e => e.id === id));
+          if (parent) await api.patch('/api/admin/model-sets/' + parent.id + '/entries/' + id, values);
         }
-        toast('Цепочки моделей сохранены');
+        toast('Настройки задач, моделей и лимитов сохранены');
         return true;
       },
     });
-    function setForEntry(entryId, allSets) {
-      const parent = allSets.find(s => (s.entries || []).some(e => e.id === entryId));
-      return parent ? parent.id : '';
-    }
+
+    const create = $('#create-task-chain');
+    if (create) create.addEventListener('click', async () => {
+      const name = ($('#new-task-name') || {}).value?.trim() || '';
+      const route_type = ($('#new-task-type') || {}).value || 'MAIN';
+      const slug = ($('#new-task-slug') || {}).value?.trim() || undefined;
+      if (!name) { toast('Укажи название новой задачи', 'error'); return; }
+      try {
+        await api.post('/api/admin/model-sets', { name, slug, route_type, is_active: true });
+        $('#modal-root').innerHTML = '';
+        await openModelChains();
+        toast('Цепочка создана — добавь в неё хотя бы одну модель');
+      } catch (e) { toast('Не удалось создать задачу: ' + e.message, 'error'); }
+    });
+
     $$('[data-delete-entry]').forEach(button => button.addEventListener('click', async () => {
       try {
         await api.del('/api/admin/model-sets/' + button.dataset.deleteSet + '/entries/' + button.dataset.deleteEntry);
         $('#modal-root').innerHTML = '';
         await openModelChains();
-      } catch (e) { toast('Не удалось удалить: ' + e.message, 'error'); }
+      } catch (e) { toast('Не удалось удалить модель: ' + e.message, 'error'); }
     }));
+
     $$('[data-add-entry]').forEach(button => button.addEventListener('click', async () => {
-      const set = sets.find(s => s.id === button.dataset.addEntry);
-      const base = $('[data-new-base="' + set.id + '"]')?.value.trim() || '';
-      const model = $('[data-new-model="' + set.id + '"]')?.value.trim() || '';
-      const key = $('[data-new-key="' + set.id + '"]')?.value.trim() || '';
-      if (!base || !model || !key) { toast('Для новой модели нужны Base URL, model-id и API-ключ', 'error'); return; }
-      const maxPosition = Math.max(-1, ...(set.entries || []).map(e => Number(e.position) || 0));
+      const id = button.dataset.addEntry;
+      const model = $('[data-new-model="' + id + '"]')?.value.trim() || '';
+      const base = $('[data-new-base="' + id + '"]')?.value.trim() || '';
+      const key = $('[data-new-key="' + id + '"]')?.value.trim() || '';
+      const provider = $('[data-new-provider="' + id + '"]')?.value.trim() || 'openai';
+      const freeRaw = $('[data-new-free="' + id + '"]')?.value.trim() || '';
+      const proRaw = $('[data-new-pro="' + id + '"]')?.value.trim() || '';
+      const resetRaw = $('[data-new-reset="' + id + '"]')?.value.trim() || '6';
+      const concurrencyRaw = $('[data-new-concurrency="' + id + '"]')?.value.trim() || '1';
+      if (!model || !base || !key) { toast('Нужны точные Model ID, Base URL и API-ключ', 'error'); return; }
+      const set = sets.find(s => s.id === id);
+      const nextPosition = Math.max(-1, ...(set?.entries || []).map(e => Number(e.position)));
       try {
-        await api.post('/api/admin/model-sets/' + set.id + '/entries', {
-          provider: 'openai', base_url: base, model, api_key: key,
-          position: maxPosition + 1, temperature: 0.2, max_tokens: 12000, timeout: 180,
-          context_len: 0, price_in: 0, price_out: 0, price_cache: 0, is_active: true,
+        await api.post('/api/admin/model-sets/' + id + '/entries', {
+          provider, base_url: base, model, api_key: key,
+          position: nextPosition + 1, temperature: 0.2, max_tokens: 12000, timeout: 180,
+          context_len: 0, price_in: 0, price_out: 0, price_cache: 0,
+          free_token_limit: freeRaw === '' ? null : Number(freeRaw),
+          pro_token_limit: proRaw === '' ? null : Number(proRaw),
+          quota_reset_hours: Math.max(1, Number(resetRaw) || 6),
+          max_concurrency: Math.max(1, Number(concurrencyRaw) || 1),
+          is_active: true
         });
         $('#modal-root').innerHTML = '';
         await openModelChains();
-      } catch (e) { toast('Не удалось добавить: ' + e.message, 'error'); }
+        toast('Модель добавлена');
+      } catch (e) { toast('Не удалось добавить модель: ' + e.message, 'error'); }
     }));
   }
 
@@ -2068,6 +2194,8 @@
     });
     const settingsButton = $('#settings-btn');
     if (settingsButton) settingsButton.addEventListener('click', openSettings);
+    const limitsButton = $('#limits-btn');
+    if (limitsButton) limitsButton.addEventListener('click', openMyLimits);
     const shareButton = $('#share-btn');
     if (shareButton) shareButton.addEventListener('click', shareCurrentChat);
     window.addEventListener('resize', applySidebar);
@@ -2082,12 +2210,15 @@
         '<div class="kv"><span>Тариф</span><b>' + escapeHtml(user.plan || 'free') + '</b></div>' +
         '<div class="settings-grid" style="margin-top:12px">' +
         '<button class="chip-btn" id="settings-memory">Память</button>' +
+        '<button class="chip-btn" id="settings-limit-view">Тариф и лимиты</button>' +
         '<button class="chip-btn" id="settings-links">Мои ссылки</button>' +
         (user.is_admin ? '<button class="chip-btn" id="settings-admin">Админ-панель</button>' : '') +
         '<button class="chip-btn" id="settings-logout">Выйти</button></div>',
       onOk: () => true,
     });
     const memory = $('#settings-memory'), links = $('#settings-links'), logout = $('#settings-logout');
+    const accountLimits = $('#settings-limit-view');
+    if (accountLimits) accountLimits.addEventListener('click', () => openMyLimits());
     const adminButton = $('#settings-admin');
     if (adminButton) adminButton.addEventListener('click', () => {
       $('#modal-root').innerHTML = '';
@@ -2103,6 +2234,42 @@
       } catch (e) { toast('Не удалось выйти: ' + e.message, 'error'); }
     });
   }
+
+  async function openMyLimits() {
+    let data = state.limits;
+    try { data = await api.get('/api/limits'); state.limits = data; }
+    catch (e) { toast('Не удалось загрузить лимиты: ' + e.message, 'error'); return; }
+    const labels = data.labels || {};
+    const limits = data.limits || {};
+    const usage = data.usage || {};
+    const show = (key, value) => {
+      let rendered;
+      if (value == null) rendered = 'Без ограничения';
+      else if (key === 'file_size' || key === 'user_storage') rendered = (Number(value) / (1024 * 1024)).toFixed(0) + ' МБ';
+      else rendered = String(value);
+      return '<div class="kv"><span>' + escapeHtml(labels[key] || key) + '</span><b>' + escapeHtml(rendered) + '</b></div>';
+    };
+    const total = usage.storage == null ? '—' : (Number(usage.storage) / (1024 * 1024)).toFixed(1) + ' МБ';
+    const msgCap = usage.messages_daily_limit == null ? 'без дневного ограничения' : (Number(usage.messages_today || 0) + ' / ' + usage.messages_daily_limit + ' сегодня');
+    const sub = usage.subscription_until ? new Date(usage.subscription_until).toLocaleString('ru-RU') : ((data.plan || 'free') === 'free' ? 'Нет платной подписки' : 'Бессрочно');
+    openModal({
+      title: 'Тариф и лимиты',
+      okText: 'Закрыть',
+      body: '<div class="kv"><span>Текущий тариф</span><b>' + escapeHtml(String(data.plan || 'free').toUpperCase()) + '</b></div>' +
+        '<div class="kv"><span>Подписка</span><b>' + escapeHtml(sub) + '</b></div>' +
+        '<div class="kv"><span>Сообщения</span><b>' + escapeHtml(msgCap) + '</b></div>' +
+        '<div class="kv"><span>Занятое хранилище</span><b>' + escapeHtml(total) + '</b></div>' +
+        '<div class="kv"><span>Файлов</span><b>' + escapeHtml(String(usage.files || 0)) + '</b></div>' +
+        '<h4 class="sec" style="margin-top:14px">Ограничения тарифа</h4>' +
+        ['messages_per_day','file_size','user_storage','files_count','chats_count','compress_per_day','compress_min','compress_max'].filter(k => Object.prototype.hasOwnProperty.call(limits, k)).map(k => show(k, limits[k])).join('') +
+        (state.user && state.user.is_admin ? '<div class="settings-grid" style="margin-top:14px"><button class="chip-btn" id="open-admin-limits">Управление лимитами и моделями</button></div>' : '') +
+        '<p class="usage-note" style="margin-top:12px">Квоты проверяются сервером. Ограничения отдельных моделей, окно сброса и резервные цепочки настраиваются администратором в разделе «Модели и лимиты».</p>',
+      onOk: () => true,
+    });
+    const admin = $('#open-admin-limits');
+    if (admin) admin.addEventListener('click', () => { $('#modal-root').innerHTML = ''; openLimits(); });
+  }
+
   async function shareCurrentChat() {
     if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
     try {
@@ -2133,41 +2300,10 @@
     } catch (e) { showAuth(); toast('Ссылка недоступна: ' + e.message, 'error'); }
   }
 
-  // ---------- theme toggle ----------
-  function applyTheme() {
-    const cls = state.theme === 'light' ? 'cs-theme-light'
-              : state.theme === 'dark' ? 'cs-theme-dark'
-              : '';
-    document.documentElement.className = cls;
-    updateThemeIcon();
-  }
-
-  function updateThemeIcon() {
-    const el = $('#theme-toggle');
-    if (!el) return;
-    const isDark = state.theme === 'dark'
-      || (state.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    el.title = isDark ? 'Светлая тема' : 'Тёмная тема';
-    // Replace icon: sun in light mode, moon in dark mode
-    const useId = isDark ? 'i-moon' : 'i-sun';
-    el.innerHTML = '<svg class="ic"><use href="#' + useId + '"/></svg>';
-  }
-
-  function cycleTheme() {
-    // auto → light → dark → auto
-    const cycle = ['auto', 'light', 'dark'];
-    const idx = cycle.indexOf(state.theme);
-    state.theme = cycle[(idx + 1) % 3];
-    localStorage.setItem('cs_theme', state.theme);
-    applyTheme();
-    const labels = { auto: 'Системная', light: 'Светлая', dark: 'Тёмная' };
-    toast('Тема: ' + labels[state.theme], 'success');
-  }
 
   // ---------- boot ----------
   async function boot() {
     showApp();
-    applyTheme();
     applySidebar();
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
     try {
@@ -2186,9 +2322,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles();
-    $('#theme-toggle').addEventListener('click', cycleTheme);
-    const token = new URLSearchParams(location.search).get('share');
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {
       const me = await api.get('/api/auth/me');
@@ -2201,10 +2335,6 @@
 
   document.addEventListener('DOMContentLoaded', init);
 
-  // Listen for system theme changes when in auto mode
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (state.theme === 'auto') updateThemeIcon();
-  });
 
   // KaTeX loads with defer: re-render math once it is available
   window.addEventListener('load', () => {

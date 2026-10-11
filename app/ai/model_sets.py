@@ -14,6 +14,8 @@ async def get_model_set(db: AsyncSession, route_type: RouteType) -> ModelSet | N
         RouteType.TITLE: "qwen-title",
         RouteType.CONTINUE: "qwen-continue",
         RouteType.SUGGESTIONS: "qwen-suggestions",
+        RouteType.SUMMARY: "qwen-summary",
+        RouteType.FILE_ANALYSIS: "qwen-file-analysis",
     }.get(route_type)
     result = await db.execute(
         select(ModelSet)

@@ -69,7 +69,7 @@ async def create_model_set(
         route = RouteType(data.route_type.upper())
     except ValueError:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "route_type: MAIN / TITLE / CONTINUE / SUGGESTIONS"
+            status.HTTP_400_BAD_REQUEST, "route_type: MAIN / TITLE / CONTINUE / SUGGESTIONS / SUMMARY / FILE_ANALYSIS"
         )
     slug = (data.slug or _slugify(data.name)).strip()
     exists = await db.execute(select(ModelSet).where(ModelSet.slug == slug))
@@ -137,6 +137,10 @@ async def add_entry(
         price_in=data.price_in,
         price_out=data.price_out,
         price_cache=data.price_cache,
+        free_token_limit=data.free_token_limit,
+        pro_token_limit=data.pro_token_limit,
+        quota_reset_hours=max(1, data.quota_reset_hours),
+        max_concurrency=max(1, data.max_concurrency),
         timeout=data.timeout,
         is_active=data.is_active,
     )
@@ -182,12 +186,22 @@ async def update_entry(
         "price_in",
         "price_out",
         "price_cache",
+        "quota_reset_hours",
+        "max_concurrency",
         "timeout",
         "is_active",
     ):
         value = getattr(data, field)
         if value is not None:
             setattr(e, field, value)
+    for field in ("free_token_limit", "pro_token_limit"):
+        if field in data.model_fields_set:
+            value = getattr(data, field)
+            setattr(e, field, value)
+    if "quota_reset_hours" in data.model_fields_set:
+        e.quota_reset_hours = max(1, int(data.quota_reset_hours or 6))
+    if "max_concurrency" in data.model_fields_set:
+        e.max_concurrency = max(1, int(data.max_concurrency or 1))
     if data.api_key:  # пустая строка = оставить прежний ключ
         e.api_key = data.api_key
     await db.commit()

@@ -227,16 +227,6 @@ a:hover { text-decoration: underline; }
 .side-item .ic { width: 17px; height: 17px; color: var(--fg-muted); }
 .side-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Theme toggle */
-.theme-toggle {
-  display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 28px; margin: 0 auto 4px;
-  border: none; background: transparent; border-radius: var(--radius-sm);
-  color: var(--fg-muted); cursor: pointer; transition: color .15s, background .15s;
-}
-.theme-toggle:hover { background: var(--bg-hover); color: var(--fg); }
-.theme-toggle .ic { width: 16px; height: 16px; }
-
 /* ============================================================
    Chat area
    ============================================================ */

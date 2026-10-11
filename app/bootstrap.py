@@ -91,6 +91,8 @@ async def _seed_model_sets(db: AsyncSession) -> None:
         RouteType.TITLE: ("Qwen Title", "qwen-title"),
         RouteType.CONTINUE: ("Qwen Continue", "qwen-continue"),
         RouteType.SUGGESTIONS: ("Qwen Suggestions", "qwen-suggestions"),
+        RouteType.SUMMARY: ("Qwen Summary", "qwen-summary"),
+        RouteType.FILE_ANALYSIS: ("Qwen File Analysis", "qwen-file-analysis"),
     }
     for route, (name, slug) in defaults.items():
         result = await db.execute(select(ModelSet).where(ModelSet.slug == slug))

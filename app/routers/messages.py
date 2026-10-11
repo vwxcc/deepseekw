@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import model_sets as model_sets_service, prompts
@@ -30,6 +31,7 @@ from ..models import (
     ModelSetEntry,
     Role,
     RouteType,
+    Suggestion,
     User,
     utcnow,
 )
@@ -329,6 +331,72 @@ async def get_messages(
     return await build_message_tree(db, result.scalars().all())
 
 
+@router.post("/messages/{message_id}/suggestions")
+async def generate_suggestions(
+    message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Generate follow-up chips through the separately configured SUGGESTIONS chain."""
+    if message.role != Role.assistant or message.status != MessageStatus.completed:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Предложения доступны после завершённого ответа")
+    existing = await db.execute(
+        select(Suggestion).where(Suggestion.message_id == message.id).order_by(Suggestion.position)
+    )
+    saved = [row.text for row in existing.scalars().all() if row.text]
+    if saved:
+        return {"suggestions": saved}
+
+    chat = await db.get(Chat, message.chat_id)
+    history = await ancestor_chain(db, message.id, summary_upto=chat.summary_upto if chat else None)
+    history = history[-10:]
+    model_messages = [{"role": "system", "content": prompts.SUGGESTIONS_SYSTEM}, *history]
+    _, _, entries = await ai_router._resolve_entries(RouteType.SUGGESTIONS)
+    suggestions: list[str] = []
+
+    from ..ai.providers import ProviderError, complete_chat
+
+    for entry in entries:
+        allowed, _reason = await ai_router.entry_available(user.id, entry)
+        if not allowed:
+            continue
+        try:
+            async with ai_router.model_slot(entry):
+                raw = await complete_chat(
+                    messages=model_messages,
+                    base_url=entry.base_url,
+                    api_key=entry.api_key,
+                    model=entry.model,
+                    temperature=0.3,
+                    max_tokens=350,
+                    timeout=min(entry.timeout, 60),
+                    disable_thinking=True,
+                )
+            parsed = []
+            for line in (raw or "").splitlines():
+                item = re.sub(r"^\s*\d+[.)]\s*", "", line.strip()).lstrip("-•*— ").strip().strip('"').strip("'")
+                if len(item) > 8 and " " in item:
+                    parsed.append(item[:200])
+            suggestions = list(dict.fromkeys(parsed))[:3]
+            await ai_router.record_model_usage(user.id, entry, RouteType.SUGGESTIONS, None, model_messages, raw or "")
+            if suggestions:
+                break
+        except ProviderError:
+            continue
+
+    await db.execute(delete(Suggestion).where(Suggestion.message_id == message.id))
+    for position, item in enumerate(suggestions):
+        db.add(Suggestion(
+            message_id=message.id,
+            chat_id=message.chat_id,
+            position=position,
+            text=item,
+        ))
+    await db.commit()
+    return {"suggestions": suggestions}
+
+
 @router.post("/chats/{chat_id}/messages")
 async def send_message(
     request: Request,
@@ -391,7 +459,8 @@ async def send_message(
     history_messages = await ancestor_chain(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
-    main_set = await model_sets_service.get_model_set(db, RouteType.MAIN)
+    task_route = RouteType.FILE_ANALYSIS if attached else RouteType.MAIN
+    main_set = await model_sets_service.get_model_set(db, task_route)
     main_set_id = main_set.id if main_set else None
     history_messages, trimmed = _trim_history(
         history_messages, await _model_context(db, main_set_id)
@@ -431,7 +500,7 @@ async def send_message(
 
     job = Job(
         kind="message",
-        route_type=RouteType.MAIN,
+        route_type=task_route,
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
@@ -442,7 +511,7 @@ async def send_message(
     )
     # Generate a title only once a main answer succeeds. If an earlier first turn failed,
     # a later successful turn can still generate the missing title from the first user prompt.
-    job.generate_title = chat.title == "Новый чат"
+    job.generate_title = chat.title == "Новый чат" and task_route in (RouteType.MAIN, RouteType.FILE_ANALYSIS)
     if job.generate_title:
         first_query = await db.scalar(
             select(Message.content)
@@ -713,36 +782,46 @@ async def compress_chat(
     if len(cut) < 2:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего сжимать")
 
-    from ..ai import model_sets as ms_mod
     from ..ai.providers import ProviderError, complete_chat
 
-    mset = await ms_mod.get_model_set(db, RouteType.MAIN)
-    entries = await ms_mod.get_active_entries(db, mset.id) if mset else []
-    if not entries:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Нет активной модели для сжатия"
-        )
-    entry = entries[0]
-
+    _, _, entries = await ai_router._resolve_entries(RouteType.SUMMARY)
     transcript = "\n".join(
         f"{m.role.value}: {(m.content or '')[:1500]}" for m in cut if m.content
     )[:60000]
-    try:
-        summary = await complete_chat(
-            messages=[
-                {"role": "system", "content": prompts.COMPRESS_SYSTEM},
-                {"role": "user", "content": transcript},
-            ],
-            base_url=entry.base_url,
-            api_key=entry.api_key,
-            model=entry.model,
-            temperature=0.3,
-            max_tokens=1200,
-            timeout=150,
-            disable_thinking=True,
-        )
-    except ProviderError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {e}")
+    summary = ""
+    last_error = "Нет доступной модели для сжатия"
+    summary_messages = [
+        {"role": "system", "content": prompts.COMPRESS_SYSTEM},
+        {"role": "user", "content": transcript},
+    ]
+    for entry in entries:
+        available, quota_reason = await ai_router.entry_available(user.id, entry)
+        if not available:
+            last_error = quota_reason
+            continue
+        try:
+            async with ai_router.model_slot(entry):
+                candidate = await complete_chat(
+                    messages=summary_messages,
+                    base_url=entry.base_url,
+                    api_key=entry.api_key,
+                    model=entry.model,
+                    temperature=0.3,
+                    max_tokens=1200,
+                    timeout=min(entry.timeout, 150),
+                    disable_thinking=True,
+                )
+            if not (candidate or "").strip():
+                last_error = f"Модель {entry.model} вернула пустое резюме"
+                continue
+            summary = candidate.strip()
+            await ai_router.record_model_usage(user.id, entry, RouteType.SUMMARY, None, summary_messages, summary)
+            break
+        except ProviderError as e:
+            last_error = f"{entry.model}: {e}"
+            continue
+    if not summary:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {last_error}")
 
     if not summary.strip():
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Модель вернула пустое резюме")

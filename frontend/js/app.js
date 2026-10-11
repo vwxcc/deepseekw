@@ -479,8 +479,6 @@
     streamStarted: false,
     activeAssistantId: null,
     thinkBody: null,
-    modelSets: [],
-    modelSetId: localStorage.getItem('cs_model') || '',
     effort: localStorage.getItem('cs_effort') || 'medium',
     draftTail: null,
     memories: [],
@@ -1278,7 +1276,6 @@
         content,
         parent_message_id: parentId,
         attachment_ids: attachments,
-        model_set_id: state.modelSetId || null,
         web_search: true,
         effort: state.effort,
         style: state.style,
@@ -1365,12 +1362,6 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
-    $('#model-select').addEventListener('change', (e) => {
-      state.modelSetId = e.target.value;
-      localStorage.setItem('cs_model', state.modelSetId);
-    });
-    $('#model-btn').addEventListener('click', openModelMenu);
-    updateModelButton();
   }
 
   function fmtNum(n) {
@@ -1407,125 +1398,6 @@
     }));
     $$('[data-open-link]').forEach(b => b.addEventListener('click', () =>
       window.open('/?share=' + b.dataset.openLink, '_blank')));
-  }
-
-  async function loadModelSets() {
-    try {
-      state.modelSets = await api.get('/api/models/sets');
-    } catch (e) {
-      state.modelSets = [];
-    }
-    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    if (!mains.length) return;
-    if (!state.modelSetId || !mains.some(s => s.id === state.modelSetId)) {
-      state.modelSetId = mains[0].id;
-      localStorage.setItem('cs_model', state.modelSetId);
-    }
-    updateModelButton();
-  }
-
-  function currentModelSet() {
-    return (state.modelSets || []).find(s => s.id === state.modelSetId) || null;
-  }
-
-  function updateModelButton() {
-    const label = $('#model-btn-label');
-    if (!label) return;
-    const ms = currentModelSet();
-    label.textContent = ms ? ms.name : 'Модель';
-  }
-
-  async function openModelMenu() {
-    await loadModelSets();
-    if (!state.limits) await loadLimits();
-    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    const lim = (state.limits && state.limits.limits) || {};
-    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
-    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
-    const cdef = Math.max(cmin, Math.min(cmax, 50));
-    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
-
-    const cards = mains.map(s => {
-      const e = (s.entries || [])[0] || {};
-      const bits = [];
-      bits.push('контекст ' + fmtNum(e.context_len || 0));
-      bits.push('ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.');
-      if (e.price_in) bits.push('вход ' + e.price_in + ' ₽/1M');
-      if (e.price_out) bits.push('выход ' + e.price_out + ' ₽/1M');
-      if (e.price_cache) bits.push('кэш ' + e.price_cache + ' ₽/1M');
-      return '<label class="mm-card' + (s.id === state.modelSetId ? ' on' : '') + '">' +
-        '<input type="radio" name="mm" value="' + s.id + '"' +
-        (s.id === state.modelSetId ? ' checked' : '') + '/>' +
-        '<span class="mm-body"><b>' + escapeHtml(s.name) +
-        (s.is_router ? ' · auto' : '') + '</b>' +
-        '<em>' + escapeHtml(e.model || '—') + '</em>' +
-        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
-    }).join('');
-
-    openModal({
-      title: 'Модель и параметры',
-      okText: 'Готово',
-      body:
-        '<h4 class="sec">Кластер</h4><div class="mm-list">' +
-        (cards || '<p>Моделей нет</p>') + '</div>' +
-        '<h4 class="sec">Усилие модели</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
-        (EFFORTS.length - 1) + '" step="1" value="' + idx +
-        '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
-        '<h4 class="sec">Температура</h4>' +
-        '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
-        state.temperature + '"/><b id="mm-temp-label">' +
-        Number(state.temperature).toFixed(1) + '</b></div>' +
-        '<h4 class="sec">Сжатие истории</h4>' +
-        '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме и освободит контекст. ' +
-        'Ваш тариф: от ' + cmin + '% до ' + cmax + '%' +
-        (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
-        '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
-        '" max="' + cmax + '" step="5" value="' + cdef +
-        '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
-        '<div style="margin-top:10px"><button class="chip-btn" id="mm-comp-go">' +
-        icon('sparkle') + 'Сжать историю</button></div>',
-      onOk: (root) => {
-        const picked = $('input[name=mm]:checked', root);
-        if (picked) {
-          state.modelSetId = picked.value;
-          localStorage.setItem('cs_model', state.modelSetId);
-        }
-        updateModelButton();
-        return true;
-      },
-    });
-
-    const eff = $('#mm-effort');
-    eff.addEventListener('input', () => {
-      const i = parseInt(eff.value, 10) || 0;
-      state.effort = EFFORTS[i];
-      localStorage.setItem('cs_effort', state.effort);
-      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
-    });
-    const tmp = $('#mm-temp');
-    tmp.addEventListener('input', () => {
-      state.temperature = parseFloat(tmp.value) || 0;
-      localStorage.setItem('cs_temp', String(state.temperature));
-      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
-    });
-    const cmp = $('#mm-comp');
-    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
-    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
-      $$('.mm-card').forEach(c => c.classList.remove('on'));
-      const card = r.closest('.mm-card');
-      if (r.checked && card) card.classList.add('on');
-    }));
-    $('#mm-comp-go').addEventListener('click', async () => {
-      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-      toast('Сжимаю историю…');
-      try {
-        await api.post('/api/chats/' + state.currentChatId + '/compress',
-          { target_percent: parseInt(cmp.value, 10) || 50 });
-        toast('История сжата');
-
-      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
-    });
   }
 
   // ---------- local file generation ----------
@@ -2090,10 +1962,16 @@
         '<div class="settings-grid" style="margin-top:12px">' +
         '<button class="chip-btn" id="settings-memory">Память</button>' +
         '<button class="chip-btn" id="settings-links">Мои ссылки</button>' +
+        (user.is_admin ? '<button class="chip-btn" id="settings-admin">Админ-панель</button>' : '') +
         '<button class="chip-btn" id="settings-logout">Выйти</button></div>',
       onOk: () => true,
     });
     const memory = $('#settings-memory'), links = $('#settings-links'), logout = $('#settings-logout');
+    const adminButton = $('#settings-admin');
+    if (adminButton) adminButton.addEventListener('click', () => {
+      $('#modal-root').innerHTML = '';
+      openLimits();
+    });
     if (memory) memory.addEventListener('click', () => openMemory());
     if (links) links.addEventListener('click', () => openLinks());
     if (logout) logout.addEventListener('click', async () => {
@@ -2174,7 +2052,6 @@
     try {
       await loadChats();
       await loadFiles();
-      await loadModelSets();
       await loadMemory();
 
       await loadLimits();

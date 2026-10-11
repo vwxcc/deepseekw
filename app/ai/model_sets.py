@@ -8,7 +8,7 @@ from ..models import ModelSet, ModelSetEntry, RouteType
 
 
 async def get_model_set(db: AsyncSession, route_type: RouteType) -> ModelSet | None:
-    """Resolve one deterministic fallback chain for a task, never an auto-router."""
+    """Return the designated task chain deterministically; never pick a router set."""
     preferred_slug = {
         RouteType.MAIN: "qwen-main",
         RouteType.TITLE: "qwen-title",
@@ -24,13 +24,12 @@ async def get_model_set(db: AsyncSession, route_type: RouteType) -> ModelSet | N
         )
         .order_by(ModelSet.slug)
     )
-    model_sets = list(result.scalars().all())
+    sets = list(result.scalars().all())
     if preferred_slug:
-        preferred = next((item for item in model_sets if item.slug == preferred_slug), None)
+        preferred = next((item for item in sets if item.slug == preferred_slug), None)
         if preferred is not None:
             return preferred
-    return model_sets[0] if model_sets else None
-
+    return sets[0] if sets else None
 
 async def get_active_entries(
     db: AsyncSession, model_set_id: str

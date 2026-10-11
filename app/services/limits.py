@@ -1,10 +1,12 @@
 """Per-plan limits (Free / Pro), editable by the administrator."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime, time
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import PlanLimit, User, utcnow
+from ..models import Chat, Message, PlanLimit, Role, User, utcnow
 
 GB = 1024 ** 3
 MB = 1024 ** 2
@@ -169,3 +171,37 @@ def allow(limits: dict, key: str, current: int, adding: int = 1) -> tuple[bool, 
     if current + adding > int(cap):
         return False, f"Лимит тарифа исчерпан: {LABELS.get(key, key)} — {cap}. Обратитесь к администратору ai-ch."
     return True, ""
+
+
+async def check_message_quota(db: AsyncSession, user: User) -> None:
+    """Reject paid AI work when the account has exhausted its daily request quota."""
+    if user.is_admin:
+        return
+    plan = await effective_plan(db, user)
+    limits = await get_limits(db, plan)
+    cap = limits.get("messages_per_day")
+    if cap is None:
+        return
+
+    now = utcnow()
+    window_start = datetime.combine(now.date(), time.min)
+    if user.usage_reset_at is not None and user.usage_reset_at > window_start:
+        window_start = user.usage_reset_at
+
+    used = await db.scalar(
+        select(func.count())
+        .select_from(Message)
+        .join(Chat, Chat.id == Message.chat_id)
+        .where(
+            Chat.user_id == user.id,
+            Message.role == Role.assistant,
+            Message.created_at >= window_start,
+        )
+    )
+    if int(used or 0) >= int(cap):
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Дневной лимит запросов исчерпан. Обратитесь к администратору ai-ch для сброса счётчика или выдачи подписки.",
+        )

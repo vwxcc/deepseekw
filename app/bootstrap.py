@@ -4,9 +4,6 @@ from __future__ import annotations
 import logging
 import secrets
 
-import logging
-import secrets
-
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,8 +12,6 @@ from .database import SessionLocal
 from .models import ModelSet, ModelSetEntry, RouteType, Session, User, utcnow
 from .security import hash_password
 from .services.memory_cleanup import clean_noisy_memories
-
-log = logging.getLogger("ai-ch.bootstrap")
 
 log = logging.getLogger("ai-ch.bootstrap")
 

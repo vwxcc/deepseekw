@@ -49,7 +49,7 @@ from ..services.chats import (
     message_out,
 )
 from ..services.websearch import format_context, web_search
-from ..services.limits import get_limits
+from ..services.limits import check_message_quota, effective_plan, get_limits
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
@@ -267,6 +267,8 @@ async def _spawn(
     history_messages: list[dict],
     user_id: str | None = None,
     effort: str | None = None,
+    route_type: RouteType = RouteType.MAIN,
+    user_text: str = "",
 ) -> StreamingResponse:
     system_prompt = prompts.MAIN_SYSTEM
     history_messages, trimmed = _trim_history(
@@ -297,12 +299,13 @@ async def _spawn(
 
     job = Job(
         kind="message",
-        route_type=RouteType.MAIN,
+        route_type=route_type,
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
         effort=effort or chat.effort,
         user_id=user_id,
+        user_text=user_text,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -336,6 +339,7 @@ async def send_message(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
+    await check_message_quota(db, user)
 
     parent_id = data.parent_message_id
     if parent_id is not None:
@@ -386,7 +390,7 @@ async def send_message(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
     history_messages, trimmed = _trim_history(
-        history_messages, await _model_context(db, data.model_set_id)
+        history_messages, await _model_context(db, None)
     )
     system_prompt = prompts.MAIN_SYSTEM
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
@@ -427,19 +431,15 @@ async def send_message(
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
-        model_set_id=data.model_set_id,
         effort=chat.effort,
         user_id=user.id,
         user_text=content,
     )
-    await ai_router.enqueue(job)
     total = await db.scalar(
         select(func.count()).select_from(Message).where(Message.chat_id == chat.id)
     )
-    if total == 2:
-        await ai_router.enqueue(
-            Job(kind="title", route_type=RouteType.TITLE, chat_id=chat.id, user_text=content)
-        )
+    job.generate_title = total == 2
+    await ai_router.enqueue(job)
 
     return StreamingResponse(
         _stream_job(request, job, assistant, user_msg, user_atts),
@@ -456,6 +456,7 @@ async def retry_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_message_quota(db, user)
     parent_id = message.parent_message_id
     if parent_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего повторять")
@@ -468,6 +469,7 @@ async def retry_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
+        user_text=next((str(m.get("content") or "") for m in reversed(history_messages) if m.get("role") == "user"), ""),
     )
 
 
@@ -479,6 +481,7 @@ async def branch_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_message_quota(db, user)
     parent_id = message.parent_message_id
     if parent_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего ветвить")
@@ -502,6 +505,7 @@ async def continue_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_message_quota(db, user)
     chat = await db.get(Chat, message.chat_id)
     history_messages = await ancestor_chain(db, message.id)
     history_messages.append(
@@ -517,6 +521,8 @@ async def continue_message(
         parent_message_id=message.id,
         history_messages=history_messages,
         user_id=user.id,
+        route_type=RouteType.CONTINUE,
+        user_text="Продолжи ответ с того места, где остановился. Не повторяй уже сказанное.",
     )
 
 

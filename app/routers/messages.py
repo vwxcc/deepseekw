@@ -212,7 +212,7 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
             await db.execute(
                 select(ModelSetEntry)
                 .join(ModelSet, ModelSet.id == ModelSetEntry.model_set_id)
-                .where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False))
+                .where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False), ModelSetEntry.is_active.is_(True))
                 .order_by(ModelSet.name, ModelSetEntry.position)
                 .limit(1)
             )
@@ -221,7 +221,7 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
         row = (
             await db.execute(
                 select(ModelSetEntry)
-                .where(ModelSetEntry.model_set_id == msid)
+                .where(ModelSetEntry.model_set_id == msid, ModelSetEntry.is_active.is_(True))
                 .order_by(ModelSetEntry.position)
                 .limit(1)
             )

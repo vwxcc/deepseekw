@@ -23,8 +23,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
       - name: Compile Python source
         run: python -m compileall -q app
+      - name: Verify application imports
+        env:
+          DATA_DIR: /tmp/ai-ch-ci-data
+          UPLOAD_DIR: /tmp/ai-ch-ci-uploads
+          ADMIN_EMAIL: ci-admin@ai-ch.local
+          ADMIN_PASSWORD: ci-only-test-password
+        run: python -c "from app.ai import prompts; from app.main import app; assert prompts.MAIN_SYSTEM; assert app.title == 'ai-ch'"
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

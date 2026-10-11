@@ -82,6 +82,10 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "price_in": "FLOAT DEFAULT 0",
         "price_out": "FLOAT DEFAULT 0",
         "price_cache": "FLOAT DEFAULT 0",
+        "free_token_limit": "INTEGER",
+        "pro_token_limit": "INTEGER",
+        "quota_reset_hours": "INTEGER DEFAULT 6",
+        "max_concurrency": "INTEGER DEFAULT 1",
     },
     "users": {
         "avatar": "INTEGER DEFAULT 0",

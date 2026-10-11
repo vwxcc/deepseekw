@@ -18,7 +18,6 @@ from ..models import (
     MessageStatus,
     ModelSet,
     RouteType,
-    Suggestion,
 )
 from . import model_sets as ms
 from . import prompts
@@ -217,8 +216,6 @@ class AIRouter:
             try:
                 if job.kind == "title":
                     await self._run_title(job)
-                elif job.kind == "suggestions":
-                    await self._run_suggestions(job)
                 else:
                     await self._run_message(job)
             except asyncio.CancelledError:
@@ -402,8 +399,8 @@ class AIRouter:
                 await self._finish(job.message_id, MessageStatus.completed, content=answer, error=None, usage=usage, thinking=thinking if thinking else None)
                 if ask:
                     await job.output.put(("ask", json.dumps({"question": ask}, ensure_ascii=False)))
-                await job.output.put(("done", answer))
-                # A title is a dependent task: only queue it after the answer succeeded.
+                # Queue the title only after a successful answer has been committed.
+                # With the single Render worker, a follow-up request is queued after title generation.
                 if job.generate_title:
                     await self.enqueue(
                         Job(
@@ -413,7 +410,7 @@ class AIRouter:
                             user_text=job.user_text,
                         )
                     )
-                await self.enqueue(Job(kind="suggestions", route_type=RouteType.SUGGESTIONS, chat_id=job.chat_id, message_id=job.message_id, history=[*job.history, {"role": "assistant", "content": answer}]))
+                await job.output.put(("done", answer))
                 return
             except ProviderError as e:
                 last_error = str(e)
@@ -470,53 +467,6 @@ class AIRouter:
                 log.warning("Title entry %s failed: %s", entry.model, e)
 
 
-    async def _run_suggestions(self, job: Job) -> None:
-        if not job.message_id:
-            return
-        try:
-            _, _, entries = await self._resolve_entries(RouteType.SUGGESTIONS)
-        except ProviderError as e:
-            log.warning("Suggestions skipped: %s", e)
-            return
-
-        dialogue = [m for m in job.history if m.get("role") != "system"]
-        messages = [
-            {"role": "system", "content": prompts.SUGGESTIONS_SYSTEM},
-            *dialogue[-8:],
-        ]
-        for entry in entries:
-            try:
-                raw = await complete_chat(
-                    messages=messages,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.6,
-                    max_tokens=220,
-                    timeout=min(entry.timeout, 60),
-                    disable_thinking=True,
-                )
-                items = _parse_suggestions(raw)
-                if items:
-                    async with SessionLocal() as db:
-                        await db.execute(
-                            delete(Suggestion).where(
-                                Suggestion.message_id == job.message_id
-                            )
-                        )
-                        for i, text in enumerate(items):
-                            db.add(
-                                Suggestion(
-                                    message_id=job.message_id,
-                                    chat_id=job.chat_id,
-                                    position=i,
-                                    text=text,
-                                )
-                            )
-                        await db.commit()
-                    return
-            except Exception as e:
-                log.warning("Suggestions entry %s failed: %s", entry.model, e)
 
 
 router = AIRouter(settings.global_ai_concurrency)

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - render-ai-ch
+      - fix/admin-quotas-model-fallbacks
   pull_request:
     branches:
       - main

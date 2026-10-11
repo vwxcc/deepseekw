@@ -30,15 +30,24 @@ async def _purge_expired_sessions(db: AsyncSession) -> None:
 
 
 async def _seed_admin(db: AsyncSession) -> None:
-    """Create a first admin on an empty database without a public default password."""
+    """Ensure there is an administrator without promoting an arbitrary account."""
+    admin_exists = await db.scalar(select(User.id).where(User.is_admin.is_(True)).limit(1))
+    if admin_exists:
+        return
+
     email = (settings.admin_email or "admin@ai-ch.local").strip().lower()
     result = await db.execute(select(User).where(User.email == email))
     existing = result.scalar_one_or_none()
     if existing is not None:
-        if not existing.is_admin:
-            existing.is_admin = True
+        if settings.admin_password:
+            # An explicitly configured password is an intentional operator action.
+            existing.password_hash = hash_password(settings.admin_password)
+            existing.name = existing.name or "Admin"
             existing.plan = "max"
-        return
+            existing.is_admin = True
+            return
+        # Do not promote a pre-existing account just because it owns the default email.
+        email = f"admin-{secrets.token_hex(4)}@ai-ch.local"
 
     password = settings.admin_password or secrets.token_urlsafe(24)
     db.add(
@@ -54,7 +63,7 @@ async def _seed_admin(db: AsyncSession) -> None:
     if not settings.admin_password:
         log.warning(
             "Первичный администратор создан: email=%s, одноразовый пароль=%s. "
-            "Задайте ADMIN_PASSWORD в Render после первого входа.",
+            "Задайте ADMIN_EMAIL и ADMIN_PASSWORD в Render после входа.",
             email,
             password,
         )

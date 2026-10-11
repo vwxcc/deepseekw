@@ -41,6 +41,7 @@ jobs:
           ADMIN_EMAIL: ci-admin@ai-ch.local
           ADMIN_PASSWORD: CIOnlyStrongPass1
           SESSION_SECRET: ci-only-secret
+          PYTHONPATH: .
         run: python tests/runtime_smoke.py
       - name: Set up Node
         uses: actions/setup-node@v4

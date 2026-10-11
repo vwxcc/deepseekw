@@ -56,6 +56,7 @@ class Job:
     effort: str | None = None
     user_id: str | None = None
     retried: bool = False
+    requeued: bool = False
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -227,8 +228,9 @@ class AIRouter:
                 if job.kind == "message":
                     await job.output.put(("error", f"{type(e).__name__}: {e}"))
             finally:
-                if job.message_id:
+                if job.message_id and not job.requeued:
                     self.active.pop(job.message_id, None)
+                job.requeued = False
                 self.queue.task_done()
 
     async def _stream_once(self, job: Job, entry, messages: list[dict]):
@@ -425,7 +427,9 @@ class AIRouter:
                 log.warning("Model entry %s error: %s", entry.model, e)
         if not job.retried and not job.cancel.is_set():
             job.retried = True
-            log.warning("Retrying once: %s", last_error)
+            job.requeued = True
+            await job.output.put(("step", json.dumps({"attempt": 1, "total": len(entries), "retry": True}, ensure_ascii=False)))
+            log.warning("Retrying once after fallback chain failure: %s", last_error)
             await self.enqueue(job)
             return
         await self._finish(job.message_id, MessageStatus.failed, error=last_error)

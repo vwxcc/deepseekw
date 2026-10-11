@@ -13,7 +13,7 @@ MB = 1024 ** 2
 DEFAULTS: dict[str, dict[str, int | None]] = {
     "free": {
         "file_size": 25 * MB,
-        "user_storage": 512 * MB,
+        "user_storage": 250 * MB,
         "files_count": 50,
         "posts": 3,
         "code_agents": 1,
@@ -30,7 +30,7 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
     },
     "pro": {
         "file_size": 100 * MB,
-        "user_storage": 4 * GB,
+        "user_storage": 1024 * MB,
         "files_count": 500,
         "posts": 50,
         "code_agents": 20,

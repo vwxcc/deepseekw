@@ -36,10 +36,11 @@ async def my_limits(
     used = await db.scalar(
         select(func.coalesce(func.sum(File.size), 0)).where(File.user_id == user.id)
     )
+    reset_filter = [Message.created_at >= user.usage_reset_at] if user.usage_reset_at is not None else []
     spent = await db.scalar(
         select(func.coalesce(func.sum(Message.tokens_in), 0) + func.coalesce(func.sum(Message.tokens_out), 0))
         .select_from(Message).join(Chat, Chat.id == Message.chat_id)
-        .where(Chat.user_id == user.id, Message.role == Role.assistant, or_(user.usage_reset_at.is_(None), Message.created_at >= user.usage_reset_at))
+        .where(Chat.user_id == user.id, Message.role == Role.assistant, *reset_filter)
     )
     reqs = await db.scalar(
         select(func.count()).select_from(Message).join(Chat, Chat.id == Message.chat_id)

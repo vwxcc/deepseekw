@@ -28,7 +28,7 @@ from ..security_middleware import (
     _MIME_TO_EXT,
 )
 from ..services.files import detect_kind, extract_text, sha256_bytes
-from ..services.limits import allow, get_limits
+from ..services.limits import allow, effective_plan, get_limits
 from ..services.storage import user_usage
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -187,7 +187,7 @@ async def upload_files(
         payloads.append((safe_name, ext, final_mime, data))
 
     # per-plan storage quota
-    limits = await get_limits(db, user.plan or "free")
+    limits = await get_limits(db, await effective_plan(db, user))
     used = await user_usage(db, user.id)
     count = (
         await db.scalar(

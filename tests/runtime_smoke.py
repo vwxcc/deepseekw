@@ -34,6 +34,9 @@ async def main() -> None:
             ("qwen-main", RouteType.MAIN),
             ("qwen-title", RouteType.TITLE),
             ("qwen-continue", RouteType.CONTINUE),
+            ("qwen-suggestions", RouteType.SUGGESTIONS),
+            ("qwen-summary", RouteType.SUMMARY),
+            ("qwen-file-analysis", RouteType.FILE_ANALYSIS),
         ):
             model_set = await db.scalar(
                 select(ModelSet)
@@ -44,6 +47,7 @@ async def main() -> None:
             assert model_set.route_type == route, f"wrong task route for {slug}"
             assert model_set.is_active and not model_set.is_router, f"{slug} must be active and not an auto-router"
             assert any(entry.is_active for entry in model_set.entries), f"no active fallback entry for {slug}"
+            assert all((entry.quota_reset_hours or 6) >= 1 for entry in model_set.entries), f"invalid quota window for {slug}"
 
         # Set a tiny quota and prove the server-side check blocks then permits after reset.
         test_email = "ci-quota-smoke@ai-ch.local"

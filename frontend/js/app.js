@@ -1042,7 +1042,7 @@
         const headers = { 'X-CSRF-Token': api.csrf() };
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         const res = await fetch(path, {
-          method: 'POST', headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),
+          method: 'POST', headers, credentials: 'same-origin', signal: AbortSignal.timeout(900000),
           body: body !== undefined ? JSON.stringify(body) : undefined,
         });
         if (res.status === 401) { showAuth(); reject(new Error('unauthorized')); return; }
@@ -1089,7 +1089,8 @@
           } else if (ev === 'step') {
             state.streamBuf = '';
             const n = findNode(state.tree, state.activeAssistantId);
-            if (n) n.draft = '';
+            if (n) { n.draft = ''; n.thinking = ''; }
+            state.streamStarted = false;
             renderMessages();
             bindStreamRefs();
           } else if (ev === 'ask') {
@@ -1212,18 +1213,28 @@
       state.streamEl = null;
       await loadChats();
       await loadLimits();
-      // refresh title (generated in background)
+      // A title is generated after the answer; poll until it is saved or times out.
       if (state.currentChatId) {
-        setTimeout(async () => {
+        const chatId = state.currentChatId;
+        let attempts = 0;
+        const refreshTitle = async () => {
+          if (state.currentChatId !== chatId) return;
           try {
-            const chat = await api.get('/api/chats/' + state.currentChatId);
+            const chat = await api.get('/api/chats/' + chatId);
             const i = state.chats.findIndex(c => c.id === chat.id);
             if (i >= 0 && state.chats[i].title !== chat.title) {
               state.chats[i] = chat; renderChatList();
               $('#chat-title').textContent = chat.title;
             }
-          } catch (e) { /* noop */ }
-        }, 2500);
+            if (chat.title === 'Новый чат' && attempts < 12) {
+              attempts += 1;
+              setTimeout(refreshTitle, 1500);
+            }
+          } catch (e) {
+            if (attempts < 12) { attempts += 1; setTimeout(refreshTitle, 1500); }
+          }
+        };
+        setTimeout(refreshTitle, 1000);
       }
     }
   }

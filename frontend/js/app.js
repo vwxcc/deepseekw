@@ -699,6 +699,7 @@
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
+    const generating = n.status === 'queued' || n.status === 'processing';
     let inner;
     if (isUser) {
       const hasAtt = n.attachments && n.attachments.length;
@@ -706,7 +707,6 @@
         '<div class="bubble">' + (n.content ? escapeHtml(n.content) : '(файл)') + '</div>';
     } else {
       const failed = n.status === 'failed';
-      const generating = n.status === 'queued' || n.status === 'processing';
       const hasThink = !!(n.thinking && String(n.thinking).trim());
       const draft = n.draft || '';
 
@@ -739,7 +739,6 @@
 
     let meta = '';
     if (!isUser && !state.readonly) {
-      const generating = n.status === 'queued' || n.status === 'processing';
       const parts = [];
       if (n.status === 'cancelled') parts.push('<span class="status">остановлено</span>');
       if (generating) {

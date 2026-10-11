@@ -645,11 +645,7 @@
     state.tree = await api.get('/api/chats/' + id + '/messages');
     renderChatList();
     renderMessages();
-    await loadUsage();
-    const meta = state.chats.find(c => c.id === id) || {};
-    const isCode = meta.mode === 'code';
-    $('#project-btn').classList.toggle('hidden', !isCode);
-    if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
+
     closeMobileSidebar();
   }
 
@@ -1008,7 +1004,7 @@
       await api.del('/api/messages/' + id);
       removeFromTree(state.tree, id);
       renderMessages();
-      loadUsage();
+
       toast('Удалено');
     } catch (e) {
       toast('Ошибка: ' + e.message, 'error');
@@ -1153,7 +1149,7 @@
               n.draft = '';
             }
             renderMessages();
-            loadUsage();
+
           } else if (ev === 'error') {
             const n = findNode(state.tree, data.message_id);
             if (n) { n.status = 'failed'; n.error = data.error; }
@@ -1195,7 +1191,7 @@
         n.draft = '';
       }
       renderMessages();
-      loadUsage();
+
     } else if (data.type === 'error') {
       const n = findNode(state.tree, data.message_id);
       if (n) { n.status = 'failed'; n.error = data.error; }
@@ -1390,11 +1386,6 @@
     });
     $('#model-btn').addEventListener('click', openModelMenu);
     updateModelButton();
-    $('#context-btn').addEventListener('click', openContextMenu);
-    $('#project-btn').addEventListener('click', () => toggleProjectPanel());
-    $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
-    $('#pp-refresh').addEventListener('click', () => loadProject(true));
-    $('#pp-git').addEventListener('click', openGit);
   }
 
   function fmtNum(n) {
@@ -1547,7 +1538,7 @@
         await api.post('/api/chats/' + state.currentChatId + '/compress',
           { target_percent: parseInt(cmp.value, 10) || 50 });
         toast('История сжата');
-        await loadUsage();
+
       } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
     });
   }
@@ -2204,12 +2195,11 @@
       await loadFiles();
       await loadModelSets();
       await loadMemory();
-      await loadWallCount();
+
       await loadLimits();
-      await loadUsage();
+
       renderMessages();
-      await loadSystem();
-      setInterval(loadSystem, 20000);
+
     } catch (e) {
       console.error('Boot error:', e.message, e.stack);
       toast('Ошибка загрузки: ' + e.message, 'error');

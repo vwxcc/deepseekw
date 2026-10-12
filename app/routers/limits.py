@@ -16,6 +16,7 @@ from ..services.limits import (
     set_limits,
     set_models_for_plan,
 )
+from ..services.usage import window_spend as usage_window_spend
 
 router = APIRouter(prefix="/api/limits", tags=["limits"])
 
@@ -23,56 +24,12 @@ router = APIRouter(prefix="/api/limits", tags=["limits"])
 async def _window_spend(
     db: AsyncSession, user_id: str, hours: int, plan: str = "free"
 ) -> tuple[float, int]:
-    """Dollar spend inside a rolling window, using each model's own prices."""
-    from datetime import timedelta
+    """Dollar spend inside a rolling window, straight from the billing journal.
 
-    from ..models import ModelSetEntry, utcnow
-
-    since = utcnow() - timedelta(hours=max(1, int(hours or 5)))
-    rows = (
-        await db.execute(
-            select(Message.model_set_id, Message.tokens_in, Message.tokens_out)
-            .join(Chat, Chat.id == Message.chat_id)
-            .where(
-                Chat.user_id == user_id,
-                Message.role == Role.assistant,
-                Message.created_at >= since,
-            )
-        )
-    ).all()
-    if not rows:
-        return 0.0, 0
-
-    entries = (await db.execute(select(ModelSetEntry))).scalars().all()
-    prices: dict = {}
-    for e in entries:
-        prices.setdefault(
-            e.model_set_id,
-            (float(e.price_in or 0), float(e.price_out or 0), float(e.price_cache or 0)),
-        )
-
-    # fallback rate per 1k tokens for models without their own price
-    limits = await get_limits(db, plan)
-    rate = float(limits.get("cost_per_1k") or 0)
-    if not rate:
-        priced = [p for p in prices.values() if p[0] or p[1]]
-        if priced:
-            avg_in = sum(p[0] for p in priced) / len(priced)
-            avg_out = sum(p[1] for p in priced) / len(priced)
-            rate = (avg_in + avg_out) / 2 / 1000.0
-
-    total = 0.0
-    tokens = 0
-    for msid, tin, tout in rows:
-        tin = int(tin or 0)
-        tout = int(tout or 0)
-        tokens += tin + tout
-        pin, pout, _ = prices.get(msid, (0.0, 0.0, 0.0))
-        if pin or pout:
-            total += tin / 1e6 * pin + tout / 1e6 * pout
-        elif rate:
-            total += (tin + tout) / 1000.0 * rate
-    return round(total, 4), len(rows)
+    Every billed call wrote its own price snapshot, so no price lookup or flat
+    fallback rate is needed here — the sum is already in dollars.
+    """
+    return await usage_window_spend(db, user_id, hours)
 
 
 @router.get("")
@@ -109,11 +66,6 @@ async def my_limits(
     window_spend, window_reqs = await _window_spend(
         db, user.id, window_hours, user.plan or "free"
     )
-    # if prices are not filled in, fall back to a flat rate so the % still means something
-    if window_spend == 0.0 and window_reqs and budget:
-        rate = float(limits.get("cost_per_1k") or 0)
-        if rate:
-            window_spend = round((int(spent or 0) and 0) + 0.0, 4)
     percent = round(min(100.0, window_spend / budget * 100.0), 1) if budget else 0.0
     return {
         "compare": await all_limits(db),

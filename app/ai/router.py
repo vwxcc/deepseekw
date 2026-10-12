@@ -1,4 +1,17 @@
-"""AI Router: bounded worker pool with ModelSet fallback, streaming and cancel."""
+"""AI Router: per-action model chains, overload guard, fallback and streaming.
+
+Every action (answer, title, suggestions) owns its own chain of models taken from
+the matching Model Set. A chain is tried in order:
+
+* a model that is **saturated** (``max_parallel`` requests already running) is
+  skipped and the next one is used;
+* if every model of the chain is saturated, the router **waits** for a free slot;
+* if a model **fails**, the next model of the chain takes over.
+
+The order of an exchange is strict: the answer first, then the chat title, then the
+follow-up suggestions. Each step is enqueued only after the previous one finished,
+so the queue never runs them in parallel.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -22,14 +35,18 @@ from ..models import (
     Message,
     MessageStatus,
     ModelSet,
+    Role,
     RouteType,
     Suggestion,
+    User,
 )
 from ..services.files import detect_kind, sha256_bytes
+from ..services.limits import get_limits
 from ..services.sandbox import cleanup, run_python
+from ..services.usage import account, est, record, window_spend
+from ..services.websearch import format_context, web_search
 from . import model_sets as ms
 from . import prompts
-from ..services.usage import account, est
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -70,6 +87,10 @@ def _tool_feedback(run: dict) -> str:
 
 @dataclass
 class EntryConfig:
+    """Plain snapshot of a model entry — safe to use outside its DB session."""
+
+    id: str
+    model_set_id: str
     provider: str
     base_url: str
     api_key: str
@@ -77,11 +98,19 @@ class EntryConfig:
     temperature: float
     max_tokens: int
     timeout: int
+    max_parallel: int = 2
+    price_in: float = 0.0
+    price_out: float = 0.0
+    price_cache: float = 0.0
+
+    @property
+    def label(self) -> str:
+        return self.model or self.id
 
 
 @dataclass
 class Job:
-    kind: str  # "message" | "title" | "suggestions"
+    kind: str  # "message" | "followup" | "merge"
     route_type: RouteType
     chat_id: str
     history: list[dict] = field(default_factory=list)
@@ -95,8 +124,67 @@ class Job:
     depends_on: list[str] = field(default_factory=list)
     max_steps: int | None = None
     retried: bool = False
+    # built by the API layer, consumed by the worker
+    system_prompt: str = ""
+    history_messages: list[dict] = field(default_factory=list)
+    search_query: str = ""
+    web_search: bool = True
+    first_exchange: bool = False
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+class ModelPool:
+    """Keeps at most ``max_parallel`` requests on each model at a time.
+
+    Asking for a busy model while a free one exists is what the chain ordering is
+    for: the router simply moves to the next model instead of queueing behind it.
+    """
+
+    def __init__(self) -> None:
+        self._used: dict[str, int] = {}
+        self._cond = asyncio.Condition()
+
+    async def acquire(
+        self,
+        entries: list[EntryConfig],
+        skip: set[str] | None = None,
+        cancel: asyncio.Event | None = None,
+    ) -> EntryConfig | None:
+        """First entry with a free slot; waits while every model is saturated."""
+        skip = skip or set()
+        while True:
+            if cancel is not None and cancel.is_set():
+                return None
+            async with self._cond:
+                for entry in entries:
+                    if entry.id in skip:
+                        continue
+                    limit = max(1, int(entry.max_parallel or 2))
+                    if self._used.get(entry.id, 0) < limit:
+                        self._used[entry.id] = self._used.get(entry.id, 0) + 1
+                        return entry
+            # every model of the chain is busy right now — wait for a release
+            try:
+                async with self._cond:
+                    await asyncio.wait_for(self._cond.wait(), timeout=0.5)
+            except asyncio.TimeoutError:
+                pass
+
+    async def release(self, entry: EntryConfig) -> None:
+        async with self._cond:
+            left = self._used.get(entry.id, 0) - 1
+            if left > 0:
+                self._used[entry.id] = left
+            else:
+                self._used.pop(entry.id, None)
+            self._cond.notify_all()
+
+    def busy(self) -> dict[str, int]:
+        return dict(self._used)
+
+
+pool = ModelPool()
 
 
 def _clean_title(text: str) -> str:
@@ -164,11 +252,12 @@ class AIRouter:
         job.cancel.set()
         return True
 
-    # --- internals ---------------------------------------------------------
+    # --- model chains ------------------------------------------------------
 
     async def _resolve_entries(
         self, route_type: RouteType, model_set_id: str | None = None
     ) -> tuple[str, str, list[EntryConfig]]:
+        """Active models of the set serving this action, in chain order."""
         async with SessionLocal() as db:
             mset = None
             if model_set_id:
@@ -182,12 +271,20 @@ class AIRouter:
                     f"Нет активного Model Set для маршрута {route_type.value}"
                 )
             entries = await ms.get_active_entries(db, mset.id)
+            if not entries and route_type is not RouteType.MAIN:
+                # a missing title/suggestions set falls back to the answer chain
+                main_set = await ms.get_model_set(db, RouteType.MAIN)
+                if main_set is not None:
+                    mset = main_set
+                    entries = await ms.get_active_entries(db, main_set.id)
             if not entries:
                 raise ProviderError(
                     f"Model Set «{mset.name}» не содержит активных моделей"
                 )
             configs = [
                 EntryConfig(
+                    id=e.id,
+                    model_set_id=e.model_set_id,
                     provider=e.provider,
                     base_url=e.base_url,
                     api_key=e.api_key,
@@ -195,10 +292,21 @@ class AIRouter:
                     temperature=e.temperature,
                     max_tokens=e.max_tokens,
                     timeout=e.timeout,
+                    max_parallel=int(getattr(e, "max_parallel", 2) or 2),
+                    price_in=float(getattr(e, "price_in", 0.0) or 0.0),
+                    price_out=float(getattr(e, "price_out", 0.0) or 0.0),
+                    price_cache=float(getattr(e, "price_cache", 0.0) or 0.0),
                 )
                 for e in entries
             ]
             return mset.id, mset.name, configs
+
+    async def _acquire_with_fallback(
+        self, job: Job, entries: list[EntryConfig], skip: set[str]
+    ) -> EntryConfig | None:
+        return await pool.acquire(entries, skip, job.cancel)
+
+    # --- persistence helpers ----------------------------------------------
 
     async def _set_status(
         self,
@@ -230,6 +338,7 @@ class AIRouter:
         error: str | None = None,
         usage: dict | None = None,
         tool_runs: list[dict] | None = None,
+        sources: list[dict] | None = None,
     ) -> None:
         if not message_id:
             return
@@ -242,6 +351,10 @@ class AIRouter:
                 msg.error = error
                 if tool_runs:
                     msg.tool_runs = json.dumps(tool_runs, ensure_ascii=False)
+                if sources is not None:
+                    msg.sources = (
+                        json.dumps(sources, ensure_ascii=False) if sources else None
+                    )
                 if usage:
                     msg.tokens_in = int(usage.get("prompt_tokens") or 0)
                     msg.tokens_out = int(usage.get("completion_tokens") or 0)
@@ -249,14 +362,68 @@ class AIRouter:
                     msg.tokens_cached = int(details.get("cached_tokens") or 0)
                 await db.commit()
 
+    async def _bill(
+        self, job: Job, entry: EntryConfig, usage: dict | None, action: str
+    ) -> None:
+        """Write the money record for one billed call."""
+        if not usage:
+            return
+        tin = int(usage.get("prompt_tokens") or 0)
+        tout = int(usage.get("completion_tokens") or 0)
+        details = usage.get("prompt_tokens_details") or {}
+        tcached = int(details.get("cached_tokens") or 0)
+        if tin + tout <= 0:
+            return
+        try:
+            async with SessionLocal() as db:
+                await record(
+                    db,
+                    user_id=job.user_id,
+                    chat_id=job.chat_id,
+                    message_id=job.message_id,
+                    entry=entry,
+                    action=action,
+                    tokens_in=tin,
+                    tokens_out=tout,
+                    tokens_cached=tcached,
+                )
+                await db.commit()
+        except Exception as e:  # noqa: BLE001 - accounting must never break a chat
+            log.warning("Billing failed (%s): %s", action, e)
+
+    async def _budget_error(self, job: Job) -> str | None:
+        """Block the request when the dollar budget of the window is used up."""
+        if not job.user_id:
+            return None
+        try:
+            async with SessionLocal() as db:
+                user = await db.get(User, job.user_id)
+                if user is None or user.is_admin:
+                    return None
+                limits = await get_limits(db, user.plan or "free")
+                budget = float(limits.get("budget_usd") or 0)
+                if budget <= 0:
+                    return None
+                hours = int(limits.get("window_hours") or 5)
+                spent, _ = await window_spend(db, user.id, hours)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Budget check failed: %s", e)
+            return None
+        if spent >= budget:
+            return (
+                f"Лимит исчерпан: израсходовано ${spent:.2f} из ${budget:.2f} "
+                f"за {hours} ч. Лимит обновится автоматически."
+            )
+        return None
+
+    # --- worker ------------------------------------------------------------
+
     async def _worker(self) -> None:
         while True:
             job = await self.queue.get()
             try:
-                if job.kind == "title":
-                    await self._run_title(job)
-                elif job.kind == "suggestions":
-                    await self._run_suggestions(job)
+                if job.kind == "followup":
+                    await self._run_followup(job)
                 elif job.kind == "merge":
                     await self._run_merge(job)
                 else:
@@ -268,11 +435,11 @@ class AIRouter:
                 if job.kind == "message":
                     await job.output.put(("error", f"{type(e).__name__}: {e}"))
             finally:
-                if job.message_id:
+                if job.message_id and job.kind == "message":
                     self.active.pop(job.message_id, None)
                 self.queue.task_done()
 
-    async def _stream_once(self, job: Job, entry, messages: list[dict]):
+    async def _stream_once(self, job: Job, entry: EntryConfig, messages: list[dict]):
         """One model turn. Returns (full, thinking, usage) or None when cancelled."""
         full = ""
         thinking = ""
@@ -363,69 +530,101 @@ class AIRouter:
             await db.commit()
         return out
 
-    async def _run_merge(self, job: Job) -> None:
-        """Council: wait for every variant, then synthesise one answer."""
-        deadline = time.time() + 300
-        while time.time() < deadline:
-            pending = False
-            async with SessionLocal() as db:
-                for mid in job.depends_on:
-                    m = await db.get(Message, mid)
-                    if m is None or m.status in (
-                        MessageStatus.queued,
-                        MessageStatus.processing,
-                    ):
-                        pending = True
-                        break
-            if not pending:
-                break
-            if job.cancel.is_set():
-                await self._finish(
-                    job.message_id, MessageStatus.cancelled, error="Остановлено"
-                )
-                await job.output.put(("cancelled", ""))
-                return
-            await asyncio.sleep(1.5)
+    # --- web search (runs inside the worker, never blocks the UI) ----------
 
-        parts: list[str] = []
-        question = job.user_text
-        async with SessionLocal() as db:
-            for i, mid in enumerate(job.depends_on, 1):
-                m = await db.get(Message, mid)
-                if m is not None and (m.content or "").strip():
-                    parts.append(f"### Вариант {i}\n{m.content.strip()[:6000]}")
-            if not question:
-                res = await db.execute(
-                    select(Message)
-                    .where(Message.chat_id == job.chat_id, Message.role == Role.user)
-                    .order_by(Message.created_at)
-                    .limit(1)
-                )
-                first = res.scalars().first()
-                question = first.content if first else ""
-
-        if not parts:
-            await self._finish(
-                job.message_id, MessageStatus.failed, error="Варианты не получены"
+    async def _smart_search(
+        self, job: Job, entry: EntryConfig
+    ) -> tuple[list[dict], str]:
+        """Let the model write the queries, then search with each of them."""
+        queries: list[str] = []
+        answer = ""
+        try:
+            answer = await complete_chat(
+                messages=[
+                    {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
+                    {"role": "user", "content": (job.search_query or "")[:1500]},
+                ],
+                base_url=entry.base_url,
+                api_key=entry.api_key,
+                model=entry.model,
+                temperature=0.0,
+                max_tokens=120,
+                timeout=min(entry.timeout or 60, 45),
+                disable_thinking=True,
             )
-            await job.output.put(("error", "Варианты не получены"))
-            return
+            text = (answer or "").strip()
+            if text and "NONE" not in text.upper():
+                for line in text.splitlines():
+                    q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
+                    q = q.replace("\u00ab", "").replace("\u00bb", "")
+                    q = q.strip('"').strip("'").strip()
+                    if 2 < len(q) <= 120:
+                        queries.append(q)
+        except Exception as e:  # noqa: BLE001 - search must never break a chat
+            log.warning("Query generation failed: %s", e)
 
-        job.history = prompts.with_system(
-            [
-                {
-                    "role": "user",
-                    "content": prompts.COUNCIL_MERGE_TEMPLATE.format(
-                        question=question, variants="\n\n".join(parts)
-                    ),
-                }
-            ],
-            prompts.MAIN_SYSTEM,
-        )
-        await job.output.put(
-            ("step", json.dumps({"n": 0, "variants": len(parts)}))
-        )
-        await self._run_message(job)
+        if not queries:
+            words = re.findall(
+                r"[A-Za-zА-Яа-яЁё0-9]{3,}", (job.search_query or "").lower()
+            )
+            stop = {
+                "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
+                "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
+                "мне", "нужно", "хочу", "можно", "есть", "это", "the", "and", "for",
+                "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
+            }
+            key = [w for w in words if w not in stop][:6]
+            queries = [" ".join(key) if key else (job.search_query or "").strip()]
+        queries = [q for q in queries if q][:3]
+
+        results: list[dict] = []
+        seen: set[str] = set()
+        for q in queries:
+            try:
+                for item in await web_search(q):
+                    url = item.get("url") or ""
+                    if url and url not in seen:
+                        seen.add(url)
+                        results.append(item)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Search failed for %r: %s", q[:60], e)
+        log.info("Search queries=%s results=%d", queries, len(results))
+
+        # the query-writing call itself is billed too
+        if answer:
+            try:
+                async with SessionLocal() as db:
+                    await record(
+                        db,
+                        user_id=job.user_id,
+                        chat_id=job.chat_id,
+                        message_id=job.message_id,
+                        entry=entry,
+                        action="search_queries",
+                        tokens_in=est(job.search_query),
+                        tokens_out=est(answer),
+                    )
+                    await db.commit()
+            except Exception as e:  # noqa: BLE001
+                log.warning("Search accounting failed: %s", e)
+        return results[:6], answer
+
+    async def _prepare_history(
+        self, job: Job, entry: EntryConfig
+    ) -> tuple[list[dict], list[dict]]:
+        """Search, fold the results into the prompt and return (history, sources)."""
+        system_prompt = job.system_prompt
+        sources: list[dict] = []
+        if job.web_search and job.search_query:
+            await job.output.put(("stage", json.dumps({"stage": "search"})))
+            sources, _ = await self._smart_search(job, entry)
+            ctx = format_context(sources)
+            if ctx:
+                system_prompt = f"{system_prompt}\n\n{ctx}"
+        history = prompts.with_system(job.history_messages, system_prompt)
+        return history, sources
+
+    # --- main generation ---------------------------------------------------
 
     async def _is_router_set(self, mset_id: str | None) -> bool:
         if not mset_id:
@@ -434,11 +633,8 @@ class AIRouter:
             obj = await db.get(ModelSet, mset_id)
             return bool(obj and getattr(obj, "is_router", False))
 
-    async def _route(self, job: Job, entry) -> tuple[str | None, str, str]:
-        """Ask the routing model to compress the request and pick a cluster.
-
-        Returns ``(set_id, set_name, brief)``.
-        """
+    async def _route(self, job: Job, entry: EntryConfig) -> tuple[str | None, str, str]:
+        """Ask the routing model to compress the request and pick a cluster."""
         async with SessionLocal() as db:
             rows = (
                 await db.execute(
@@ -497,6 +693,8 @@ class AIRouter:
                 await account(
                     db, job.chat_id, chosen.id,
                     est(job.user_text) + est(listing), est(brief),
+                    entry=entry, user_id=job.user_id, message_id=job.message_id,
+                    action="routing",
                 )
                 await db.commit()
         except Exception as e:  # noqa: BLE001 - accounting must never break a chat
@@ -504,6 +702,12 @@ class AIRouter:
         return chosen.id, chosen.name, brief
 
     async def _run_message(self, job: Job) -> None:
+        blocked = await self._budget_error(job)
+        if blocked:
+            await self._finish(job.message_id, MessageStatus.failed, error=blocked)
+            await job.output.put(("error", blocked))
+            return
+
         try:
             mset_id, mset_name, entries = await self._resolve_entries(
                 job.route_type, job.model_set_id
@@ -538,136 +742,175 @@ class AIRouter:
         base_steps = plan_steps or (
             settings.code_agent_max_steps if code_mode else settings.agent_max_steps
         )
-        steps_limit = base_steps
-        max_steps = max(1, steps_limit) if agent_on else 1
+        max_steps = max(1, base_steps) if agent_on else 1
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
+
+        tried: set[str] = set()
         last_error = "Генерация не удалась"
-        for entry in entries:
-            if job.cancel.is_set():
-                await self._finish(
-                    job.message_id, MessageStatus.cancelled, error="Остановлено пользователем"
-                )
-                await job.output.put(("cancelled", ""))
-                return
-            try:
-                messages = list(job.history)
-                answer = ""
-                thinking = ""
-                usage: dict | None = None
-                all_runs: list[dict] = []
-                for step in range(max_steps):
-                    got = await self._stream_once(job, entry, messages)
-                    if got is None:
-                        return
-                    full, thinking, usage = got
-                    runs = extract_run_blocks(full) if agent_on else []
-                    if not runs:
-                        answer = full if full.strip() else thinking
-                        break
-                    for code in runs:
-                        await job.output.put(
-                            ("tool_start", json.dumps({"code": code}, ensure_ascii=False))
-                        )
-                        result = await run_python(
-                            code, timeout=run_timeout, project=job.project
-                        )
-                        attached = await self._attach_run_files(job, result)
-                        run = {
-                            "code": code,
-                            "ok": bool(result.get("ok")),
-                            "stdout": result.get("stdout", ""),
-                            "stderr": result.get("stderr", ""),
-                            "timed_out": bool(result.get("timed_out")),
-                            "files": attached,
-                        }
-                        await job.output.put(("tool", json.dumps(run, ensure_ascii=False)))
-                        all_runs.append(run)
-                        messages = [
-                            *messages,
-                            {"role": "assistant", "content": full},
-                            {"role": "user", "content": _tool_feedback(run)},
-                        ]
-                        cleanup(result.get("workdir"))
-                    answer = strip_run_blocks(full)
-                    if step + 1 < max_steps:
-                        await job.output.put(("step", json.dumps({"n": step + 1})))
+        rounds = 0
 
-                if extract_run_blocks(answer):
-                    answer = strip_run_blocks(answer)
-                answer = strip_sandbox_paths(answer)
-                if not answer.strip():
-                    raise ProviderError("Пустой ответ модели")
-
-                # pull [[memory: ...]] commands out of the visible answer
-                answer, memories = extract_memories(answer)
-                answer, ask = extract_ask(answer)
-                answer = strip_cot(answer)
-                if not ask and len(answer) <= 500:
-                    # fallback: a short answer that ends with a question is a clarification
-                    tail = answer.strip().split("\n")[-1].strip()
-                    if tail.endswith("?") and 12 < len(tail) < 260:
-                        ask = tail
-                if memories and job.user_id:
-                    async with SessionLocal() as db:
-                        for kind, value in memories:
-                            db.add(
-                                Memory(
-                                    user_id=job.user_id,
-                                    content=value[:2000],
-                                    kind=kind,
-                                    message_id=job.message_id,
-                                )
+        while rounds < 2:
+            rounds += 1
+            while len(tried) < len(entries):
+                entry = await self._acquire_with_fallback(job, entries, tried)
+                if entry is None:
+                    await self._finish(
+                        job.message_id, MessageStatus.cancelled,
+                        error="Остановлено пользователем",
+                    )
+                    await job.output.put(("cancelled", ""))
+                    return
+                if tried:
+                    # a fallback is in play — let the UI show which model stepped in
+                    await job.output.put(
+                        ("route", json.dumps(
+                            {"name": entry.label, "brief": "резервная модель"},
+                            ensure_ascii=False,
+                        ))
+                    )
+                try:
+                    messages, sources = await self._prepare_history(job, entry)
+                    answer = ""
+                    thinking = ""
+                    usage: dict | None = None
+                    all_runs: list[dict] = []
+                    for step in range(max_steps):
+                        got = await self._stream_once(job, entry, messages)
+                        if got is None:
+                            return
+                        full, thinking, usage = got
+                        runs = extract_run_blocks(full) if agent_on else []
+                        if not runs:
+                            answer = full if full.strip() else thinking
+                            break
+                        for code in runs:
+                            await job.output.put(
+                                ("tool_start", json.dumps({"code": code}, ensure_ascii=False))
                             )
-                        await db.commit()
-                    await job.output.put(
-                        ("memory", json.dumps([v for _, v in memories], ensure_ascii=False))
-                    )
+                            result = await run_python(
+                                code, timeout=run_timeout, project=job.project
+                            )
+                            attached = await self._attach_run_files(job, result)
+                            run = {
+                                "code": code,
+                                "ok": bool(result.get("ok")),
+                                "stdout": result.get("stdout", ""),
+                                "stderr": result.get("stderr", ""),
+                                "timed_out": bool(result.get("timed_out")),
+                                "files": attached,
+                            }
+                            await job.output.put(("tool", json.dumps(run, ensure_ascii=False)))
+                            all_runs.append(run)
+                            messages = [
+                                *messages,
+                                {"role": "assistant", "content": full},
+                                {"role": "user", "content": _tool_feedback(run)},
+                            ]
+                            cleanup(result.get("workdir"))
+                        answer = strip_run_blocks(full)
+                        if step + 1 < max_steps:
+                            await job.output.put(("step", json.dumps({"n": step + 1})))
 
-                await self._finish(
-                    job.message_id,
-                    MessageStatus.completed,
-                    content=answer,
-                    error=None,
-                    usage=usage,
-                    tool_runs=all_runs or None,
-                )
-                if ask:
-                    await job.output.put(
-                        ("ask", json.dumps({"question": ask}, ensure_ascii=False))
-                    )
-                await job.output.put(("done", answer))
-                await self.enqueue(
-                    Job(
-                        kind="suggestions",
-                        route_type=RouteType.SUGGESTIONS,
-                        chat_id=job.chat_id,
-                        message_id=job.message_id,
-                        history=[*messages, {"role": "assistant", "content": answer}],
-                    )
-                )
-                return
-            except ProviderError as e:
-                last_error = str(e)
-                log.warning("Model entry %s failed: %s", entry.model, e)
-            except asyncio.CancelledError:
-                await self._finish(
-                    job.message_id, MessageStatus.cancelled, error="Остановлено"
-                )
-                await job.output.put(("cancelled", ""))
-                return
-            except Exception as e:
-                last_error = f"{type(e).__name__}: {e}"
-                log.warning("Model entry %s error: %s", entry.model, e)
+                    if extract_run_blocks(answer):
+                        answer = strip_run_blocks(answer)
+                    answer = strip_sandbox_paths(answer)
+                    if not answer.strip():
+                        raise ProviderError("Пустой ответ модели")
 
-        # one automatic retry with the same model (matters for Auto routing)
-        if not job.retried and not job.cancel.is_set():
-            job.retried = True
-            log.warning("Retrying once: %s", last_error)
+                    # pull [[memory: ...]] commands out of the visible answer
+                    answer, memories = extract_memories(answer)
+                    answer, ask = extract_ask(answer)
+                    answer = strip_cot(answer)
+                    if not ask and len(answer) <= 500:
+                        tail = answer.strip().split("\n")[-1].strip()
+                        if tail.endswith("?") and 12 < len(tail) < 260:
+                            ask = tail
+                    if memories and job.user_id:
+                        async with SessionLocal() as db:
+                            for kind, value in memories:
+                                db.add(
+                                    Memory(
+                                        user_id=job.user_id,
+                                        content=value[:2000],
+                                        kind=kind,
+                                        message_id=job.message_id,
+                                    )
+                                )
+                            await db.commit()
+                        await job.output.put(
+                            ("memory", json.dumps(
+                                [v for _, v in memories], ensure_ascii=False
+                            ))
+                        )
+
+                    await self._bill(job, entry, usage, "main")
+                    await self._finish(
+                        job.message_id,
+                        MessageStatus.completed,
+                        content=answer,
+                        error=None,
+                        usage=usage,
+                        tool_runs=all_runs or None,
+                        sources=sources,
+                    )
+                    if ask:
+                        await job.output.put(
+                            ("ask", json.dumps({"question": ask}, ensure_ascii=False))
+                        )
+                    await job.output.put(("done", answer))
+                    # strict order: the title (first exchange only) runs next,
+                    # and the suggestions only after that
+                    await self.enqueue(
+                        Job(
+                            kind="followup",
+                            route_type=RouteType.TITLE,
+                            chat_id=job.chat_id,
+                            message_id=job.message_id,
+                            user_id=job.user_id,
+                            model_set_id=job.model_set_id,
+                            user_text=job.user_text,
+                            history=[
+                                *job.history_messages,
+                                {"role": "assistant", "content": answer},
+                            ],
+                            first_exchange=job.first_exchange,
+                        )
+                    )
+                    return
+                except asyncio.CancelledError:
+                    await self._finish(
+                        job.message_id, MessageStatus.cancelled, error="Остановлено"
+                    )
+                    await job.output.put(("cancelled", ""))
+                    return
+                except ProviderError as e:
+                    last_error = str(e)
+                    tried.add(entry.id)
+                    log.warning("Model %s failed: %s", entry.label, e)
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {e}"
+                    tried.add(entry.id)
+                    log.warning("Model %s error: %s", entry.label, e)
+                finally:
+                    await pool.release(entry)
+
+            # every model failed once — retry the whole chain one more time
+            if rounds >= 2 or job.cancel.is_set():
+                break
+            log.warning("Retrying the chain once: %s", last_error)
+            tried.clear()
             await job.output.put(("step", json.dumps({"n": 0, "retry": True})))
-            await self.enqueue(job)
-            return
+
         await self._finish(job.message_id, MessageStatus.failed, error=last_error)
         await job.output.put(("error", last_error))
+
+    # --- title, then suggestions ------------------------------------------
+
+    async def _run_followup(self, job: Job) -> None:
+        """Title first (only on the first exchange), then the suggestions."""
+        if job.first_exchange:
+            await self._run_title(job)
+        await self._run_suggestions(job)
 
     async def _run_title(self, job: Job) -> None:
         try:
@@ -678,9 +921,13 @@ class AIRouter:
 
         messages = [
             {"role": "system", "content": prompts.TITLE_SYSTEM},
-            {"role": "user", "content": job.user_text[:2000]},
+            {"role": "user", "content": (job.user_text or "")[:2000]},
         ]
-        for entry in entries:
+        tried: set[str] = set()
+        while len(tried) < len(entries):
+            entry = await pool.acquire(entries, tried)
+            if entry is None:
+                return
             try:
                 raw = await complete_chat(
                     messages=messages,
@@ -704,12 +951,18 @@ class AIRouter:
                             entry.model_set_id,
                             est(prompts.TITLE_SYSTEM) + est((job.user_text or "")[:2000]),
                             est(title),
+                            entry=entry,
+                            user_id=job.user_id,
+                            message_id=job.message_id,
+                            action="title",
                         )
                         await db.commit()
                     return
             except Exception as e:
-                log.warning("Title entry %s failed: %s", entry.model, e)
-
+                log.warning("Title entry %s failed: %s", entry.label, e)
+                tried.add(entry.id)
+            finally:
+                await pool.release(entry)
 
     async def _run_suggestions(self, job: Job) -> None:
         if not job.message_id:
@@ -725,7 +978,11 @@ class AIRouter:
             {"role": "system", "content": prompts.SUGGESTIONS_SYSTEM},
             *dialogue[-8:],
         ]
-        for entry in entries:
+        tried: set[str] = set()
+        while len(tried) < len(entries):
+            entry = await pool.acquire(entries, tried)
+            if entry is None:
+                return
             try:
                 raw = await complete_chat(
                     messages=messages,
@@ -747,6 +1004,10 @@ class AIRouter:
                             est(prompts.SUGGESTIONS_SYSTEM)
                             + sum(est(m.get("content")) for m in dialogue[-8:]),
                             est(raw),
+                            entry=entry,
+                            user_id=job.user_id,
+                            message_id=job.message_id,
+                            action="suggestions",
                         )
                         await db.execute(
                             delete(Suggestion).where(
@@ -765,7 +1026,82 @@ class AIRouter:
                         await db.commit()
                     return
             except Exception as e:
-                log.warning("Suggestions entry %s failed: %s", entry.model, e)
+                log.warning("Suggestions entry %s failed: %s", entry.label, e)
+                tried.add(entry.id)
+            finally:
+                await pool.release(entry)
+
+    # --- council merge (kept for the beta endpoint) ------------------------
+
+    async def _run_merge(self, job: Job) -> None:
+        """Council: wait for every variant, then synthesise one answer."""
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            pending = False
+            async with SessionLocal() as db:
+                for mid in job.depends_on:
+                    m = await db.get(Message, mid)
+                    if m is None or m.status in (
+                        MessageStatus.queued,
+                        MessageStatus.processing,
+                    ):
+                        pending = True
+                        break
+            if not pending:
+                break
+            if job.cancel.is_set():
+                await self._finish(
+                    job.message_id, MessageStatus.cancelled, error="Остановлено"
+                )
+                await job.output.put(("cancelled", ""))
+                return
+            await asyncio.sleep(1.5)
+
+        parts: list[str] = []
+        question = job.user_text
+        async with SessionLocal() as db:
+            for i, mid in enumerate(job.depends_on, 1):
+                m = await db.get(Message, mid)
+                if m is not None and (m.content or "").strip():
+                    parts.append(f"### Вариант {i}\n{m.content.strip()[:6000]}")
+            if not question:
+                res = await db.execute(
+                    select(Message)
+                    .where(Message.chat_id == job.chat_id, Message.role == Role.user)
+                    .order_by(Message.created_at)
+                    .limit(1)
+                )
+                first = res.scalars().first()
+                question = first.content if first else ""
+
+        if not parts:
+            await self._finish(
+                job.message_id, MessageStatus.failed, error="Варианты не получены"
+            )
+            await job.output.put(("error", "Варианты не получены"))
+            return
+
+        job.history_messages = [
+            {
+                "role": "user",
+                "content": prompts.COUNCIL_MERGE_TEMPLATE.format(
+                    question=question, variants="\n\n".join(parts)
+                ),
+            }
+        ]
+        job.system_prompt = prompts.MAIN_SYSTEM
+        job.web_search = False
+        await job.output.put(("step", json.dumps({"n": 0, "variants": len(parts)})))
+        await self._run_message(job)
+
+
+SEARCH_QUERIES_SYSTEM = (
+    "Ты составляешь поисковые запросы для интернет-поиска. На входе — сообщение "
+    "пользователя. Верни от 1 до 3 коротких поисковых запросов (2-5 слов каждый), "
+    "по одному на строку, без нумерации, кавычек и пояснений — только то, что реально "
+    "надо найти. Если поиск не нужен (простой вопрос, математика, рассуждение, код) — "
+    "верни ровно одно слово NONE."
+)
 
 
 router = AIRouter(settings.global_ai_concurrency)

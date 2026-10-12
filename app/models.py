@@ -228,9 +228,41 @@ class ModelSetEntry(Base):
     price_out: Mapped[float] = mapped_column(Float, default=0.0)
     price_cache: Mapped[float] = mapped_column(Float, default=0.0)
     timeout: Mapped[int] = mapped_column(Integer, default=300)
+    # how many requests this model may serve at the same time; when the limit is
+    # reached the router moves on to the next model of the chain
+    max_parallel: Mapped[int] = mapped_column(Integer, default=2)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     model_set: Mapped["ModelSet"] = relationship(back_populates="entries")
+
+
+class UsageEvent(Base):
+    """One billed model call — the source of truth for money limits.
+
+    Every call (answer, title, suggestions, routing, search queries, compression)
+    writes exactly one row with the price snapshot of the model that served it,
+    so the dollar budget counts everything and survives price edits.
+    """
+
+    __tablename__ = "usage_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    chat_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    model_set_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    entry_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    model: Mapped[str] = mapped_column(String(255), default="")
+    action: Mapped[str] = mapped_column(String(32), default="main")
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_cached: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
 
 
 class Suggestion(Base):

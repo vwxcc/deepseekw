@@ -461,8 +461,8 @@
     activeAssistantId: null,
     thinkBody: null,
     modelSets: [],
-    modelSetId: localStorage.getItem('cs_model') || '',
-    effort: localStorage.getItem('cs_effort') || 'medium',
+    modelSetId: '',
+    effort: 'medium',
     usage: null,
     draftTail: null,
     memories: [],
@@ -659,16 +659,13 @@
 
   async function newChat(mode) {
     const chat = await api.post('/api/chats', {
-      title: mode === 'code' ? 'Код-проект' : 'Новый чат',
+      title: 'Новый чат',
       mode: mode || 'chat',
     });
     state.chats.unshift(chat);
     renderChatList();
     await openChat(chat.id);
     $('#input').focus();
-    if (mode === 'code') {
-      toast('Код-агент: файлы проекта сохраняются между сообщениями');
-    }
   }
 
   function openRename(id) {
@@ -777,6 +774,14 @@
       '<i class="core"></i></span>';
   }
 
+  function genAnim(label) {
+    return '<span class="gen-anim">' +
+      '<span class="gen-anim-icon">' + thinkAnim() + '</span>' +
+      '<span class="gen-anim-text">' + escapeHtml(label || 'Создаю чат…') + '</span>' +
+      '<span class="gen-anim-bar"><i></i></span>' +
+      '</span>';
+  }
+
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
@@ -789,7 +794,10 @@
       const hasThink = !!(n.thinking && String(n.thinking).trim());
       const draft = n.draft || '';
 
-      if (generating) {
+      if (generating && n.creating) {
+        // first message of a brand-new chat: show the creation animation right away
+        inner = genAnim(n.creatingLabel || 'Создаю чат…');
+      } else if (generating) {
         // while generating we only show a few live lines (thinking + answer draft)
         inner = '<div class="think-box">' +
           '<div class="think-head">' + thinkAnim() +
@@ -800,8 +808,9 @@
           '<div class="think-tail answer">' + escapeHtml(tailText(n.draft, 900)) + '</div>' +
           '</div>';
       } else if (failed) {
+        // a failed request is just shown as an error message, nothing more
         inner = '<div class="content md" style="color:var(--danger)">Ошибка: ' +
-          escapeHtml(n.error || 'генерация не удалась') + '</div>';
+          escapeHtml(n.error || 'запрос не прошёл') + '</div>';
       } else {
         const raw = String(n.content || '');
         const truncated = raw.length > FULL_RENDER_LIMIT && !n.showFull;
@@ -1183,24 +1192,29 @@
     $('#input').disabled = false;
   }
 
-  async function streamRequest(path, body) {
+  async function streamRequest(path, body, opts) {
+    // opts: { optimistic: true } — a pending assistant bubble was already
+    // rendered by the caller; don't block on it and don't reset the tree ids
     if (state.streaming) return;
     setStreaming(true);
+    if (!opts || !opts.optimistic) {
+      state.activeAssistantId = null;
+    }
     state.streamEl = null; state.thinkBody = null; state.draftTail = null;
-    state.streamBuf = ''; state.streamStarted = false; state.activeAssistantId = null;
+    state.streamBuf = ''; state.streamStarted = false;
     state.genStart = Date.now();
     state.lastEvent = Date.now();
     if (state.genTimer) clearInterval(state.genTimer);
     state.genTimer = setInterval(() => {
-      // the limit bar fills live while the answer is still streaming
+      // the limit bar fills live while the answer is still streaming;
+      // the exact dollar amount lands on `done` (server bills per model)
       const w = windowUsage();
       if (w && w.budget_usd) {
-        const ms = currentModelSet();
-        const ent = (ms && ms.entries && ms.entries[0]) || {};
         const outTokens = Math.round(((state.streamBuf || '').length) / 3.6);
-        const live = Number(w.spend_usd || 0) + outTokens / 1e6 * Number(ent.price_out || 0);
+        const live = Number(w.spend_usd || 0);
         paintUsage(live / w.budget_usd * 100,
-          'Идёт генерация · $' + live.toFixed(4) + ' из $' + w.budget_usd +
+          'Идёт генерация · ' + outTokens.toLocaleString('ru-RU') +
+          ' ток. выхода · бюджет $' + live.toFixed(4) + ' из $' + w.budget_usd +
           ' за ' + w.hours + ' ч');
       }
       const el = $('[data-gen]');
@@ -1224,12 +1238,36 @@
       await consumeSse(res, (ev, data) => {
         state.lastEvent = Date.now();
         if (ev === 'user_message' || ev === 'assistant_message') {
-          const node = insertMessage(state.tree, data);
+          const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
+          let node = null;
+          if (tmp) {
+            // swap the optimistic node in place (no flicker, no duplicates)
+            node = findNode(state.tree, tmp.id);
+            if (node) {
+              const parentId = data.parent_message_id || node.parent_message_id;
+              Object.assign(node, data, { children: node.children || [] });
+              if (parentId) node.parent_message_id = parentId;
+            }
+          }
+          if (!node) node = insertMessage(state.tree, data);
           renderMessages();
           if (ev === 'assistant_message') {
-            state.activeAssistantId = data.id;
+            state.activeAssistantId = node.id;
             bindStreamRefs();
           }
+        } else if (ev === 'stage') {
+          // search / routing stages: the bubble keeps the creation animation,
+          // the label tells what is happening right now
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) {
+            n.stage = data.stage || '';
+            if (data.stage === 'search') {
+              n.creating = true;
+              n.creatingLabel = 'Ищу в интернете…';
+            }
+          }
+          renderMessages();
+          bindStreamRefs();
         } else if (ev === 'thinking') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.thinking = (n.thinking || '') + (data.text || '');
@@ -1242,7 +1280,7 @@
         } else if (ev === 'delta') {
           state.streamBuf += data.text || '';
           const n = findNode(state.tree, state.activeAssistantId);
-          if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
+          if (n) { n.draft = state.streamBuf; n.creating = false; state.streamStarted = true; }
           if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
           maybeScroll();
         } else if (ev === 'memory') {
@@ -1298,27 +1336,46 @@
           renderMessages();
           bindStreamRefs();
         } else if (ev === 'done') {
-          const n = findNode(state.tree, data.message_id);
+          const n = findNode(state.tree, data.message_id) ||
+            findNode(state.tree, state.activeAssistantId);
           if (n) {
             n.status = 'completed';
             n.content = data.text || state.streamBuf;
-            n.draft = '';
+            n.draft = ''; n.creating = false;
           }
           renderMessages();
           loadUsage();
         } else if (ev === 'error') {
-          const n = findNode(state.tree, data.message_id);
-          if (n) { n.status = 'failed'; n.error = data.error; }
+          const n = findNode(state.tree, data.message_id) ||
+            findNode(state.tree, state.activeAssistantId);
+          if (n) { n.status = 'failed'; n.creating = false; n.error = data.error; }
           renderMessages();
         } else if (ev === 'cancelled') {
-          const n = findNode(state.tree, data.message_id);
-          if (n) { n.status = 'cancelled'; if (data.text) n.content = data.text; }
+          const n = findNode(state.tree, data.message_id) ||
+            findNode(state.tree, state.activeAssistantId);
+          if (n) { n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text; }
           renderMessages();
         }
       });
     } catch (err) {
       console.error(err);
       toast('Ошибка: ' + err.message, 'error');
+      // the optimistic messages must not hang — turn them into a plain error
+      const a = state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null;
+      if (a && a.status !== 'completed' && a.status !== 'cancelled') {
+        a.status = 'failed'; a.creating = false;
+        a.error = (err && err.message) ? err.message : 'запрос не прошёл';
+        renderMessages();
+      }
+      // if the server never answered at all, the synthetic bubble is a ghost:
+      // drop it and re-sync from the real history so nothing stays on screen
+      const ghost = state.tmpAssistant ? findNode(state.tree, state.tmpAssistant.id) : null;
+      if (ghost && /^tmp_/.test(ghost.id)) {
+        try { if (state.currentChatId) await openChat(state.currentChatId); }
+        catch (e) { /* noop */ }
+      }
+      // forget temporary ids so a retry starts a clean branch
+      state.tmpUser = null; state.tmpAssistant = null;
     } finally {
       setStreaming(false);
       // limits must move the moment the answer lands
@@ -1346,7 +1403,9 @@
     const input = $('#input');
     const content = input.value.trim();
     if (!content || state.streaming) return;
-    if (!state.currentChatId) {
+    // create the chat right away so the animation plays while the request runs
+    const isNewChat = !state.currentChatId;
+    if (isNewChat) {
       const chat = await api.post('/api/chats', { title: 'Новый чат' });
       state.chats.unshift(chat);
       state.currentChatId = chat.id;
@@ -1358,8 +1417,43 @@
     // continue the ACTIVE branch: the last message of the visible path
     const path = activePath(state.tree, state.choices);
     const parentId = path.length ? path[path.length - 1].node.id : null;
+    const attList = state.pendingAttachments.map(f => ({
+      file_id: f.id, name: f.original_name || f.name || 'файл',
+      kind: f.kind || 'other', size: f.size || 0,
+    }));
+
+    // ---- optimistic render: show the messages at once, don't wait for the
+    // server round-trip (the 2nd message must appear immediately too) ----
+    const userId = 'tmp_u_' + Date.now().toString(36);
+    const asstId = 'tmp_a_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const userNode = {
+      id: userId, role: 'user', content, status: 'completed',
+      parent_message_id: parentId, attachments: attList, children: [],
+      created_at: new Date().toISOString(),
+    };
+    const asstNode = {
+      id: asstId, role: 'assistant', content: '', status: 'processing',
+      parent_message_id: userId, children: [],
+      created_at: new Date().toISOString(),
+      // first message of a new chat: creation animation until the stream starts
+      creating: isNewChat, creatingLabel: 'Создаю чат…',
+      error: null,
+    };
+    const parentNode = parentId ? findNode(state.tree, parentId) : null;
+    if (parentNode) {
+      parentNode.children = parentNode.children || [];
+      parentNode.children.push(userNode, asstNode);
+    } else {
+      state.tree.push(userNode, asstNode);
+    }
+    state.activeAssistantId = asstId;
+    renderMessages();
+
     input.value = ''; autoGrow();
     state.pendingAttachments = []; renderAttachments();
+    // remember which tmp node the server messages should replace
+    state.tmpUser = { id: userId, content };
+    state.tmpAssistant = { id: asstId };
     await streamRequest('/api/chats/' + state.currentChatId + '/messages',
       {
         content,
@@ -1369,7 +1463,8 @@
         web_search: true,
         effort: state.effort,
         style: state.style,
-      });
+      }, { optimistic: true });
+    state.tmpUser = null; state.tmpAssistant = null;
   }
 
   // ---------- composer ----------
@@ -1406,13 +1501,7 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
-    const legacySelect = $('#model-select');
-    if (legacySelect) legacySelect.addEventListener('change', (e) => {
-      state.modelSetId = e.target.value;
-      localStorage.setItem('cs_model', state.modelSetId);
-    });
-    if ($('#model-btn')) $('#model-btn').addEventListener('click', openModelMenu);
-    updateModelButton();
+    // the model picker is gone — the server runs the chain per action itself
     if ($('#context-btn')) $('#context-btn').addEventListener('click', openUsageModal);
     if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
@@ -1653,24 +1742,11 @@
     } catch (e) {
       state.modelSets = [];
     }
+    // The picker is gone: the server picks models itself per action.
+    // We keep the list only for the admin panel.
     const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    if (!mains.length) { updateModelButton(); return; }
-
-    // one-time switch to Auto as the default for everyone
-    if (!localStorage.getItem('cs_model_default_v2')) {
-      localStorage.setItem('cs_model_default_v2', '1');
-      const auto = mains.find(s => s.is_router);
-      if (auto) {
-        state.modelSetId = auto.id;
-        localStorage.setItem('cs_model', auto.id);
-      }
-    }
-    if (!state.modelSetId || !mains.some(s => s.id === state.modelSetId)) {
-      const pick = mains.find(s => s.is_router) || mains[0];
-      state.modelSetId = pick.id;
-      localStorage.setItem('cs_model', state.modelSetId);
-    }
-    updateModelButton();
+    const auto = mains.find(s => s.is_router) || mains[0];
+    state.modelSetId = auto ? auto.id : '';
   }
 
   // ---------- files ----------
@@ -2012,8 +2088,7 @@
   }
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
-    $('#new-code-btn').addEventListener('click', () => toastSoon('Код-агент'));
-    $('#new-council-btn').addEventListener('click', () => toastSoon('Консилиум'));
+    // Код-агент и Консилиум убраны из интерфейса — обработчиков больше нет
     $('#collapse-btn').addEventListener('click', () => {
       state.sidebarCollapsed = true;
       localStorage.setItem('cs_sidebar', '1');
@@ -2054,8 +2129,7 @@
           '<span class="role-chip">' + (isAdmin ? 'администратор' : 'пользователь') + '</span></div>' +
           '</div>' +
           '<h4 class="sec">Параметры</h4>' +
-          '<p class="usage-note">Поиск в интернете: всегда включён · Усилие: ' +
-          escapeHtml(state.effort) + ' · Память: ' +
+          '<p class="usage-note">Поиск в интернете: всегда включён · Память: ' +
           ((state.memories || []).length) + ' записей<br/>' +
           'Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
           '<h4 class="sec">Состояние сервера</h4>' +
@@ -2454,63 +2528,6 @@
       const counts = document.querySelectorAll('.mem-count');
       counts.forEach((el) => { el.textContent = items.length ? String(items.length) : ''; });
     } catch (e) { state.memories = []; }
-  }
-
-  async function openMemory(filterMessageId) {
-    let items = [];
-    try { items = await api.get('/api/memory'); } catch (e) { items = []; }
-    if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
-    openModal({
-      title: filterMessageId ? 'Что запомнил по этому ответу' : 'Память о вас',
-      okText: 'Закрыть',
-      body: (items.length
-        ? '<div class="mem-list">' + items.map(m =>
-            '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
-            '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>').join('') +
-          '</div>'
-        : '<p>Пока ничего не записано.</p>') +
-        '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить</button>' +
-        (items.length && !filterMessageId
-          ? '<button class="chip-btn" id="mem-clear">' + icon('trash') + 'Очистить всё</button>' : '') +
-        '</div>',
-      onOk: () => true,
-    });
-    $$('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
-      try {
-        await api.del('/api/memory/' + b.dataset.delMem);
-        $('#modal-root').innerHTML = '';
-        await loadMemory();
-        openMemory(filterMessageId);
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    }));
-    const add = $('#mem-add');
-    if (add) add.addEventListener('click', () => {
-      openModal({
-        title: 'Добавить в память',
-        body: '<textarea id="mem-text" rows="4" placeholder="Что запомнить о вас?"></textarea>',
-        onOk: async (root) => {
-          const val = $('#mem-text', root).value.trim();
-          if (!val) return false;
-          await api.post('/api/memory', { content: val });
-          await loadMemory();
-          $('#modal-root').innerHTML = '';
-          openMemory();
-          toast('Записано в память');
-          return true;
-        },
-      });
-    });
-    const clr = $('#mem-clear');
-    if (clr) clr.addEventListener('click', async () => {
-      if (!confirm('Очистить всю память о вас?')) return;
-      try {
-        await api.del('/api/memory');
-        await loadMemory();
-        $('#modal-root').innerHTML = '';
-        openMemory();
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    });
   }
 
   async function openCouncil() {
@@ -3138,7 +3155,7 @@
       questions: '**Код.** Что нужно написать?\n\n' +
         '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
         '3. Нужны ли тесты и комментарии?\n\n' +
-        'Или переключитесь в режим **Код-агента** — там будет полноценный проект с файлами.',
+        'Если нужен полноценный проект с файлами — опишите задачу, я напишу код и файлы.',
     },
     {
       id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#c0563f',
@@ -3255,122 +3272,16 @@
     }, 420);
   }
 
-  function toastSoon(what) {
-    toast('🔒 ' + what + ' скоро появится — уже в работе. Пока доступен обычный чат.', 'error');
-  }
-
-
-  // ---------- rich model menu (clusters + effort + temperature + compression) ----------
+  // ---------- model choice ----------
+  // The picker is gone from the interface: every action (answer, title,
+  // suggestions) runs its own chain of models on the server — base API first,
+  // next model when one is at its parallel limit, waiting when all are busy.
   function currentModelSet() {
     return (state.modelSets || []).find(x => x.id === state.modelSetId) || null;
   }
 
   function updateModelButton() {
-    const label = $('#model-btn-label');
-    if (!label) return;
-    const ms = currentModelSet();
-    label.textContent = ms ? ms.name : 'Модель';
-  }
-
-  async function openModelMenu() {
-    await loadModelSets();
-    if (!state.limits) await loadLimits();
-    const mains = (state.modelSets || []).filter(x => x.route_type === 'MAIN')
-      .sort((a, b) => (b.is_router ? 1 : 0) - (a.is_router ? 1 : 0));
-    const lim = (state.limits && state.limits.limits) || {};
-    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
-    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
-    const cdef = Math.max(cmin, Math.min(cmax, 50));
-    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
-
-    const cards = mains.map(x => {
-      const e = (x.entries || [])[0] || {};
-      const bits = ['контекст ' + fmtNum(e.context_len || 0),
-                    'ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.'];
-      if (e.price_in) bits.push('вход $' + e.price_in + '/1M');
-      if (e.price_out) bits.push('выход $' + e.price_out + '/1M');
-      if (e.price_cache) bits.push('кэш $' + e.price_cache + '/1M');
-      return '<label class="mm-card' + (x.id === state.modelSetId ? ' on' : '') + '">' +
-        '<input type="radio" name="mm" value="' + x.id + '"' +
-        (x.id === state.modelSetId ? ' checked' : '') + '/>' +
-        '<span class="mm-body"><b>' + escapeHtml(x.name) + (x.is_router ? ' · авто по умолчанию' : '') + '</b>' +
-        '<em>' + escapeHtml(e.model || '—') + '</em>' +
-        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
-    }).join('');
-
-    openModal({
-      title: 'Модель и параметры',
-      okText: 'Готово',
-      body:
-        '<div class="mm-grid">' +
-          '<div class="mm-col">' +
-            '<h4 class="sec">Кластер</h4>' +
-            '<div class="mm-list">' + (cards || '<p>Моделей нет</p>') + '</div>' +
-          '</div>' +
-          '<div class="mm-col">' +
-            '<h4 class="sec">Усилие модели</h4>' +
-            '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
-            (EFFORTS.length - 1) + '" step="1" value="' + idx +
-            '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
-            '<h4 class="sec">Температура</h4>' +
-            '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
-            (state.temperature != null ? state.temperature : 0.2) +
-            '"/><b id="mm-temp-label">' +
-            Number(state.temperature != null ? state.temperature : 0.2).toFixed(1) + '</b></div>' +
-            '<h4 class="sec">Сжатие истории</h4>' +
-            '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме. ' +
-            'Тариф: от ' + cmin + '% до ' + cmax + '%' +
-            (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
-            '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
-            '" max="' + cmax + '" step="5" value="' + cdef +
-            '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
-            '<div style="margin-top:10px">' +
-            '<button class="chip-btn" id="mm-comp-go">Сжать историю</button></div>' +
-          '</div>' +
-        '</div>',
-      onOk: (root) => {
-        const picked = $('input[name=mm]:checked', root);
-        if (picked) {
-          state.modelSetId = picked.value;
-          localStorage.setItem('cs_model', state.modelSetId);
-        }
-        updateModelButton();
-        return true;
-      },
-    });
-
-    const mmBox = document.querySelector('#modal-root .modal');
-    if (mmBox) mmBox.classList.add('wide');
-    const eff = $('#mm-effort');
-    eff.addEventListener('input', () => {
-      const i = parseInt(eff.value, 10) || 0;
-      state.effort = EFFORTS[i];
-      localStorage.setItem('cs_effort', state.effort);
-      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
-    });
-    const tmp = $('#mm-temp');
-    tmp.addEventListener('input', () => {
-      state.temperature = parseFloat(tmp.value) || 0;
-      localStorage.setItem('cs_temp', String(state.temperature));
-      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
-    });
-    const cmp = $('#mm-comp');
-    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
-    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
-      $$('.mm-card').forEach(c => c.classList.remove('on'));
-      const card = r.closest('.mm-card');
-      if (r.checked && card) card.classList.add('on');
-    }));
-    $('#mm-comp-go').addEventListener('click', async () => {
-      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-      toast('Сжимаю историю…');
-      try {
-        await api.post('/api/chats/' + state.currentChatId + '/compress',
-          { target_percent: parseInt(cmp.value, 10) || 50 });
-        toast('История сжата');
-        await loadUsage();
-      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
-    });
+    // no model button in the composer anymore
   }
 
   // playful composer placeholders

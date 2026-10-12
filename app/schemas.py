@@ -296,6 +296,7 @@ class ModelSetEntryOut(ORMModel):
     price_out: float = 0.0
     price_cache: float = 0.0
     timeout: int
+    max_parallel: int = 2
     is_active: bool
     has_api_key: bool = False
 

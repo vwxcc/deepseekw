@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     # --- App ---
-    app_name: str = "ai-ch"
+    app_name: str = "ChatStudio"
     app_version: str = "0.1.0"
 
     # --- Auth / sessions ---
@@ -37,22 +37,33 @@ class Settings(BaseSettings):
 
     # --- Web search (SearXNG) ---
     web_search_enabled: bool = True
-    searxng_url: str = ""
+    searxng_url: str = "http://searxng-web:8080"
     web_search_results: int = 5
-    web_search_timeout: int = 6
+    web_search_timeout: int = 12
     # context window of the default model, used for the "usage %" widget
     model_context_len: int = 262144
+    # --- Agent (sandboxed code execution) ---
+    agent_enabled: bool = True
+    agent_max_steps: int = 6
+    agent_timeout: int = 40
+    # isolated runner (separate container, internal network, no internet)
+    sandbox_url: str = "http://chatstudio-sandbox:8000"
+    sandbox_work_dir: str = "/app/data/sandbox"
+    sandbox_concurrency: int = 2
+    sandbox_queue_limit: int = 12
+    # code-agent mode: persistent project per chat, more steps
+    code_agent_max_steps: int = 10
+    code_agent_timeout: int = 60
+
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file
     max_total_file_size: int = 100 * 1024 * 1024  # 100 MB per request
     max_files_per_request: int = 10
-    # Conservative limits for small hosted instances.
-    max_user_storage: int = 250 * 1024 * 1024
-    disk_min_free: int = 100 * 1024 * 1024
+    # per-user storage quota (4 GB) and the free-space floor below which we prune
+    max_user_storage: int = 4 * 1024 * 1024 * 1024
+    disk_min_free: int = 3 * 1024 * 1024 * 1024
     # how many characters of an extracted document are sent to the model
-    max_attachment_chars: int = 8000
-    # per-file, per-message cap for extracted text (hard limit even before DB)
-    max_extracted_per_message: int = 24000
+    max_attachment_chars: int = 40000
 
     # --- Default model set seed (Qwen) ---
     qwen_api_key: str = ""
@@ -62,24 +73,12 @@ class Settings(BaseSettings):
     qwen_max_tokens: int = 32000
 
     # --- Admin bootstrap (optional) ---
-    admin_email: str = "admin@ai-ch.local"
+    admin_email: str = ""
     admin_password: str = ""
-
-    # --- HTTPS / SSL ---
-    ssl_certfile: str = ""
-    ssl_keyfile: str = ""
-    ssl_cafile: str = ""
-    ssl_verify_client: bool = False
-    host: str = "127.0.0.1"
-    port: int = 8000
-
-    @property
-    def is_https(self) -> bool:
-        return bool(self.ssl_certfile and self.ssl_keyfile)
 
     @property
     def database_url(self) -> str:
-        db_path = (Path(self.data_dir).expanduser().resolve() / "ai-ch.db")
+        db_path = (Path(self.data_dir).expanduser().resolve() / "chatstudio.db")
         return f"sqlite+aiosqlite:///{db_path}"
 
     @property
@@ -89,5 +88,11 @@ class Settings(BaseSettings):
     @property
     def upload_path(self) -> Path:
         return Path(self.upload_dir).expanduser().resolve()
+
+    @property
+    def sandbox_path(self) -> Path:
+        """Directory shared with the sandbox container (read-only for us)."""
+        return Path(self.sandbox_work_dir).expanduser().resolve()
+
 
 settings = Settings()

@@ -69,7 +69,7 @@ async def create_model_set(
         route = RouteType(data.route_type.upper())
     except ValueError:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "route_type: MAIN / TITLE / CONTINUE / SUGGESTIONS / SUMMARY / FILE_ANALYSIS"
+            status.HTTP_400_BAD_REQUEST, "route_type: MAIN / TITLE / SUGGESTIONS"
         )
     slug = (data.slug or _slugify(data.name)).strip()
     exists = await db.execute(select(ModelSet).where(ModelSet.slug == slug))
@@ -137,10 +137,6 @@ async def add_entry(
         price_in=data.price_in,
         price_out=data.price_out,
         price_cache=data.price_cache,
-        free_token_limit=data.free_token_limit,
-        pro_token_limit=data.pro_token_limit,
-        quota_reset_hours=max(1, data.quota_reset_hours),
-        max_concurrency=max(1, data.max_concurrency),
         timeout=data.timeout,
         is_active=data.is_active,
     )
@@ -163,18 +159,6 @@ async def update_entry(
     e = await db.get(ModelSetEntry, entry_id)
     if e is None or e.model_set_id != set_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Модель не найдена")
-    if data.is_active is False and e.is_active:
-        active_count = await db.scalar(
-            select(func.count()).select_from(ModelSetEntry).where(
-                ModelSetEntry.model_set_id == set_id,
-                ModelSetEntry.is_active.is_(True),
-            )
-        )
-        if int(active_count or 0) <= 1:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "В цепочке должна оставаться хотя бы одна активная модель",
-            )
     for field in (
         "provider",
         "base_url",
@@ -186,22 +170,12 @@ async def update_entry(
         "price_in",
         "price_out",
         "price_cache",
-        "quota_reset_hours",
-        "max_concurrency",
         "timeout",
         "is_active",
     ):
         value = getattr(data, field)
         if value is not None:
             setattr(e, field, value)
-    for field in ("free_token_limit", "pro_token_limit"):
-        if field in data.model_fields_set:
-            value = getattr(data, field)
-            setattr(e, field, value)
-    if "quota_reset_hours" in data.model_fields_set:
-        e.quota_reset_hours = max(1, int(data.quota_reset_hours or 6))
-    if "max_concurrency" in data.model_fields_set:
-        e.max_concurrency = max(1, int(data.max_concurrency or 1))
     if data.api_key:  # пустая строка = оставить прежний ключ
         e.api_key = data.api_key
     await db.commit()
@@ -221,28 +195,6 @@ async def delete_entry(
     e = await db.get(ModelSetEntry, entry_id)
     if e is None or e.model_set_id != set_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Модель не найдена")
-    count = await db.scalar(
-        select(func.count()).select_from(ModelSetEntry).where(
-            ModelSetEntry.model_set_id == set_id
-        )
-    )
-    if int(count or 0) <= 1:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Нельзя удалить последнюю модель в цепочке. Добавьте резерв или отключите цепочку отдельно.",
-        )
-    if e.is_active:
-        active_count = await db.scalar(
-            select(func.count()).select_from(ModelSetEntry).where(
-                ModelSetEntry.model_set_id == set_id,
-                ModelSetEntry.is_active.is_(True),
-            )
-        )
-        if int(active_count or 0) <= 1:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "Нельзя удалить единственную активную модель",
-            )
     await db.delete(e)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

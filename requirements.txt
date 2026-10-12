@@ -1,4 +1,4 @@
-# ai-ch backend requirements (Python 3.12)
+# ChatStudio backend requirements (Python 3.12)
 
 # --- Web framework ---
 fastapi==0.115.6

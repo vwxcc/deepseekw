@@ -1,4 +1,4 @@
-/* ai-ch — SPA (vanilla JS) */
+/* ChatStudio — SPA (vanilla JS) */
 (() => {
   'use strict';
 
@@ -418,43 +418,23 @@
 
   // ---------- api ----------
   const api = {
-    csrf() { return window.__csrf || getCookie('ai-ch_csrf') || ''; },
+    csrf() { return window.__csrf || getCookie('chatstudio_csrf') || ''; },
     async req(method, path, body, isForm) {
       const headers = {};
       if (!isForm && body !== undefined) headers['Content-Type'] = 'application/json';
       if (method !== 'GET') headers['X-CSRF-Token'] = api.csrf();
-      const maxRetries = 2;
-      let lastErr;
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        let res;
-        try {
-          res = await fetch(path, {
-            method, headers, credentials: 'same-origin', signal: AbortSignal.timeout(30000),
-            body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
-          });
-          console.log('API:', method, path, res.status, res.statusText);
-          if (res.status === 401) { showAuth(); throw new Error('unauthorized'); }
-          if (res.status === 204) return null;
-          if (!res.ok) {
-            let msg = res.status + '';
-            try { const j = await res.json(); msg = j.detail || JSON.stringify(j); } catch (e) { /* noop */ }
-            throw new Error(msg);
-          }
-          return res.json();
-        } catch (e) {
-          console.warn('API request failed (attempt ' + (attempt+1) + '):', method, path, e.message);
-          lastErr = e;
-          // Retry on network errors, timeouts, and 5xx
-          const isRetryable = e.name === 'TimeoutError'
-            || e.message.includes('Failed to fetch')
-            || e.code === 'FETCH_ERROR'
-            || (res && res.status >= 500);
-          if (!isRetryable || attempt >= maxRetries) throw e;
-          // Exponential backoff: 500ms, 1000ms
-          await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
-        }
+      const res = await fetch(path, {
+        method, headers, credentials: 'same-origin',
+        body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+      });
+      if (res.status === 401) { showAuth(); throw new Error('unauthorized'); }
+      if (res.status === 204) return null;
+      if (!res.ok) {
+        let msg = res.status + '';
+        try { const j = await res.json(); msg = j.detail || JSON.stringify(j); } catch (e) { /* noop */ }
+        throw new Error(msg);
       }
-      throw lastErr;
+      return res.json();
     },
     get(p) { return api.req('GET', p); },
     post(p, b) { return api.req('POST', p, b === undefined ? {} : b); },
@@ -467,8 +447,6 @@
   // ---------- state ----------
   const state = {
     user: null,
-    limits: null,
-    planSettings: {},
     chats: [],
     query: '',
     currentChatId: null,
@@ -482,18 +460,110 @@
     streamStarted: false,
     activeAssistantId: null,
     thinkBody: null,
+    modelSets: [],
+    modelSetId: localStorage.getItem('cs_model') || '',
     effort: localStorage.getItem('cs_effort') || 'medium',
+    usage: null,
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
-    temperature: parseFloat(localStorage.getItem('cs_temp')) || 0.2,
     readonly: false,
     publicToken: null,
+    greetTimer: null,
+    greetIdx: Math.floor(Math.random() * 100),
+    suggIdx: Math.floor(Math.random() * 50),
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
   };
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
   const EFFORT_LABELS = ['Low', 'Medium', 'High', 'Extra', 'Max'];
+
+  const TARIFFS = [
+    { name: 'Free', ctx: 10, out: 20, files: 5, note: 'знакомство и лёгкие задачи' },
+    { name: 'Plus', ctx: 30, out: 45, files: 25, note: 'ежедневная работа' },
+    { name: 'Pro', ctx: 60, out: 70, files: 100, note: 'длинные диалоги и файлы' },
+    { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
+  ];
+
+  const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
+    'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
+    'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
+    'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
+    'О чём поговорим?', 'Что разберём?', 'Какая идея?', 'Что придумаем?',
+    'Чем помочь?', 'Что подскажем?', 'Какой план?', 'Что изучим?',
+    'Куда двигаемся?', 'Что создадим?', 'Какую проблему решаем?', 'Что анализируем?',
+    'О чём поразмышляем?', 'Что объяснить?', 'Какой текст разберём?', 'Что написать?',
+    'Какую тему раскроем?', 'Что посчитать?', 'Какой код нужен?', 'Что спроектируем?',
+    'О чём расскажу?', 'Что найдём?', 'Какую задачу решим?', 'Что улучшим?',
+    'С чего начать?', 'Какой вопрос у вас?', 'Что уточнить?', 'Как помочь?',
+    'О чём речь?', 'Что разложим по полочкам?', 'Какую идею обсудим?', 'Что проверим?',
+    'Куда копаем?', 'Что переведём?', 'Какой документ разберём?', 'Что суммируем?',
+    'О чём спросить?', 'Что построим?', 'Какой план составим?', 'Что оптимизируем?',
+    'Какую тему разберём?', 'Что изобретём?', 'О чём подумать?', 'Что настроим?',
+    'Какую статью разберём?', 'Что напишем?', 'О чём мечтаем?', 'Что решаем?',
+    'Какую мысль разовьём?', 'Что подытожим?', 'О чём поговорим сегодня?', 'Что найдём вместе?',
+    'Какая цель?', 'Что нужно объяснить?', 'Какой вопрос на повестке?', 'Что разгадаем?',
+    'О чём поспорим?', 'Что посоветовать?', 'Какую задачу разберём?', 'Что сравним?',
+    'Какой пример нужен?', 'Что расскажем?', 'О чём почитать?', 'Что запланируем?',
+    'Какую идею проверим?', 'Что упростим?', 'О чём подумаем вместе?', 'Что посмотрим?',
+    'Какой вопрос решаем?', 'Что подправим?', 'О чём расскажете?', 'Что придумаем вместе?',
+    'Какую проблему разберём?', 'Что нарисуем?', 'О чём поговорим?', 'Что сделаем?',
+    'Какой текст напишем?', 'Что разберём подробно?', 'О чём подумаем сейчас?', 'Что принесёте?',
+  ];
+
+  const SUGGESTIONS = [
+    'Помоги с Python — пример кода',
+    'Объясни, что такое API',
+    'Составь план на неделю',
+    'Напиши SQL-запрос с JOIN',
+    'Как работает Docker?',
+    'Переведи текст на английский',
+    'Сократи этот текст',
+    'Сравни React и Vue',
+    'Напиши регулярное выражение',
+    'Объясни async/await простыми словами',
+    'Составь резюме для junior-разработчика',
+    'Как настроить CI/CD?',
+    'Разбери ошибку в коде',
+    'Придумай название для проекта',
+    'Напиши письмо клиенту',
+    'Сделай конспект статьи',
+    'Как ускорить запрос к базе?',
+    'Объясни разницу между TCP и UDP',
+    'Составь бюджет на месяц',
+    'Напиши bash-скрипт для бэкапа',
+    'Что такое векторная база данных?',
+    'Придумай 10 идей для стартапа',
+    'Как работает JWT?',
+    'Оптимизируй этот алгоритм',
+    'Напиши тесты на pytest',
+    'Объясни принципы SOLID',
+    'Как развернуть приложение на сервере?',
+    'Составь чек-лист для релиза',
+    'Придумай вопросы для собеседования',
+    'Как работает HTTPS?',
+    'Напиши Dockerfile для Python',
+    'Разбери JSON на части',
+    'Объясни, что такое REST',
+    'Составь план изучения ML',
+    'Напиши функцию сортировки',
+    'Как чистить данные в pandas?',
+    'Придумай структуру базы данных',
+    'Объясни git rebase',
+    'Как работает Redis?',
+    'Составь договор простыми словами',
+    'Напиши HTML-страницу с формой',
+    'Объясни, что такое WebSocket',
+    'Как защитить API?',
+    'Придумай метрики для продукта',
+    'Напиши текст для лендинга',
+    'Объясни разницу между процессами и потоками',
+    'Как настроить nginx?',
+    'Составь roadmap проекта',
+    'Напиши SQL для отчёта',
+    'Что почитать про архитектуру?',
+  ];
+
 
   // ---------- auth ----------
   function showAuth() {
@@ -562,6 +632,9 @@
       '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
         '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
         '<span class="chat-meta">' +
+          (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
+          (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
+          (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
           (c.model_name ? '<em class="model-tag">' + escapeHtml(c.model_name) + '</em>' : '') +
         '</span>' +
         '<span class="acts">' +
@@ -584,13 +657,18 @@
     });
   }
 
-  async function newChat() {
-    const chat = await api.post('/api/chats', { title: 'Новый чат' });
+  async function newChat(mode) {
+    const chat = await api.post('/api/chats', {
+      title: mode === 'code' ? 'Код-проект' : 'Новый чат',
+      mode: mode || 'chat',
+    });
     state.chats.unshift(chat);
     renderChatList();
     await openChat(chat.id);
-    const input = $('#input');
-    if (input) input.focus();
+    $('#input').focus();
+    if (mode === 'code') {
+      toast('Код-агент: файлы проекта сохраняются между сообщениями');
+    }
   }
 
   function openRename(id) {
@@ -617,7 +695,7 @@
     state.chats = state.chats.filter(c => c.id !== id);
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
-      $('#chat-title').textContent = 'ai-ch';
+      $('#chat-title').textContent = 'ChatStudio';
       renderMessages();
     }
     renderChatList();
@@ -631,7 +709,11 @@
     state.tree = await api.get('/api/chats/' + id + '/messages');
     renderChatList();
     renderMessages();
-
+    await loadUsage();
+    const meta = state.chats.find(c => c.id === id) || {};
+    const isCode = meta.mode === 'code';
+    $('#project-btn').classList.toggle('hidden', !isCode);
+    if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
     closeMobileSidebar();
   }
 
@@ -698,14 +780,12 @@
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
-    const generating = n.status === 'queued' || n.status === 'processing';
     let inner;
     if (isUser) {
-      const hasAtt = n.attachments && n.attachments.length;
-      inner = (hasAtt ? attsHtml(n.attachments) : '') +
-        '<div class="bubble">' + (n.content ? escapeHtml(n.content) : '(файл)') + '</div>';
+      inner = attsHtml(n.attachments) + '<div class="bubble">' + escapeHtml(n.content) + '</div>';
     } else {
       const failed = n.status === 'failed';
+      const generating = n.status === 'queued' || n.status === 'processing';
       const hasThink = !!(n.thinking && String(n.thinking).trim());
       const draft = n.draft || '';
 
@@ -738,6 +818,7 @@
 
     let meta = '';
     if (!isUser && !state.readonly) {
+      const generating = n.status === 'queued' || n.status === 'processing';
       const parts = [];
       if (n.status === 'cancelled') parts.push('<span class="status">остановлено</span>');
       if (generating) {
@@ -786,13 +867,9 @@
         '<span>Запомнил: ' + escapeHtml(n.memories.join('; ').slice(0, 140)) + '</span></div>';
     }
 
-    let thinkBox = '';
-    if (!isUser && !generating && n.status !== 'failed' && n.thinking && String(n.thinking).trim()) {
-      thinkBox = '<div class="think-box">' +
-        '<div class="think-head">' + thinkAnim() +
-          '<span class="label">Размышления</span></div>' +
-        '<div class="think-body">' + escapeHtml(n.thinking) + '</div>' +
-        '</div>';
+    let tools = '';
+    if (!isUser && n.tool_runs && n.tool_runs.length) {
+      tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
     }
 
     let routeLine = '';
@@ -813,8 +890,33 @@
     }
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
-      '<div class="role">' + (isUser ? 'Вы' : 'ai-ch') + '</div>' +
-      routeLine + thinkBox + inner + askCard + branch + meta + sugg + memLine + '</div>';
+      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
+      routeLine + tools + inner + askCard + branch + meta + sugg + memLine + '</div>';
+  }
+
+  function toolRunHtml(r, i) {
+    const running = !!r.running;
+    const files = (r.files || []).map(f => {
+      const url = '/api/files/' + f.file_id + '/download';
+      if (f.kind === 'image') {
+        return '<a class="tool-file img" href="' + url + '" target="_blank" rel="noopener">' +
+          '<img src="' + url + '?inline=1" alt="' + escapeHtml(f.name) + '" loading="lazy" /></a>';
+      }
+      return '<a class="tool-file" href="' + url + '" target="_blank" rel="noopener">' +
+        icon('download') + '<span>' + escapeHtml(f.name) + '</span>' +
+        '<em>' + formatSize(f.size) + '</em></a>';
+    }).join('');
+    return '<div class="tool-box' + (r.ok ? '' : ' err') + '">' +
+      '<div class="tool-head">' +
+      (running ? thinkAnim() : icon('terminal')) +
+      '<span>Шаг ' + (i + 1) + ' — ' +
+      (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
+      (r.timed_out ? '<em class="warn">таймаут</em>' : '') + '</div>' +
+      '<pre class="tool-code">' + escapeHtml(r.code || '') + '</pre>' +
+      (r.stdout ? '<pre class="tool-out">' + escapeHtml(r.stdout) + '</pre>' : '') +
+      (r.stderr ? '<pre class="tool-err">' + escapeHtml(r.stderr) + '</pre>' : '') +
+      (files ? '<div class="tool-files">' + files + '</div>' : '') +
+      '</div>';
   }
 
   function openSources(list) {
@@ -832,14 +934,71 @@
 
   function renderEmptyState() {
     const box = $('#messages');
-    if (box) box.innerHTML = '';
+    box.innerHTML =
+      '<div class="empty-state">' +
+        '<h2 class="greet" id="greet-text">' +
+          escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
+        '<div class="tiles" id="tiles"></div>' +
+        '<div class="chips" id="sugg-chips"></div>' +
+      '</div>';
+    renderTiles();
+    bindTiles();
+    renderSuggestionChips();
+    rollPlaceholder();
+    startRotation();
+  }
+
+  function renderSuggestionChips() {
+    const box = $('#sugg-chips');
+    if (!box) return;
+    const total = SUGGESTIONS.length, n = 4;
+    const picks = [];
+    for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
+    state.suggIdx = (state.suggIdx + n) % total;
+    box.innerHTML = picks.map((p, i) =>
+      '<button class="chip-in" style="animation-delay:' + (i * 70) +
+      'ms" data-prompt="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>').join('');
+    $$('button[data-prompt]', box).forEach(b => b.addEventListener('click', () => {
+      $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
+    }));
+  }
+
+  function rotateGreeting() {
+    state.greetIdx = (state.greetIdx + 1) % GREETINGS.length;
+    const el = $('#greet-text');
+    if (!el) return;
+    el.textContent = GREETINGS[state.greetIdx];
+    el.classList.remove('greet');
+    void el.offsetWidth;   // restart the CSS animation
+    el.classList.add('greet');
+  }
+
+  function startRotation() {
+    stopRotation();
+    let tick = 0;
+    state.greetTimer = setInterval(() => {
+      if (!$('#greet-text')) { stopRotation(); return; }
+      tick += 1;
+      if (tick % 2 === 0) rotateGreeting();
+      renderSuggestionChips();
+    }, 11000);
+    state.tileTimer = setInterval(() => {
+      if (!$('#tiles')) { if (state.tileTimer) clearInterval(state.tileTimer); return; }
+      rotateTiles();
+    }, 15000);
+  }
+
+  function stopRotation() {
+    if (state.greetTimer) { clearInterval(state.greetTimer); state.greetTimer = null; }
+    if (state.tileTimer) { clearInterval(state.tileTimer); state.tileTimer = null; }
   }
 
   function renderMessages() {
     const box = $('#messages');
     const path = activePath(state.tree, state.choices);
     if (!path.length) { renderEmptyState(); return; }
-
+    stopRotation();
+    stopShowcase();
     box.innerHTML = '<div class="msg-wrap">' +
       path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
     bindMessageEvents();
@@ -893,7 +1052,7 @@
         if (n) {
           const el = $('.msg[data-mid="' + id + '"] .content');
           openSaveMenu({
-            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'ai-ch',
+            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'ChatStudio',
             text: n.content || '',
             html: el ? el.innerHTML : '',
           });
@@ -988,7 +1147,7 @@
       await api.del('/api/messages/' + id);
       removeFromTree(state.tree, id);
       renderMessages();
-
+      loadUsage();
       toast('Удалено');
     } catch (e) {
       toast('Ошибка: ' + e.message, 'error');
@@ -1022,165 +1181,6 @@
     $('#send-btn').classList.toggle('hidden', on);
     $('#stop-btn').classList.toggle('hidden', !on);
     $('#input').disabled = false;
-    updateQuotaControls();
-  }
-
-  // ---------- WebSocket streaming with SSE fallback ----------
-  let wsConnection = null;
-
-  // Render-compatible streaming uses the session-authenticated HTTP endpoint.
-  async function streamWebSocket(path, body) {
-    return streamSSE(path, body);
-  }
-
-  function streamSSE(path, body) {
-    // SSE fallback — uses original consumeSSE
-    return new Promise(async (resolve, reject) => {
-      try {
-        const headers = { 'X-CSRF-Token': api.csrf() };
-        if (body !== undefined) headers['Content-Type'] = 'application/json';
-        const res = await fetch(path, {
-          method: 'POST', headers, credentials: 'same-origin', signal: AbortSignal.timeout(900000),
-          body: body !== undefined ? JSON.stringify(body) : undefined,
-        });
-        if (res.status === 401) { showAuth(); reject(new Error('unauthorized')); return; }
-        if (!res.ok) {
-          let msg = res.status + ' ' + res.statusText;
-          try { const payload = await res.json(); msg = payload.detail || payload.error || JSON.stringify(payload); }
-          catch (e) { try { msg = await res.text(); } catch (_) { /* keep status */ } }
-          const failure = new Error(msg); failure.status = res.status; reject(failure); return;
-        }
-        await consumeSse(res, (ev, data) => {
-          state.lastEvent = Date.now();
-          if (ev === 'user_message' || ev === 'assistant_message') {
-            const node = insertMessage(state.tree, data);
-            renderMessages();
-            if (ev === 'assistant_message') {
-              state.activeAssistantId = data.id;
-              bindStreamRefs();
-            }
-          } else if (ev === 'thinking') {
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) n.thinking = (n.thinking || '') + (data.text || '');
-            if (state.thinkBody) {
-              state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
-              const head = state.thinkBody.parentElement;
-              const lbl = head ? head.querySelector('.label') : null;
-              if (lbl) lbl.textContent = 'Размышления';
-            }
-          } else if (ev === 'delta') {
-            state.streamBuf += data.text || '';
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
-            if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
-            maybeScroll();
-          } else if (ev === 'memory') {
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) n.memories = (n.memories || []).concat(data.items || []);
-            loadMemory();
-          } else if (ev === 'route') {
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) { n.route = data.name; n.routeBrief = data.brief || ''; }
-            renderMessages();
-            bindStreamRefs();
-            toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
-          } else if (ev === 'step') {
-            state.streamBuf = '';
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) { n.draft = ''; n.thinking = ''; }
-            state.streamStarted = false;
-            renderMessages();
-            bindStreamRefs();
-          } else if (ev === 'ask') {
-            const n = findNode(state.tree, state.activeAssistantId);
-            if (n) n.ask = data.question;
-            renderMessages();
-            bindStreamRefs();
-          } else if (ev === 'done') {
-            const n = findNode(state.tree, data.message_id);
-            if (n) {
-              n.status = 'completed';
-              n.content = data.text || state.streamBuf;
-              n.draft = '';
-            }
-            renderMessages();
-            if (n && n.role === 'assistant' && !(n.suggestions && n.suggestions.length) && !n.suggestionsLoading) {
-              n.suggestionsLoading = true;
-              api.post('/api/messages/' + encodeURIComponent(data.message_id) + '/suggestions', {})
-                .then(result => {
-                  const current = findNode(state.tree, data.message_id);
-                  if (!current) return;
-                  current.suggestions = result.suggestions || [];
-                  current.suggestionsLoading = false;
-                  renderMessages();
-                })
-                .catch(() => {
-                  const current = findNode(state.tree, data.message_id);
-                  if (current) current.suggestionsLoading = false;
-                });
-            }
-
-          } else if (ev === 'error') {
-            const n = findNode(state.tree, data.message_id);
-            if (n) { n.status = 'failed'; n.error = data.error; }
-            renderMessages();
-          } else if (ev === 'cancelled') {
-            const n = findNode(state.tree, data.message_id);
-            if (n) { n.status = 'cancelled'; if (data.text) n.content = data.text; }
-            renderMessages();
-          }
-        });
-        resolve();
-      } catch (e) {
-        reject(e);
-      }
-    });
-  }
-
-  function handleWsEvent(data) {
-    if (data.type === 'delta') {
-      state.streamBuf += data.text || '';
-      const n = findNode(state.tree, state.activeAssistantId);
-      if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
-      if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
-      maybeScroll();
-    } else if (data.type === 'thinking') {
-      const n = findNode(state.tree, state.activeAssistantId);
-      if (n) n.thinking = (n.thinking || '') + (data.text || '');
-      if (state.thinkBody) {
-        state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
-        const head = state.thinkBody.parentElement;
-        const lbl = head ? head.querySelector('.label') : null;
-        if (lbl) lbl.textContent = 'Размышления';
-      }
-    } else if (data.type === 'done') {
-      const n = findNode(state.tree, data.message_id);
-      if (n) {
-        n.status = 'completed';
-        n.content = data.text || state.streamBuf;
-        n.draft = '';
-      }
-      renderMessages();
-
-    } else if (data.type === 'error') {
-      const n = findNode(state.tree, data.message_id);
-      if (n) { n.status = 'failed'; n.error = data.error; }
-      renderMessages();
-      toast('Ошибка: ' + data.error, 'error');
-    } else if (data.type === 'cancelled') {
-      const n = findNode(state.tree, data.message_id);
-      if (n) { n.status = 'cancelled'; if (data.text) n.content = data.text; }
-      renderMessages();
-    } else if (data.type === 'final') {
-      // Final update with complete message data
-      if (data.data && data.data.id) {
-        const existing = findNode(state.tree, data.data.id);
-        if (existing) {
-          Object.assign(existing, data.data);
-          renderMessages();
-        }
-      }
-    }
   }
 
   async function streamRequest(path, body) {
@@ -1192,6 +1192,17 @@
     state.lastEvent = Date.now();
     if (state.genTimer) clearInterval(state.genTimer);
     state.genTimer = setInterval(() => {
+      // the limit bar fills live while the answer is still streaming
+      const w = windowUsage();
+      if (w && w.budget_usd) {
+        const ms = currentModelSet();
+        const ent = (ms && ms.entries && ms.entries[0]) || {};
+        const outTokens = Math.round(((state.streamBuf || '').length) / 3.6);
+        const live = Number(w.spend_usd || 0) + outTokens / 1e6 * Number(ent.price_out || 0);
+        paintUsage(live / w.budget_usd * 100,
+          'Идёт генерация · $' + live.toFixed(4) + ' из $' + w.budget_usd +
+          ' за ' + w.hours + ' ч');
+      }
       const el = $('[data-gen]');
       const secs = Math.round((Date.now() - (state.genStart || Date.now())) / 1000);
       const idle = Math.round((Date.now() - (state.lastEvent || Date.now())) / 1000);
@@ -1200,54 +1211,133 @@
         (idle > 45 ? ' · модель долго думает…' : '');
       el.classList.toggle('warn', idle > 45);
     }, 1000);
-    
-    let fetchFailed = false;
-    let fetchError = '';
-    
     try {
-      // Try WebSocket first, fallback to SSE with retry
-      await streamWebSocket(path, body);
+      const headers = { 'X-CSRF-Token': api.csrf() };
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
+      const res = await fetch(path, {
+        method: 'POST', headers, credentials: 'same-origin',
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      if (res.status === 401) { showAuth(); return; }
+      if (!res.ok) { const t = await res.text(); throw new Error(t); }
+
+      await consumeSse(res, (ev, data) => {
+        state.lastEvent = Date.now();
+        if (ev === 'user_message' || ev === 'assistant_message') {
+          const node = insertMessage(state.tree, data);
+          renderMessages();
+          if (ev === 'assistant_message') {
+            state.activeAssistantId = data.id;
+            bindStreamRefs();
+          }
+        } else if (ev === 'thinking') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.thinking = (n.thinking || '') + (data.text || '');
+          if (state.thinkBody) {
+            state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
+            const head = state.thinkBody.parentElement;
+            const lbl = head ? head.querySelector('.label') : null;
+            if (lbl) lbl.textContent = 'Размышления';
+          }
+        } else if (ev === 'delta') {
+          state.streamBuf += data.text || '';
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) { n.draft = state.streamBuf; state.streamStarted = true; }
+          if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
+          maybeScroll();
+        } else if (ev === 'memory') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.memories = (n.memories || []).concat(data.items || []);
+          loadMemory();
+        } else if (ev === 'route') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) { n.route = data.name; n.routeBrief = data.brief || ''; }
+          renderMessages();
+          bindStreamRefs();
+          toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
+        } else if (ev === 'tool_start') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) {
+            n.tool_runs = (n.tool_runs || []).concat([
+              { code: data.code || '', running: true, ok: true, files: [] },
+            ]);
+          }
+          renderMessages();
+          bindStreamRefs();
+          appendLog('▶ запуск кода…');
+        } else if (ev === 'tool') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) {
+            const runs = n.tool_runs || [];
+            const idx = runs.findIndex(r => r.running);
+            if (idx >= 0) runs[idx] = data; else runs.push(data);
+            n.tool_runs = runs;
+            if (data.files && data.files.length) {
+              n.attachments = (n.attachments || []).concat(data.files.map(f => ({
+                id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
+              })));
+            }
+          }
+          renderMessages();
+          bindStreamRefs();
+          if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
+          if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
+          if (data.files && data.files.length) {
+            appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
+          }
+          loadProject(false);
+        } else if (ev === 'step') {
+          state.streamBuf = '';
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.draft = '';
+          renderMessages();
+          bindStreamRefs();
+        } else if (ev === 'ask') {
+          const n = findNode(state.tree, state.activeAssistantId);
+          if (n) n.ask = data.question;
+          renderMessages();
+          bindStreamRefs();
+        } else if (ev === 'done') {
+          const n = findNode(state.tree, data.message_id);
+          if (n) {
+            n.status = 'completed';
+            n.content = data.text || state.streamBuf;
+            n.draft = '';
+          }
+          renderMessages();
+          loadUsage();
+        } else if (ev === 'error') {
+          const n = findNode(state.tree, data.message_id);
+          if (n) { n.status = 'failed'; n.error = data.error; }
+          renderMessages();
+        } else if (ev === 'cancelled') {
+          const n = findNode(state.tree, data.message_id);
+          if (n) { n.status = 'cancelled'; if (data.text) n.content = data.text; }
+          renderMessages();
+        }
+      });
     } catch (err) {
-      fetchFailed = true;
-      fetchError = err && err.message ? String(err.message).slice(0, 300) : 'ошибка сети';
-      if (err && err.status === 403 && body && body.content) { const draft = $('#input'); if (draft) { draft.value = body.content; autoGrow(); } }
       console.error(err);
-      toast('Ошибка: ' + fetchError, 'error');
+      toast('Ошибка: ' + err.message, 'error');
     } finally {
       setStreaming(false);
+      // limits must move the moment the answer lands
+      setTimeout(() => { loadLimits().then(loadUsage); }, 250);
       if (state.genTimer) { clearInterval(state.genTimer); state.genTimer = null; }
-      // never leave a message stuck in "generating" — that keeps the animation alive
-      const stuck = findNode(state.tree, state.activeAssistantId);
-      if (stuck && (stuck.status === 'queued' || stuck.status === 'processing')) {
-        stuck.status = fetchFailed ? 'failed' : 'cancelled';
-        if (fetchFailed && !stuck.error) stuck.error = fetchError || 'генерация прервана';
-        renderMessages();
-      }
       state.streamEl = null;
       await loadChats();
-      await loadLimits();
-      // A title is generated after the answer; poll until it is saved or times out.
+      // refresh title (generated in background)
       if (state.currentChatId) {
-        const chatId = state.currentChatId;
-        let attempts = 0;
-        const refreshTitle = async () => {
-          if (state.currentChatId !== chatId) return;
+        setTimeout(async () => {
           try {
-            const chat = await api.get('/api/chats/' + chatId);
+            const chat = await api.get('/api/chats/' + state.currentChatId);
             const i = state.chats.findIndex(c => c.id === chat.id);
             if (i >= 0 && state.chats[i].title !== chat.title) {
               state.chats[i] = chat; renderChatList();
               $('#chat-title').textContent = chat.title;
             }
-            if (chat.title === 'Новый чат' && attempts < 12) {
-              attempts += 1;
-              setTimeout(refreshTitle, 1500);
-            }
-          } catch (e) {
-            if (attempts < 12) { attempts += 1; setTimeout(refreshTitle, 1500); }
-          }
-        };
-        setTimeout(refreshTitle, 1000);
+          } catch (e) { /* noop */ }
+        }, 2500);
       }
     }
   }
@@ -1256,12 +1346,6 @@
     const input = $('#input');
     const content = input.value.trim();
     if (!content || state.streaming) return;
-    if (!state.limits) await loadLimits();
-    if (quotaBlocked()) {
-      toast('Дневной лимит запросов исчерпан. Обратитесь к администратору ai-ch для сброса счётчика или выдачи подписки.', 'error');
-      updateQuotaControls();
-      return;
-    }
     if (!state.currentChatId) {
       const chat = await api.post('/api/chats', { title: 'Новый чат' });
       state.chats.unshift(chat);
@@ -1281,56 +1365,11 @@
         content,
         parent_message_id: parentId,
         attachment_ids: attachments,
+        model_set_id: state.modelSetId || null,
         web_search: true,
         effort: state.effort,
         style: state.style,
       });
-  }
-
-  // ---------- file upload ----------
-  async function uploadFiles(fileList) {
-    const fd = new FormData();
-    for (const f of fileList) fd.append('files', f);
-    try {
-      const files = await api.postForm('/api/files', fd);
-      // Add to pending attachments and local file list
-      state.pendingAttachments = state.pendingAttachments.concat(files.map(f => ({
-        id: f.id, original_name: f.original_name, kind: f.kind, size: f.size, mime_type: f.mime_type,
-      })));
-      state.files = (state.files || []).concat(files);
-      renderAttachments();
-      if ($('#file-list')) renderFileList();
-      toast('Файлы загружены: ' + fileList.length);
-    } catch (e) {
-      toast('Ошибка загрузки: ' + e.message, 'error');
-    }
-  }
-
-  // ---------- file list rendering ----------
-  function renderFileList() {
-    const box = $('#file-list');
-    if (!box || !state.files || !state.files.length) {
-      if (box) box.innerHTML = '<div class="empty-note">Нет загруженных файлов</div>';
-      return;
-    }
-    const q = ($('#file-search')?.value || '').toLowerCase();
-    const typeFilter = ($('#file-filter')?.value || 'all');
-    let filtered = state.files;
-    if (q) filtered = filtered.filter(f => (f.original_name || '').toLowerCase().includes(q));
-    if (typeFilter !== 'all') {
-      const typeMap = { image: 'image', doc: 'doc', table: 'sheet', slide: 'slide', other: 'other' };
-      const t = typeMap[typeFilter] || typeFilter;
-      filtered = filtered.filter(f => f.kind === t);
-    }
-    box.innerHTML = filtered.map(f =>
-      '<a class="msg-att" href="/api/files/' + f.id + '/download" target="_blank" rel="noopener" title="' + escapeHtml(f.original_name) + '">' +
-        '<span class="att-icon">' + icon('file') + '</span>' +
-        '<span class="att-name">' + escapeHtml(f.original_name) + '</span>' +
-        '<span class="att-size">' + formatSize(f.size) + '</span></a>'
-    ).join('');
-    if (!filtered.length) {
-      box.innerHTML = '<div class="empty-note">Ничего не найдено</div>';
-    }
   }
 
   // ---------- composer ----------
@@ -1355,20 +1394,30 @@
     const input = $('#input');
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent().catch(err => toast('Ошибка отправки: ' + err.message, 'error')); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
     });
-    $('#send-btn').addEventListener('click', () => sendCurrent().catch(err => toast('Ошибка отправки: ' + err.message, 'error')));
+    $('#send-btn').addEventListener('click', sendCurrent);
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());
-    const memoryButton = $('#mem-quick-btn');
-    if (memoryButton) memoryButton.addEventListener('click', () => openMemory());
     $('#file-input').addEventListener('change', async (e) => {
       const files = Array.from(e.target.files || []);
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
+    const legacySelect = $('#model-select');
+    if (legacySelect) legacySelect.addEventListener('change', (e) => {
+      state.modelSetId = e.target.value;
+      localStorage.setItem('cs_model', state.modelSetId);
+    });
+    if ($('#model-btn')) $('#model-btn').addEventListener('click', openModelMenu);
+    updateModelButton();
+    if ($('#context-btn')) $('#context-btn').addEventListener('click', openUsageModal);
+    if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
+    if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
+    if ($('#pp-refresh')) $('#pp-refresh').addEventListener('click', () => loadProject(true));
+    if ($('#pp-git')) $('#pp-git').addEventListener('click', openGit);
   }
 
   function fmtNum(n) {
@@ -1378,28 +1427,142 @@
     return String(n);
   }
 
-  function quotaBlocked() {
-    if (!state.user || state.user.is_admin) return false;
-    const usage = (state.limits && state.limits.usage) || {};
-    const cap = usage.messages_daily_limit;
-    return cap != null && Number(usage.messages_today || 0) >= Number(cap);
+  // percent of the plan's dollar budget spent inside the rolling window
+  function windowUsage() {
+    const w = (state.limits && state.limits.window) || null;
+    if (!w || !w.budget_usd) return null;
+    return w;
   }
 
-  function updateQuotaControls() {
-    const blocked = quotaBlocked();
-    const send = $('#send-btn');
-    if (send) {
-      send.disabled = blocked || state.streaming;
-      send.title = blocked ? 'Лимит исчерпан. Обратитесь к администратору ai-ch.' : 'Отправить';
+  function planUsage() {
+    const data = state.limits || {};
+    const lim = data.limits || {};
+    const use = data.usage || {};
+    const defs = [
+      ['files', 'files_count', 'Файлы', 'шт'],
+      ['storage', 'user_storage', 'Хранилище', ' Б'],
+      ['posts', 'posts', 'Посты', 'шт'],
+      ['requests', 'messages_per_day', 'Запросы в день', 'шт'],
+    ];
+    const rows = [];
+    defs.forEach(d => {
+      const used = Number(use[d[0]] || 0);
+      const cap = lim[d[1]];
+      const unlimited = (cap === null || cap === undefined);
+      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
+      rows.push({ key: d[0], label: d[2], unit: d[3], used: used, cap: cap, unlimited: unlimited, pct: pct });
+    });
+    const worst = rows.reduce((m, r) => (r.unlimited ? m : Math.max(m, r.pct)), 0);
+    return { rows: rows, worst: worst, plan: data.plan || 'free' };
+  }
+
+  function paintUsage(pct, note) {
+    const btn = $('#context-btn');
+    if (!btn) return;
+    const label = $('#usage-pct');
+    const bar = $('#usage-bar');
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    if (label) label.textContent = p + '%';
+    if (bar) bar.style.width = p + '%';
+    btn.classList.toggle('warn', p >= 80);
+    btn.classList.toggle('full', p >= 100);
+    btn.title = note;
+  }
+
+  async function loadUsage() {
+    if (!$('#context-btn')) return;
+    if (!state.limits) await loadLimits();
+    const w = windowUsage();
+    if (w) {
+      paintUsage(w.percent,
+        'Израсходовано $' + Number(w.spend_usd).toFixed(2) + ' из $' + w.budget_usd +
+        ' за ' + w.hours + ' ч · осталось $' +
+        Math.max(0, w.budget_usd - w.spend_usd).toFixed(2));
+      return;
     }
-    const input = $('#input');
-    if (input) input.title = blocked ? 'Дневной лимит исчерпан. Обратитесь к администратору ai-ch.' : '';
+    const info = planUsage();
+    paintUsage(info.worst, 'Использование лимитов подписки: ' + info.worst + '%');
+  }
+
+  function usageCards(u) {
+    const card = (label, val) =>
+      '<div class="usage-card"><span>' + label + '</span><b>' + val + '</b></div>';
+    return '<div class="usage-grid">' +
+      card('Вход', fmtNum(u.tokens_in)) +
+      card('Выход', fmtNum(u.tokens_out)) +
+      card('Из кэша', fmtNum(u.tokens_cached)) +
+      card('Сообщений', u.messages) +
+      card('Средний вход', fmtNum(u.avg_in)) +
+      card('Занято', (u.percent || 0).toFixed(2) + '%') +
+      '</div>';
+  }
+
+  function limitsHtml(plan) {
+    const mine = String(plan || '').toLowerCase();
+    return '<h4 class="sec">Лимиты по тарифам (в % от окна модели)</h4>' +
+      '<div class="tariffs">' + TARIFFS.map(t => {
+        const isMine = t.name.toLowerCase() === mine;
+        return '<div class="tariff' + (isMine ? ' me' : '') + '">' +
+          '<div class="tariff-head"><b>' + t.name + '</b>' +
+          (isMine ? '<span class="badge">ваш тариф</span>' : '') + '</div>' +
+          '<div class="tariff-row"><span>Контекст</span><i><b style="width:' + t.ctx + '%"></b></i><u>' + t.ctx + '%</u></div>' +
+          '<div class="tariff-row"><span>Ответ</span><i><b style="width:' + t.out + '%"></b></i><u>' + t.out + '%</u></div>' +
+          '<div class="tariff-note">' + t.note + ' · файлов: ' + t.files + '</div>' +
+          '</div>';
+      }).join('') + '</div>';
   }
 
   async function loadLimits() {
     try { state.limits = await api.get('/api/limits'); }
     catch (e) { state.limits = null; }
-    updateQuotaControls();
+  }
+
+  async function openContextMenu() {
+    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+    let u;
+    try { u = await api.get('/api/chats/' + state.currentChatId + '/usage'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    state.usage = u;
+    const barW = Math.min(100, Math.max(0, u.percent || 0));
+    const lim = (state.limits && state.limits.limits) || {};
+    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
+    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
+    const cdef = Math.max(cmin, Math.min(cmax, Math.round((cmin + cmax) / 2 / 5) * 5));
+    const perDay = lim.compress_per_day;
+    openModal({
+      title: 'Контекст и проценты',
+      okText: 'Закрыть',
+      body: '<h4 class="sec">Контекст и проценты</h4>' +
+        usageCards(u) +
+        '<div class="usage-bar"><i style="width:' + barW + '%"></i></div>' +
+        '<p class="usage-note">Окно модели — ' + fmtNum(u.context_len) + ' токенов. ' +
+        'Резюме истории: ' + (u.summary_chars ? fmtNum(u.summary_chars) + ' симв.' : 'нет') + '. ' +
+        'Усилие: ' + escapeHtml(u.effort || 'recommended') + '.</p>' +
+        '<label style="margin-top:14px">Сжать историю до <b id="cmp-val">' + cdef + '</b>%</label>' +
+        '<input type="range" id="cmp-range" class="orange-range" min="' + cmin + '" max="' + cmax +
+        '" step="5" value="' + cdef + '" />' +
+        '<p class="usage-note">Ваш тариф («' + escapeHtml((state.limits && state.limits.plan) || 'free') +
+        '»): сжатие от ' + cmin + '% до ' + cmax + '%' +
+        (perDay != null ? ' · до ' + perDay + ' сжатий в день' : ' · без лимита сжатий') + '.</p>' +
+        '<p class="usage-note">Сжатие делает та же модель: старое сворачивается в краткое резюме.</p>' +
+        '<div style="margin-top:10px"><button class="chip-btn" id="cmp-go">' +
+        icon('sparkle') + 'Сжать историю</button></div>' +
+        limitsHtml(state.user && state.user.plan),
+      onOk: () => true,
+    });
+    const r = $('#cmp-range');
+    if (r) r.addEventListener('input', () => { $('#cmp-val').textContent = r.value; });
+    const go = $('#cmp-go');
+    if (go) go.addEventListener('click', async () => {
+      const p = parseInt(r.value, 10) || 50;
+      toast('Сжимаю историю…');
+      try {
+        await api.post('/api/chats/' + state.currentChatId + '/compress', { target_percent: p });
+        toast('История сжата');
+        $('#modal-root').innerHTML = '';
+        await loadUsage();
+      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
+    });
   }
 
   async function openLinks() {
@@ -1424,6 +1587,620 @@
     }));
     $$('[data-open-link]').forEach(b => b.addEventListener('click', () =>
       window.open('/?share=' + b.dataset.openLink, '_blank')));
+  }
+
+  async function openAdminStats() {
+    let s;
+    try { s = await api.get('/api/admin/stats'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    const maxH = Math.max(1, ...s.hourly.map(h => h.messages));
+    const bars = s.hourly.length
+      ? s.hourly.map(h =>
+          '<div class="bar" title="' + escapeHtml(h.hour) + ' — ' + h.messages + ' сообщ.">' +
+          '<i style="height:' + Math.round((h.messages / maxH) * 100) + '%"></i>' +
+          '<span>' + escapeHtml((h.hour || '').slice(11, 13)) + '</span></div>').join('')
+      : '<p class="usage-note">Нет данных за 24 часа</p>';
+    const card = (label, val) =>
+      '<div class="usage-card"><span>' + label + '</span><b>' + val + '</b></div>';
+    openModal({
+      title: 'Статистика использования',
+      okText: 'Закрыть',
+      body: '<div class="usage-grid">' +
+        card('Пользователи', s.users) + card('Чаты', s.chats) +
+        card('Сообщения', s.messages) + card('Файлы', s.files) +
+        card('Токенов вход', fmtNum(s.tokens_in)) + card('Токенов выход', fmtNum(s.tokens_out)) +
+        card('Из кэша', fmtNum(s.tokens_cached)) +
+        card('Оценки', '👍 ' + s.rating_up + ' · 👎 ' + s.rating_down) +
+        '</div>' +
+        '<h4 class="sec">Активность за 24 часа</h4><div class="chart">' + bars + '</div>' +
+        '<h4 class="sec">Модели</h4>' +
+        (s.top_models.length
+          ? s.top_models.map(m => '<div class="kv"><span>' + escapeHtml(m.name) + '</span><b>' + m.count + '</b></div>').join('')
+          : '<p class="usage-note">—</p>'),
+      onOk: () => true,
+    });
+  }
+
+  async function openAdminChats() {
+    let items = [];
+    try { items = await api.get('/api/admin/chats?limit=200'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    openModal({
+      title: 'Все чаты',
+      okText: 'Закрыть',
+      body: items.length
+        ? '<div class="link-list">' + items.map(c =>
+            '<div class="link-row"><div class="link-info"><b>' + escapeHtml(c.title) + '</b>' +
+            '<span>' + escapeHtml(c.owner) + ' · ' + c.messages + ' сообщ. · ' +
+            fmtNum(c.tokens_in) + '/' + fmtNum(c.tokens_out) + ' ток. · 👍' + c.rating_up +
+            ' 👎' + c.rating_down + '</span></div>' +
+            '<button class="chip-btn" data-open-chat="' + c.id + '">' + icon('link') + 'Открыть</button>' +
+            '</div>').join('') + '</div>'
+        : '<p>Чатов нет.</p>',
+      onOk: () => true,
+    });
+    $$('[data-open-chat]').forEach(b => b.addEventListener('click', async () => {
+      try {
+        const sh = await api.post('/api/admin/chats/' + b.dataset.openChat + '/share');
+        window.open('/?share=' + sh.share_token, '_blank');
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+  }
+
+  async function loadModelSets() {
+    try {
+      state.modelSets = await api.get('/api/models/sets');
+    } catch (e) {
+      state.modelSets = [];
+    }
+    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
+    if (!mains.length) { updateModelButton(); return; }
+
+    // one-time switch to Auto as the default for everyone
+    if (!localStorage.getItem('cs_model_default_v2')) {
+      localStorage.setItem('cs_model_default_v2', '1');
+      const auto = mains.find(s => s.is_router);
+      if (auto) {
+        state.modelSetId = auto.id;
+        localStorage.setItem('cs_model', auto.id);
+      }
+    }
+    if (!state.modelSetId || !mains.some(s => s.id === state.modelSetId)) {
+      const pick = mains.find(s => s.is_router) || mains[0];
+      state.modelSetId = pick.id;
+      localStorage.setItem('cs_model', state.modelSetId);
+    }
+    updateModelButton();
+  }
+
+  // ---------- files ----------
+  async function loadFiles() {
+    state.files = await api.get('/api/files');
+    renderFiles();
+  }
+
+  function kindIcon() {
+    return icon('file');
+  }
+
+  function renderFiles() {
+    const box = $('#file-list');
+    const q = (state.fileQuery || '').toLowerCase();
+    const kind = state.fileKind || 'all';
+    let items = state.files || [];
+    if (q) items = items.filter(f => (f.original_name || '').toLowerCase().includes(q));
+    if (kind !== 'all') {
+      items = items.filter(f => {
+        const k = f.kind || 'other';
+        if (kind === 'image') return k === 'image';
+        if (kind === 'doc') return ['pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text'].includes(k);
+        if (kind === 'table') return ['sheet', 'csv', 'xlsx'].includes(k);
+        if (kind === 'slide') return k === 'slide' || k === 'presentation';
+        return !['image', 'pdf', 'doc', 'docx', 'txt', 'md', 'code', 'text', 'sheet', 'csv', 'xlsx', 'slide'].includes(k);
+      });
+    }
+    if (!items.length) {
+      box.innerHTML = '<div class="side-empty">' +
+        (state.files.length ? 'Ничего не найдено' : 'Файлов пока нет') + '</div>';
+      return;
+    }
+    box.innerHTML = items.map(f =>
+      '<div class="file-item">' +
+        '<span class="fi-kind">' + kindIcon(f.kind) + '</span>' +
+        '<span class="fi-name" title="' + escapeHtml(f.original_name) + '">' + escapeHtml(f.original_name) + '</span>' +
+        '<span class="fi-size">' + formatSize(f.size) + '</span>' +
+        '<a class="fi-btn" href="/api/files/' + f.id + '/download" title="Скачать" download>' +
+        icon('download') + '</a>' +
+        '<button data-attach="' + f.id + '" title="Прикрепить">' + icon('plus') + '</button>' +
+        '<button data-del="' + f.id + '" title="Удалить">' + icon('trash') + '</button>' +
+      '</div>').join('');
+    $$('[data-del]', box).forEach(b => b.addEventListener('click', async () => {
+      await api.del('/api/files/' + b.dataset.del);
+      state.files = state.files.filter(x => x.id !== b.dataset.del);
+      renderFiles();
+    }));
+    $$('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
+      const f = state.files.find(x => x.id === b.dataset.attach);
+      if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
+        state.pendingAttachments.push(f);
+        renderAttachments();
+      }
+      toggleFiles(false);
+    }));
+  }
+
+  async function uploadFiles(files) {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    try {
+      const out = await api.postForm('/api/files', fd);
+      state.files = out.concat(state.files);
+      renderFiles();
+      out.forEach(f => state.pendingAttachments.push(f));
+      renderAttachments();
+    } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }
+  }
+
+  function toggleFiles(force) {
+    const p = $('#files-panel');
+    const show = force === undefined ? p.classList.contains('hidden') : force;
+    p.classList.toggle('hidden', !show);
+    if (show) loadFiles();
+  }
+
+  function bindFiles() {
+    $('#models-btn').addEventListener('click', openModelStats);
+    $('#wall-btn').addEventListener('click', openWall);
+    $('#publish-btn').addEventListener('click', publishCurrentChat);
+    $('#mem-quick-btn').addEventListener('click', () => openMemory());
+    $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
+    $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
+    $('#upload-btn').addEventListener('click', () => $('#file-input').click());
+    $('#file-search').addEventListener('input', (e) => {
+      state.fileQuery = e.target.value.trim();
+      renderFiles();
+    });
+    $('#file-filter').addEventListener('change', (e) => {
+      state.fileKind = e.target.value;
+      renderFiles();
+    });
+    const dz = $('#drop-zone');
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+    dz.addEventListener('drop', async (e) => {
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length) await uploadFiles(files);
+    });
+  }
+
+  // ---------- modal ----------
+  function closeModal() {
+    $('#modal-root').innerHTML = '';
+  }
+
+  function openModal({ title, body, onOk, okText }) {
+    const root = $('#modal-root');
+    const infoOnly = (okText || '') === 'Закрыть';
+    root.innerHTML = '<div class="modal-back"><div class="modal' + (infoOnly ? ' wide' : '') +
+      '"><h3>' + escapeHtml(title) + '</h3>' +
+      '<div class="modal-body">' + body + '</div>' +
+      '<div class="row">' +
+      (infoOnly ? '' : '<button class="ghost" data-cancel>Отмена</button>') +
+      '<button class="solid" data-ok>' + escapeHtml(okText || 'Сохранить') + '</button></div></div></div>';
+    const back = $('.modal-back', root);
+    const close = () => { root.innerHTML = ''; };
+    const cancel = $('[data-cancel]', root);
+    if (cancel) cancel.addEventListener('click', close);
+    back.addEventListener('click', (e) => { if (e.target === back) close(); });
+    $('[data-ok]', root).addEventListener('click', async () => {
+      try { const ok = onOk ? await onOk(root) : true; if (ok !== false) close(); }
+      catch (err) { toast('Ошибка: ' + err.message, 'error'); }
+    });
+    const inp = $('input, textarea', root);
+    if (inp) { inp.focus(); inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('[data-ok]', root).click(); } }); }
+  }
+
+  // ---------- admin: model sets ----------
+
+  // live cost estimate for a model: prices are $ per 1M tokens
+  function wireCostCalc(root, calcId, ids) {
+    const box = $('#' + calcId, root);
+    if (!box) return;
+    const get = (id) => { const n = $('#' + id, root); return n ? (parseFloat(n.value) || 0) : 0; };
+    const upd = () => {
+      const pin = get(ids.in), pout = get(ids.out), pcache = get(ids.cache);
+      const ctx = get(ids.ctx), mx = get(ids.max);
+      const full = (pin * ctx) / 1e6 + (pout * mx) / 1e6;
+      const short = (pin * 1000) / 1e6 + (pout * 500) / 1e6;
+      box.innerHTML =
+        '<div class="calc-line"><span>Вход</span><b>$' + pin + ' / 1M токенов</b></div>' +
+        '<div class="calc-line"><span>Выход</span><b>$' + pout + ' / 1M токенов</b></div>' +
+        '<div class="calc-line"><span>Кэш</span><b>$' + pcache + ' / 1M токенов</b></div>' +
+        '<div class="calc-line total"><span>Короткий ответ (1k контекст + 0.5k ответ)</span><b>≈ $' +
+          short.toFixed(5) + '</b></div>' +
+        '<div class="calc-line total"><span>Полный контекст ' + fmtNum(ctx) + ' + ответ ' +
+          fmtNum(mx) + '</span><b>≈ $' + full.toFixed(4) + '</b></div>' +
+        (pout ? '<div class="calc-line"><span>1000 таких ответов</span><b>≈ $' +
+          (full * 1000).toFixed(2) + '</b></div>' : '');
+    };
+    $$('input', root).forEach(i => {
+      i.addEventListener('input', upd);
+      i.addEventListener('change', upd);
+    });
+    upd();
+  }
+
+  function adminForm(root, title, fields, onSubmit, done) {
+    root.innerHTML = '<div class="modal-back"><div class="modal wide"><h3>' + escapeHtml(title) + '</h3>' +
+      '<div class="modal-body lim-plans">' + fields.map(f =>
+        f.type === 'html' ? (f.html || '') :
+        '<label>' + escapeHtml(f.label) +
+        (f.type === 'select'
+          ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
+          : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
+            (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
+            (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') +
+            (f.calc ? ' data-calc="1" inputmode="decimal"' : '') + ' />') +
+        (f.note ? '<span class="field-note">' + f.note + '</span>' : '') +
+        '</label>').join('') + '</div>' +
+      '<div class="row"><button class="ghost" data-cancel>Отмена</button>' +
+      '<button class="solid" data-ok>Сохранить</button></div></div></div>';
+    $('[data-cancel]', root).addEventListener('click', done);
+    $('[data-ok]', root).addEventListener('click', async () => {
+      try { await onSubmit(); done(); } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+  }
+
+  async function openModelSetsAdmin() {
+    const root = $('#modal-root');
+
+    async function rerender() {
+      const sets = await api.get('/api/admin/model-sets');
+      const body = sets.length ? sets.map(s =>
+        '<div class="ms-set"><div class="ms-head">' +
+          '<span class="ms-route">' + escapeHtml(s.route_type) + '</span>' +
+          '<b>' + escapeHtml(s.name) + '</b>' +
+          '<span class="ms-slug">' + escapeHtml(s.slug) + '</span>' +
+          '<span class="spacer" style="flex:1"></span>' +
+          '<button data-toggle="' + s.id + '" data-active="' + (s.is_active ? 1 : 0) + '">' +
+            (s.is_active ? 'вкл' : 'выкл') + '</button>' +
+          '<button data-del-set="' + s.id + '" title="Удалить набор">' + icon('trash') + '</button>' +
+        '</div><div class="ms-entries">' +
+          (s.entries.length ? s.entries.map(e =>
+            '<div class="ms-entry">' +
+              '<span class="ms-pos">' + e.position + '</span>' +
+              '<span class="ms-model">' + escapeHtml(e.model) + '</span>' +
+              '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
+              '<span class="ms-key">' + (e.has_api_key ? icon('check') : '—') + '</span>' +
+              '<span class="ms-price">' + (e.price_in || e.price_out
+                ? '$' + (e.price_in || 0) + ' / $' + (e.price_out || 0)
+                : '—') + '</span>' +
+              '<button data-edit-entry="' + s.id + '|' + e.id + '" title="Модель, цены, контекст, лимит ответа">Изменить</button>' +
+              '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button>' +
+            '</div>').join('') : '<div class="ms-empty">нет моделей</div>') +
+          '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button>' +
+        '</div></div>').join('') : '<p>Наборов нет.</p>';
+
+      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px">' +
+        '<h3>Model Sets</h3><div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div>' +
+        '<div class="row"><button class="ghost" data-add-set>' + icon('plus') + 'Набор</button>' +
+        '<span style="flex:1"></span><button class="solid" data-close>Закрыть</button></div></div></div>';
+
+      $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
+      $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
+      $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Удалить набор и все его модели?')) return;
+        await api.del('/api/admin/model-sets/' + b.dataset.delSet); rerender();
+      }));
+      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => {
+        await api.patch('/api/admin/model-sets/' + b.dataset.toggle,
+          { is_active: b.dataset.active !== '1' }); rerender();
+      }));
+      $$('[data-del-entry]', root).forEach(b => {
+        const [sid, eid] = b.dataset.delEntry.split('|');
+        b.addEventListener('click', async () => {
+          await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
+        });
+      });
+      $$('[data-edit-entry]', root).forEach(b => {
+        const [sid, eid] = b.dataset.editEntry.split('|');
+        b.addEventListener('click', () => editEntryForm(root, sid, eid, rerender));
+      });
+      $$('[data-add-entry]', root).forEach(b =>
+        b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
+    }
+
+    await rerender();
+  }
+
+  function addSetForm(root, done) {
+    adminForm(root, 'Новый Model Set', [
+      { id: 'ms-name', label: 'Название', placeholder: 'Например: Qwen Fast' },
+      { id: 'ms-route', label: 'Маршрут', type: 'select', options: ['MAIN', 'TITLE', 'SUGGESTIONS'] },
+    ], async () => {
+      await api.post('/api/admin/model-sets', {
+        name: $('#ms-name').value.trim(),
+        route_type: $('#ms-route').value,
+      });
+    }, done);
+  }
+
+  function addEntryForm(root, setId, done) {
+    adminForm(root, 'Новая модель (шаг fallback)', [
+      { id: 'me-url', label: 'Base URL', placeholder: 'https://…/v1' },
+      { id: 'me-model', label: 'Модель', placeholder: 'qwen36-35b' },
+      { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
+      { id: 'me-pos', label: 'Позиция', type: 'number', value: '0' },
+      { id: 'me-temp', label: 'Temperature', type: 'number', value: '0.2' },
+      { id: 'me-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: '32000', calc: true },
+      { id: 'me-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: '0', calc: true },
+      { id: 'me-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: '0', calc: true },
+      { id: 'me-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: '0', calc: true },
+      { id: 'me-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: '0', calc: true },
+      { type: 'html', html: '<div id="me-calc" class="field-calc"></div>' },
+    ], async () => {
+      await api.post('/api/admin/model-sets/' + setId + '/entries', {
+        base_url: $('#me-url').value.trim(),
+        model: $('#me-model').value.trim(),
+        api_key: $('#me-key').value,
+        position: parseInt($('#me-pos').value, 10) || 0,
+        temperature: parseFloat($('#me-temp').value) || 0.2,
+        max_tokens: parseInt($('#me-max').value, 10) || 32000,
+        context_len: parseInt($('#me-ctx').value, 10) || 0,
+        price_in: parseFloat($('#me-pin').value) || 0,
+        price_out: parseFloat($('#me-pout').value) || 0,
+        price_cache: parseFloat($('#me-pcache').value) || 0,
+      });
+    }, done);
+    wireCostCalc(root, 'me-calc',
+      { in: 'me-pin', out: 'me-pout', cache: 'me-pcache', ctx: 'me-ctx', max: 'me-max' });
+  }
+
+  async function editEntryForm(root, setId, entryId, done) {
+    let entry = null;
+    try {
+      const sets = await api.get('/api/models/sets');
+      (sets || []).forEach(s => {
+        (s.entries || []).forEach(e => { if (e.id === entryId) entry = e; });
+      });
+    } catch (e) { /* ignore */ }
+    if (!entry) { toast('Модель не найдена', 'error'); return; }
+    adminForm(root, 'Модель: ' + (entry.model || ''), [
+      { id: 'ee-model', label: 'Модель', value: entry.model || '' },
+      { id: 'ee-url', label: 'Base URL', value: entry.base_url || '' },
+      { id: 'ee-key', label: 'API-ключ (пусто = не менять)', placeholder: 'sk-…' },
+      { id: 'ee-temp', label: 'Temperature', type: 'number', value: String(entry.temperature != null ? entry.temperature : 0.2) },
+      { id: 'ee-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: String(entry.max_tokens || 32000), calc: true },
+      { id: 'ee-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: String(entry.context_len || 0), calc: true },
+      { id: 'ee-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: String(entry.price_in || 0), calc: true },
+      { id: 'ee-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: String(entry.price_out || 0), calc: true },
+      { id: 'ee-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: String(entry.price_cache || 0), calc: true },
+      { type: 'html', html: '<div id="ee-calc" class="field-calc"></div>' },
+    ], async () => {
+      const body = {
+        model: $('#ee-model').value.trim(),
+        base_url: $('#ee-url').value.trim(),
+        temperature: parseFloat($('#ee-temp').value) || 0.2,
+        max_tokens: parseInt($('#ee-max').value, 10) || 32000,
+        context_len: parseInt($('#ee-ctx').value, 10) || 0,
+        price_in: parseFloat($('#ee-pin').value) || 0,
+        price_out: parseFloat($('#ee-pout').value) || 0,
+        price_cache: parseFloat($('#ee-pcache').value) || 0,
+      };
+      const key = $('#ee-key').value;
+      if (key) body.api_key = key;
+      await api.patch('/api/admin/model-sets/' + setId + '/entries/' + entryId, body);
+      toast('Модель обновлена');
+    }, done);
+    wireCostCalc(root, 'ee-calc',
+      { in: 'ee-pin', out: 'ee-pout', cache: 'ee-pcache', ctx: 'ee-ctx', max: 'ee-max' });
+  }
+
+  // ---------- sidebar ----------
+  function applySidebar() {
+    const sb = $('#sidebar');
+    const collapsed = state.sidebarCollapsed && window.innerWidth > 860;
+    sb.classList.toggle('collapsed', collapsed);
+    const openBtn = $('#sidebar-open-btn');
+    if (openBtn) openBtn.classList.toggle('hidden', !collapsed);
+  }
+  function closeMobileSidebar() {
+    if (window.innerWidth <= 860) {
+      $('#sidebar').classList.remove('open');
+      $('#sidebar-overlay').classList.remove('show');
+    }
+  }
+  function bindSidebar() {
+    $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
+    $('#new-code-btn').addEventListener('click', () => toastSoon('Код-агент'));
+    $('#new-council-btn').addEventListener('click', () => toastSoon('Консилиум'));
+    $('#collapse-btn').addEventListener('click', () => {
+      state.sidebarCollapsed = true;
+      localStorage.setItem('cs_sidebar', '1');
+      applySidebar();
+    });
+    $('#sidebar-open-btn').addEventListener('click', () => {
+      state.sidebarCollapsed = false;
+      localStorage.setItem('cs_sidebar', '0');
+      applySidebar();
+    });
+    $('#share-btn').addEventListener('click', openShare);
+    $('#menu-btn').addEventListener('click', () => {
+      $('#sidebar').classList.add('open'); $('#sidebar-overlay').classList.add('show');
+    });
+    $('#sidebar-overlay').addEventListener('click', closeMobileSidebar);
+    let t = null;
+    $('#search-input').addEventListener('input', (e) => {
+      clearTimeout(t);
+      t = setTimeout(() => { state.query = e.target.value.trim(); loadChats(); }, 250);
+    });
+    $('#chat-title').addEventListener('click', renameCurrentChat);
+    $('#messages').addEventListener('scroll', () => {
+      const box = $('#messages');
+      state.stickBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 70;
+    });
+    $('#settings-btn').addEventListener('click', () => {
+      const u = state.user || {};
+      const isAdmin = !!u.is_admin;
+      const who = u.name || u.email || 'Аккаунт';
+      openModal({
+        title: 'Настройки и профиль',
+        okText: 'Закрыть',
+        body:
+          '<div class="profile-box">' +
+          '<img class="profile-ava" src="/api/avatars/' + (u.avatar || 0) + '.svg" alt="" />' +
+          '<div class="profile-info"><b>' + escapeHtml(who) + '</b>' +
+          '<span>' + escapeHtml(u.email || '') + '</span>' +
+          '<span class="role-chip">' + (isAdmin ? 'администратор' : 'пользователь') + '</span></div>' +
+          '</div>' +
+          '<h4 class="sec">Параметры</h4>' +
+          '<p class="usage-note">Поиск в интернете: всегда включён · Усилие: ' +
+          escapeHtml(state.effort) + ' · Память: ' +
+          ((state.memories || []).length) + ' записей<br/>' +
+          'Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
+          '<h4 class="sec">Состояние сервера</h4>' +
+          '<div id="sys-block">' + systemRowsHtml() + '</div>' +
+          '<h4 class="sec">Разделы</h4>' +
+          '<div class="settings-grid">' +
+          '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' +
+          '<button class="chip-btn" id="set-wall">' + icon('globe-box') + 'Стенка постов</button>' +
+          '<button class="chip-btn" id="set-memory">' + icon('sparkle') + 'Память</button>' +
+          '<button class="chip-btn" id="set-links">' + icon('link') + 'Мои ссылки</button>' +
+          '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
+          (isAdmin
+            ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
+              '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
+              '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>' +
+              '<button class="chip-btn" id="open-limits">' + icon('gauge') + 'Тарифы и лимиты</button>'
+            : '') +
+          '</div>' +
+          '<div style="margin-top:18px"><button class="chip-btn danger" id="set-logout">' +
+          icon('logout') + 'Выйти из аккаунта</button></div>',
+        onOk: () => true,
+      });
+      const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+      on('#set-models', () => { closeModal(); openModelStats(); });
+      on('#set-wall', () => { closeModal(); openWall(); });
+      on('#set-memory', () => { closeModal(); openMemory(); });
+      on('#set-links', () => { closeModal(); openLinks(); });
+      on('#set-files', () => { closeModal(); toggleFiles(true); });
+      on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
+      on('#open-stats', () => { closeModal(); openAdminStats(); });
+      on('#open-allchats', () => { closeModal(); openAdminChats(); });
+      on('#open-limits', () => { closeModal(); openLimits(); });
+      on('#set-logout', async () => {
+        try { await api.post('/api/auth/logout'); } catch (e) { /* noop */ }
+        location.reload();
+      });
+    });
+    window.addEventListener('resize', () => {
+      applySidebar();
+      $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
+    });
+  }
+
+  // ---------- share / public ----------
+  async function openShare() {
+    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+    let st;
+    try { st = await api.get('/api/chats/' + state.currentChatId + '/share'); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+
+    const url = st.share_token ? (location.origin + '/?share=' + st.share_token) : '';
+    openModal({
+      title: 'Поделиться чатом',
+      okText: 'Закрыть',
+      body: st.is_public
+        ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
+          '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
+          '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="chip-btn" id="copy-link">' + icon('copy') + 'Копировать</button>' +
+          '<button class="chip-btn" id="open-link">' + icon('link') + 'Открыть</button>' +
+          '<button class="chip-btn" id="stop-share">' + icon('x') + 'Отключить</button></div>'
+        : '<p>Создать публичную ссылку на этот чат? Доступ будет только на чтение.</p>' +
+          '<div style="margin-top:12px"><button class="chip-btn" id="start-share">' +
+          icon('link') + 'Создать ссылку</button></div>',
+      onOk: () => true,
+    });
+
+    const start = $('#start-share');
+    if (start) start.addEventListener('click', async () => {
+      try { await api.post('/api/chats/' + state.currentChatId + '/share'); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+      $('#modal-root').innerHTML = ''; openShare();
+    });
+    const copy = $('#copy-link');
+    if (copy) copy.addEventListener('click', async () => {
+      const ok = await copyText(url);
+      toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
+    });
+    const open = $('#open-link');
+    if (open) open.addEventListener('click', () => window.open(url, '_blank'));
+    const stop = $('#stop-share');
+    if (stop) stop.addEventListener('click', async () => {
+      try { await api.del('/api/chats/' + state.currentChatId + '/share'); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+      $('#modal-root').innerHTML = ''; openShare();
+    });
+  }
+
+  async function currentUserOrNull() {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) { return null; }
+  }
+
+  async function showPublicView(token) {
+    let data;
+    try {
+      const r = await fetch('/api/public/chats/' + encodeURIComponent(token),
+        { credentials: 'same-origin' });
+      if (!r.ok) {
+        throw new Error(r.status === 404 ? 'ссылка недействительна или отключена' : 'HTTP ' + r.status);
+      }
+      data = await r.json();
+    } catch (e) {
+      showAuth();
+      $('#auth-error').textContent = 'Не удалось открыть ссылку: ' + e.message;
+      return;
+    }
+
+    state.user = await currentUserOrNull();
+    state.publicToken = token;
+    state.readonly = true;
+    state.tree = data.messages || [];
+    state.currentChatId = null;
+    state.choices = {};
+
+    $('#auth-screen').classList.add('hidden');
+    $('#main-screen').classList.remove('hidden');
+    $('#sidebar').classList.add('collapsed');
+    $('#chat-title').textContent = data.title || 'Публичный чат';
+    $('#composer').classList.add('hidden');
+    $('#share-btn').classList.add('hidden');
+
+    const banner = document.createElement('div');
+    banner.className = 'public-banner';
+    banner.innerHTML = '<span>' + icon('link') + ' Публичный чат' +
+      (data.author ? ' · ' + escapeHtml(data.author) : '') + ' — только чтение</span>' +
+      (state.user
+        ? '<button id="fork-btn">Продолжить у себя</button>'
+        : '<button id="login-btn">Войти, чтобы продолжить</button>');
+    $('#chat-area').insertBefore(banner, $('#messages'));
+
+    const fb = $('#fork-btn');
+    if (fb) fb.addEventListener('click', async () => {
+      try {
+        await api.post('/api/public/chats/' + encodeURIComponent(token) + '/fork');
+        location.href = '/';
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    const lb = $('#login-btn');
+    if (lb) lb.addEventListener('click', () => { location.href = '/'; });
+
+    renderMessages();
   }
 
   // ---------- local file generation ----------
@@ -1609,7 +2386,7 @@
   }
 
   function openSaveMenu(p) {
-    const base = (p.title || 'ai-ch').replace(/[^\wа-яА-ЯёЁ\- ]+/g, '').trim().slice(0, 40) || 'ai-ch';
+    const base = (p.title || 'chatstudio').replace(/[^\wа-яА-ЯёЁ\- ]+/g, '').trim().slice(0, 40) || 'chatstudio';
     const items = [
       { id: 'txt', label: 'TXT', hint: 'обычный текст' },
       { id: 'md', label: 'Markdown', hint: '.md' },
@@ -1632,7 +2409,7 @@
         if (f === 'txt') downloadBlob(base + '.txt', new Blob([text], { type: 'text/plain;charset=utf-8' }));
         else if (f === 'md') downloadBlob(base + '.md', new Blob([text], { type: 'text/markdown;charset=utf-8' }));
         else if (f === 'docx') downloadBlob(base + '.docx', textToDocx(text));
-        else if (f === 'pdf') printPdf(p.title || 'ai-ch', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
+        else if (f === 'pdf') printPdf(p.title || 'ChatStudio', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
         else if (f === 'svg' && p.svg) downloadBlob(base + '.svg', new Blob([p.svg], { type: 'image/svg+xml' }));
         $('#modal-root').innerHTML = '';
         toast('Файл сохранён');
@@ -1677,6 +2454,101 @@
       const counts = document.querySelectorAll('.mem-count');
       counts.forEach((el) => { el.textContent = items.length ? String(items.length) : ''; });
     } catch (e) { state.memories = []; }
+  }
+
+  async function openMemory(filterMessageId) {
+    let items = [];
+    try { items = await api.get('/api/memory'); } catch (e) { items = []; }
+    if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
+    openModal({
+      title: filterMessageId ? 'Что запомнил по этому ответу' : 'Память о вас',
+      okText: 'Закрыть',
+      body: (items.length
+        ? '<div class="mem-list">' + items.map(m =>
+            '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
+            '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>').join('') +
+          '</div>'
+        : '<p>Пока ничего не записано.</p>') +
+        '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить</button>' +
+        (items.length && !filterMessageId
+          ? '<button class="chip-btn" id="mem-clear">' + icon('trash') + 'Очистить всё</button>' : '') +
+        '</div>',
+      onOk: () => true,
+    });
+    $$('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
+      try {
+        await api.del('/api/memory/' + b.dataset.delMem);
+        $('#modal-root').innerHTML = '';
+        await loadMemory();
+        openMemory(filterMessageId);
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+    const add = $('#mem-add');
+    if (add) add.addEventListener('click', () => {
+      openModal({
+        title: 'Добавить в память',
+        body: '<textarea id="mem-text" rows="4" placeholder="Что запомнить о вас?"></textarea>',
+        onOk: async (root) => {
+          const val = $('#mem-text', root).value.trim();
+          if (!val) return false;
+          await api.post('/api/memory', { content: val });
+          await loadMemory();
+          $('#modal-root').innerHTML = '';
+          openMemory();
+          toast('Записано в память');
+          return true;
+        },
+      });
+    });
+    const clr = $('#mem-clear');
+    if (clr) clr.addEventListener('click', async () => {
+      if (!confirm('Очистить всю память о вас?')) return;
+      try {
+        await api.del('/api/memory');
+        await loadMemory();
+        $('#modal-root').innerHTML = '';
+        openMemory();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+  }
+
+  async function openCouncil() {
+    let models = [];
+    try { models = await api.get('/api/council/models'); } catch (e) { models = []; }
+    if (models.length < 2) {
+      toast('Совет недоступен', 'error');
+      return;
+    }
+    openModal({
+      title: 'Совет моделей · бета',
+      okText: 'Запустить',
+      body: '<p class="usage-note">Все участники отвечают <b>в этом же чате</b> и параллельно. ' +
+        'Переключай ответы стрелками ‹ › под сообщением — последний вариант «Совет» ' +
+        'сводит их в один общий ответ.</p>' +
+        '<textarea id="council-q" rows="3" placeholder="Ваш вопрос для совета..."></textarea>' +
+        '<div class="council-models">' + models.map((m, i) =>
+          '<label class="council-row"><input type="checkbox" data-ms="' + m.id + '"' +
+          (i < 3 ? ' checked' : '') + '/><span><b>' + escapeHtml(m.name) + '</b>' +
+          (m.hint ? '<em>' + escapeHtml(m.hint) + '</em>' : '') + '</span></label>').join('') +
+        '</div>',
+      onOk: async (root) => {
+        const q = ($('#council-q', root) || {}).value ? $('#council-q', root).value.trim() : '';
+        if (!q) { toast('Введите вопрос', 'error'); return false; }
+        const ids = $$('[data-ms]', root).filter(c => c.checked).map(c => c.dataset.ms);
+        if (ids.length < 1) { toast('Выберите хотя бы одного участника', 'error'); return false; }
+        try {
+          const res = await api.post('/api/council', { question: q, personas: ids });
+          await loadChats();
+          await openChat(res.merge_chat_id);
+          toast('Совет запущен: ' + ids.length + ' участников');
+          return true;
+        } catch (e) {
+          toast('Ошибка: ' + e.message, 'error');
+          return false;
+        }
+      },
+    });
   }
 
   async function openMemory(filterMessageId) {
@@ -1755,6 +2627,245 @@
     });
   }
 
+  // ---------- models & status ----------
+  async function openModelStats() {
+    let stats = [];
+    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
+    const card = (s) => {
+      const total = (s.rating_up + s.rating_down) || 0;
+      const good = total ? Math.round((s.rating_up / total) * 100) : 0;
+      return '<div class="model-card">' +
+        '<div class="mc-head"><b>' + escapeHtml(s.name) + '</b>' +
+        '<em class="route">' + escapeHtml(s.route_type) + '</em></div>' +
+        '<div class="mc-model">' + escapeHtml(s.model || '—') + '</div>' +
+        '<div class="mc-bar"><i style="width:' + Math.min(100, s.share) + '%"></i></div>' +
+        '<div class="mc-rows">' +
+        '<span>Доля запросов: <b>' + s.share + '%</b></span>' +
+        '<span>Запросов: <b>' + s.messages + '</b></span>' +
+        '<span>Вход: <b>' + fmtNum(s.tokens_in) + '</b></span>' +
+        '<span>Выход: <b>' + fmtNum(s.tokens_out) + '</b></span>' +
+        '<span>Из кэша: <b>' + fmtNum(s.tokens_cached) + '</b></span>' +
+        '<span>Оценки: 👍 <b>' + s.rating_up + '</b> · 👎 <b>' + s.rating_down + '</b></span>' +
+        '<span>Входов: <b>' + s.active_entries + '/' + s.entries + '</b></span>' +
+        '</div>' +
+        (total ? '<div class="mc-good">Довольных ответами: <b>' + good + '%</b></div>' : '') +
+        '</div>';
+    };
+    openModal({
+      title: 'Модели и статус',
+      okText: 'Закрыть',
+      body: '<p class="usage-note">Общая статистика по всем моделям — доступна всем пользователям.</p>' +
+        (stats.length ? '<div class="model-grid">' + stats.map(card).join('') + '</div>'
+                      : '<p>Моделей пока нет.</p>'),
+      onOk: () => true,
+    });
+  }
+
+  // ---------- wall of posts ----------
+  function postCard(p, compact) {
+    const img = p.image_file_id
+      ? '<img class="post-img" src="/api/files/' + p.image_file_id + '/download?inline=1" alt="" loading="lazy" />'
+      : '';
+    return '<div class="post-card" data-post="' + p.id + '">' +
+      img +
+      '<div class="post-body">' +
+      '<div class="post-head"><b>' + escapeHtml(p.title || 'Пост') + '</b>' +
+      '<em>' + escapeHtml(p.author || '') + ' · ' + timeAgo(p.created_at) + '</em></div>' +
+      '<p class="post-preview">' + escapeHtml((p.preview || '').slice(0, compact ? 180 : 420)) + '</p>' +
+      '<div class="post-foot">' +
+      '<button class="pv" data-vote="1" data-id="' + p.id + '"' + (p.my_vote > 0 ? ' class="on"' : '') + '>👍 <b>' + p.likes + '</b></button>' +
+      '<button class="pv" data-vote="-1" data-id="' + p.id + '"' + (p.my_vote < 0 ? ' class="on"' : '') + '>👎 <b>' + p.dislikes + '</b></button>' +
+      '<span class="pv-ro">💬 <b>' + p.comments + '</b></span>' +
+      '<span class="pv-ro">👁 <b>' + p.views + '</b></span>' +
+      '<span class="pv-ro" data-open-post="' + p.id + '">Открыть</span>' +
+      (p.can_delete ? '<button class="pv del" data-del-post="' + p.id + '">Удалить</button>' : '') +
+      '</div></div></div>';
+  }
+
+  function bindPostCards(root) {
+    $$('[data-vote]', root).forEach(b => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = b.dataset.id;
+      const value = parseInt(b.dataset.vote, 10);
+      const cards = $$('.post-card[data-post="' + id + '"]');
+      const cur = cards[0] && cards[0].querySelector('.pv.on[data-vote]');
+      const next = cur && parseInt(cur.dataset.vote, 10) === value ? 0 : value;
+      try {
+        const upd = await api.post('/api/posts/' + id + '/vote', { value: next });
+        cards.forEach(card => card.outerHTML = postCard(upd, card.classList.contains('compact')));
+        bindPostCards(root);
+      } catch (err) { toast('Ошибка: ' + err.message, 'error'); }
+    }));
+    $$('[data-open-post]', root).forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPost(b.dataset.openPost);
+    }));
+    $$('[data-del-post]', root).forEach(b => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Удалить пост со стенки?')) return;
+      try {
+        await api.del('/api/posts/' + b.dataset.delPost);
+        toast('Пост удалён');
+        closeModal();
+        openWall();
+      } catch (err) { toast('Ошибка: ' + err.message, 'error'); }
+    }));
+  }
+
+  async function openWall() {
+    let items = [];
+    try { items = await api.get('/api/posts?limit=60'); } catch (e) { items = []; }
+    openModal({
+      title: 'Стенка постов',
+      okText: 'Закрыть',
+      body: '<div class="wall-top">' +
+        '<span class="usage-note">Публичные ответы. Лайки, дизлайки и комментарии — для авторизованных.</span>' +
+        '<button class="chip-btn" id="wall-publish">' + icon('share') + 'Опубликовать чат</button>' +
+        '</div>' +
+        (items.length ? '<div class="wall-grid">' + items.map(p => postCard(p, true)).join('') + '</div>'
+                      : '<p>Пока постов нет. Открой чат и нажми «Опубликовать».</p>'),
+      onOk: () => true,
+    });
+    bindPostCards($('#modal-root'));
+    const pub = $('#wall-publish');
+    if (pub) pub.addEventListener('click', () => publishCurrentChat());
+  }
+
+  async function openPost(id) {
+    let p;
+    try { p = await api.get('/api/posts/' + id); }
+    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    if (!p.chat_id) {
+      toast('Чат недоступен', 'error');
+      return;
+    }
+    // viewing a post counts a view and opens the full chat read-only
+    api.post('/api/posts/' + id + '/view').catch(() => {});
+    const chat = await api.get('/api/chats/' + p.chat_id).catch(() => null);
+    const token = chat && chat.share_token;
+    if (!token) { toast('Ссылка недоступна', 'error'); return; }
+    window.open('/?share=' + token, '_blank');
+  }
+
+  async function publishCurrentChat() {
+    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+    const chat = state.chats.find(c => c.id === state.currentChatId) || {};
+    openModal({
+      title: 'Опубликовать на стенке',
+      okText: 'Опубликовать',
+      body: '<p class="usage-note">Чат станет публичным (ссылка только для чтения), ' +
+        'а его последний ответ появится на стенке с превью.</p>' +
+        '<input id="post-title" value="' + escapeHtml(chat.title || 'Пост') + '" placeholder="Заголовок" />',
+      onOk: async (root) => {
+        const title = ($('#post-title', root) || {}).value ? $('#post-title', root).value.trim() : '';
+        try {
+          await api.post('/api/posts', { chat_id: state.currentChatId, title });
+          await loadWallCount();
+          toast('Опубликовано на стенке');
+          return true;
+        } catch (e) { toast('Ошибка: ' + e.message, 'error'); return false; }
+      },
+    });
+  }
+
+  async function loadWallCount() {
+    try {
+      const items = await api.get('/api/posts?limit=100');
+      const btn = $('#wall-btn');
+      const badge = btn && btn.querySelector('.wall-count');
+      if (badge) badge.textContent = items.length ? String(items.length) : '';
+    } catch (e) { /* noop */ }
+  }
+
+  // ---------- main page showcase: model + top post, both visible, refreshed ----------
+  let showcaseTimer = null;
+
+  function modelCardHtml(s) {
+    if (!s) return '<div class="show-empty">Модели недоступны</div>';
+    const total = (s.rating_up + s.rating_down) || 0;
+    const good = total ? Math.round((s.rating_up / total) * 100) : 0;
+    return '<div class="model-card compact">' +
+      '<div class="mc-head"><b>' + escapeHtml(s.name) + '</b>' +
+      '<em class="route">' + escapeHtml(s.route_type) + '</em></div>' +
+      '<div class="mc-model">' + escapeHtml(s.model || '—') + '</div>' +
+      '<div class="mc-bar"><i style="width:' + Math.min(100, s.share) + '%"></i></div>' +
+      '<div class="mc-rows"><span>Запросов: <b>' + s.messages + '</b></span>' +
+      '<span>Доля: <b>' + s.share + '%</b></span>' +
+      '<span>Вход/выход: <b>' + fmtNum(s.tokens_in) + ' / ' + fmtNum(s.tokens_out) + '</b></span>' +
+      '<span>Оценки: 👍 <b>' + s.rating_up + '</b> · 👎 <b>' + s.rating_down + '</b></span>' +
+      (total ? '<span>Довольных: <b>' + good + '%</b></span>' : '') +
+      '</div></div>';
+  }
+
+  async function startShowcase() {
+    stopShowcase();
+    let posts = [];
+    let stats = [];
+    try { posts = await api.get('/api/posts?limit=6'); } catch (e) { posts = []; }
+    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
+    const top = stats.length ? stats[Math.floor(Math.random() * stats.length)] : null;
+
+    const slides = (posts || []).slice(0, 5);
+    const track = slides.length
+      ? '<div class="carousel"><div class="car-track" id="car-track">' +
+        slides.map(p => '<div class="car-item">' +
+          postCard(Object.assign({}, p, { can_delete: false }), true) + '</div>').join('') +
+        '</div></div>'
+      : '<div class="show-empty">Постов пока нет — нажми «Опубликовать» в чате</div>';
+
+    const box = $('#empty-showcase');
+    if (!box) return;
+    box.innerHTML =
+      '<div class="show-col"><div class="show-label">Модель дня</div>' + modelCardHtml(top) + '</div>' +
+      '<div class="show-col"><div class="show-label">Стенка постов</div>' + track + '</div>';
+    bindPostCards(box);
+
+    if (slides.length > 1) {
+      let i = 0;
+      showcaseTimer = setInterval(() => {
+        const el = $('#car-track');
+        if (!el) { stopShowcase(); return; }
+        i = (i + 1) % slides.length;
+        el.style.transform = 'translateX(' + (-i * 100) + '%)';
+      }, 8000);
+    }
+  }
+
+  function stopShowcase() {
+    if (showcaseTimer) { clearInterval(showcaseTimer); showcaseTimer = null; }
+  }
+
+  // ---------- code-agent project panel ----------
+  function toggleProjectPanel(show) {
+    const panel = $('#project-panel');
+    if (!panel) return;
+    const visible = show === undefined ? panel.classList.contains('hidden') : !!show;
+    panel.classList.toggle('hidden', !visible);
+    if (visible) loadProject(true);
+  }
+
+  async function loadProject(resetLogs) {
+    if (!state.currentChatId) return;
+    try {
+      const data = await api.get('/api/chats/' + state.currentChatId + '/project');
+      const files = data.files || [];
+      const tree = $('#pp-tree');
+      tree.innerHTML = files.length
+        ? files.map(f =>
+            '<div class="pp-file" title="' + escapeHtml(f.path) + '">' + icon('file') +
+            '<span>' + escapeHtml(f.path) + '</span><em>' + formatSize(f.size) + '</em></div>').join('')
+        : '<div class="pp-empty">Файлов пока нет — попроси агента создать проект.</div>';
+      if (resetLogs) $('#pp-logs').textContent = '';
+    } catch (e) { /* noop */ }
+  }
+
+  function appendLog(text) {
+    const box = $('#pp-logs');
+    if (!box || !text) return;
+    box.textContent = (box.textContent + '\n' + text).slice(-20000);
+    box.scrollTop = box.scrollHeight;
+  }
+
   // ---------- pick from already uploaded files ----------
   async function openFilePicker() {
     if (!state.files || !state.files.length) {
@@ -1783,104 +2894,83 @@
     }));
   }
 
-  // ---------- load uploaded files list ----------
-  async function loadFiles() {
-    try {
-      state.files = await api.get('/api/files');
-      renderFileList();
-    } catch (e) {
-      state.files = [];
-      renderFileList();
-    }
-  }
-
-  // ---------- bind file search/filter ----------
-  function setFilesPanelOpen(open) {
-    const panel = $('#files-panel');
-    if (!panel) return;
-    panel.classList.toggle('hidden', !open);
-    const toggle = $('#toggle-files-btn');
-    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-  }
-
-  function bindFileControls() {
-    const filesToggle = $('#toggle-files-btn');
-    if (filesToggle) filesToggle.addEventListener('click', async () => {
-      const panel = $('#files-panel');
-      const opening = !!panel && panel.classList.contains('hidden');
-      setFilesPanelOpen(opening);
-      if (opening) await loadFiles();
-    });
-    const filesClose = $('#close-files-btn');
-    if (filesClose) filesClose.addEventListener('click', () => setFilesPanelOpen(false));
-
-    const search = $('#file-search');
-    if (search) {
-      search.addEventListener('input', () => renderFileList());
-    }
-    const filter = $('#file-filter');
-    if (filter) {
-      filter.addEventListener('change', () => renderFileList());
-    }
-    const uploadBtn = $('#upload-btn');
-    if (uploadBtn) {
-      uploadBtn.addEventListener('click', () => $('#file-input').click());
-    }
-    const pickBtn = $('#pick-file-btn');
-    if (pickBtn) {
-      pickBtn.addEventListener('click', openFilePicker);
-    }
-    const dropZone = $('#drop-zone');
-    if (dropZone) {
-      dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = 'var(--accent)'; });
-      dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
-      dropZone.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        dropZone.style.borderColor = '';
-        const files = Array.from(e.dataTransfer.files || []);
-        if (files.length) await uploadFiles(files);
-      });
-    }
-  }
-
-  // Alias for existing boot call
-  function bindFiles() {
-    bindFileControls();
-  }
-
   // ---------- server load ----------
+  async function loadSystem() {
+    try { state.system = await api.get('/api/system'); }
+    catch (e) { /* noop */ }
+  }
+
+  function systemRowsHtml() {
+    const s = state.system;
+    if (!s) return '<p class="usage-note">Загрузка…</p>';
+    const row = (label, pct, note) =>
+      '<div class="sys-row"><span>' + label + '</span>' +
+      '<i><b style="width:' + Math.min(100, Math.max(0, pct)) + '%"></b></i>' +
+      '<u>' + pct + '%</u></div>' +
+      '<div class="sys-note">' + note + '</div>';
+    return row('Процессор', s.cpu, 'load average: ' + s.load.map(v => v.toFixed(2)).join(' · ') +
+        ' · ядер: ' + s.cpus) +
+      row('Оперативная память', s.ram_pct, 'занято ' + formatSize(s.ram_used) +
+        ' из ' + formatSize(s.ram_total)) +
+      row('Диск', s.disk_pct, 'занято ' + formatSize(s.disk_used) +
+        ' из ' + formatSize(s.disk_total) + ' · свободно ' + formatSize(s.disk_free)) +
+      '<p class="usage-note">Квота на пользователя: ' + formatSize(s.quota) +
+      '. При нехватке места самые старые файлы удаляются автоматически.</p>';
+  }
+
+  // ---------- plan limits ----------
   async function openLimits() {
     let data;
     try { data = await api.get('/api/limits/all'); }
     catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
     const labels = data.labels || {};
-    state.planSettings = data.limits || {};
     const bytes = { file_size: 1, user_storage: 1 };
     const field = (plan, key, value) => {
       const isBytes = bytes[key];
-      const shown = isBytes ? (value == null ? '' : Math.round(value / (1024 * 1024))) : (value == null ? '' : value);
+      const shown = isBytes ? Math.round((value || 0) / (1024 * 1024)) : (value === null ? '' : value);
       return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
         (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
         '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
-        escapeHtml(shown) + '" placeholder="∞" /></label>';
+        shown + '" placeholder="∞" /></label>';
     };
-    const planBlock = (plan) => {
-      const lim = data.limits[plan] || {};
-      return '<h4 class="sec">Тариф ' + escapeHtml(plan.toUpperCase()) + '</h4>' +
-        '<div class="lim-grid">' + Object.keys(lim).map(k => field(plan, k, lim[k])).join('') + '</div>';
+    const modelBoxes = (plan) => {
+      const allowed = data.allowed[plan] || [];
+      const open = allowed.length === 0;
+      return '<div class="lim-models">' + (data.models || []).map(m =>
+        '<label class="council-row"><input type="checkbox" data-mplan="' + plan +
+        '" data-mid="' + m.id + '"' + (open || allowed.indexOf(m.id) >= 0 ? ' checked' : '') +
+        '/><span><b>' + escapeHtml(m.name) + '</b></span></label>').join('') +
+        '<p class="usage-note">Ничего не отмечено = разрешены все модели.</p></div>';
     };
+    const lf = data.limits.free || {};
+    const lp = data.limits.pro || {};
+    const tableKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp))));
+    const rowFor = (key) => '<tr><td class="lk">' + escapeHtml(labels[key] || key) +
+      (bytes[key] ? ' <em>МБ</em>' : '') + '</td>' +
+      '<td>' + field('free', key, lf[key]) + '</td>' +
+      '<td>' + field('pro', key, lp[key]) + '</td></tr>';
+    const block = (plan) =>
+      '<div class="lim-plan"><h5>Модели тарифа ' + plan.toUpperCase() + '</h5>' +
+      modelBoxes(plan) + '</div>';
     openModal({
-      title: 'Админ-панель · тарифы и пользователи',
-      okText: 'Сохранить лимиты',
-      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, деньги в рублях. '
-        + 'Лимит запросов проверяется на сервере до отправки модели. Пользователь после исчерпания увидит сообщение обратиться к администратору.</p>'
-        + (data.plans || ['free', 'pro', 'max']).map(planBlock).join('')
-        + '<div class="settings-grid" style="margin:12px 0"><button class="chip-btn" id="admin-model-chains">Цепочки моделей и API</button></div>'
-        + '<h4 class="sec">Пользователи · подписки и сброс счётчиков</h4><div id="lim-users">Загрузка…</div>',
+      title: 'Тарифы, лимиты и деньги',
+      okText: 'Сохранить',
+      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
+        'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, посты, ' +
+        'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
+        '<table class="lim-table"><thead><tr><th>Лимит</th>' +
+        '<th>Free<button class="reset-plan" data-reset-plan="free">сбросить</button></th>' +
+        '<th>Pro<button class="reset-plan" data-reset-plan="pro">сбросить</button></th>' +
+        '</tr></thead>' +
+        '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table>' +
+        '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
+        '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
         const grouped = {};
         $$('[data-plan]', root).forEach(inp => {
-          const plan = inp.dataset.plan, key = inp.dataset.key, raw = inp.value.trim();
+          const plan = inp.dataset.plan;
+          const key = inp.dataset.key;
+          const raw = inp.value.trim();
           let val = raw === '' ? null : Number(raw);
           if (val !== null && bytes[key]) val = Math.round(val * 1024 * 1024);
           grouped[plan] = grouped[plan] || {};
@@ -1889,440 +2979,536 @@
         for (const plan of Object.keys(grouped)) {
           await api.put('/api/limits/' + plan, grouped[plan]);
         }
-        toast('Лимиты сохранены');
+        for (const plan of (data.plans || [])) {
+          const ids = $$('[data-mplan="' + plan + '"]', root)
+            .filter(c => c.checked).map(c => c.dataset.mid);
+          const all = (data.models || []).map(m => m.id);
+          await api.put('/api/limits/' + plan + '/models',
+            { ids: ids.length === all.length ? [] : ids });
+        }
+        toast('Тарифы сохранены');
         return true;
       },
     });
-    const chains = $('#admin-model-chains');
-    if (chains) chains.addEventListener('click', () => {
-      $('#modal-root').innerHTML = '';
-      openModelChains();
-    });
     loadLimitUsers();
+    $$('[data-reset-plan]', $('#modal-root')).forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Сбросить лимиты тарифа ' + b.dataset.resetPlan.toUpperCase() +
+                   ' к значениям по умолчанию?')) return;
+      try {
+        await api.post('/api/limits/' + b.dataset.resetPlan + '/reset', {});
+        toast('Лимиты ' + b.dataset.resetPlan.toUpperCase() + ' сброшены');
+        const root = $('#modal-root');
+        root.innerHTML = '';
+        await openLimits();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
   }
 
   async function loadLimitUsers() {
     const box = $('#lim-users');
     if (!box) return;
     let rows = [];
-    try { rows = await api.get('/api/limits/users'); }
-    catch (e) { box.textContent = 'Не удалось загрузить пользователей: ' + e.message; return; }
-    box.innerHTML = '<div class="link-list">' + rows.map(u => {
-      const expiry = u.subscription_until ? new Date(u.subscription_until).toLocaleString('ru-RU') : (u.plan === 'free' ? 'нет подписки' : 'бессрочно');
-      const details = 'тариф ' + (u.plan || 'free') + ' · запросов после сброса: ' + u.requests
-        + ' · токены: ' + fmtAdminNumber((Number(u.tokens_in) || 0) + (Number(u.tokens_out) || 0))
-        + ' · расход: ' + u.cost + ' ₽ · подписка: ' + expiry;
-      if (u.is_admin) {
-        return '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b><span>'
-          + escapeHtml(u.email) + ' · администратор · ' + escapeHtml(details) + '</span></div></div>';
-      }
-      return '<div class="link-row" style="align-items:flex-start"><div class="link-info"><b>'
-        + escapeHtml(u.name || u.email) + '</b><span>' + escapeHtml(u.email) + ' · ' + escapeHtml(details) + '</span>'
-        + '<div class="settings-grid" style="margin-top:8px">'
-        + '<select data-user-plan="' + u.id + '" aria-label="Тариф">'
-        + '<option value="free"' + (u.plan === 'free' ? ' selected' : '') + '>Free</option>'
-        + '<option value="pro"' + (u.plan === 'pro' ? ' selected' : '') + '>Pro</option>'
-        + '<option value="max"' + (u.plan === 'max' ? ' selected' : '') + '>Max</option></select>'
-        + '<input type="number" min="1" max="3650" data-user-days="' + u.id + '" value="' + escapeHtml(state.planSettings[u.plan] && state.planSettings[u.plan].subscription_days != null ? state.planSettings[u.plan].subscription_days : '') + '" placeholder="Дней; пусто = навсегда" aria-label="Длительность подписки в днях"/>'
-        + '<button class="chip-btn" data-user-save="' + u.id + '">Применить тариф</button>'
-        + '<button class="chip-btn" data-user-reset="' + u.id + '">Обнулить счётчики</button>'
-        + '</div></div></div>';
-    }).join('') + '</div>';
-
-    $('[data-user-plan]', box).forEach(select => select.addEventListener('change', () => {
-      const target = $('[data-user-days="' + select.dataset.userPlan + '"]', box);
-      const defaultDays = state.planSettings[select.value] ? state.planSettings[select.value].subscription_days : null;
-      if (target) target.value = defaultDays == null ? '' : String(defaultDays);
-    }));
-    $('[data-user-save]', box).forEach(button => button.addEventListener('click', async () => {
-      const id = button.dataset.userSave;
-      const plan = $('[data-user-plan="' + id + '"]', box).value;
-      const rawDays = $('[data-user-days="' + id + '"]', box).value.trim();
-      const days = rawDays === '' ? null : Math.max(1, Math.min(3650, Number(rawDays) || 30));
+    try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
+    box.innerHTML = '<div class="link-list">' + rows.map(u =>
+      '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
+      '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
+      ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
+      ' · файлы: ' + formatSize(u.storage) +
+      ' · тариф $' + u.plan_price + ' · расход $' + u.cost + '</span></div>' +
+      '<button class="chip-btn" data-uplan="' + u.id + '">' +
+      (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
+      '</div>';
+    $$('[data-uplan]').forEach(b => b.addEventListener('click', async () => {
+      const cur = rows.find(x => x.id === b.dataset.uplan);
+      const next = cur && cur.plan === 'pro' ? 'free' : 'pro';
       try {
-        await api.put('/api/limits/user/' + id, { plan, days });
-        toast(plan === 'free' ? 'Тариф Free установлен' : 'Подписка сохранена');
-        await loadLimitUsers();
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    }));
-    $$('[data-user-reset]', box).forEach(button => button.addEventListener('click', async () => {
-      try {
-        await api.post('/api/limits/user/' + button.dataset.userReset + '/reset');
-        toast('Счётчики обнулены');
-        await loadLimitUsers();
+        await api.put('/api/limits/user/' + b.dataset.uplan, { plan: next });
+        toast('Тариф изменён: ' + next);
+        loadLimitUsers();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     }));
   }
 
-  function fmtAdminNumber(n) {
-    n = Number(n) || 0;
-    return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
-  }
-
-  async function openModelChains() {
-    let all;
-    try { all = await api.get('/api/admin/model-sets'); }
-    catch (e) { toast('Не удалось загрузить модели: ' + e.message, 'error'); return; }
-
-    const labels = {
-      MAIN: 'Основной ответ',
-      TITLE: 'Заголовок чата',
-      CONTINUE: 'Продолжение ответа',
-      SUGGESTIONS: 'Предлагаемые вопросы',
-      SUMMARY: 'Сжатие истории / summary',
-      FILE_ANALYSIS: 'Анализ файлов'
-    };
-    const routes = Object.keys(labels);
-    const sets = (all || []).filter(s => !s.is_router);
-    const missingRoutes = routes.filter(route => !sets.some(set => set.route_type === route));
-    const routeName = route => labels[route] || route;
-    const escapeValue = value => escapeHtml(value == null ? '' : value);
-
-    const entryHtml = (set, entry) => {
-      const eid = entry.id;
-      const field = (key, value, type, label, extra) =>
-        '<label class="lim-field"><span>' + escapeHtml(label) + '</span><input type="' + (type || 'text') +
-        '" data-chain-entry="' + eid + '" data-chain-field="' + key + '"' +
-        (extra || '') + ' value="' + escapeValue(value) + '"' +
-        (key === 'api_key' ? ' placeholder="' + (entry.has_api_key ? 'Ключ сохранён; пустое поле оставит его' : 'API-ключ') + '"' : '') +
-        '/></label>';
-      return '<div class="model-editor-entry" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin:10px 0">' +
-        '<b>Модель / резерв</b><div class="lim-grid" style="margin-top:8px">' +
-        field('position', entry.position, 'number', 'Порядок (0 — первый)') +
-        field('provider', entry.provider || 'openai', 'text', 'Формат API / provider') +
-        field('model', entry.model, 'text', 'Model ID') +
-        field('base_url', entry.base_url, 'url', 'Base URL') +
-        field('api_key', '', 'password', 'API-ключ') +
-        field('context_len', entry.context_len || 0, 'number', 'Контекст, токены (0 — общий)') +
-        field('max_tokens', entry.max_tokens, 'number', 'Максимум выходных токенов') +
-        field('temperature', entry.temperature, 'number', 'Temperature') +
-        field('timeout', entry.timeout, 'number', 'Таймаут, сек') +
-        field('free_token_limit', entry.free_token_limit, 'number', 'Лимит токенов Free / окно', ' placeholder="∞"') +
-        field('pro_token_limit', entry.pro_token_limit, 'number', 'Лимит токенов Pro/Max / окно', ' placeholder="∞"') +
-        field('quota_reset_hours', entry.quota_reset_hours || 6, 'number', 'Сброс квоты, часов') +
-        field('max_concurrency', entry.max_concurrency || 1, 'number', 'Макс. одновременных запросов') +
-        field('price_in', entry.price_in || 0, 'number', 'Цена input за 1M токенов') +
-        field('price_out', entry.price_out || 0, 'number', 'Цена output за 1M токенов') +
-        field('price_cache', entry.price_cache || 0, 'number', 'Цена cache за 1M токенов') +
-        '<label class="lim-field"><span>Модель включена</span><input type="checkbox" data-chain-entry="' + eid +
-        '" data-chain-field="is_active"' + (entry.is_active ? ' checked' : '') + '/></label>' +
-        '</div><button class="chip-btn" data-delete-entry="' + eid + '" data-delete-set="' + set.id + '">Удалить из цепочки</button></div>';
-    };
-
-    const renderSet = set => {
-      const entries = (set.entries || []).slice().sort((a,b) => Number(a.position) - Number(b.position));
-      return '<section style="border:1px solid var(--border);border-radius:12px;padding:12px;margin:14px 0">' +
-        '<h4 class="sec">' + escapeHtml(routeName(set.route_type)) + '</h4>' +
+  // ---------- GitHub for the code agent ----------
+  async function openGit() {
+    if (!state.currentChatId) { toast('Откройте проект', 'error'); return; }
+    let me = { connected: false, login: '' };
+    try { me = await api.get('/api/github/me'); } catch (e) { /* noop */ }
+    let st = { initialized: false };
+    try { st = await api.get('/api/github/chats/' + state.currentChatId + '/status'); }
+    catch (e) { /* noop */ }
+    openModal({
+      title: 'GitHub · ' + (st.initialized ? 'репозиторий готов' : 'не подключён'),
+      okText: 'Закрыть',
+      body:
+        '<h4 class="sec">Аккаунт</h4>' +
         '<div class="lim-grid">' +
-        '<label class="lim-field"><span>Название цепочки / задачи</span><input data-set-name="' + set.id + '" value="' + escapeValue(set.name) + '"/></label>' +
-        '<label class="lim-field"><span>Slug</span><input value="' + escapeValue(set.slug) + '" disabled/></label>' +
-        '<label class="lim-field"><span>Цепочка включена</span><input type="checkbox" data-set-active="' + set.id + '"' + (set.is_active ? ' checked' : '') + '/></label>' +
+        '<label class="lim-field"><span>Логин GitHub</span>' +
+        '<input id="gh-login" value="' + escapeHtml(me.login || '') + '" placeholder="username" /></label>' +
+        '<label class="lim-field"><span>Токен (repo)</span>' +
+        '<input id="gh-token" type="password" placeholder="' +
+        (me.connected ? '•••••••• (сохранён)' : 'ghp_...') + '" /></label>' +
         '</div>' +
-        (entries.length ? entries.map(e => entryHtml(set,e)).join('') : '<p class="usage-note">Пока нет моделей. Добавь первую ниже.</p>') +
-        '<h5 style="margin:14px 0 6px">Добавить модель в задачу</h5>' +
-        '<div class="lim-grid">' +
-        '<label class="lim-field"><span>Model ID</span><input data-new-model="' + set.id + '" placeholder="точный model-id провайдера"/></label>' +
-        '<label class="lim-field"><span>Base URL</span><input data-new-base="' + set.id + '" type="url" value="' + escapeValue((entries[0] || {}).base_url || '') + '"/></label>' +
-        '<label class="lim-field"><span>API-ключ</span><input data-new-key="' + set.id + '" type="password" placeholder="ключ именно этого API"/></label>' +
-        '<label class="lim-field"><span>Формат API</span><input data-new-provider="' + set.id + '" value="openai" placeholder="openai"/></label>' +
-        '<label class="lim-field"><span>Лимит Free (токены за окно)</span><input data-new-free="' + set.id + '" type="number" placeholder="пусто = без лимита"/></label>' +
-        '<label class="lim-field"><span>Лимит Pro/Max (токены за окно)</span><input data-new-pro="' + set.id + '" type="number" placeholder="пусто = без лимита"/></label>' +
-        '<label class="lim-field"><span>Окно сброса, часов</span><input data-new-reset="' + set.id + '" type="number" value="6"/></label>' +
-        '<label class="lim-field"><span>Параллельность API</span><input data-new-concurrency="' + set.id + '" type="number" value="1"/></label>' +
-        '</div><button class="chip-btn" data-add-entry="' + set.id + '">Добавить модель / резерв</button></section>';
-    };
+        '<div class="settings-grid" style="margin-top:10px">' +
+        '<button class="chip-btn" id="gh-save">Сохранить доступ</button>' +
+        (me.connected ? '<button class="chip-btn danger" id="gh-forget">Отключить</button>' : '') +
+        '</div>' +
+        '<h4 class="sec">Проект</h4>' +
+        '<label class="lim-field"><span>Репозиторий (owner/repo)</span>' +
+        '<input id="gh-repo" placeholder="user/my-project" /></label>' +
+        '<div class="settings-grid" style="margin-top:10px">' +
+        '<button class="chip-btn" id="gh-init">init</button>' +
+        '<button class="chip-btn" id="gh-commit">commit</button>' +
+        '<button class="chip-btn" id="gh-push">push</button>' +
+        '<button class="chip-btn" id="gh-sync">commit + push</button>' +
+        '</div>' +
+        (st.initialized ? '<p class="usage-note">Ветка: <b>' + escapeHtml(st.branch || '') +
+          '</b> · remote: ' + escapeHtml(st.remote || '—') + '<br/>' +
+          escapeHtml((st.changes || 'нет изменений').slice(0, 400)) + '</p>' : '') +
+        '<pre class="pp-logs" id="gh-log" style="margin-top:10px"></pre>',
+      onOk: () => true,
+    });
+    const log = (t) => { const el = $('#gh-log'); if (el) el.textContent = String(t || '').slice(-4000); };
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('#gh-save', async () => {
+      try {
+        await api.post('/api/github/me', {
+          login: $('#gh-login').value.trim(), token: $('#gh-token').value.trim(),
+        });
+        toast('Доступ сохранён');
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    on('#gh-forget', async () => {
+      try { await api.del('/api/github/me'); closeModal(); openGit(); }
+      catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    ['init', 'commit', 'push', 'sync'].forEach(act => {
+      on('#gh-' + act, async () => {
+        log('выполняется ' + act + '…');
+        try {
+          const res = await api.post('/api/github/chats/' + state.currentChatId + '/git', {
+            action: act,
+            repo: ($('#gh-repo') || {}).value ? $('#gh-repo').value.trim() : '',
+            message: 'Update from ChatStudio',
+          });
+          log((res.log || '') + (res.ok ? '\n✓ готово' : '\n✗ ошибка'));
+          loadProject(false);
+        } catch (e) { log('Ошибка: ' + e.message); }
+      });
+    });
+  }
+
+  // ---------- main page: action tiles + rotating showcase ----------
+  const ACTION_TILES = [
+    {
+      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',
+      title: 'Сочинение',
+      questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
+        '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +
+        '3. Класс, курс или аудитория?\n4. Нужны аргументы из литературы или можно своими словами?\n\n' +
+        'Можно ответить одной строкой — остальное подберу сам.',
+    },
+    {
+      id: 'doc', label: 'Документ Word', icon: 'i-doc', color: '#2f6fb0',
+      title: 'Документ Word',
+      questions: '**Документ Word.** Чтобы получилось то, что нужно, уточните:\n\n' +
+        '1. Тема и назначение документа?\n2. Какие разделы должны быть?\n' +
+        '3. Примерный объём (страниц)?\n4. Нужен ли титульный лист и оглавление?\n5. Стиль оформления (деловой, научный, отчёт)?\n\n' +
+        'Ответьте одной строкой — оформлю в лучшем виде.',
+    },
+    {
+      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#e8834f',
+      title: 'Презентация',
+      questions: '**Презентация.** Расскажите:\n\n' +
+        '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
+        '3. Сколько слайдов?\n4. Нужны ли графики и цифры?\n5. Стиль: Apple, Fluent, Glass, Neural, Minimal?\n\n' +
+        'Достаточно одной строки.',
+    },
+    {
+      id: 'sheet', label: 'Таблица Excel', icon: 'i-sheet', color: '#2f8f6f',
+      title: 'Таблица Excel',
+      questions: '**Таблица Excel.** Уточните:\n\n' +
+        '1. Какие данные и по какой теме?\n2. Какие колонки нужны?\n' +
+        '3. Нужны ли формулы, итоги и графики?\n4. Данные дадите вы или их надо придумать/собрать?\n\n' +
+        'Ответьте одной строкой.',
+    },
+    {
+      id: 'code', label: 'Написать код', icon: 'i-terminal', color: '#7c5cbf',
+      title: 'Код',
+      questions: '**Код.** Что нужно написать?\n\n' +
+        '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
+        '3. Нужны ли тесты и комментарии?\n\n' +
+        'Или переключитесь в режим **Код-агента** — там будет полноценный проект с файлами.',
+    },
+    {
+      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#c0563f',
+      title: 'Схема',
+      questions: '**Схема.** Опишите:\n\n' +
+        '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
+        '2. Какие элементы и связи между ними?\n3. Нужны ли размеры и подписи?\n\n' +
+        'Нарисую в SVG — можно будет скачать.',
+    },
+    { id: 'image', label: 'Сделать график', icon: 'i-chart', color: '#0e7c9b', title: 'График',
+      questions: '**График.** Какие данные построить? Пришлите числа или опишите, откуда их взять, и укажите тип графика (линия, столбцы, круговая).' },
+    { id: 'research', label: 'Найти в интернете', icon: 'i-globe', color: '#3f7a3f', title: 'Поиск',
+      questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
+    { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#a03f6f', title: 'Объяснение',
+      questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
+    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#8a4a2f', title: 'План',
+      questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
+    { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
+      questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
+    { id: 'wall', label: 'Посмотреть посты', icon: 'i-globe-box', color: '#b8862f', action: 'wall' },
+  ];
+
+  // inline tile icon paths — drawn directly, so they render everywhere
+  const TILE_PATHS = {
+    pencil: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>',
+    doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+    slides: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/><path d="M7 8h6M7 11h4"/>',
+    sheet: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/>',
+    terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
+    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18 16l.7 1.8L20.5 18.5l-1.8.7L18 21l-.7-1.8L15.5 18.5l1.8-.7z"/>',
+    chart: '<path d="M4 20V4M4 20h16"/><path d="M8 17v-6M12.5 17V8M17 17v-9"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+    brain: '<path d="M9.6 4.6A2.6 2.6 0 0 0 7 7.2v.4A2.8 2.8 0 0 0 5.3 12.4 2.8 2.8 0 0 0 7 17.1v.3a2.6 2.6 0 0 0 5.2 0V5.9a2.6 2.6 0 0 0-2.6-1.3Z"/><path d="M14.4 4.6A2.6 2.6 0 0 1 17 7.2v.4a2.8 2.8 0 0 1 1.7 4.8A2.8 2.8 0 0 1 17 17.1v.3a2.6 2.6 0 0 1-5.2 0"/><path d="M12 4.6v15"/>',
+    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    link: '<path d="M9.5 14.5l5-5"/><path d="M11 7l1.5-1.5a3.5 3.5 0 1 1 5 5L16 12M13 17l-1.5 1.5a3.5 3.5 0 1 1-5-5L8 12"/>',
+  };
+
+  // maps old sprite ids (and bare names) onto the inline set
+  const TILE_ALIAS = {
+    'i-pencil': 'pencil', 'i-doc': 'doc', 'i-slides': 'slides', 'i-sheet': 'sheet',
+    'i-terminal': 'terminal', 'i-sparkle': 'sparkle', 'i-chart': 'chart',
+    'i-globe': 'globe', 'i-globe-box': 'globe', 'i-brain': 'brain',
+    'i-file': 'file', 'i-link': 'link', 'i-search': 'globe',
+  };
+
+  function tileIcon(name) {
+    const key = TILE_ALIAS[name] || name;
+    const path = TILE_PATHS[key] || TILE_PATHS.sparkle;
+    return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffffff" ' +
+      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
+  }
+
+  function tileHtml(t) {
+    return '<button class="tile' + (t.locked ? ' locked' : '') + '" data-tile="' + t.id +
+      '" style="--tile:' + t.color + '">' +
+      '<span class="tile-ico">' + tileIcon(t.icon) + '</span>' +
+      '<span class="tile-label">' + escapeHtml(t.label) + '</span>' +
+      (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</button>';
+  }
+
+  function renderTiles() {
+    const box = $('#tiles');
+    if (!box) return;
+    const picks = [];
+    const pool = ACTION_TILES.slice();
+    for (let i = 0; i < 6 && pool.length; i++) {
+      picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    box.innerHTML = picks.map(tileHtml).join('');
+  }
+
+  function bindTiles() {
+    $$('[data-tile]').forEach(b => b.addEventListener('click', () => {
+      const t = ACTION_TILES.find(x => x.id === b.dataset.tile);
+      if (!t) return;
+      if (t.locked) {
+        toast('«' + t.label + '» появится в ближайшем обновлении — уже пишем', 'error');
+        return;
+      }
+      useTile(t);
+    }));
+  }
+
+  async function useTile(t) {
+    if (t.action === 'wall') { openWall(); return; }
+    let chat;
+    try {
+      chat = await api.post('/api/chats', { title: t.title || t.label });
+    } catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    state.chats.unshift(chat);
+    renderChatList();
+    await openChat(chat.id);
+    if (t.questions) {
+      try {
+        await api.post('/api/chats/' + chat.id + '/seed', { text: t.questions });
+        state.tree = await api.get('/api/chats/' + chat.id + '/messages');
+        renderMessages();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+      toast('Ответьте на вопросы — и я приступлю');
+      $('#input').focus();
+    } else {
+      $('#input').focus();
+    }
+  }
+
+  function rotateTiles() {
+    const box = $('#tiles');
+    if (!box) return;
+    box.classList.add('swap');
+    setTimeout(() => {
+      renderTiles();
+      bindTiles();
+      box.classList.remove('swap');
+    }, 420);
+  }
+
+  function toastSoon(what) {
+    toast('🔒 ' + what + ' скоро появится — уже в работе. Пока доступен обычный чат.', 'error');
+  }
+
+
+  // ---------- rich model menu (clusters + effort + temperature + compression) ----------
+  function currentModelSet() {
+    return (state.modelSets || []).find(x => x.id === state.modelSetId) || null;
+  }
+
+  function updateModelButton() {
+    const label = $('#model-btn-label');
+    if (!label) return;
+    const ms = currentModelSet();
+    label.textContent = ms ? ms.name : 'Модель';
+  }
+
+  async function openModelMenu() {
+    await loadModelSets();
+    if (!state.limits) await loadLimits();
+    const mains = (state.modelSets || []).filter(x => x.route_type === 'MAIN')
+      .sort((a, b) => (b.is_router ? 1 : 0) - (a.is_router ? 1 : 0));
+    const lim = (state.limits && state.limits.limits) || {};
+    const cmin = Number(lim.compress_min != null ? lim.compress_min : 5);
+    const cmax = Number(lim.compress_max != null ? lim.compress_max : 85);
+    const cdef = Math.max(cmin, Math.min(cmax, 50));
+    const idx = Math.max(0, EFFORTS.indexOf(state.effort));
+
+    const cards = mains.map(x => {
+      const e = (x.entries || [])[0] || {};
+      const bits = ['контекст ' + fmtNum(e.context_len || 0),
+                    'ответ до ' + fmtNum(e.max_tokens || 0) + ' ток.'];
+      if (e.price_in) bits.push('вход $' + e.price_in + '/1M');
+      if (e.price_out) bits.push('выход $' + e.price_out + '/1M');
+      if (e.price_cache) bits.push('кэш $' + e.price_cache + '/1M');
+      return '<label class="mm-card' + (x.id === state.modelSetId ? ' on' : '') + '">' +
+        '<input type="radio" name="mm" value="' + x.id + '"' +
+        (x.id === state.modelSetId ? ' checked' : '') + '/>' +
+        '<span class="mm-body"><b>' + escapeHtml(x.name) + (x.is_router ? ' · авто по умолчанию' : '') + '</b>' +
+        '<em>' + escapeHtml(e.model || '—') + '</em>' +
+        '<span class="mm-meta">' + escapeHtml(bits.join(' · ')) + '</span></span></label>';
+    }).join('');
 
     openModal({
-      title: 'Модели, задачи и лимиты',
-      okText: 'Сохранить настройки',
-      body: '<p class="usage-note">Для каждой задачи настрой отдельную цепочку. Порядок 0, 1, 2… означает приоритет резерва: при ошибке или исчерпании квоты сервис перейдёт к следующей модели. Лимиты считаются в токенах за скользящее окно (по умолчанию 6 часов). Пустой лимит означает отсутствие пользовательского ограничения. Вводи реальные Model ID, Base URL и ключи своего API-провайдера.</p>' +
-        (missingRoutes.length
-          ? '<div class="settings-grid" style="margin:12px 0"><label class="lim-field"><span>Новая задача</span><input id="new-task-name" placeholder="название задачи"/></label>' +
-            '<label class="lim-field"><span>Тип задачи</span><select id="new-task-type">' + missingRoutes.map(r => '<option value="' + r + '">' + escapeHtml(routeName(r)) + '</option>').join('') + '</select></label>' +
-            '<label class="lim-field"><span>Slug (необязательно)</span><input id="new-task-slug" placeholder="auto-generated"/></label>' +
-            '<button class="chip-btn" id="create-task-chain">Создать цепочку задачи</button></div>'
-          : '<p class="usage-note">Все типы задач уже заведены. Чтобы добавить модель, используй «Добавить модель / резерв» внутри нужной задачи — новые дубли цепочек создавать не нужно.</p>') +
-        (routes.map(route => {
-          const group = sets.filter(s => s.route_type === route);
-          return '<h3 style="margin:18px 0 8px">' + escapeHtml(routeName(route)) + '</h3>' +
-            (group.length ? group.map(renderSet).join('') : '<p class="usage-note">Нет цепочек этого типа. Создай выше.</p>');
-        }).join('')),
-      onOk: async root => {
-        const setUpdates = {};
-        $$('[data-set-name]', root).forEach(input => {
-          setUpdates[input.dataset.setName] = setUpdates[input.dataset.setName] || {};
-          setUpdates[input.dataset.setName].name = input.value.trim();
-        });
-        $$('[data-set-active]', root).forEach(input => {
-          setUpdates[input.dataset.setActive] = setUpdates[input.dataset.setActive] || {};
-          setUpdates[input.dataset.setActive].is_active = input.checked;
-        });
-        for (const [id, values] of Object.entries(setUpdates)) {
-          if (values.name || values.is_active !== undefined) await api.patch('/api/admin/model-sets/' + id, values);
+      title: 'Модель и параметры',
+      okText: 'Готово',
+      body:
+        '<div class="mm-grid">' +
+          '<div class="mm-col">' +
+            '<h4 class="sec">Кластер</h4>' +
+            '<div class="mm-list">' + (cards || '<p>Моделей нет</p>') + '</div>' +
+          '</div>' +
+          '<div class="mm-col">' +
+            '<h4 class="sec">Усилие модели</h4>' +
+            '<div class="mm-slider"><input type="range" id="mm-effort" min="0" max="' +
+            (EFFORTS.length - 1) + '" step="1" value="' + idx +
+            '"/><b id="mm-effort-label">' + EFFORT_LABELS[idx] + '</b></div>' +
+            '<h4 class="sec">Температура</h4>' +
+            '<div class="mm-slider"><input type="range" id="mm-temp" min="0" max="1.5" step="0.1" value="' +
+            (state.temperature != null ? state.temperature : 0.2) +
+            '"/><b id="mm-temp-label">' +
+            Number(state.temperature != null ? state.temperature : 0.2).toFixed(1) + '</b></div>' +
+            '<h4 class="sec">Сжатие истории</h4>' +
+            '<p class="usage-note">Сожмёт старую часть диалога в краткое резюме. ' +
+            'Тариф: от ' + cmin + '% до ' + cmax + '%' +
+            (lim.compress_per_day != null ? ' · до ' + lim.compress_per_day + ' в день' : '') + '.</p>' +
+            '<div class="mm-slider"><input type="range" id="mm-comp" class="orange-range" min="' + cmin +
+            '" max="' + cmax + '" step="5" value="' + cdef +
+            '"/><b id="mm-comp-label">' + cdef + '%</b></div>' +
+            '<div style="margin-top:10px">' +
+            '<button class="chip-btn" id="mm-comp-go">Сжать историю</button></div>' +
+          '</div>' +
+        '</div>',
+      onOk: (root) => {
+        const picked = $('input[name=mm]:checked', root);
+        if (picked) {
+          state.modelSetId = picked.value;
+          localStorage.setItem('cs_model', state.modelSetId);
         }
-
-        const updates = {};
-        $$('[data-chain-entry]', root).forEach(input => {
-          const id = input.dataset.chainEntry, key = input.dataset.chainField;
-          updates[id] = updates[id] || {};
-          if (key === 'is_active') { updates[id][key] = input.checked; return; }
-          const raw = input.value.trim();
-          if (key === 'api_key' && !raw) return;
-          if (key === 'free_token_limit' || key === 'pro_token_limit') {
-            updates[id][key] = raw === '' ? null : Number(raw);
-          } else if (['position','context_len','max_tokens','timeout','quota_reset_hours','max_concurrency'].includes(key)) {
-            updates[id][key] = raw === '' ? 0 : Number(raw);
-          } else if (['temperature','price_in','price_out','price_cache'].includes(key)) {
-            updates[id][key] = raw === '' ? 0 : Number(raw);
-          } else updates[id][key] = raw;
-        });
-        for (const [id, values] of Object.entries(updates)) {
-          const parent = sets.find(s => (s.entries || []).some(e => e.id === id));
-          if (parent) await api.patch('/api/admin/model-sets/' + parent.id + '/entries/' + id, values);
-        }
-        toast('Настройки задач, моделей и лимитов сохранены');
+        updateModelButton();
         return true;
       },
     });
 
-    const create = $('#create-task-chain');
-    if (create) create.addEventListener('click', async () => {
-      const name = ($('#new-task-name') || {}).value?.trim() || '';
-      const route_type = ($('#new-task-type') || {}).value || 'MAIN';
-      const slug = ($('#new-task-slug') || {}).value?.trim() || undefined;
-      if (!name) { toast('Укажи название новой задачи', 'error'); return; }
-      try {
-        await api.post('/api/admin/model-sets', { name, slug, route_type, is_active: true });
-        $('#modal-root').innerHTML = '';
-        await openModelChains();
-        toast('Цепочка создана — добавь в неё хотя бы одну модель');
-      } catch (e) { toast('Не удалось создать задачу: ' + e.message, 'error'); }
+    const mmBox = document.querySelector('#modal-root .modal');
+    if (mmBox) mmBox.classList.add('wide');
+    const eff = $('#mm-effort');
+    eff.addEventListener('input', () => {
+      const i = parseInt(eff.value, 10) || 0;
+      state.effort = EFFORTS[i];
+      localStorage.setItem('cs_effort', state.effort);
+      $('#mm-effort-label').textContent = EFFORT_LABELS[i];
     });
-
-    $$('[data-delete-entry]').forEach(button => button.addEventListener('click', async () => {
-      try {
-        await api.del('/api/admin/model-sets/' + button.dataset.deleteSet + '/entries/' + button.dataset.deleteEntry);
-        $('#modal-root').innerHTML = '';
-        await openModelChains();
-      } catch (e) { toast('Не удалось удалить модель: ' + e.message, 'error'); }
+    const tmp = $('#mm-temp');
+    tmp.addEventListener('input', () => {
+      state.temperature = parseFloat(tmp.value) || 0;
+      localStorage.setItem('cs_temp', String(state.temperature));
+      $('#mm-temp-label').textContent = state.temperature.toFixed(1);
+    });
+    const cmp = $('#mm-comp');
+    cmp.addEventListener('input', () => { $('#mm-comp-label').textContent = cmp.value + '%'; });
+    $$('[name=mm]').forEach(r => r.addEventListener('change', () => {
+      $$('.mm-card').forEach(c => c.classList.remove('on'));
+      const card = r.closest('.mm-card');
+      if (r.checked && card) card.classList.add('on');
     }));
-
-    $$('[data-add-entry]').forEach(button => button.addEventListener('click', async () => {
-      const id = button.dataset.addEntry;
-      const model = $('[data-new-model="' + id + '"]')?.value.trim() || '';
-      const base = $('[data-new-base="' + id + '"]')?.value.trim() || '';
-      const key = $('[data-new-key="' + id + '"]')?.value.trim() || '';
-      const provider = $('[data-new-provider="' + id + '"]')?.value.trim() || 'openai';
-      const freeRaw = $('[data-new-free="' + id + '"]')?.value.trim() || '';
-      const proRaw = $('[data-new-pro="' + id + '"]')?.value.trim() || '';
-      const resetRaw = $('[data-new-reset="' + id + '"]')?.value.trim() || '6';
-      const concurrencyRaw = $('[data-new-concurrency="' + id + '"]')?.value.trim() || '1';
-      if (!model || !base || !key) { toast('Нужны точные Model ID, Base URL и API-ключ', 'error'); return; }
-      const set = sets.find(s => s.id === id);
-      const nextPosition = Math.max(-1, ...(set?.entries || []).map(e => Number(e.position)));
+    $('#mm-comp-go').addEventListener('click', async () => {
+      if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+      toast('Сжимаю историю…');
       try {
-        await api.post('/api/admin/model-sets/' + id + '/entries', {
-          provider, base_url: base, model, api_key: key,
-          position: nextPosition + 1, temperature: 0.2, max_tokens: 12000, timeout: 180,
-          context_len: 0, price_in: 0, price_out: 0, price_cache: 0,
-          free_token_limit: freeRaw === '' ? null : Number(freeRaw),
-          pro_token_limit: proRaw === '' ? null : Number(proRaw),
-          quota_reset_hours: Math.max(1, Number(resetRaw) || 6),
-          max_concurrency: Math.max(1, Number(concurrencyRaw) || 1),
-          is_active: true
-        });
-        $('#modal-root').innerHTML = '';
-        await openModelChains();
-        toast('Модель добавлена');
-      } catch (e) { toast('Не удалось добавить модель: ' + e.message, 'error'); }
-    }));
-  }
-
-  // ---------- Sidebar and account navigation ----------
-
-  function applySidebar() {
-    const sidebar = $('#sidebar');
-    if (!sidebar) return;
-    const mobile = window.innerWidth <= 860;
-    if (mobile) sidebar.classList.remove('collapsed');
-    else {
-      sidebar.classList.toggle('collapsed', !!state.sidebarCollapsed);
-      sidebar.classList.remove('open');
-    }
-    const overlay = $('#sidebar-overlay');
-    if (overlay && !mobile) overlay.classList.remove('show');
-    const openButton = $('#sidebar-open-btn');
-    if (openButton) openButton.classList.toggle('hidden', mobile || !state.sidebarCollapsed);
-  }
-  function openMobileSidebar() {
-    const sidebar = $('#sidebar'), overlay = $('#sidebar-overlay');
-    if (sidebar) sidebar.classList.add('open');
-    if (overlay) overlay.classList.add('show');
-  }
-  function closeMobileSidebar() {
-    const sidebar = $('#sidebar'), overlay = $('#sidebar-overlay');
-    if (sidebar) sidebar.classList.remove('open');
-    if (overlay) overlay.classList.remove('show');
-  }
-  function bindSidebar() {
-    const newButton = $('#new-chat-btn');
-    if (newButton) newButton.addEventListener('click', async () => {
-      try { await newChat(); } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    });
-    const collapse = $('#collapse-btn');
-    if (collapse) collapse.addEventListener('click', () => {
-      state.sidebarCollapsed = !state.sidebarCollapsed;
-      localStorage.setItem('cs_sidebar', state.sidebarCollapsed ? '1' : '0');
-      applySidebar();
-    });
-    const openSidebar = $('#sidebar-open-btn');
-    if (openSidebar) openSidebar.addEventListener('click', () => {
-      state.sidebarCollapsed = false; localStorage.setItem('cs_sidebar', '0'); applySidebar();
-    });
-    const menu = $('#menu-btn');
-    if (menu) menu.addEventListener('click', () => {
-      const sidebar = $('#sidebar');
-      if (sidebar && sidebar.classList.contains('open')) closeMobileSidebar();
-      else openMobileSidebar();
-    });
-    const overlay = $('#sidebar-overlay');
-    if (overlay) overlay.addEventListener('click', closeMobileSidebar);
-    const search = $('#search-input');
-    if (search) search.addEventListener('input', () => {
-      state.query = search.value.trim();
-      loadChats().catch(e => toast('Ошибка поиска: ' + e.message, 'error'));
-    });
-    const settingsButton = $('#settings-btn');
-    if (settingsButton) settingsButton.addEventListener('click', openSettings);
-    const limitsButton = $('#limits-btn');
-    if (limitsButton) limitsButton.addEventListener('click', openMyLimits);
-    const shareButton = $('#share-btn');
-    if (shareButton) shareButton.addEventListener('click', shareCurrentChat);
-    window.addEventListener('resize', applySidebar);
-    applySidebar();
-  }
-  async function openSettings() {
-    const user = state.user || {};
-    openModal({
-      title: 'Настройки и профиль', okText: 'Закрыть',
-      body: '<div class="kv"><span>Аккаунт</span><b>' + escapeHtml(user.email || '') + '</b></div>' +
-        '<div class="kv"><span>Имя</span><b>' + escapeHtml(user.name || '—') + '</b></div>' +
-        '<div class="kv"><span>Тариф</span><b>' + escapeHtml(user.plan || 'free') + '</b></div>' +
-        '<div class="settings-grid" style="margin-top:12px">' +
-        '<button class="chip-btn" id="settings-memory">Память</button>' +
-        '<button class="chip-btn" id="settings-limit-view">Тариф и лимиты</button>' +
-        '<button class="chip-btn" id="settings-links">Мои ссылки</button>' +
-        (user.is_admin ? '<button class="chip-btn" id="settings-admin">Админ-панель</button>' : '') +
-        '<button class="chip-btn" id="settings-logout">Выйти</button></div>',
-      onOk: () => true,
-    });
-    const memory = $('#settings-memory'), links = $('#settings-links'), logout = $('#settings-logout');
-    const accountLimits = $('#settings-limit-view');
-    if (accountLimits) accountLimits.addEventListener('click', () => openMyLimits());
-    const adminButton = $('#settings-admin');
-    if (adminButton) adminButton.addEventListener('click', () => {
-      $('#modal-root').innerHTML = '';
-      openLimits();
-    });
-    if (memory) memory.addEventListener('click', () => openMemory());
-    if (links) links.addEventListener('click', () => openLinks());
-    if (logout) logout.addEventListener('click', async () => {
-      try {
-        await api.post('/api/auth/logout');
-        state.user = null; state.chats = []; state.tree = []; window.__csrf = '';
-        $('#modal-root').innerHTML = ''; showAuth();
-      } catch (e) { toast('Не удалось выйти: ' + e.message, 'error'); }
+        await api.post('/api/chats/' + state.currentChatId + '/compress',
+          { target_percent: parseInt(cmp.value, 10) || 50 });
+        toast('История сжата');
+        await loadUsage();
+      } catch (e) { toast('Не удалось: ' + e.message, 'error'); }
     });
   }
 
-  async function openMyLimits() {
-    let data = state.limits;
-    try { data = await api.get('/api/limits'); state.limits = data; }
-    catch (e) { toast('Не удалось загрузить лимиты: ' + e.message, 'error'); return; }
-    const labels = data.labels || {};
-    const limits = data.limits || {};
-    const usage = data.usage || {};
-    const show = (key, value) => {
-      let rendered;
-      if (value == null) rendered = 'Без ограничения';
-      else if (key === 'file_size' || key === 'user_storage') rendered = (Number(value) / (1024 * 1024)).toFixed(0) + ' МБ';
-      else rendered = String(value);
-      return '<div class="kv"><span>' + escapeHtml(labels[key] || key) + '</span><b>' + escapeHtml(rendered) + '</b></div>';
+  // playful composer placeholders
+  const PLACEHOLDERS = [
+    'Жду указаний…', 'Слушаю, мой повелитель…', 'Что изволите?', 'Приказывайте…',
+    'Готов служить…', 'Ваше слово?', 'Я весь внимание…', 'Жду вашу мудрую мысль…',
+    'Повелевайте…', 'Скажите слово — и я начну…', 'Ваш ход, господин…',
+    'Куда направим усилия?', 'Слушаю и повинуюсь…', 'Излагайте, я записываю…',
+  ];
+
+  function rollPlaceholder() {
+    const el = $('#input');
+    if (!el) return;
+    el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+  }
+
+// ---------- subscription limits window ----------
+  function limitValueLabel(key, value) {
+    if (value === null || value === undefined) return 'без лимита';
+    if (key === 'user_storage' || key === 'file_size') return formatSize(value);
+    return fmtNum(value);
+  }
+
+  function planCompareHtml(lim, compare) {
+    const pro = (compare && compare.pro) || {};
+    const order = ['budget_usd', 'window_hours', 'file_size', 'user_storage', 'files_count',
+                   'chats_count', 'messages_per_day', 'posts', 'code_agents',
+                   'agent_steps', 'council_members', 'sandbox_seconds'];
+    const labels = {
+      budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
+      file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
+      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день', posts: 'Постов',
+      code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
+      council_members: 'Участников консилиума', sandbox_seconds: 'Секунд на код',
     };
-    const total = usage.storage == null ? '—' : (Number(usage.storage) / (1024 * 1024)).toFixed(1) + ' МБ';
-    const msgCap = usage.messages_daily_limit == null ? 'без дневного ограничения' : (Number(usage.messages_today || 0) + ' / ' + usage.messages_daily_limit + ' сегодня');
-    const sub = usage.subscription_until ? new Date(usage.subscription_until).toLocaleString('ru-RU') : ((data.plan || 'free') === 'free' ? 'Нет платной подписки' : 'Бессрочно');
+    const rows = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
+      const mine = lim[k];
+      const theirs = pro[k];
+      let mult = '—';
+      if (theirs === null || theirs === undefined) mult = '∞';
+      else if (mine === null || mine === undefined) mult = '=';
+      else if (Number(mine) > 0) {
+        const m = Number(theirs) / Number(mine);
+        mult = m >= 1.05 ? '×' + (Math.round(m * 10) / 10) : '=';
+      }
+      return '<tr><td>' + (labels[k] || k) + '</td>' +
+        '<td>' + limitValueLabel(k, mine) + '</td>' +
+        '<td class="pro-col">' + limitValueLabel(k, theirs) + '</td>' +
+        '<td class="mult">' + mult + '</td></tr>';
+    }).join('');
+    const half = Math.ceil(rows.length / 2);
+    const head = '<thead><tr><th>Лимит</th><th>Сейчас</th><th>С подпиской</th><th>×</th></tr></thead>';
+    return '<div class="cmp-cols">' +
+      '<table class="cmp">' + head + '<tbody>' + rows.slice(0, half).join('') + '</tbody></table>' +
+      '<table class="cmp">' + head + '<tbody>' + rows.slice(half).join('') + '</tbody></table>' +
+      '</div>';
+  }
+
+  async function openUsageModal() {
+    await loadLimits();
+    const data = state.limits || {};
+    const lim = data.limits || {};
+    const pro = (data.compare && data.compare.pro) || {};
+    const plan = data.plan || 'free';
+    const w = data.window || null;
+    const use = data.usage || {};
+    const proPrice = Number(pro.price || 0);
+
+    let money = '';
+    if (w && w.budget_usd) {
+      const left = Math.max(0, Number(w.budget_usd) - Number(w.spend_usd));
+      const pct = Math.min(100, Math.round(w.percent));
+      money = '<div class="lim-row ' + (pct >= 80 ? 'warn' : '') + '">' +
+        '<div class="lr-top"><b>Деньги за ' + w.hours + ' ч</b>' +
+        '<i>$' + Number(w.spend_usd).toFixed(2) + ' из $' + Number(w.budget_usd).toFixed(2) +
+        ' · осталось $' + left.toFixed(2) + ' (' + (100 - pct) + '%)</i></div>' +
+        '<div class="lr-bar"><i style="width:' + pct + '%"></i></div></div>';
+    }
+
+    const defs = [
+      ['files', 'files_count', 'Файлы'],
+      ['storage', 'user_storage', 'Хранилище'],
+      ['posts', 'posts', 'Посты'],
+      ['requests', 'messages_per_day', 'Сообщений в день'],
+    ];
+    const rows = defs.map(d => {
+      const used = Number(use[d[0]] || 0);
+      const cap = lim[d[1]];
+      const unlimited = cap === null || cap === undefined;
+      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
+      const right = unlimited
+        ? limitValueLabel(d[1], used) + ' · без лимита'
+        : limitValueLabel(d[1], used) + ' из ' + limitValueLabel(d[1], cap) +
+          ' · осталось ' + limitValueLabel(d[1], Math.max(0, cap - used));
+      return '<div class="lim-row ' + (unlimited ? 'unlimited' : (pct >= 80 ? 'warn' : '')) + '">' +
+        '<div class="lr-top"><b>' + d[2] + '</b><i>' + right + ' · ' +
+        (unlimited ? '∞' : pct + '%') + '</i></div>' +
+        '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
+    }).join('');
+
     openModal({
-      title: 'Тариф и лимиты',
-      okText: 'Закрыть',
-      body: '<div class="kv"><span>Текущий тариф</span><b>' + escapeHtml(String(data.plan || 'free').toUpperCase()) + '</b></div>' +
-        '<div class="kv"><span>Подписка</span><b>' + escapeHtml(sub) + '</b></div>' +
-        '<div class="kv"><span>Сообщения</span><b>' + escapeHtml(msgCap) + '</b></div>' +
-        '<div class="kv"><span>Занятое хранилище</span><b>' + escapeHtml(total) + '</b></div>' +
-        '<div class="kv"><span>Файлов</span><b>' + escapeHtml(String(usage.files || 0)) + '</b></div>' +
-        '<h4 class="sec" style="margin-top:14px">Ограничения тарифа</h4>' +
-        ['messages_per_day','file_size','user_storage','files_count','chats_count','compress_per_day','compress_min','compress_max'].filter(k => Object.prototype.hasOwnProperty.call(limits, k)).map(k => show(k, limits[k])).join('') +
-        (state.user && state.user.is_admin ? '<div class="settings-grid" style="margin-top:14px"><button class="chip-btn" id="open-admin-limits">Управление лимитами и моделями</button></div>' : '') +
-        '<p class="usage-note" style="margin-top:12px">Квоты проверяются сервером. Ограничения отдельных моделей, окно сброса и резервные цепочки настраиваются администратором в разделе «Модели и лимиты».</p>',
+      title: 'Лимиты подписки',
+      okText: 'Понятно',
+      body:
+        '<div class="sub-head">' +
+          '<div class="sub-plan">Тариф «' + escapeHtml(String(plan).toUpperCase()) + '»' +
+          '<br><em>' + (w && w.budget_usd
+            ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
+            : 'лимит по минутам и файлам') + '</em></div>' +
+        '</div>' +
+        money + rows +
+        '<h4 class="sec">Что даёт подписка</h4>' +
+        planCompareHtml(lim, data.compare) +
+        '<p class="usage-note">Подписка оформляется у администратора — напишите ему в чат.</p>',
       onOk: () => true,
     });
-    const admin = $('#open-admin-limits');
-    if (admin) admin.addEventListener('click', () => { $('#modal-root').innerHTML = ''; openLimits(); });
   }
-
-  async function shareCurrentChat() {
-    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-    try {
-      const res = await api.post('/api/chats/' + state.currentChatId + '/share');
-      const url = location.origin + (res.url || ('/?share=' + res.share_token));
-      if (await copyText(url)) toast('Ссылка на чат скопирована');
-      else openModal({
-        title: 'Ссылка на чат', okText: 'Закрыть',
-        body: '<input id="share-url" readonly value="' + escapeHtml(url) + '" />',
-        onOk: () => true,
-      });
-    } catch (e) { toast('Не удалось поделиться: ' + e.message, 'error'); }
-  }
-  async function showPublicView(token) {
-    try {
-      const data = await api.get('/api/public/chats/' + encodeURIComponent(token));
-      state.readonly = true; state.publicToken = token; state.user = null;
-      state.currentChatId = null; state.tree = data.messages || [];
-      showApp(); closeMobileSidebar();
-      const sidebar = $('#sidebar'); if (sidebar) sidebar.classList.add('collapsed');
-      const title = $('#chat-title'); if (title) title.textContent = data.title || 'Чат';
-      const who = $('#who'); if (who) who.textContent = data.author ? 'Общий доступ · ' + data.author : 'Общий доступ';
-      const composer = $('#composer'); if (composer) composer.classList.add('hidden');
-      const files = $('#files-panel'); if (files) files.classList.add('hidden');
-      const share = $('#share-btn'); if (share) share.classList.add('hidden');
-      const fileButton = $('#toggle-files-btn'); if (fileButton) fileButton.classList.add('hidden');
-      renderMessages();
-    } catch (e) { showAuth(); toast('Ссылка недоступна: ' + e.message, 'error'); }
-  }
-
 
   // ---------- boot ----------
   async function boot() {
     showApp();
     applySidebar();
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    try {
-      await loadChats();
-      await loadFiles();
-      await loadMemory();
-
-      await loadLimits();
-
-      renderMessages();
-
-    } catch (e) {
-      console.error('Boot error:', e.message, e.stack);
-      toast('Ошибка загрузки: ' + e.message, 'error');
-    }
+    await loadChats();
+    await loadFiles();
+    await loadModelSets();
+    await loadMemory();
+    await loadWallCount();
+    await loadLimits();
+    await loadUsage();
+    renderMessages();
+    await loadSystem();
+    setInterval(loadSystem, 20000);
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); const token = new URLSearchParams(location.search).get('share');
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles();
+    const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {
       const me = await api.get('/api/auth/me');
@@ -2334,7 +3520,6 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
-
 
   // KaTeX loads with defer: re-render math once it is available
   window.addEventListener('load', () => {

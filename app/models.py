@@ -1,4 +1,4 @@
-"""ORM models for ai-ch."""
+"""ORM models for ChatStudio."""
 from __future__ import annotations
 
 import enum
@@ -46,10 +46,7 @@ class Role(str, enum.Enum):
 class RouteType(str, enum.Enum):
     MAIN = "MAIN"
     TITLE = "TITLE"
-    CONTINUE = "CONTINUE"
     SUGGESTIONS = "SUGGESTIONS"
-    SUMMARY = "SUMMARY"
-    FILE_ANALYSIS = "FILE_ANALYSIS"
 
 
 class User(Base):
@@ -61,9 +58,9 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), default="")
     plan: Mapped[str] = mapped_column(String(32), default="free")
     avatar: Mapped[int] = mapped_column(Integer, default=0)
+    github_user: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    github_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
-    subscription_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    usage_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     chats: Mapped[list["Chat"]] = relationship(
@@ -109,7 +106,9 @@ class Chat(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_upto: Mapped[str | None] = mapped_column(String(36), nullable=True)
     effort: Mapped[str] = mapped_column(String(16), default="recommended")
+    mode: Mapped[str] = mapped_column(String(16), default="chat")
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    bundle_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     compress_count: Mapped[int] = mapped_column(Integer, default=0)
     compress_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
@@ -131,7 +130,6 @@ class Message(Base):
     )
     role: Mapped[Role] = mapped_column(Enum(Role), nullable=False, default=Role.user)
     content: Mapped[str] = mapped_column(Text, default="")
-    thinking: Mapped[str | None] = mapped_column(Text, nullable=True)
     parent_message_id: Mapped[str | None] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
     )
@@ -147,6 +145,7 @@ class Message(Base):
     tokens_cached: Mapped[int] = mapped_column(Integer, default=0)
     rating: Mapped[int] = mapped_column(Integer, default=0)
     sources: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_runs: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")
@@ -228,30 +227,10 @@ class ModelSetEntry(Base):
     price_in: Mapped[float] = mapped_column(Float, default=0.0)
     price_out: Mapped[float] = mapped_column(Float, default=0.0)
     price_cache: Mapped[float] = mapped_column(Float, default=0.0)
-    free_token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
-    pro_token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
-    quota_reset_hours: Mapped[int] = mapped_column(Integer, default=6)
-    max_concurrency: Mapped[int] = mapped_column(Integer, default=1)
     timeout: Mapped[int] = mapped_column(Integer, default=300)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     model_set: Mapped["ModelSet"] = relationship(back_populates="entries")
-
-
-class ModelUsage(Base):
-    """Per-user token usage per configured model entry and task."""
-    __tablename__ = "model_usage"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    model_entry_id: Mapped[str | None] = mapped_column(ForeignKey("model_set_entries.id", ondelete="SET NULL"), nullable=True, index=True)
-    model_id: Mapped[str] = mapped_column(String(255), default="")
-    base_url: Mapped[str] = mapped_column(String(512), default="")
-    route_type: Mapped[str] = mapped_column(String(32), default="MAIN")
-    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
-    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
-    estimated: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class Suggestion(Base):
@@ -278,6 +257,50 @@ class Memory(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     kind: Mapped[str] = mapped_column(String(16), default="fact")
     message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Post(Base):
+    __tablename__ = "posts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chat_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    preview: Mapped[str] = mapped_column(Text, default="")
+    image_file_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PostVote(Base):
+    __tablename__ = "post_votes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    post_id: Mapped[str] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    value: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PostComment(Base):
+    __tablename__ = "post_comments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    post_id: Mapped[str] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

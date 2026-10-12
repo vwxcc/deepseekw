@@ -1,17 +1,20 @@
 """Message endpoints: tree retrieval, streaming generation, retry/branch/continue/stop."""
 from __future__ import annotations
 
+import json
+
 import asyncio
 import json
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..ai import model_sets as model_sets_service, prompts
+from ..ai import prompts
 from ..ai.router import Job, router as ai_router
+from ..ai.providers import ProviderError, complete_chat
+import re
 from ..deps import (
     get_current_user,
     get_db,
@@ -31,7 +34,6 @@ from ..models import (
     ModelSetEntry,
     Role,
     RouteType,
-    Suggestion,
     User,
     utcnow,
 )
@@ -48,8 +50,13 @@ from ..services.chats import (
     message_attachments,
     message_out,
 )
+import logging
+
+from ..services.usage import account, est
 from ..services.websearch import format_context, web_search
-from ..services.limits import check_message_quota, effective_plan, get_limits
+from ..services.limits import get_limits
+
+log = logging.getLogger("chatstudio.messages")
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
@@ -103,6 +110,20 @@ async def _stream_job(
                     items = []
                 if items:
                     yield _sse("memory", {"items": items})
+            elif kind == "tool_start":
+                try:
+                    start = json.loads(payload)
+                except Exception:
+                    start = None
+                if start:
+                    yield _sse("tool_start", start)
+            elif kind == "tool":
+                try:
+                    run = json.loads(payload)
+                except Exception:
+                    run = None
+                if run:
+                    yield _sse("tool", run)
             elif kind == "step":
                 try:
                     meta = json.loads(payload)
@@ -158,52 +179,17 @@ def _estimate_chars(messages: list[dict]) -> int:
 def _trim_history(
     messages: list[dict], context_len: int, reserve: int = 6144
 ) -> tuple[list[dict], bool]:
-    """Shrink messages to fit the model window.
+    """Drop the oldest turns so the request fits the model window.
 
-    Strategy:
-      1. Drop oldest turns (user+assistant pairs) first.
-      2. If still too large — truncate each remaining message's content
-         (user messages and assistant content equally).
-      3. Never drop below the system message + 1 exchange.
+    ~2.6 characters per token is a safe estimate for mixed Russian/English text.
     """
     budget = max(4000, int(max(0, context_len - reserve) * 2.6))
-    chars = _estimate_chars(messages)
-    if chars <= budget:
+    if _estimate_chars(messages) <= budget:
         return messages, False
-
-    # Phase 1: drop oldest messages (keep at least system + 1 exchange = 2 msgs)
     trimmed = list(messages)
     while len(trimmed) > 2 and _estimate_chars(trimmed) > budget:
         trimmed.pop(0)
-
-    # Phase 2: if still over budget, truncate content of each message
-    if _estimate_chars(trimmed) > budget:
-        _truncate_messages(trimmed, budget)
-
     return trimmed, True
-
-
-def _truncate_messages(messages: list[dict], budget: int) -> None:
-    """Roughly truncate each message so total chars fit `budget`."""
-    if not messages:
-        return
-    # Rough char budget per message (system gets priority)
-    msg_budget = max(500, (budget - 500) // max(len(messages) - 1, 1))
-    for msg in messages:
-        content = msg.get("content")
-        if content is None:
-            continue
-        if isinstance(content, list):
-            # multimodal: only truncate text parts
-            for part in content:
-                if isinstance(part, dict) and part.get("type") == "text":
-                    t = part["text"]
-                    if len(t) > msg_budget:
-                        part["text"] = t[:msg_budget] + "\n\n[… обрезано]"
-        else:
-            t = content or ""
-            if len(t) > msg_budget:
-                msg["content"] = t[:msg_budget] + "\n\n[… обрезано]"
 
 
 async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
@@ -214,7 +200,7 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
             await db.execute(
                 select(ModelSetEntry)
                 .join(ModelSet, ModelSet.id == ModelSetEntry.model_set_id)
-                .where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False), ModelSetEntry.is_active.is_(True))
+                .where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False))
                 .order_by(ModelSet.name, ModelSetEntry.position)
                 .limit(1)
             )
@@ -223,7 +209,7 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
         row = (
             await db.execute(
                 select(ModelSetEntry)
-                .where(ModelSetEntry.model_set_id == msid, ModelSetEntry.is_active.is_(True))
+                .where(ModelSetEntry.model_set_id == msid)
                 .order_by(ModelSetEntry.position)
                 .limit(1)
             )
@@ -267,14 +253,11 @@ async def _spawn(
     history_messages: list[dict],
     user_id: str | None = None,
     effort: str | None = None,
-    route_type: RouteType = RouteType.MAIN,
-    user_text: str = "",
 ) -> StreamingResponse:
-    system_prompt = prompts.MAIN_SYSTEM
-    task_set = await model_sets_service.get_model_set(db, route_type)
-    task_set_id = task_set.id if task_set else None
+    mode = chat.mode or "chat"
+    system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
     history_messages, trimmed = _trim_history(
-        history_messages, await _model_context(db, task_set_id)
+        history_messages, settings.model_context_len
     )
     if trimmed:
         system_prompt += prompts.CONTEXT_LIMIT_NOTE
@@ -301,15 +284,14 @@ async def _spawn(
 
     job = Job(
         kind="message",
-        route_type=route_type,
+        route_type=RouteType.MAIN,
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
-        model_set_id=task_set_id,
-        generate_title=(route_type == RouteType.MAIN and chat.title == "Новый чат"),
         effort=effort or chat.effort,
         user_id=user_id,
-        user_text=user_text,
+        mode=mode,
+        project=chat.id if mode == "code" else None,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -331,70 +313,104 @@ async def get_messages(
     return await build_message_tree(db, result.scalars().all())
 
 
-@router.post("/messages/{message_id}/suggestions")
-async def generate_suggestions(
-    message: Message = Depends(get_owned_message),
-    user: User = Depends(get_current_user),
-    _csrf=Depends(require_csrf),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Generate follow-up chips through the separately configured SUGGESTIONS chain."""
-    if message.role != Role.assistant or message.status != MessageStatus.completed:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Предложения доступны после завершённого ответа")
-    existing = await db.execute(
-        select(Suggestion).where(Suggestion.message_id == message.id).order_by(Suggestion.position)
-    )
-    saved = [row.text for row in existing.scalars().all() if row.text]
-    if saved:
-        return {"suggestions": saved}
+SEARCH_QUERIES_SYSTEM = (
+    "Ты составляешь поисковые запросы для интернет-поиска. На входе — сообщение "
+    "пользователя. Верни от 1 до 3 коротких поисковых запросов (2-5 слов каждый), "
+    "по одному на строку, без нумерации, кавычек и пояснений — только то, что реально "
+    "надо найти. Если поиск не нужен (простой вопрос, математика, рассуждение, код) — "
+    "верни ровно одно слово NONE."
+)
 
-    chat = await db.get(Chat, message.chat_id)
-    history = await ancestor_chain(db, message.id, summary_upto=chat.summary_upto if chat else None)
-    history = history[-10:]
-    model_messages = [{"role": "system", "content": prompts.SUGGESTIONS_SYSTEM}, *history]
-    _, _, entries = await ai_router._resolve_entries(RouteType.SUGGESTIONS)
-    suggestions: list[str] = []
 
-    from ..ai.providers import ProviderError, complete_chat
+async def _main_entry(db: AsyncSession, model_set_id: str | None):
+    """The concrete model entry that will answer (for the query-writing call)."""
+    if model_set_id:
+        row = (
+            await db.execute(
+                select(ModelSetEntry)
+                .where(ModelSetEntry.model_set_id == model_set_id)
+                .order_by(ModelSetEntry.position)
+                .limit(1)
+            )
+        ).scalars().first()
+        if row is not None:
+            return row
+    return (
+        await db.execute(
+            select(ModelSetEntry)
+            .join(ModelSet, ModelSet.id == ModelSetEntry.model_set_id)
+            .where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False))
+            .order_by(ModelSet.name, ModelSetEntry.position)
+            .limit(1)
+        )
+    ).scalars().first()
 
-    for entry in entries:
-        allowed, _reason = await ai_router.entry_available(user.id, entry)
-        if not allowed:
-            continue
+
+async def _smart_search(
+    message: str, db: AsyncSession, model_set_id: str | None, chat_id: str | None = None
+) -> list[dict]:
+    """Let the model write the queries, then search with each of them."""
+    queries: list[str] = []
+    answer = ""
+    try:
+        entry = await _main_entry(db, model_set_id)
+        if entry is not None:
+            answer = await complete_chat(
+                messages=[
+                    {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
+                    {"role": "user", "content": (message or "")[:1500]},
+                ],
+                base_url=entry.base_url,
+                api_key=entry.api_key,
+                model=entry.model,
+                temperature=0.0,
+                max_tokens=120,
+                timeout=min(entry.timeout or 60, 45),
+                disable_thinking=True,
+            )
+            text = (answer or "").strip()
+            if text and "NONE" not in text.upper():
+                for line in text.splitlines():
+                    q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
+                    q = q.replace('\u00ab', '').replace('\u00bb', '')
+                    q = q.strip('"').strip("'").strip()
+                    if 2 < len(q) <= 120:
+                        queries.append(q)
+    except Exception as e:  # noqa: BLE001 - search must never break a chat
+        log.warning("Query generation failed: %s", e)
+
+    if not queries:
+        # fall back to keywords: long phrases return nothing from the engine
+        words = re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", (message or "").lower())
+        stop = {
+            "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
+            "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
+            "мне", "нужно", "хочу", "можно", "есть", "это", "the", "and", "for",
+            "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
+        }
+        key = [w for w in words if w not in stop][:6]
+        queries = [" ".join(key) if key else (message or "").strip()]
+    queries = [q for q in queries if q][:3]
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for q in queries:
         try:
-            async with ai_router.model_slot(entry):
-                raw = await complete_chat(
-                    messages=model_messages,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.3,
-                    max_tokens=350,
-                    timeout=min(entry.timeout, 60),
-                    disable_thinking=True,
-                )
-            parsed = []
-            for line in (raw or "").splitlines():
-                item = re.sub(r"^\s*\d+[.)]\s*", "", line.strip()).lstrip("-•*— ").strip().strip('"').strip("'")
-                if len(item) > 8 and " " in item:
-                    parsed.append(item[:200])
-            suggestions = list(dict.fromkeys(parsed))[:3]
-            await ai_router.record_model_usage(user.id, entry, RouteType.SUGGESTIONS, None, model_messages, raw or "")
-            if suggestions:
-                break
-        except ProviderError:
-            continue
-
-    await db.execute(delete(Suggestion).where(Suggestion.message_id == message.id))
-    for position, item in enumerate(suggestions):
-        db.add(Suggestion(
-            message_id=message.id,
-            chat_id=message.chat_id,
-            position=position,
-            text=item,
-        ))
-    await db.commit()
-    return {"suggestions": suggestions}
+            for item in await web_search(q):
+                url = item.get("url") or ""
+                if url and url not in seen:
+                    seen.add(url)
+                    out.append(item)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Search failed for %r: %s", q[:60], e)
+    log.info("Search queries=%s results=%d", queries, len(out))
+    if chat_id and answer:
+        try:
+            await account(db, chat_id, model_set_id, est(message), est(answer))
+            await db.commit()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Search accounting failed: %s", e)
+    return out[:6]
 
 
 @router.post("/chats/{chat_id}/messages")
@@ -409,7 +425,6 @@ async def send_message(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
-    await check_message_quota(db, user)
 
     parent_id = data.parent_message_id
     if parent_id is not None:
@@ -459,13 +474,12 @@ async def send_message(
     history_messages = await ancestor_chain(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
-    task_route = RouteType.FILE_ANALYSIS if attached else RouteType.MAIN
-    main_set = await model_sets_service.get_model_set(db, task_route)
-    main_set_id = main_set.id if main_set else None
     history_messages, trimmed = _trim_history(
-        history_messages, await _model_context(db, main_set_id)
+        history_messages, await _model_context(db, data.model_set_id)
     )
-    system_prompt = prompts.MAIN_SYSTEM
+
+    code_mode = (chat.mode or "chat") == "code"
+    system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     if trimmed:
         system_prompt += prompts.CONTEXT_LIMIT_NOTE
@@ -476,8 +490,8 @@ async def send_message(
 
     system_prompt += await _memory_block(db, user.id)
 
-    # web search is always on
-    results = await web_search(content)
+    # web search is always on: the model writes its own short queries first
+    results = await _smart_search(content, db, data.model_set_id, chat.id)
     ctx = format_context(results)
     if ctx:
         system_prompt = f"{system_prompt}\n\n{ctx}"
@@ -500,27 +514,27 @@ async def send_message(
 
     job = Job(
         kind="message",
-        route_type=task_route,
+        route_type=RouteType.MAIN,
         chat_id=chat.id,
         history=history,
         message_id=assistant.id,
-        model_set_id=main_set_id,
+        model_set_id=data.model_set_id,
         effort=chat.effort,
         user_id=user.id,
+        mode=chat.mode or "chat",
+        project=chat.id if code_mode else None,
         user_text=content,
+        max_steps=int((await get_limits(db, user.plan or "free")).get("agent_steps") or 0)
+        or None,
     )
-    # Generate a title only once a main answer succeeds. If an earlier first turn failed,
-    # a later successful turn can still generate the missing title from the first user prompt.
-    job.generate_title = chat.title == "Новый чат" and task_route in (RouteType.MAIN, RouteType.FILE_ANALYSIS)
-    if job.generate_title:
-        first_query = await db.scalar(
-            select(Message.content)
-            .where(Message.chat_id == chat.id, Message.role == Role.user)
-            .order_by(Message.created_at, Message.id)
-            .limit(1)
-        )
-        job.user_text = str(first_query or content)[:2000]
     await ai_router.enqueue(job)
+    total = await db.scalar(
+        select(func.count()).select_from(Message).where(Message.chat_id == chat.id)
+    )
+    if total == 2:
+        await ai_router.enqueue(
+            Job(kind="title", route_type=RouteType.TITLE, chat_id=chat.id, user_text=content)
+        )
 
     return StreamingResponse(
         _stream_job(request, job, assistant, user_msg, user_atts),
@@ -537,7 +551,6 @@ async def retry_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    await check_message_quota(db, user)
     parent_id = message.parent_message_id
     if parent_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего повторять")
@@ -550,7 +563,6 @@ async def retry_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
-        user_text=next((str(m.get("content") or "") for m in reversed(history_messages) if m.get("role") == "user"), ""),
     )
 
 
@@ -562,7 +574,6 @@ async def branch_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    await check_message_quota(db, user)
     parent_id = message.parent_message_id
     if parent_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего ветвить")
@@ -575,7 +586,6 @@ async def branch_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
-        user_text=next((str(m.get("content") or "") for m in reversed(history_messages) if m.get("role") == "user"), ""),
     )
 
 
@@ -587,7 +597,6 @@ async def continue_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    await check_message_quota(db, user)
     chat = await db.get(Chat, message.chat_id)
     history_messages = await ancestor_chain(db, message.id)
     history_messages.append(
@@ -603,8 +612,6 @@ async def continue_message(
         parent_message_id=message.id,
         history_messages=history_messages,
         user_id=user.id,
-        route_type=RouteType.CONTINUE,
-        user_text="Продолжи ответ с того места, где остановился. Не повторяй уже сказанное.",
     )
 
 
@@ -683,6 +690,32 @@ async def seed_chat(
     return message_out(msg)
 
 
+@router.get("/chats/{chat_id}/project")
+async def chat_project(
+    chat: Chat = Depends(get_owned_chat), db: AsyncSession = Depends(get_db)
+) -> dict:
+    """File tree of a code-agent project (lives in the shared sandbox directory)."""
+    root = settings.sandbox_path / "projects" / chat.id
+    files: list[dict] = []
+    if root.is_dir():
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root)
+            if any(part in {"__pycache__", ".git"} for part in rel.parts):
+                continue
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            files.append(
+                {"path": str(rel).replace("\\", "/"), "name": path.name, "size": size}
+            )
+            if len(files) >= 400:
+                break
+    return {"chat_id": chat.id, "mode": chat.mode or "chat", "files": files}
+
+
 @router.get("/chats/{chat_id}/usage", response_model=UsageOut)
 async def chat_usage(
     chat: Chat = Depends(get_owned_chat), db: AsyncSession = Depends(get_db)
@@ -747,7 +780,7 @@ async def compress_chat(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    limits = await get_limits(db, await effective_plan(db, user))
+    limits = await get_limits(db, user.plan or "free")
     cmin = int(limits.get("compress_min") or 5)
     cmax = int(limits.get("compress_max") or 85)
     if cmin > cmax:
@@ -763,7 +796,7 @@ async def compress_chat(
     if per_day is not None and (chat.compress_count or 0) >= int(per_day):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            f"Лимит сжатий на сегодня исчерпан. Обратитесь к администратору ai-ch для сброса счётчика или подписки.",
+            f"Лимит тарифа: сжатий в день — {int(per_day)}. Оформите Pro для снятия лимита.",
         )
 
     res = await db.execute(
@@ -782,50 +815,45 @@ async def compress_chat(
     if len(cut) < 2:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего сжимать")
 
+    from ..ai import model_sets as ms_mod
     from ..ai.providers import ProviderError, complete_chat
 
-    _, _, entries = await ai_router._resolve_entries(RouteType.SUMMARY)
+    mset = await ms_mod.get_model_set(db, RouteType.MAIN)
+    entries = await ms_mod.get_active_entries(db, mset.id) if mset else []
+    if not entries:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Нет активной модели для сжатия"
+        )
+    entry = entries[0]
+
     transcript = "\n".join(
         f"{m.role.value}: {(m.content or '')[:1500]}" for m in cut if m.content
     )[:60000]
-    summary = ""
-    last_error = "Нет доступной модели для сжатия"
-    summary_messages = [
-        {"role": "system", "content": prompts.COMPRESS_SYSTEM},
-        {"role": "user", "content": transcript},
-    ]
-    for entry in entries:
-        available, quota_reason = await ai_router.entry_available(user.id, entry)
-        if not available:
-            last_error = quota_reason
-            continue
-        try:
-            async with ai_router.model_slot(entry):
-                candidate = await complete_chat(
-                    messages=summary_messages,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.3,
-                    max_tokens=1200,
-                    timeout=min(entry.timeout, 150),
-                    disable_thinking=True,
-                )
-            if not (candidate or "").strip():
-                last_error = f"Модель {entry.model} вернула пустое резюме"
-                continue
-            summary = candidate.strip()
-            await ai_router.record_model_usage(user.id, entry, RouteType.SUMMARY, None, summary_messages, summary)
-            break
-        except ProviderError as e:
-            last_error = f"{entry.model}: {e}"
-            continue
-    if not summary:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {last_error}")
+    try:
+        summary = await complete_chat(
+            messages=[
+                {"role": "system", "content": prompts.COMPRESS_SYSTEM},
+                {"role": "user", "content": transcript},
+            ],
+            base_url=entry.base_url,
+            api_key=entry.api_key,
+            model=entry.model,
+            temperature=0.3,
+            max_tokens=1200,
+            timeout=150,
+            disable_thinking=True,
+        )
+    except ProviderError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {e}")
 
     if not summary.strip():
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Модель вернула пустое резюме")
 
+    try:
+        _in_tokens = sum(est(m.content) for m in cut)
+    except Exception:
+        _in_tokens = 0
+    await account(db, chat.id, data.model_set_id, _in_tokens, est(summary))
     chat.summary = summary.strip()[:20000]
     chat.summary_upto = cut[-1].id
     chat.compress_count = (chat.compress_count or 0) + 1

@@ -9,7 +9,7 @@ import httpx
 
 from ..config import settings
 
-log = logging.getLogger("ai-ch.search")
+log = logging.getLogger("chatstudio.search")
 
 
 async def web_search(query: str, limit: int | None = None) -> list[dict]:
@@ -19,21 +19,23 @@ async def web_search(query: str, limit: int | None = None) -> list[dict]:
         return []
 
     base = (settings.searxng_url or "").rstrip("/")
+    if not base:
+        return []
+
     params = {
         "q": query,
         "format": "json",
         "language": "ru",
         "safesearch": "0",
     }
-    data = {}
-    if base:
-        try:
-            async with httpx.AsyncClient(timeout=settings.web_search_timeout) as client:
-                resp = await client.get(f"{base}/search", params=params)
-                resp.raise_for_status()
-                data = resp.json()
-        except Exception as e:  # pragma: no cover - network dependent
-            log.warning("SearXNG unavailable; trying DuckDuckGo: %s", e)
+    try:
+        async with httpx.AsyncClient(timeout=settings.web_search_timeout) as client:
+            resp = await client.get(f"{base}/search", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:  # pragma: no cover - network dependent
+        log.warning("Web search failed: %s", e)
+        return []
 
     count = limit or settings.web_search_results
     out: list[dict] = []

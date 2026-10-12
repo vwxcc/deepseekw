@@ -4,10 +4,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+import re
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai.router import router as ai_router
@@ -19,18 +20,20 @@ from .routers import (
     auth,
     avatars,
     chats,
+    council,
     files,
+    github,
     limits,
     memory,
     messages,
     models,
+    posts,
     public,
     system,
 )
-from .security_middleware import SecurityMiddleware
 from .services.storage import disk_free, enforce_disk_floor
 
-log = logging.getLogger("ai-ch")
+log = logging.getLogger("chatstudio")
 
 CLEANUP_INTERVAL = 600  # seconds
 
@@ -58,8 +61,6 @@ async def lifespan(app: FastAPI):
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s"
     )
-    settings.data_path.mkdir(parents=True, exist_ok=True)
-    settings.upload_path.mkdir(parents=True, exist_ok=True)
     await init_db()
     await bootstrap()
     await ai_router.start()
@@ -73,9 +74,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
-# --- Security middleware ---
-app.add_middleware(SecurityMiddleware)
-
 app.include_router(auth.router)
 app.include_router(chats.router)
 app.include_router(messages.router)
@@ -84,9 +82,12 @@ app.include_router(models.router)
 app.include_router(admin.router)
 app.include_router(public.router)
 app.include_router(memory.router)
+app.include_router(council.router)
+app.include_router(posts.router)
 app.include_router(avatars.router)
 app.include_router(system.router)
 app.include_router(limits.router)
+app.include_router(github.router)
 
 
 @app.get("/api/health")
@@ -104,6 +105,15 @@ if _frontend.exists():
 async def index():
     idx = _frontend / "index.html"
     if idx.exists():
-        # never let the shell HTML go stale in the browser
-        return FileResponse(idx, headers={"Cache-Control": "no-cache, must-revalidate"})
+        # stamp the asset URLs with the real file mtimes, so a deploy can never be
+        # served from the browser cache (the shell itself is always revalidated)
+        try:
+            stamp = str(int(max(
+                (_frontend / "js" / "app.js").stat().st_mtime,
+                (_frontend / "css" / "app.css").stat().st_mtime,
+            )))
+        except OSError:
+            stamp = "0"
+        html = re.sub(r"\?v=\d+", "?v=" + stamp, idx.read_text(encoding="utf-8"))
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
     return JSONResponse({"app": settings.app_name, "status": "ok"})

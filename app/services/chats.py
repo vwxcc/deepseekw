@@ -43,7 +43,6 @@ def message_out(
         chat_id=m.chat_id,
         role=m.role.value,
         content=m.content,
-        thinking=m.thinking or "",
         parent_message_id=m.parent_message_id,
         status=m.status.value,
         error=m.error,
@@ -55,6 +54,7 @@ def message_out(
         suggestions=suggestions or [],
         attachments=attachments or [],
         sources=_json_list(m.sources),
+        tool_runs=_json_list(m.tool_runs),
     )
 
 
@@ -131,17 +131,13 @@ async def ancestor_chain(
 
         text = msg.content or ""
         images: list[dict] = []
-        total_extracted = 0  # running total of extracted text for this message
         if include_attachments:
             res = await db.execute(
                 select(Attachment, File)
                 .join(File, File.id == Attachment.file_id)
                 .where(Attachment.message_id == msg.id)
             )
-            attachments = res.all()
-            # Divide budget among all files in this message
-            file_budget = settings.max_extracted_per_message // max(2, len(attachments))
-            for _att, rec in attachments:
+            for _att, rec in res.all():
                 if rec.kind == "image":
                     url = image_to_data_url(rec.storage_path, rec.mime_type or "")
                     if url:
@@ -149,13 +145,10 @@ async def ancestor_chain(
                             {"type": "image_url", "image_url": {"url": url}}
                         )
                 elif rec.extracted_text:
-                    # Hard cap per file + running cap per message
-                    remaining = settings.max_extracted_per_message - total_extracted
-                    if remaining <= 0:
-                        continue  # skip this file, no more space
-                    chunk = rec.extracted_text[: min(file_budget, remaining)]
-                    text += f"\n\n[Вложение: {rec.original_name}]\n{chunk}"
-                    total_extracted += len(chunk)
+                    text += (
+                        f"\n\n[Вложение: {rec.original_name}]\n"
+                        f"{rec.extracted_text[: settings.max_attachment_chars]}"
+                    )
 
         if images:
             content: list | str = [

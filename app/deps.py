@@ -11,7 +11,7 @@ from .database import SessionLocal
 from .models import Chat, Message, Session, User
 from .security import hash_token, verify_csrf
 
-COOKIE_NAME = "ai-ch_session"
+COOKIE_NAME = "chatstudio_session"
 
 
 async def get_db() -> AsyncSession:

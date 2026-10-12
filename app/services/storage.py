@@ -10,7 +10,7 @@ from ..config import settings
 from ..database import SessionLocal
 from ..models import File
 
-log = logging.getLogger("ai-ch.storage")
+log = logging.getLogger("chatstudio.storage")
 
 
 def disk_free(path: str | None = None) -> int:

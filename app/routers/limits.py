@@ -1,14 +1,12 @@
 """Plan limits: read for everyone, edited by the administrator."""
 from __future__ import annotations
 
-from datetime import timedelta
-
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_current_user, get_db, require_csrf
-from ..models import Chat, File, Message, ModelSet, Role, RouteType, User, utcnow
+from ..models import Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, User
 from ..services.limits import (
     LABELS,
     PLANS,
@@ -17,10 +15,64 @@ from ..services.limits import (
     get_models_for_plan,
     set_limits,
     set_models_for_plan,
-    effective_plan,
 )
 
 router = APIRouter(prefix="/api/limits", tags=["limits"])
+
+
+async def _window_spend(
+    db: AsyncSession, user_id: str, hours: int, plan: str = "free"
+) -> tuple[float, int]:
+    """Dollar spend inside a rolling window, using each model's own prices."""
+    from datetime import timedelta
+
+    from ..models import ModelSetEntry, utcnow
+
+    since = utcnow() - timedelta(hours=max(1, int(hours or 5)))
+    rows = (
+        await db.execute(
+            select(Message.model_set_id, Message.tokens_in, Message.tokens_out)
+            .join(Chat, Chat.id == Message.chat_id)
+            .where(
+                Chat.user_id == user_id,
+                Message.role == Role.assistant,
+                Message.created_at >= since,
+            )
+        )
+    ).all()
+    if not rows:
+        return 0.0, 0
+
+    entries = (await db.execute(select(ModelSetEntry))).scalars().all()
+    prices: dict = {}
+    for e in entries:
+        prices.setdefault(
+            e.model_set_id,
+            (float(e.price_in or 0), float(e.price_out or 0), float(e.price_cache or 0)),
+        )
+
+    # fallback rate per 1k tokens for models without their own price
+    limits = await get_limits(db, plan)
+    rate = float(limits.get("cost_per_1k") or 0)
+    if not rate:
+        priced = [p for p in prices.values() if p[0] or p[1]]
+        if priced:
+            avg_in = sum(p[0] for p in priced) / len(priced)
+            avg_out = sum(p[1] for p in priced) / len(priced)
+            rate = (avg_in + avg_out) / 2 / 1000.0
+
+    total = 0.0
+    tokens = 0
+    for msid, tin, tout in rows:
+        tin = int(tin or 0)
+        tout = int(tout or 0)
+        tokens += tin + tout
+        pin, pout, _ = prices.get(msid, (0.0, 0.0, 0.0))
+        if pin or pout:
+            total += tin / 1e6 * pin + tout / 1e6 * pout
+        elif rate:
+            total += (tin + tout) / 1000.0 * rate
+    return round(total, 4), len(rows)
 
 
 @router.get("")
@@ -28,43 +80,60 @@ async def my_limits(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Current plan + limits + live usage counters."""
-    plan = await effective_plan(db, user)
-    limits = await get_limits(db, plan)
+    limits = await get_limits(db, user.plan or "free")
     files = await db.scalar(
         select(func.count()).select_from(File).where(File.user_id == user.id)
     )
     used = await db.scalar(
         select(func.coalesce(func.sum(File.size), 0)).where(File.user_id == user.id)
     )
-    reset_filter = [Message.created_at >= user.usage_reset_at] if user.usage_reset_at is not None else []
+    posts = await db.scalar(
+        select(func.count()).select_from(Post).where(Post.user_id == user.id)
+    )
+    agents = await db.scalar(
+        select(func.count())
+        .select_from(Chat)
+        .where(Chat.user_id == user.id, Chat.mode == "code", Chat.deleted_at.is_(None))
+    )
     spent = await db.scalar(
         select(func.coalesce(func.sum(Message.tokens_in), 0) + func.coalesce(func.sum(Message.tokens_out), 0))
         .select_from(Message).join(Chat, Chat.id == Message.chat_id)
-        .where(Chat.user_id == user.id, Message.role == Role.assistant, *reset_filter)
+        .where(Chat.user_id == user.id, Message.role == Role.assistant)
     )
     reqs = await db.scalar(
         select(func.count()).select_from(Message).join(Chat, Chat.id == Message.chat_id)
-        .where(Chat.user_id == user.id, Message.role == Role.assistant, or_(user.usage_reset_at.is_(None), Message.created_at >= user.usage_reset_at))
+        .where(Chat.user_id == user.id, Message.role == Role.assistant)
     )
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    if user.usage_reset_at is not None and user.usage_reset_at > today_start:
-        today_start = user.usage_reset_at
-    today_requests = await db.scalar(
-        select(func.count()).select_from(Message).join(Chat, Chat.id == Message.chat_id)
-        .where(Chat.user_id == user.id, Message.role == Role.assistant, Message.created_at >= today_start)
+    window_hours = int(limits.get("window_hours") or 5)
+    budget = float(limits.get("budget_usd") or 0)
+    window_spend, window_reqs = await _window_spend(
+        db, user.id, window_hours, user.plan or "free"
     )
+    # if prices are not filled in, fall back to a flat rate so the % still means something
+    if window_spend == 0.0 and window_reqs and budget:
+        rate = float(limits.get("cost_per_1k") or 0)
+        if rate:
+            window_spend = round((int(spent or 0) and 0) + 0.0, 4)
+    percent = round(min(100.0, window_spend / budget * 100.0), 1) if budget else 0.0
     return {
-        "plan": plan,
+        "compare": await all_limits(db),
+        "plan": user.plan or "free",
         "labels": LABELS,
         "limits": limits,
+        "window": {
+            "hours": window_hours,
+            "budget_usd": budget,
+            "spend_usd": window_spend,
+            "requests": window_reqs,
+            "percent": percent,
+        },
         "usage": {
             "files": files or 0,
             "storage": int(used or 0),
+            "posts": posts or 0,
+            "code_agents": agents or 0,
             "tokens": int(spent or 0),
             "requests": int(reqs or 0),
-            "messages_today": int(today_requests or 0),
-            "messages_daily_limit": limits.get("messages_per_day"),
-            "subscription_until": user.subscription_until.isoformat() if user.subscription_until else None,
         },
     }
 
@@ -75,7 +144,7 @@ async def limits_all(
 ) -> dict:
     models = (
         await db.execute(
-            select(ModelSet).where(ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False)).order_by(ModelSet.name)
+            select(ModelSet).where(ModelSet.route_type == RouteType.MAIN).order_by(ModelSet.name)
         )
     ).scalars().all()
     return {
@@ -114,8 +183,7 @@ async def users_overview(
             func.coalesce(func.sum(Message.tokens_out), 0).label("tout"),
         )
         .join(Message, Message.chat_id == Chat.id)
-        .join(User, User.id == Chat.user_id)
-        .where(Message.role == Role.assistant, or_(User.usage_reset_at.is_(None), Message.created_at >= User.usage_reset_at))
+        .where(Message.role == Role.assistant)
         .group_by(Chat.user_id)
         .subquery()
     )
@@ -132,8 +200,7 @@ async def users_overview(
 
     out: list[dict] = []
     for user, requests, tin, tout in rows:
-        plan = await effective_plan(db, user)
-        limits = await get_limits(db, plan)
+        limits = await get_limits(db, user.plan or "free")
         rate = float(limits.get("cost_per_1k") or 0)
         tokens = int(tin) + int(tout)
         used = await db.scalar(
@@ -144,7 +211,7 @@ async def users_overview(
                 "id": user.id,
                 "email": user.email,
                 "name": user.name or "",
-                "plan": plan,
+                "plan": user.plan or "free",
                 "is_admin": bool(user.is_admin),
                 "avatar": user.avatar or 0,
                 "requests": int(requests or 0),
@@ -153,11 +220,42 @@ async def users_overview(
                 "storage": int(used or 0),
                 "plan_price": int(limits.get("price") or 0),
                 "cost": round(tokens / 1000 * rate, 2),
-                "subscription_until": user.subscription_until.isoformat() if user.subscription_until else None,
-                "usage_reset_at": user.usage_reset_at.isoformat() if user.usage_reset_at else None,
             }
         )
     return out
+
+
+@router.post("/{plan}/reset")
+async def reset_plan_limits(
+    plan: str,
+    admin: User = Depends(get_current_admin),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Drop every stored override for a plan so the built-in defaults apply again."""
+    from sqlalchemy import delete as sa_delete
+
+    if plan not in PLANS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неизвестный тариф")
+    await db.execute(
+        sa_delete(PlanLimit).where(PlanLimit.plan == plan, PlanLimit.key != "models")
+    )
+    await db.commit()
+    return {"plan": plan, "limits": await get_limits(db, plan)}
+
+
+@router.post("/reset")
+async def reset_all_plans(
+    admin: User = Depends(get_current_admin),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Reset the limits of every plan at once (handy after experiments)."""
+    from sqlalchemy import delete as sa_delete
+
+    await db.execute(sa_delete(PlanLimit).where(PlanLimit.key != "models"))
+    await db.commit()
+    return {"plans": {p: await get_limits(db, p) for p in PLANS}}
 
 
 @router.put("/{plan}")
@@ -173,7 +271,7 @@ async def limits_update(
     values: dict[str, int] = {}
     for key, raw in (data or {}).items():
         try:
-            values[key] = None if raw in (None, "") else int(raw)
+            values[key] = int(raw)
         except (TypeError, ValueError):
             continue
     updated = await set_limits(db, plan, values)
@@ -191,46 +289,7 @@ async def plan_of_user(
     target = await db.get(User, user_id)
     if target is None:
         return {"ok": False}
-    if target.is_admin:
-        return {"ok": False, "error": "Нельзя менять подписку администратора"}
     plan = str((data or {}).get("plan") or "free").lower()
-    if plan not in PLANS:
-        plan = "free"
-    target.plan = plan
-    days_raw = (data or {}).get("days") if "days" in (data or {}) else (await get_limits(db, plan)).get("subscription_days", 30)
-    if plan == "free":
-        target.subscription_until = None
-    elif days_raw in (None, "", 0, "0"):
-        target.subscription_until = None
-    else:
-        try:
-            days = max(1, min(int(days_raw), 3650))
-        except (TypeError, ValueError):
-            days = 30
-        target.subscription_until = utcnow() + timedelta(days=days)
+    target.plan = plan if plan in PLANS else "free"
     await db.commit()
-    return {
-        "ok": True,
-        "plan": target.plan,
-        "subscription_until": target.subscription_until.isoformat() if target.subscription_until else None,
-    }
-
-
-@router.post("/user/{user_id}/reset")
-async def reset_user_usage(
-    user_id: str,
-    admin: User = Depends(get_current_admin),
-    _csrf=Depends(require_csrf),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    target = await db.get(User, user_id)
-    if target is None:
-        return {"ok": False, "error": "Пользователь не найден"}
-    target.usage_reset_at = utcnow()
-    await db.execute(
-        update(Chat)
-        .where(Chat.user_id == target.id)
-        .values(compress_count=0, compress_date=None)
-    )
-    await db.commit()
-    return {"ok": True, "reset_at": target.usage_reset_at.isoformat()}
+    return {"ok": True, "plan": target.plan}

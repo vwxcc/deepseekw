@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..ai import prompts
 from ..ai.router import Job, router as ai_router
 from ..ai.providers import ProviderError, complete_chat
-import re
 from ..deps import (
     get_current_user,
     get_db,
@@ -51,8 +50,7 @@ from ..services.chats import (
 )
 import logging
 
-from ..services.usage import account, est, record
-from ..services.websearch import format_context, web_search
+from ..services.usage import account, est
 from ..services.limits import get_limits
 
 log = logging.getLogger("chatstudio.messages")

@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +35,8 @@ MAX_FILES = int(os.environ.get("SANDBOX_MAX_FILES", "24"))
 MAX_FILE_BYTES = int(os.environ.get("SANDBOX_MAX_FILE_BYTES", str(30 * 1024 * 1024)))
 MAX_INLINE_FILE_BYTES = int(os.environ.get("SANDBOX_MAX_INLINE_FILE_BYTES", str(4 * 1024 * 1024)))
 MAX_INLINE_TOTAL_BYTES = int(os.environ.get("SANDBOX_MAX_INLINE_TOTAL_BYTES", str(8 * 1024 * 1024)))
+MAX_CONCURRENT_RUNS = max(1, min(int(os.environ.get("SANDBOX_CONCURRENCY", "2")), 4))
+RUN_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_RUNS)
 KEEP_RUNS = int(os.environ.get("SANDBOX_KEEP_RUNS", "40"))
 DEFAULT_TIMEOUT = 40
 PROJECT_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -137,7 +140,7 @@ def _limits(timeout: int):
             resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu + 5))
             resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE_BYTES, MAX_FILE_BYTES))
             resource.setrlimit(resource.RLIMIT_NOFILE, (512, 512))
-            resource.setrlimit(resource.RLIMIT_NPROC, (256, 256))
+            resource.setrlimit(resource.RLIMIT_NPROC, (32, 32))
         except Exception:
             pass
 
@@ -179,8 +182,8 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
         "PYTHONPATH": "/srv",
         "MPLBACKEND": "Agg",
         "MPLCONFIGDIR": mpl_dir,
-        "HOME": "/tmp",
-        "TMPDIR": "/tmp",
+        "HOME": workdir,
+        "TMPDIR": workdir,
     }
 
     # Use a stable UID for a persistent project and a distinct UID per one-off
@@ -357,7 +360,19 @@ class Handler(BaseHTTPRequestHandler):
         timeout = max(5, min(timeout, 120))
         project = data.get("project")
         project = str(project) if project else None
-        self._json(200, execute(code, timeout, project))
+        if project and not PROJECT_RE.fullmatch(project):
+            self._json(400, {"error": "invalid project"})
+            return
+        if not RUN_SLOTS.acquire(blocking=False):
+            self._json(429, {"error": "sandbox busy; retry shortly"})
+            return
+        try:
+            self._json(200, execute(code, timeout, project))
+        except Exception as e:  # keep an unexpected runner error from killing the handler
+            sys.stderr.write(f"[sandbox] execution handler failed: {type(e).__name__}\\n")
+            self._json(500, {"error": "sandbox execution failed"})
+        finally:
+            RUN_SLOTS.release()
 
 
 def main() -> None:

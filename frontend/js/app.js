@@ -651,12 +651,20 @@
 
   // ---------- chats ----------
   async function loadChats() {
-    state.chats = await api.get('/api/chats' + (state.query ? '?q=' + encodeURIComponent(state.query) : ''));
+    const result = await api.get('/api/chats' + (state.query ? '?q=' + encodeURIComponent(state.query) : ''));
+    if (!Array.isArray(result)) {
+      throw new Error('Сервер вернул некорректный список чатов');
+    }
+    // Ignore malformed/null rows from stale responses instead of crashing on c.id.
+    state.chats = result.filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
     renderChatList();
   }
 
   function renderChatList() {
     const box = $('#chat-list');
+    // Defensive normalization: an incomplete response must never crash the sidebar.
+    state.chats = (Array.isArray(state.chats) ? state.chats : [])
+      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
     if (!state.chats.length) {
       box.innerHTML = '<div class="side-empty">' + (state.query ? 'Ничего не найдено' : 'Пока нет чатов') + '</div>';
       return;
@@ -695,6 +703,11 @@
       title: 'Новый чат',
       mode: mode || 'chat',
     });
+    if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
+      throw new Error('Сервер не вернул созданный чат с корректным ID');
+    }
+    state.chats = (Array.isArray(state.chats) ? state.chats : [])
+      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
     state.chats.unshift(chat);
     renderChatList();
     await openChat(chat.id);
@@ -1294,8 +1307,10 @@
         state.lastEvent = Date.now();
         if (ev === 'chat_created') {
           // The combined endpoint tells the UI which chat now owns this stream.
-          if (data && data.id) {
+          if (data && typeof data === 'object' && data.id) {
             state.currentChatId = data.id;
+            state.chats = (Array.isArray(state.chats) ? state.chats : [])
+              .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
             const index = state.chats.findIndex(c => c.id === data.id);
             if (index >= 0) state.chats[index] = data;
             else state.chats.unshift(data);
@@ -1526,8 +1541,21 @@
     const content = draft.trim();
     if (!content || state.streaming || state.sending) return;
 
+    // Validate pending attachments before reading IDs; a stale/null item must not abort sending.
+    const pending = Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [];
+    const hasInvalidAttachment = pending.some(f =>
+      !f || typeof f !== 'object' || typeof f.id !== 'string' || !f.id
+    );
+    if (hasInvalidAttachment) {
+      state.pendingAttachments = pending.filter(f =>
+        f && typeof f === 'object' && typeof f.id === 'string' && f.id
+      );
+      renderAttachments();
+      toast('Одно из вложений устарело. Прикрепите этот файл заново; текст запроса сохранён.', 'error');
+      return;
+    }
     // Freeze the current attachment selection; new attachments stay for the next message.
-    const sentAttachments = state.pendingAttachments.slice();
+    const sentAttachments = pending.slice();
     const attachments = sentAttachments.map(f => f.id);
     const attList = sentAttachments.map(f => ({
       file_id: f.id, name: f.original_name || f.name || 'файл',
@@ -1545,7 +1573,10 @@
         state.choices = {};
       }
       const path = activePath(state.tree, state.choices);
-      const parentId = isNewChat ? null : (path.length ? path[path.length - 1].node.id : null);
+      const lastPathEntry = path.length ? path[path.length - 1] : null;
+      const parentId = !isNewChat && lastPathEntry && lastPathEntry.node && lastPathEntry.node.id
+        ? lastPathEntry.node.id
+        : null;
 
       const userId = 'tmp_u_' + Date.now().toString(36);
       const asstId = 'tmp_a_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

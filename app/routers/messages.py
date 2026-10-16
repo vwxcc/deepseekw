@@ -1,9 +1,9 @@
 """Message endpoints: tree retrieval, streaming generation, retry/branch/continue/stop."""
 from __future__ import annotations
 
-import json
-
 import asyncio
+import json
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -22,6 +22,7 @@ from ..deps import (
 )
 from ..config import settings
 from ..models import (
+    AudioGeneration,
     Attachment,
     Chat,
     File,
@@ -57,6 +58,12 @@ from ..services.audio_quota import (
     AudioQuotaExceeded,
     release_audio_generation,
     reserve_audio_generation,
+)
+from ..services.audio_state import (
+    AudioGenerationInProgress,
+    active_audio_generation,
+    begin_audio_generation,
+    finish_audio_generation,
 )
 from ..services.sandbox import list_project_files
 from ..services.tts import (
@@ -860,19 +867,54 @@ async def compress_chat(
 
 # ---------- response audio / text-to-speech ----------
 
+# A stuck reservation without a resulting file is treated as active for at most
+# ten minutes; this also lets another worker/device discover in-flight generation.
+_AUDIO_ACTIVITY_STALE_AFTER = timedelta(minutes=10)
+
+
 @router.get("/messages/{message_id}/audio/status")
 async def message_audio_status(
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Tell the authenticated owner whether a cached response audio file exists."""
+    """Return cached and in-progress audio state to every authenticated device."""
     try:
         fmt = normalized_audio_format()
         path = audio_file_path(user.id, message.id, fmt)
     except ValueError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
+
+    ready = path.is_file()
+    generating_message_id = active_audio_generation(user.id)
+
+    # Fall back to shared DB reservations: these are visible across browser
+    # sessions and across workers sharing the same database.
+    if generating_message_id is None:
+        recent = await db.execute(
+            select(AudioGeneration)
+            .where(
+                AudioGeneration.user_id == user.id,
+                AudioGeneration.created_at >= utcnow() - _AUDIO_ACTIVITY_STALE_AFTER,
+            )
+            .order_by(AudioGeneration.created_at.desc())
+            .limit(20)
+        )
+        for reservation in recent.scalars().all():
+            try:
+                candidate = audio_file_path(user.id, reservation.message_id, fmt)
+            except ValueError:
+                continue
+            if not candidate.is_file():
+                generating_message_id = reservation.message_id
+                break
+
+    busy = bool(generating_message_id and not (ready and generating_message_id == message.id))
     return {
-        "ready": path.is_file(),
+        "ready": ready,
+        "generating": bool(not ready and generating_message_id == message.id),
+        "busy": busy,
+        "generating_message_id": generating_message_id if busy or not ready else None,
         "url": f"/api/messages/{message.id}/audio/file",
         "format": fmt,
     }
@@ -907,7 +949,7 @@ async def create_message_audio(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Generate a spoken version of a completed response, enforcing the rolling plan quota."""
+    """Generate speech while allowing no parallel generation for one account."""
     if message.role != Role.assistant or message.status != MessageStatus.completed:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Озвучить можно только готовый ответ ассистента.")
     source = (message.content or "").strip()
@@ -919,20 +961,39 @@ async def create_message_audio(
     except ValueError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
 
-    # A cached audio file can be replayed without consuming another generation slot.
-    if not path.is_file():
+    # Cached playback is free and should not block a new generation.
+    if path.is_file():
+        return {
+            "ready": True,
+            "url": f"/api/messages/{message.id}/audio/file",
+            "format": fmt,
+            "size": path.stat().st_size,
+        }
+
+    try:
+        begin_audio_generation(user.id, message.id)
+    except AudioGenerationInProgress as exc:
+        if exc.message_id == message.id:
+            detail = "Озвучка этого ответа уже создаётся на другом устройстве."
+        else:
+            detail = "Уже создаётся другая озвучка. Дождитесь её завершения."
+        raise HTTPException(status.HTTP_409_CONFLICT, detail) from exc
+
+    reservation = None
+
+    async def release_reservation() -> None:
+        try:
+            await release_audio_generation(db, reservation)
+        except Exception:
+            log.exception("Could not release audio quota reservation for message %s", message.id)
+
+    try:
         try:
             reservation = await reserve_audio_generation(
                 db, user.id, message.id, user.plan or "free"
             )
         except AudioQuotaExceeded as exc:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
-
-        async def release_reservation() -> None:
-            try:
-                await release_audio_generation(db, reservation)
-            except Exception:
-                log.exception("Could not release audio quota reservation for message %s", message.id)
 
         try:
             audio_bytes, generated_format = await generate_speech(source)
@@ -963,9 +1024,13 @@ async def create_message_audio(
             await release_reservation()
             raise
 
-    return {
-        "ready": True,
-        "url": f"/api/messages/{message.id}/audio/file",
-        "format": fmt,
-        "size": path.stat().st_size,
-    }
+        return {
+            "ready": True,
+            "url": f"/api/messages/{message.id}/audio/file",
+            "format": fmt,
+            "size": path.stat().st_size,
+        }
+    finally:
+        finish_audio_generation(user.id, message.id)
+
+

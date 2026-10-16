@@ -30,6 +30,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_tts.py' -v
       - name: Test rolling audio generation quota
         run: python -m unittest discover -s tests -p 'test_audio_quota.py' -v
+      - name: Test parallel audio generation guard
+        run: python -m unittest discover -s tests -p 'test_audio_state.py' -v
       - name: Test isolated sandbox execution and authentication
         run: sudo python -m unittest discover -s tests -p 'test_sandbox_runner.py' -v
       - name: Check browser JavaScript syntax
@@ -54,9 +56,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=37" not in html:
+          if "/assets/css/app.css?v=39" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=42" not in html:
+          if "/assets/js/app.js?v=45" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -78,6 +80,8 @@ jobs:
               'data-mact="copy-user"',
               'data-mact="generate-audio"',
               'data-mact="play-audio"',
+              'function startAudioStatusPolling()',
+              'navigator.mediaSession.setActionHandler',
               "if (!Array.isArray(nodes) || id == null) return null;",
               "const rawIndex = selected[parentKey];",
               "typeof node.id === 'string' && node.id",
@@ -85,6 +89,12 @@ jobs:
           missing = [token for token in required_js if token not in js]
           if missing:
               raise SystemExit("Missing message/audio interaction hooks: " + ", ".join(missing))
+          if 'id="i-gift-open"' not in html or 'class="auth-audio-promo"' not in html:
+              raise SystemExit("Login free-audio promo or open-gift icon is missing")
+          if 'active_audio_generation(user.id)' not in messages or 'generating_message_id' not in messages:
+              raise SystemExit("Server audio status must expose cross-device generation state")
+          if 'def begin_audio_generation' not in Path("app/services/audio_state.py").read_text(encoding="utf-8"):
+              raise SystemExit("Missing per-user audio generation guard")
           if 'data-sugg="' in js:
               raise SystemExit("Post-answer follow-up suggestion buttons must stay removed")
           if any(token in router for token in ("_run_suggestions", "_parse_suggestions")):

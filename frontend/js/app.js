@@ -153,18 +153,18 @@
         push('x', s.x || 0); push('y', s.y || 0);
         push('width', s.w || 0); push('height', s.h || 0);
         if (s.rx) push('rx', s.rx);
-        if (s.fill == null && s.stroke == null) push('fill', '#c96442');
+        if (s.fill == null && s.stroke == null) push('fill', '#4b4a46');
         common();
         return '<rect ' + a.join(' ') + '/>';
       case 'circle':
         push('cx', s.cx || 0); push('cy', s.cy || 0); push('r', s.r || 0);
-        if (s.fill == null) push('fill', '#c96442');
+        if (s.fill == null) push('fill', '#4b4a46');
         common();
         return '<circle ' + a.join(' ') + '/>';
       case 'ellipse':
         push('cx', s.cx || 0); push('cy', s.cy || 0);
         push('rx', s.rx || 0); push('ry', s.ry || 0);
-        if (s.fill == null) push('fill', '#c96442');
+        if (s.fill == null) push('fill', '#4b4a46');
         common();
         return '<ellipse ' + a.join(' ') + '/>';
       case 'line':
@@ -187,7 +187,7 @@
         push('d', 'M ' + x0.toFixed(2) + ' ' + y0.toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' +
           large + ' 1 ' + x1.toFixed(2) + ' ' + y1.toFixed(2));
         push('fill', s.fill || 'none');
-        push('stroke', s.stroke || '#c96442');
+        push('stroke', s.stroke || '#4b4a46');
         push('stroke-width', s.width || 2);
         push('opacity', s.opacity);
         if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
@@ -233,10 +233,10 @@
       case 'polygon': {
         push('points', pts(s.points));
         if (String(s.type) === 'polygon') {
-          if (s.fill == null) push('fill', '#c96442');
+          if (s.fill == null) push('fill', '#4b4a46');
         } else {
           push('fill', 'none');
-          push('stroke', s.stroke || '#c96442');
+          push('stroke', s.stroke || '#4b4a46');
           push('stroke-width', s.width || 2);
         }
         common();
@@ -245,7 +245,7 @@
       case 'path':
         push('d', s.d || '');
         push('fill', s.fill || 'none');
-        push('stroke', s.stroke || '#c96442');
+        push('stroke', s.stroke || '#4b4a46');
         push('stroke-width', s.width || 2);
         push('opacity', s.opacity);
         if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
@@ -516,6 +516,11 @@
     audioReady: Object.create(null),
     audioPending: Object.create(null),
     audioStatusRequested: new Set(),
+    audioStatusChatId: null,
+    audioRequestInFlight: Object.create(null),
+    audioBusyMessageId: null,
+    audioStatusPollTimer: null,
+    audioStatusPollRunning: false,
     audioMessageId: null,
     audioDuration: 0,
     greetIdx: Math.floor(Math.random() * 100),
@@ -1002,6 +1007,14 @@
           '<span class="audio-preview-play">' + icon('play') + '</span>' +
         '</button></div>';
     }
+    if (state.audioBusyMessageId) {
+      const sameMessage = String(state.audioBusyMessageId) === String(n.id);
+      return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
+        '<button class="answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
+          '<span class="audio-loading-ring"></span><span>' +
+          (sameMessage ? 'Создаю озвучку…' : 'Другая озвучка уже создаётся…') +
+          '</span></button></div>';
+    }
     return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
       '<button class="answer-audio-generate" data-mact="generate-audio" data-id="' + id + '" title="Создать голосовую версию ответа">' +
         icon('audio') + '<span>Аудиоверсия ответа</span></button></div>';
@@ -1013,39 +1026,125 @@
     if (wrapper && entry) wrapper.innerHTML = audioControlHtml(entry);
   }
 
-  function hydrateAudioStatuses(entries) {
-    if (state.readonly) return;
-    entries.forEach(entry => {
-      const n = entry.node;
-      if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
-      if (state.audioStatusRequested.has(n.id)) return;
-      state.audioStatusRequested.add(n.id);
-      api.get('/api/messages/' + encodeURIComponent(n.id) + '/audio/status')
-        .then(result => {
-          if (result && result.ready) {
-            state.audioReady[n.id] = true;
-            updateAudioControl(n.id);
-          }
-        })
-        .catch(() => { /* audio is optional; keep the generate button available */ });
+  function updateAllAudioControls() {
+    allMessages(state.tree).forEach(entry => {
+      const n = entry && entry.node;
+      if (n && n.role === 'assistant' && n.status === 'completed' && String(n.content || '').trim()) {
+        updateAudioControl(n.id);
+      }
     });
   }
 
-  async function generateAnswerAudio(messageId) {
-    if (state.audioPending[messageId]) return;
-    state.audioPending[messageId] = true;
+  function applyAudioStatus(messageId, result) {
+    if (!result) return;
+    const previousBusyId = state.audioBusyMessageId;
+    if (result.busy && result.generating_message_id) {
+      state.audioBusyMessageId = String(result.generating_message_id);
+    } else if (!result.busy && !(previousBusyId && state.audioRequestInFlight[previousBusyId])) {
+      state.audioBusyMessageId = null;
+      if (previousBusyId && String(previousBusyId) !== String(messageId) && !state.audioRequestInFlight[previousBusyId]) {
+        state.audioPending[previousBusyId] = false;
+        state.audioStatusRequested.delete(previousBusyId);
+        updateAudioControl(previousBusyId);
+      }
+    }
+
+    if (result.ready) {
+      state.audioReady[messageId] = true;
+      state.audioPending[messageId] = false;
+    } else if (result.generating) {
+      state.audioPending[messageId] = true;
+    } else if (!state.audioRequestInFlight[messageId]) {
+      state.audioPending[messageId] = false;
+    }
+
+    if (previousBusyId !== state.audioBusyMessageId) updateAllAudioControls();
     updateAudioControl(messageId);
+  }
+
+  async function refreshAudioStatus(messageId) {
+    try {
+      const result = await api.get('/api/messages/' + encodeURIComponent(messageId) + '/audio/status');
+      applyAudioStatus(messageId, result);
+      return result;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function startAudioStatusPolling() {
+    if (state.readonly || state.audioStatusPollTimer) return;
+    state.audioStatusPollTimer = window.setInterval(async () => {
+      if (state.audioStatusPollRunning || state.readonly) return;
+      const entries = allMessages(state.tree);
+      const messages = entries
+        .map(entry => entry && entry.node)
+        .filter(n => n && n.role === 'assistant' && n.status === 'completed' && String(n.content || '').trim());
+      if (!messages.length) {
+        window.clearInterval(state.audioStatusPollTimer);
+        state.audioStatusPollTimer = null;
+        return;
+      }
+      const active = state.audioBusyMessageId &&
+        messages.find(n => String(n.id) === String(state.audioBusyMessageId));
+      const monitor = active || messages[messages.length - 1];
+      state.audioStatusPollRunning = true;
+      try {
+        await refreshAudioStatus(monitor.id);
+      } finally {
+        state.audioStatusPollRunning = false;
+      }
+    }, 2500);
+  }
+
+  function hydrateAudioStatuses(entries) {
+    if (state.readonly) return;
+    if (state.audioStatusChatId !== state.currentChatId) {
+      state.audioStatusRequested.clear();
+      state.audioStatusChatId = state.currentChatId;
+    }
+    let hasCompletedAnswer = false;
+    entries.forEach(entry => {
+      const n = entry.node;
+      if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
+      hasCompletedAnswer = true;
+      if (state.audioStatusRequested.has(n.id) && !state.audioPending[n.id] &&
+          String(state.audioBusyMessageId || '') !== String(n.id)) return;
+      state.audioStatusRequested.add(n.id);
+      refreshAudioStatus(n.id);
+    });
+    // Poll the server while this chat has answers so generation started on
+    // another device appears here too, and its completion is reflected.
+    if (hasCompletedAnswer) startAudioStatusPolling();
+  }
+
+  async function generateAnswerAudio(messageId) {
+    if (state.audioPending[messageId] || state.audioRequestInFlight[messageId]) return;
+    if (state.audioBusyMessageId && String(state.audioBusyMessageId) !== String(messageId)) {
+      toast('Уже создаётся другая озвучка. Дождитесь завершения.', 'error');
+      return;
+    }
+    state.audioRequestInFlight[messageId] = true;
+    state.audioPending[messageId] = true;
+    state.audioBusyMessageId = String(messageId);
+    updateAllAudioControls();
+    startAudioStatusPolling();
     try {
       const result = await api.post('/api/messages/' + encodeURIComponent(messageId) + '/audio', {});
+      state.audioRequestInFlight[messageId] = false;
       state.audioPending[messageId] = false;
       state.audioReady[messageId] = !!(result && result.ready);
       state.audioStatusRequested.add(messageId);
-      updateAudioControl(messageId);
+      state.audioBusyMessageId = null;
+      updateAllAudioControls();
       toast('Озвучка готова — нажмите на аудиокарточку');
     } catch (err) {
+      state.audioRequestInFlight[messageId] = false;
       state.audioPending[messageId] = false;
-      updateAudioControl(messageId);
+      if (String(state.audioBusyMessageId) === String(messageId)) state.audioBusyMessageId = null;
+      updateAllAudioControls();
       toast('Не удалось озвучить ответ: ' + (err.message || 'ошибка сервера'), 'error');
+      await refreshAudioStatus(messageId);
     }
   }
 
@@ -1080,7 +1179,15 @@
     if (!shell || !audio) return;
     state.audioMessageId = messageId;
     const chat = state.chats.find(c => c.id === state.currentChatId);
-    $('#audio-player-title').textContent = (chat && chat.title) || 'Ответ';
+    const playerTitle = (chat && chat.title) || 'Ответ';
+    $('#audio-player-title').textContent = playerTitle;
+    if (navigator.mediaSession && typeof window.MediaMetadata === 'function') {
+      try {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: playerTitle, artist: 'ai-ch', album: 'Озвучка ответов',
+        });
+      } catch (e) { /* media metadata is optional */ }
+    }
     audio.pause();
     audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
     audio.load();
@@ -1115,15 +1222,24 @@
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();
     });
-    $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
-      const action = btn.dataset.audioAction;
-      if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
-      else if (action === 'forward') {
-        const end = Number.isFinite(audio.duration) ? audio.duration : audio.currentTime + 10;
-        audio.currentTime = Math.min(end, (audio.currentTime || 0) + 10);
-      }
+    const seekAudio = (offset) => {
+      const current = Number(audio.currentTime) || 0;
+      const duration = Number.isFinite(audio.duration) ? audio.duration : current + 10;
+      audio.currentTime = Math.max(0, Math.min(duration, current + offset));
       updateAudioPlayerControls();
+    };
+    $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+      if (btn.dataset.audioAction === 'back') seekAudio(-10);
+      else if (btn.dataset.audioAction === 'forward') seekAudio(10);
     }));
+    // Headset/media-key previous and next track buttons act as ±10 second seek.
+    if (navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function') {
+      [['previoustrack', () => seekAudio(-10)], ['nexttrack', () => seekAudio(10)],
+       ['seekbackward', () => seekAudio(-10)], ['seekforward', () => seekAudio(10)]]
+        .forEach(([action, handler]) => {
+          try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) { /* unsupported media action */ }
+        });
+    }
     $('#audio-progress')?.addEventListener('input', ev => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         audio.currentTime = (Number(ev.target.value) / 1000) * audio.duration;
@@ -3314,7 +3430,7 @@
         'Ответьте одной строкой — оформлю в лучшем виде.',
     },
     {
-      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#e8834f',
+      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#55544f',
       title: 'Презентация',
       questions: '**Презентация.** Расскажите:\n\n' +
         '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
@@ -3338,7 +3454,7 @@
         'Если нужен полноценный проект с файлами — опишите задачу, я напишу код и файлы.',
     },
     {
-      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#c0563f',
+      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#4b4a46',
       title: 'Схема',
       questions: '**Схема.** Опишите:\n\n' +
         '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
@@ -3351,7 +3467,7 @@
       questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
     { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#a03f6f', title: 'Объяснение',
       questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
-    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#8a4a2f', title: 'План',
+    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#4b4a46', title: 'План',
       questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
     { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
       questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },

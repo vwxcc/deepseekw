@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=35" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=36" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -109,6 +109,9 @@
         <button class="side-item wide sidebar-limits hidden" id="sidebar-limits-btn" title="Настроить тарифы и лимиты">
           <svg class="ic"><use href="#i-settings"/></svg><span>Настройки лимитов</span>
         </button>
+        <button class="chip-btn context mem-quick sidebar-memory" id="mem-quick-btn" title="Память: факты и предпочтения">
+          <svg class="ic"><use href="#i-brain"/></svg><span>Память</span>
+        </button>
         <div class="side-row primary-actions">
           <button class="new-chat" id="new-chat-btn" title="Новый чат">
             <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
@@ -160,9 +163,6 @@
           <textarea id="input" rows="1" placeholder="Написать сообщение…"></textarea>
           <div class="composer-row">
             <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-paperclip"/></svg></button>
-            <button class="chip-btn context mem-quick" id="mem-quick-btn" title="Память: факты и предпочтения">
-              <svg class="ic"><use href="#i-brain"/></svg>
-            </button>
             <span class="spacer"></span>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
@@ -208,9 +208,7 @@
       <div class="audio-sheet-head">
         <div class="audio-sheet-art" aria-hidden="true"><svg class="ic"><use href="#i-audio"/></svg></div>
         <div class="audio-sheet-titles">
-          <span class="audio-sheet-kicker">VOICE PLAYER</span>
-          <h2 id="audio-player-title">Аудиоверсия ответа</h2>
-          <p id="audio-player-subtitle">Голосовая версия ответа</p>
+          <h2 id="audio-player-title">ChatStudio</h2>
         </div>
         <button class="icon-btn audio-player-close" id="audio-close-btn" type="button" data-audio-close title="Закрыть плеер" aria-label="Закрыть плеер"><svg class="ic"><use href="#i-x"/></svg></button>
       </div>
@@ -222,10 +220,8 @@
       <div class="audio-player-controls">
         <button class="audio-skip-btn" type="button" data-audio-action="back" title="Назад на 10 секунд" aria-label="Назад на 10 секунд"><svg class="ic"><use href="#i-back-10"/></svg></button>
         <button class="audio-main-play" type="button" id="audio-play-toggle" title="Воспроизвести" aria-label="Воспроизвести"><svg class="ic"><use href="#i-play"/></svg></button>
-        <button class="audio-skip-btn" type="button" data-audio-action="stop" title="Остановить и в начало" aria-label="Остановить и в начало"><svg class="ic"><use href="#i-stop"/></svg></button>
         <button class="audio-skip-btn" type="button" data-audio-action="forward" title="Вперёд на 10 секунд" aria-label="Вперёд на 10 секунд"><svg class="ic"><use href="#i-forward-10"/></svg></button>
       </div>
-      <div class="audio-sheet-foot"><span class="audio-foot-dot"></span> Озвучка ответа · локальный плеер</div>
     </section>
   </div>
 
@@ -235,6 +231,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=40"></script>
+  <script src="/assets/js/app.js?v=41"></script>
 </body>
 </html>

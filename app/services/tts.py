@@ -32,6 +32,83 @@ class TTSGenerationError(RuntimeError):
     """Raised when the configured TTS provider cannot return usable audio."""
 
 
+async def prepare_spoken_text(value: str) -> str:
+    """Use one explicitly configured OpenAI-compatible model to verbalize notation."""
+    base_url = (settings.tts_preprocess_base_url or "").strip().rstrip("/")
+    api_key = (settings.tts_preprocess_api_key or "").strip()
+    model = (settings.tts_preprocess_model or "").strip()
+    if not base_url or not model:
+        raise TTSNotConfiguredError(
+            "Для понятной озвучки задайте TTS_PREPROCESS_BASE_URL, "
+            "TTS_PREPROCESS_API_KEY и TTS_PREPROCESS_MODEL."
+        )
+    source = str(value or "").strip()
+    if not source:
+        raise ValueError("В ответе нет текста для озвучки.")
+    limit = max(1000, int(settings.tts_max_chars or 30000))
+    if len(source) > limit:
+        source = source[:limit].rsplit(" ", 1)[0].rstrip() + "…"
+
+    system_prompt = (
+        "Ты — редактор текста для русской голосовой озвучки. Преобразуй исходный ответ "
+        "в полный естественный текст, который TTS сможет произнести понятно. Верни ТОЛЬКО "
+        "готовый текст для произношения, без комментариев о своей работе и без Markdown. "
+        "Сохраняй все факты, ход решения, числа, единицы измерения, порядок действий и смысл. "
+        "Ничего не додумывай и не сокращай математическое содержание. Любую формулу, LaTeX, "
+        "слеши, кодовые обозначения и символы переводи в однозначные слова по-русски. "
+        "Дроби произноси как «в числителе ...; в знаменателе ...» или «... делённое на ...». "
+        "Интегралы — как «интеграл от ... по ... от ... до ...» с проговариванием пределов; "
+        "корни — «квадратный корень из ...», степени — «... в степени ...», индексы — "
+        "«... с индексом ...». Скобки, модули, суммы, пределы, производные, векторы, "
+        "греческие буквы, логические и множественные знаки проговаривай словами. "
+        "В геометрии проговаривай обозначения точек, отрезков, углов, параллельности, "
+        "перпендикулярности, подобия и равенства. В физике и химии расшифровывай обозначения "
+        "в контексте, индексы и единицы измерения, формулы веществ произноси как названия "
+        "или последовательность символов, не меняя состав. В русском языке и лингвистике "
+        "произноси знаки транскрипции, ударения, морфемные границы и сокращения понятным "
+        "образом. В информатике объясняй символы кода словами, но не исполняй код и не "
+        "выдумывай его смысл. Сохраняй обычную прозу обычной прозой. Не произноси URL, "
+        "служебную разметку и декоративные Markdown-символы. Не заменяй формулу фразой "
+        "«формула пропущена»: всё значимое должно быть проговорено."
+    )
+    endpoint = base_url if base_url.endswith("/chat/completions") else base_url + "/chat/completions"
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = "Bearer " + api_key
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Подготовь этот ответ к озвучке, сохранив содержание:\n\n" + source},
+        ],
+        "temperature": max(0.0, min(float(settings.tts_preprocess_temperature or 0.1), 0.5)),
+        "max_tokens": max(256, min(int(settings.tts_preprocess_max_tokens or 12000), 24000)),
+    }
+    timeout = max(10, min(int(settings.tts_preprocess_timeout or 180), 600))
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15)) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+    except httpx.TimeoutException as exc:
+        raise TTSGenerationError("ИИ-подготовщик текста для озвучки не ответил вовремя.") from exc
+    except httpx.HTTPError as exc:
+        raise TTSGenerationError("Не удалось связаться с ИИ-подготовщиком озвучки.") from exc
+    if response.status_code < 200 or response.status_code >= 300:
+        raise TTSGenerationError(f"ИИ-подготовщик озвучки вернул HTTP {response.status_code}.")
+    try:
+        data = response.json()
+        prepared = data["choices"][0]["message"]["content"]
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise TTSGenerationError("ИИ-подготовщик озвучки вернул ответ неизвестного формата.") from exc
+    if isinstance(prepared, list):
+        prepared = " ".join(
+            item.get("text", "") for item in prepared if isinstance(item, dict)
+        )
+    prepared = clean_tts_text(str(prepared or ""))
+    if not prepared:
+        raise TTSGenerationError("ИИ-подготовщик вернул пустой текст для озвучки.")
+    return prepared
+
+
 def audio_file_path(user_id: str, message_id: str, fmt: str | None = None) -> Path:
     """Return a private, non-user-controlled path for a message's cached audio."""
     audio_format = normalized_audio_format(fmt)
@@ -73,7 +150,7 @@ async def generate_speech(text: str) -> tuple[bytes, str]:
     if not base_url:
         raise TTSNotConfiguredError("Задайте TTS_BASE_URL в переменных окружения сервиса.")
     fmt = normalized_audio_format()
-    cleaned = clean_tts_text(text)
+    cleaned = await prepare_spoken_text(text)
     if not cleaned:
         raise ValueError("В ответе нет текста для озвучки.")
 

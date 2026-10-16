@@ -12,13 +12,23 @@ from app.services.tts import (
 
 
 class FakeResponse:
-    status_code = 200
-    headers = {"content-type": "audio/mpeg"}
-    content = b"fake-mp3-bytes"
+    def __init__(self, url):
+        self.status_code = 200
+        if url.endswith("/chat/completions"):
+            self.headers = {"content-type": "application/json"}
+            self.content = b'{"choices":[{"message":{"content":"\u041f\u0440\u0438\u0432\u0435\u0442, \u043c\u0438\u0440."}}]}'
+        else:
+            self.headers = {"content-type": "audio/mpeg"}
+            self.content = b"fake-mp3-bytes"
+
+    def json(self):
+        import json
+        return json.loads(self.content)
 
 
 class FakeClient:
     last_request = None
+    requests = []
 
     def __init__(self, *args, **kwargs):
         self.args = args
@@ -31,8 +41,10 @@ class FakeClient:
         return False
 
     async def post(self, url, *, headers, json):
-        FakeClient.last_request = {"url": url, "headers": headers, "json": json}
-        return FakeResponse()
+        request = {"url": url, "headers": headers, "json": json}
+        FakeClient.last_request = request
+        FakeClient.requests.append(request)
+        return FakeResponse(url)
 
 
 class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
@@ -77,7 +89,14 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_openai_compatible_audio_request(self):
         FakeClient.last_request = None
+        FakeClient.requests = []
         with (
+            patch.object(settings, "tts_preprocess_base_url", "https://prep.example/v1"),
+            patch.object(settings, "tts_preprocess_api_key", "prep-secret"),
+            patch.object(settings, "tts_preprocess_model", "verbalizer"),
+            patch.object(settings, "tts_preprocess_temperature", 0.1),
+            patch.object(settings, "tts_preprocess_max_tokens", 12000),
+            patch.object(settings, "tts_preprocess_timeout", 180),
             patch.object(settings, "tts_base_url", "https://speech.example/v1"),
             patch.object(settings, "tts_api_key", "test-secret"),
             patch.object(settings, "tts_model", "voice-model"),
@@ -95,6 +114,12 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["json"]["voice"], "ru-RU")
         self.assertEqual(request["json"]["input"], "Привет, мир.")
         self.assertEqual(request["json"]["response_format"], "mp3")
+        self.assertEqual(len(FakeClient.requests), 2)
+        prep_request = FakeClient.requests[0]
+        self.assertEqual(prep_request["url"], "https://prep.example/v1/chat/completions")
+        self.assertEqual(prep_request["headers"]["Authorization"], "Bearer prep-secret")
+        self.assertEqual(prep_request["json"]["model"], "verbalizer")
+        self.assertIn("Привет, **мир**.", prep_request["json"]["messages"][1]["content"])
 
 
 if __name__ == "__main__":

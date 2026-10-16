@@ -928,17 +928,17 @@
             icon('globe') + '<b class="cnt">' + n.sources.length + '</b></button>');
         }
         if (n.content) {
-          parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="copy" data-id="' + escapeHtml(n.id) +
-            '" title="Копировать ответ" aria-label="Копировать ответ">' + icon('copy') + '</button>');
-          parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="save" data-id="' + escapeHtml(n.id) +
-            '" title="Сохранить ответ" aria-label="Сохранить ответ">' + icon('download') + '</button>');
+          parts.push('<button class="message-action-labeled" data-mact="copy" data-id="' + escapeHtml(n.id) +
+            '" title="Копировать ответ" aria-label="Копировать ответ">' + icon('copy') + '<span>Копировать</span></button>');
+          parts.push('<button class="message-action-labeled" data-mact="save" data-id="' + escapeHtml(n.id) +
+            '" title="Сохранить ответ" aria-label="Сохранить ответ">' + icon('download') + '<span>Сохранить</span></button>');
           if (n.memories && n.memories.length) {
             parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="memory" data-id="' + escapeHtml(n.id) +
               '" title="Что записано в память" aria-label="Память">' + icon('sparkle') + '</button>');
           }
         }
-        parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="retry" data-id="' + escapeHtml(n.id) +
-          '" title="Повторить ответ" aria-label="Повторить ответ">' + icon('refresh') + '</button>');
+        parts.push('<button class="message-action-labeled" data-mact="retry" data-id="' + escapeHtml(n.id) +
+          '" title="Повторить ответ" aria-label="Повторить ответ">' + icon('refresh') + '<span>Повторить</span></button>');
       }
       meta = '<div class="meta">' + parts.join('') + '</div>';
     }
@@ -1635,6 +1635,11 @@
             n.draft = ''; n.creating = false;
           }
           renderMessages({ focusMessageId: n ? n.id : null });
+          // Start the complete preprocess -> TTS pipeline as soon as the final
+          // answer arrives. It runs in the background and never blocks the chat.
+          if (n && !state.readonly && String(n.content || '').trim() && !state.audioReady[n.id] && !state.audioPending[n.id]) {
+            generateAnswerAudio(n.id).catch((err) => console.warn('Automatic answer audio failed:', err));
+          }
           loadUsage();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id) ||

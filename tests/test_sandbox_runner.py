@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,9 @@ from sandbox import server
 class SandboxRunnerTests(unittest.TestCase):
     def test_executes_under_restricted_identity_and_transfers_artifacts(self) -> None:
         with tempfile.TemporaryDirectory(prefix="ai-ch-sandbox-test-") as tmp:
+            # The runner child drops privileges, so its ancestor directory
+            # must be traversable just like /work in the deployed container.
+            os.chmod(tmp, 0o711)
             root = Path(tmp) / "work"
             root.mkdir()
             projects = root / "projects"
@@ -45,7 +49,7 @@ class SandboxRunnerTests(unittest.TestCase):
         handler = object.__new__(server.Handler)
         handler.headers = Message()
         with (
-            patch.dict("os.environ", {"SANDBOX_API_KEY": "test-secret", "SANDBOX_REQUIRE_AUTH": "1"}),
+            patch.dict(os.environ, {"SANDBOX_API_KEY": "test-secret", "SANDBOX_REQUIRE_AUTH": "1"}),
         ):
             self.assertFalse(handler._authorized())
             handler.headers["Authorization"] = "Bearer test-secret"

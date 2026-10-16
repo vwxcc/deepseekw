@@ -280,6 +280,17 @@ a { color: var(--accent); }
 }
 .msg.assistant .content { word-wrap: break-word; }
 .msg.assistant .content:empty { display: none; }
+/* A quick, soft reveal for a newly completed answer — no artificial typing delay. */
+.msg.assistant .content.answer-arrive {
+  animation: answerReveal .24s cubic-bezier(.2, .75, .25, 1) both;
+}
+@keyframes answerReveal {
+  from { opacity: .35; transform: translateY(5px); filter: blur(1px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg.assistant .content.answer-arrive { animation-duration: .12s; }
+}
 
 .msg .meta {
   margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
@@ -1267,7 +1278,7 @@ input[type="range"].orange-range { width: 100%; }
 .tiles::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .tile-track {
   display: flex; align-items: center; width: max-content;
-  will-change: transform; animation: tileMarquee 36s linear infinite;
+  will-change: transform; animation: tileMarquee 24s linear infinite;
 }
 .tile-sequence {
   display: flex; align-items: center; gap: 18px; flex: 0 0 auto; padding-right: 18px;
@@ -1301,7 +1312,7 @@ input[type="range"].orange-range { width: 100%; }
 .tile-lock .ic { width: 10px; height: 10px; }
 @media (prefers-reduced-motion: reduce) {
   /* The icon row must keep moving; overflow remains clipped so no scrollbar appears. */
-  .tile-track { animation: tileMarquee 36s linear infinite; }
+  .tile-track { animation: tileMarquee 24s linear infinite; }
   .tiles { overflow: hidden; overflow-x: hidden; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%); }
 }
 

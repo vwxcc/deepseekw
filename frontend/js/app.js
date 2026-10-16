@@ -3595,6 +3595,12 @@
   async function boot() {
     showApp();
     applySidebar();
+
+    // The empty welcome screen needs no server data. Render it immediately
+    // rather than waiting for the sidebar, files, models, memory and limits.
+    const welcomeRenderedEarly = !state.currentChatId && allMessages(state.tree).length === 0;
+    if (welcomeRenderedEarly) renderMessages();
+
     if (state.user && state.user.is_admin) {
       $('#sidebar-limits-btn').classList.remove('hidden');
       await loadSystem();
@@ -3607,7 +3613,12 @@
     await loadMemory();
     await loadLimits();
     await loadUsage();
-    renderMessages();
+
+    // Avoid rebuilding the welcome block (and restarting its animation) once
+    // background data has arrived. If a chat was opened meanwhile, render it.
+    if (!welcomeRenderedEarly || state.currentChatId || allMessages(state.tree).length) {
+      renderMessages();
+    }
   }
 
   async function init() {

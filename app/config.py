@@ -37,9 +37,9 @@ class Settings(BaseSettings):
 
     # --- Web search (SearXNG) ---
     web_search_enabled: bool = True
-    searxng_url: str = "http://searxng-web:8080"
+    searxng_url: str = ""
     web_search_results: int = 5
-    web_search_timeout: int = 12
+    web_search_timeout: int = 8
     # context window of the default model, used for the "usage %" widget
     model_context_len: int = 262144
     # --- Agent (sandboxed code execution) ---
@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     agent_timeout: int = 40
     # isolated runner (separate container, internal network, no internet)
     sandbox_url: str = "http://chatstudio-sandbox:8000"
+    # Set to the same high-entropy key on the app and the separate sandbox service.
+    sandbox_api_key: str = ""
     sandbox_work_dir: str = "/app/data/sandbox"
     sandbox_concurrency: int = 2
     sandbox_queue_limit: int = 12

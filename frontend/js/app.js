@@ -1292,7 +1292,18 @@
       await consumeSse(res, (ev, data) => {
         armWatchdog(330000);
         state.lastEvent = Date.now();
-        if (ev === 'user_message' || ev === 'assistant_message') {
+        if (ev === 'chat_created') {
+          // The combined endpoint tells the UI which chat now owns this stream.
+          if (data && data.id) {
+            state.currentChatId = data.id;
+            const index = state.chats.findIndex(c => c.id === data.id);
+            if (index >= 0) state.chats[index] = data;
+            else state.chats.unshift(data);
+            const title = $('#chat-title');
+            if (title) title.textContent = data.title || 'Новый чат';
+            renderChatList();
+          }
+        } else if (ev === 'user_message' || ev === 'assistant_message') {
           const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
           let node = null;
           if (tmp) {
@@ -1426,6 +1437,12 @@
         : usefulErrorMessage(err, 'Неизвестная ошибка при отправке запроса');
       if (!responseReceived && opts && opts.optimistic && opts.input) {
         restoreUnsentDraft(opts.input, opts.draft || '');
+        const unsent = Array.isArray(opts.attachments) ? opts.attachments : [];
+        if (unsent.length) {
+          const present = new Set(state.pendingAttachments.map(f => f.id));
+          state.pendingAttachments = unsent.filter(f => !present.has(f.id)).concat(state.pendingAttachments);
+          renderAttachments();
+        }
       }
       toast('Ошибка: ' + friendlyError, 'error');
       // the optimistic messages must not hang — turn them into a plain error
@@ -1504,11 +1521,12 @@
 
   async function sendCurrent() {
     const input = $('#input');
+    if (!input) return;
     const draft = input.value;
     const content = draft.trim();
     if (!content || state.streaming || state.sending) return;
 
-    // Freeze this request's attachment selection; newly added files stay for the next send.
+    // Freeze the current attachment selection; new attachments stay for the next message.
     const sentAttachments = state.pendingAttachments.slice();
     const attachments = sentAttachments.map(f => f.id);
     const attList = sentAttachments.map(f => ({
@@ -1517,37 +1535,18 @@
     }));
     const isNewChat = !state.currentChatId;
 
-    // Keep the draft in the composer until the new-chat API confirms a valid chat.
-    // The preparing state blocks duplicate submissions but doesn't erase user text.
     state.sending = true;
     setSendPreparing(true);
     let requestStarted = false;
     try {
+      // Create the chat and send its first message via one request.
       if (isNewChat) {
-        const chat = await api.postTimed('/api/chats', { title: 'Новый чат' }, 120000);
-        if (!chat || typeof chat !== 'object' || !chat.id) {
-          throw new Error('API /api/chats вернул пустой ответ: чат не создан. Проверьте журнал сервера.');
-        }
-        state.chats.unshift(chat);
-        state.currentChatId = chat.id;
         state.tree = [];
         state.choices = {};
-        $('#chat-title').textContent = chat.title || 'Новый чат';
-        renderChatList();
       }
-
-      // Continue the active branch: the last message of the visible path.
       const path = activePath(state.tree, state.choices);
-      const parentId = path.length ? path[path.length - 1].node.id : null;
+      const parentId = isNewChat ? null : (path.length ? path[path.length - 1].node.id : null);
 
-      // Only clear the composer if it still contains the draft being sent.
-      // Text typed during chat creation is preserved for the next message.
-      if (input.value === draft) {
-        input.value = '';
-        autoGrow();
-      }
-
-      // Optimistic render: show both messages before waiting for the server stream.
       const userId = 'tmp_u_' + Date.now().toString(36);
       const asstId = 'tmp_a_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const userNode = {
@@ -1559,7 +1558,7 @@
         id: asstId, role: 'assistant', content: '', status: 'processing',
         parent_message_id: userId, children: [],
         created_at: new Date().toISOString(),
-        creating: isNewChat, creatingLabel: isNewChat ? 'Отправляю запрос…' : 'Запрос отправляется…',
+        creating: true, creatingLabel: isNewChat ? 'Создаю чат и отправляю запрос…' : 'Запрос отправляется…',
         error: null,
       };
       const parentNode = parentId ? findNode(state.tree, parentId) : null;
@@ -1572,26 +1571,32 @@
       state.activeAssistantId = asstId;
       renderMessages();
 
-      // Remove only files included in this request; keep any newly added files.
       const sentIds = new Set(attachments);
       state.pendingAttachments = state.pendingAttachments.filter(f => !sentIds.has(f.id));
       renderAttachments();
 
-      // The SSE handlers replace these temporary nodes in place.
       state.tmpUser = { id: userId, content };
       state.tmpAssistant = { id: asstId };
-      const request = streamRequest('/api/chats/' + state.currentChatId + '/messages',
-        {
-          content,
-          parent_message_id: parentId,
-          attachment_ids: attachments,
-          model_set_id: state.modelSetId || null,
-          web_search: true,
-          effort: state.effort,
-          style: state.style,
-        }, { optimistic: true, input, draft });
+      const endpoint = isNewChat
+        ? '/api/new-chat/messages'
+        : '/api/chats/' + encodeURIComponent(state.currentChatId) + '/messages';
+      const request = streamRequest(endpoint, {
+        content,
+        parent_message_id: parentId,
+        attachment_ids: attachments,
+        model_set_id: state.modelSetId || null,
+        web_search: true,
+        effort: state.effort,
+        style: state.style,
+      }, { optimistic: true, input, draft, attachments: sentAttachments });
       requestStarted = true;
-      // streamRequest synchronously turns on the normal streaming/stop controls.
+
+      // Clear only after the network request has actually started. If it fails
+      // before the SSE stream opens, streamRequest restores the text and files.
+      if (input.value === draft) {
+        input.value = '';
+        autoGrow();
+      }
       state.sending = false;
       setSendPreparing(false);
       await request;
@@ -1601,10 +1606,8 @@
       console.error(err);
       const message = usefulErrorMessage(err, 'Неизвестная ошибка при подготовке запроса');
       if (!requestStarted) {
-        // Since the input wasn't cleared before the chat was created, don't
-        // overwrite a newer draft the user may have started typing meanwhile.
         if (!(input.value || '').trim()) restoreUnsentDraft(input, draft);
-        toast('Не удалось подготовить запрос: ' + message + '. Текст сохранён.', 'error');
+        toast('Не удалось начать отправку: ' + message + '. Текст сохранён.', 'error');
       } else {
         toast('Ошибка при отправке запроса: ' + message, 'error');
       }
@@ -1615,7 +1618,6 @@
       setSendPreparing(false);
     }
   }
-
 
   // ---------- composer ----------
   function autoGrow() {

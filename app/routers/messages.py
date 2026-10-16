@@ -36,6 +36,7 @@ from ..models import (
     utcnow,
 )
 from ..schemas import (
+    ChatOut,
     CompressIn,
     MessageCreate,
     MessageOut,
@@ -436,6 +437,51 @@ async def send_message(
 
     return StreamingResponse(
         _stream_job(request, job, assistant, user_msg, user_atts),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
+
+
+@router.post("/new-chat/messages")
+async def send_first_message(
+    request: Request,
+    data: MessageCreate,
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a chat and start its first message through one streaming request."""
+    content = (data.content or "").strip()
+    if not content:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
+
+    # Validate attachments before creating a chat so invalid uploads do not leave
+    # an empty chat behind.
+    for fid in data.attachment_ids or []:
+        rec = await db.get(File, fid)
+        if rec is None or rec.user_id != user.id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Файл {fid} не найден")
+
+    # A new chat is always a new root branch.
+    data.parent_message_id = None
+    chat = Chat(user_id=user.id, title="Новый чат", mode="chat")
+    db.add(chat)
+    await db.commit()
+    await db.refresh(chat)
+
+    inner_response = await send_message(request, data, chat, user, None, db)
+    if not isinstance(inner_response, StreamingResponse):
+        return inner_response
+
+    chat_payload = ChatOut.model_validate(chat).model_dump(mode="json")
+
+    async def first_message_stream():
+        yield _sse("chat_created", chat_payload)
+        async for chunk in inner_response.body_iterator:
+            yield chunk
+
+    return StreamingResponse(
+        first_message_stream(),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )

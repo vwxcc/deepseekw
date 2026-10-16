@@ -44,10 +44,8 @@ class SandboxRunnerTests(unittest.TestCase):
             self.assertNotIn("content_base64", result["stdout"])
 
     def test_runner_rejects_unauthenticated_requests_when_key_is_required(self) -> None:
-        from email.message import Message
-
         handler = object.__new__(server.Handler)
-        handler.headers = Message()
+        handler.headers = {}
         with patch.object(
             server.os,
             "environ",

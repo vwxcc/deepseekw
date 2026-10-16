@@ -76,7 +76,13 @@ class Sandbox:
         if not code:
             return self._fail("Пустой код")
         if not settings.sandbox_url:
-            return await self._run_local(code, timeout)
+            if settings.sandbox_allow_local:
+                log.warning("Using opt-in local code runner; this is not suitable for a public multi-user app")
+                return await self._run_local(code, timeout)
+            return self._fail(
+                "Изолированная песочница не настроена. Укажите SANDBOX_URL "
+                "на отдельный сервис песочницы."
+            )
 
         sem = await self._semaphore()
         if self.waiting >= settings.sandbox_queue_limit:
@@ -201,13 +207,19 @@ class Sandbox:
         workdir = root / uuid.uuid4().hex
         workdir.mkdir(parents=True, exist_ok=True)
         (workdir / "main.py").write_text(code, encoding="utf-8")
+        # Do not expose web-app API keys or session secrets to the child process.
         env = {
-            **os.environ,
+            key: os.environ[key]
+            for key in ("PATH", "LANG", "LC_ALL", "TZ")
+            if os.environ.get(key)
+        }
+        env.update({
             "PYTHONUNBUFFERED": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
             "MPLBACKEND": "Agg",
             "HOME": str(workdir),
-        }
+            "TMPDIR": str(workdir),
+        })
 
         def _limits() -> None:
             try:

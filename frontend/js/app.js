@@ -838,10 +838,6 @@
             icon('globe') + 'Источники <b class="cnt">' + n.sources.length + '</b></button>');
         }
         if (n.content) {
-          parts.push('<button data-mact="rate-up" data-id="' + n.id + '" class="rate' +
-            (n.rating > 0 ? ' on' : '') + '" title="Хороший ответ">' + icon('thumb-up') + '</button>');
-          parts.push('<button data-mact="rate-down" data-id="' + n.id + '" class="rate' +
-            (n.rating < 0 ? ' on' : '') + '" title="Плохой ответ">' + icon('thumb-down') + '</button>');
           parts.push('<button data-mact="copy" data-id="' + n.id + '">' + icon('copy') + 'Копировать</button>');
           parts.push('<button data-mact="save" data-id="' + n.id + '" title="Сохранить как">' + icon('download') + 'Сохранить</button>');
           if (n.memories && n.memories.length) {
@@ -851,7 +847,6 @@
           parts.push('<button data-mact="delete" data-id="' + n.id + '" title="Удалить ответ">' + icon('trash') + '</button>');
         }
         parts.push('<button data-mact="retry" data-id="' + n.id + '">' + icon('refresh') + 'Повторить</button>');
-        if (n.content) parts.push('<button data-mact="continue" data-id="' + n.id + '">' + icon('continue') + 'Продолжить</button>');
       }
       meta = '<div class="meta">' + parts.join('') + '</div>';
     }
@@ -915,17 +910,20 @@
         icon('download') + '<span>' + escapeHtml(f.name) + '</span>' +
         '<em>' + formatSize(f.size) + '</em></a>';
     }).join('');
-    return '<div class="tool-box' + (r.ok ? '' : ' err') + '">' +
+    return '<div class="tool-box collapsed' + (r.ok ? '' : ' err') + '">' +
       '<div class="tool-head">' +
       (running ? thinkAnim() : icon('terminal')) +
-      '<span>Шаг ' + (i + 1) + ' — ' +
+      '<span class="tool-title">Шаг ' + (i + 1) + ' — ' +
       (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
-      (r.timed_out ? '<em class="warn">таймаут</em>' : '') + '</div>' +
+      (r.timed_out ? '<em class="warn">таймаут</em>' : '') +
+      '<button type="button" class="tool-toggle" data-tool-toggle aria-expanded="false" title="Развернуть вывод">' +
+      icon('chevron-down') + '<span data-tool-toggle-label>Развернуть</span></button></div>' +
+      '<div class="tool-content">' +
       '<pre class="tool-code">' + escapeHtml(r.code || '') + '</pre>' +
       (r.stdout ? '<pre class="tool-out">' + escapeHtml(r.stdout) + '</pre>' : '') +
       (r.stderr ? '<pre class="tool-err">' + escapeHtml(r.stderr) + '</pre>' : '') +
       (files ? '<div class="tool-files">' + files + '</div>' : '') +
-      '</div>';
+      '</div></div>';
   }
 
   function openSources(list) {
@@ -943,6 +941,7 @@
 
   function renderEmptyState() {
     const box = $('#messages');
+    box.classList.add('empty');
     box.innerHTML =
       '<div class="empty-state">' +
         '<h2 class="greet" id="greet-text">' +
@@ -1006,6 +1005,7 @@
     const box = $('#messages');
     const path = activePath(state.tree, state.choices);
     if (!path.length) { renderEmptyState(); return; }
+    box.classList.remove('empty');
     stopRotation();
     box.innerHTML = '<div class="msg-wrap">' +
       path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
@@ -1015,7 +1015,16 @@
   }
 
   function bindMessageEvents() {
-    $$('.ask-card').forEach(card => {
+    $('[data-tool-toggle]').forEach(btn => btn.addEventListener('click', () => {
+      const box = btn.closest('.tool-box');
+      if (!box) return;
+      const expanded = box.classList.toggle('collapsed') === false;
+      btn.setAttribute('aria-expanded', String(expanded));
+      btn.title = expanded ? 'Свернуть вывод' : 'Развернуть вывод';
+      const label = $('[data-tool-toggle-label]', btn);
+      if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
+    }));
+    $('.ask-card').forEach(card => {
       const input = $('.ask-input', card);
       const send = () => {
         const value = (input.value || '').trim();
@@ -2128,11 +2137,11 @@
           '<p class="usage-note">Поиск в интернете: всегда включён · Память: ' +
           ((state.memories || []).length) + ' записей<br/>' +
           'Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
-          '<h4 class="sec">Состояние сервера</h4>' +
-          '<div id="sys-block">' + systemRowsHtml() + '</div>' +
+          (isAdmin ? '<h4 class="sec">Состояние сервера</h4>' : '') +
+          (isAdmin ? '<div id="sys-block">' + systemRowsHtml() + '</div>' : '') +
           '<h4 class="sec">Разделы</h4>' +
           '<div class="settings-grid">' +
-          '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' +
+          (isAdmin ? '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' : '') +
           '<button class="chip-btn" id="set-memory">' + icon('sparkle') + 'Память</button>' +
           '<button class="chip-btn" id="set-links">' + icon('link') + 'Мои ссылки</button>' +
           '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
@@ -3219,7 +3228,12 @@
   async function boot() {
     showApp();
     applySidebar();
-    if (state.user && state.user.is_admin) $('#sidebar-limits-btn').classList.remove('hidden');
+    if (state.user && state.user.is_admin) {
+      $('#sidebar-limits-btn').classList.remove('hidden');
+      $('#models-btn').classList.remove('hidden');
+      await loadSystem();
+      setInterval(loadSystem, 20000);
+    }
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
     await loadChats();
     await loadFiles();
@@ -3228,8 +3242,6 @@
     await loadLimits();
     await loadUsage();
     renderMessages();
-    await loadSystem();
-    setInterval(loadSystem, 20000);
   }
 
   async function init() {
@@ -3243,6 +3255,18 @@
     } catch (e) {
       showAuth();
     }
+  }
+
+  function syncAppViewportHeight() {
+    const h = window.visualViewport && window.visualViewport.height
+      ? window.visualViewport.height
+      : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
+  }
+  syncAppViewportHeight();
+  window.addEventListener('resize', syncAppViewportHeight, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncAppViewportHeight, { passive: true });
   }
 
   document.addEventListener('DOMContentLoaded', init);

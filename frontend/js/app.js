@@ -3489,159 +3489,7 @@
                    'chats_count', 'messages_per_day', 'code_agents',
                    'agent_steps', 'council_members', 'sandbox_seconds'];
     const labels = {
-      budget_usd: 'Бюджет на окно, 
-      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день',
-      code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
-      council_members: 'Участников консилиума', sandbox_seconds: 'Секунд на код',
-    };
-    const rows = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
-      const mine = lim[k];
-      const theirs = pro[k];
-      let mult = '—';
-      if (theirs === null || theirs === undefined) mult = '∞';
-      else if (mine === null || mine === undefined) mult = '=';
-      else if (Number(mine) > 0) {
-        const m = Number(theirs) / Number(mine);
-        mult = m >= 1.05 ? '×' + (Math.round(m * 10) / 10) : '=';
-      }
-      return '<tr><td>' + (labels[k] || k) + '</td>' +
-        '<td>' + limitValueLabel(k, mine) + '</td>' +
-        '<td class="pro-col">' + limitValueLabel(k, theirs) + '</td>' +
-        '<td class="mult">' + mult + '</td></tr>';
-    }).join('');
-    const half = Math.ceil(rows.length / 2);
-    const head = '<thead><tr><th>Лимит</th><th>Сейчас</th><th>С подпиской</th><th>×</th></tr></thead>';
-    return '<div class="cmp-cols">' +
-      '<table class="cmp">' + head + '<tbody>' + rows.slice(0, half).join('') + '</tbody></table>' +
-      '<table class="cmp">' + head + '<tbody>' + rows.slice(half).join('') + '</tbody></table>' +
-      '</div>';
-  }
-
-  async function openUsageModal() {
-    await loadLimits();
-    const data = state.limits || {};
-    const lim = data.limits || {};
-    const pro = (data.compare && data.compare.pro) || {};
-    const plan = data.plan || 'free';
-    const w = data.window || null;
-    const use = data.usage || {};
-    const proPrice = Number(pro.price || 0);
-
-    let money = '';
-    if (w && w.budget_usd) {
-      const left = Math.max(0, Number(w.budget_usd) - Number(w.spend_usd));
-      const pct = Math.min(100, Math.round(w.percent));
-      money = '<div class="lim-row ' + (pct >= 80 ? 'warn' : '') + '">' +
-        '<div class="lr-top"><b>Деньги за ' + w.hours + ' ч</b>' +
-        '<i>$' + Number(w.spend_usd).toFixed(2) + ' из $' + Number(w.budget_usd).toFixed(2) +
-        ' · осталось $' + left.toFixed(2) + ' (' + (100 - pct) + '%)</i></div>' +
-        '<div class="lr-bar"><i style="width:' + pct + '%"></i></div></div>';
-    }
-
-    const defs = [
-      ['files', 'files_count', 'Файлы'],
-      ['storage', 'user_storage', 'Хранилище'],
-      ['requests', 'messages_per_day', 'Сообщений в день'],
-    ];
-    const rows = defs.map(d => {
-      const used = Number(use[d[0]] || 0);
-      const cap = lim[d[1]];
-      const unlimited = cap === null || cap === undefined;
-      const pct = unlimited ? 0 : Math.min(100, Math.round(used / Math.max(1, Number(cap)) * 100));
-      const right = unlimited
-        ? limitValueLabel(d[1], used) + ' · без лимита'
-        : limitValueLabel(d[1], used) + ' из ' + limitValueLabel(d[1], cap) +
-          ' · осталось ' + limitValueLabel(d[1], Math.max(0, cap - used));
-      return '<div class="lim-row ' + (unlimited ? 'unlimited' : (pct >= 80 ? 'warn' : '')) + '">' +
-        '<div class="lr-top"><b>' + d[2] + '</b><i>' + right + ' · ' +
-        (unlimited ? '∞' : pct + '%') + '</i></div>' +
-        '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
-    }).join('');
-
-    const audioUsed = Number(w && w.audio_generations || 0);
-    const audioCap = w && w.audio_limit !== undefined ? w.audio_limit : lim.audio_generations;
-    const audioUnlimited = audioCap === null || audioCap === undefined;
-    const audioHours = Number(w && w.hours || lim.window_hours || 5);
-    const audioPct = audioUnlimited ? 0 : Math.min(100, Math.round(audioUsed / Math.max(1, Number(audioCap)) * 100));
-    const audioRight = audioUnlimited
-      ? audioUsed + ' · без лимита'
-      : audioUsed + ' из ' + audioCap + ' за ' + audioHours + ' ч · осталось ' + Math.max(0, Number(audioCap) - audioUsed);
-    const audioRow = '<div class="lim-row ' + (audioUnlimited ? 'unlimited' : (audioPct >= 80 ? 'warn' : '')) + '">' +
-      '<div class="lr-top"><b>Голосовые ответы</b><i>' + audioRight + ' · ' +
-      (audioUnlimited ? '∞' : audioPct + '%') + '</i></div>' +
-      '<div class="lr-bar"><i style="width:' + (audioUnlimited ? 100 : audioPct) + '%"></i></div></div>';
-
-    openModal({
-      title: 'Лимиты подписки',
-      okText: 'Понятно',
-      body:
-        '<div class="sub-head">' +
-          '<div class="sub-plan">Тариф «' + escapeHtml(String(plan).toUpperCase()) + '»' +
-          '<br><em>' + (w && w.budget_usd
-            ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
-            : 'лимит по минутам и файлам') + '</em></div>' +
-        '</div>' +
-        money + rows + audioRow +
-        '<h4 class="sec">Что даёт подписка</h4>' +
-        planCompareHtml(lim, data.compare) +
-        '<p class="usage-note">Подписка оформляется у администратора — напишите ему в чат.</p>',
-      onOk: () => true,
-    });
-  }
-
-  // ---------- boot ----------
-  async function boot() {
-    showApp();
-    applySidebar();
-    if (state.user && state.user.is_admin) {
-      $('#sidebar-limits-btn').classList.remove('hidden');
-      await loadSystem();
-      setInterval(loadSystem, 20000);
-    }
-    $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    await loadChats();
-    await loadFiles();
-    await loadModelSets();
-    await loadMemory();
-    await loadLimits();
-    await loadUsage();
-    renderMessages();
-  }
-
-  async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer();
-    const token = new URLSearchParams(location.search).get('share');
-    if (token) { await showPublicView(token); return; }
-    try {
-      const me = await api.get('/api/auth/me');
-      state.user = me;
-      await boot();
-    } catch (e) {
-      showAuth();
-    }
-  }
-
-  function syncAppViewportHeight() {
-    const h = window.visualViewport && window.visualViewport.height
-      ? window.visualViewport.height
-      : window.innerHeight;
-    document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
-  }
-  syncAppViewportHeight();
-  window.addEventListener('resize', syncAppViewportHeight, { passive: true });
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', syncAppViewportHeight, { passive: true });
-  }
-
-  document.addEventListener('DOMContentLoaded', init);
-
-  // KaTeX loads with defer: re-render math once it is available
-  window.addEventListener('load', () => {
-    const box = document.getElementById('messages');
-    if (box) renderMath(box.querySelector('.msg-wrap'));
-  });
-})();
-, window_hours: 'Окно, часов',
+      budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
       audio_generations: 'Голосовых ответов за окно',
       file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
       chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день',
@@ -3712,6 +3560,19 @@
         '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
     }).join('');
 
+    const audioUsed = Number(w && w.audio_generations || 0);
+    const audioCap = w && w.audio_limit !== undefined ? w.audio_limit : lim.audio_generations;
+    const audioUnlimited = audioCap === null || audioCap === undefined;
+    const audioHours = Number(w && w.hours || lim.window_hours || 5);
+    const audioPct = audioUnlimited ? 0 : Math.min(100, Math.round(audioUsed / Math.max(1, Number(audioCap)) * 100));
+    const audioRight = audioUnlimited
+      ? audioUsed + ' · без лимита'
+      : audioUsed + ' из ' + audioCap + ' за ' + audioHours + ' ч · осталось ' + Math.max(0, Number(audioCap) - audioUsed);
+    const audioRow = '<div class="lim-row ' + (audioUnlimited ? 'unlimited' : (audioPct >= 80 ? 'warn' : '')) + '">' +
+      '<div class="lr-top"><b>Голосовые ответы</b><i>' + audioRight + ' · ' +
+      (audioUnlimited ? '∞' : audioPct + '%') + '</i></div>' +
+      '<div class="lr-bar"><i style="width:' + (audioUnlimited ? 100 : audioPct) + '%"></i></div></div>';
+
     openModal({
       title: 'Лимиты подписки',
       okText: 'Понятно',
@@ -3722,7 +3583,7 @@
             ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
             : 'лимит по минутам и файлам') + '</em></div>' +
         '</div>' +
-        money + rows +
+        money + rows + audioRow +
         '<h4 class="sec">Что даёт подписка</h4>' +
         planCompareHtml(lim, data.compare) +
         '<p class="usage-note">Подписка оформляется у администратора — напишите ему в чат.</p>',

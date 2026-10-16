@@ -515,7 +515,10 @@
     greetTimer: null,
     audioReady: Object.create(null),
     audioPending: Object.create(null),
+    audioLocalPending: Object.create(null),
+    audioBusyMessageId: null,
     audioStatusRequested: new Set(),
+    audioStatusPoll: null,
     audioMessageId: null,
     audioDuration: 0,
     greetIdx: Math.floor(Math.random() * 100),
@@ -1002,6 +1005,11 @@
           '<span class="audio-preview-play">' + icon('play') + '</span>' +
         '</button></div>';
     }
+    if (state.audioBusyMessageId && String(state.audioBusyMessageId) !== String(n.id)) {
+      return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
+        '<button class="answer-audio-generate is-loading" data-mact="audio-busy" data-id="' + id + '" disabled>' +
+          '<span class="audio-loading-ring"></span><span>Создаётся другая озвучка…</span></button></div>';
+    }
     return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
       '<button class="answer-audio-generate" data-mact="generate-audio" data-id="' + id + '" title="Создать голосовую версию ответа">' +
         icon('audio') + '<span>Аудиоверсия ответа</span></button></div>';
@@ -1013,39 +1021,68 @@
     if (wrapper && entry) wrapper.innerHTML = audioControlHtml(entry);
   }
 
-  function hydrateAudioStatuses(entries) {
-    if (state.readonly) return;
-    entries.forEach(entry => {
-      const n = entry.node;
-      if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
-      if (state.audioStatusRequested.has(n.id)) return;
-      state.audioStatusRequested.add(n.id);
-      api.get('/api/messages/' + encodeURIComponent(n.id) + '/audio/status')
-        .then(result => {
-          if (result && result.ready) {
-            state.audioReady[n.id] = true;
-            updateAudioControl(n.id);
-          }
-        })
-        .catch(() => { /* audio is optional; keep the generate button available */ });
+  function refreshAllAudioControls() {
+    allMessages(state.tree).forEach(entry => {
+      if (entry && entry.node && entry.node.role === 'assistant') updateAudioControl(entry.node.id);
     });
   }
 
+  function hydrateAudioStatuses(entries, force) {
+    if (state.readonly) return;
+    const nodes = entries.map(entry => entry && entry.node).filter(n =>
+      n && n.role === 'assistant' && n.status === 'completed' && String(n.content || '').trim()
+    );
+    const requests = nodes.filter(n => {
+      if (!force && state.audioStatusRequested.has(n.id)) return false;
+      state.audioStatusRequested.add(n.id);
+      return true;
+    });
+    if (!requests.length) return;
+    Promise.all(requests.map(n => api.get('/api/messages/' + encodeURIComponent(n.id) + '/audio/status')
+      .then(result => ({ n, result })).catch(() => null)))
+      .then(rows => {
+        let activeMessageId = null, hadSuccessfulStatus = false;
+        rows.forEach(row => {
+          if (!row || !row.result) return;
+          hadSuccessfulStatus = true;
+          const n = row.n, result = row.result;
+          if (result.ready) state.audioReady[n.id] = true;
+          if (result.busy && result.active_message_id) activeMessageId = String(result.active_message_id);
+          if (result.generating) activeMessageId = String(result.active_message_id || n.id);
+          state.audioPending[n.id] = !!(state.audioLocalPending[n.id] || result.generating);
+        });
+        if (hadSuccessfulStatus) {
+          state.audioBusyMessageId = activeMessageId;
+          if (activeMessageId) state.audioPending[activeMessageId] = true;
+          else nodes.forEach(n => { if (!state.audioLocalPending[n.id]) state.audioPending[n.id] = false; });
+          refreshAllAudioControls();
+        }
+      });
+  }
+
   async function generateAnswerAudio(messageId) {
-    if (state.audioPending[messageId]) return;
+    if (state.audioPending[messageId] || state.audioBusyMessageId ||
+        Object.keys(state.audioLocalPending).some(id => state.audioLocalPending[id])) return;
+    state.audioLocalPending[messageId] = true;
     state.audioPending[messageId] = true;
-    updateAudioControl(messageId);
+    state.audioBusyMessageId = String(messageId);
+    refreshAllAudioControls();
     try {
       const result = await api.post('/api/messages/' + encodeURIComponent(messageId) + '/audio', {});
+      state.audioLocalPending[messageId] = false;
       state.audioPending[messageId] = false;
       state.audioReady[messageId] = !!(result && result.ready);
       state.audioStatusRequested.add(messageId);
-      updateAudioControl(messageId);
+      state.audioBusyMessageId = null;
+      refreshAllAudioControls();
       toast('Озвучка готова — нажмите на аудиокарточку');
     } catch (err) {
+      state.audioLocalPending[messageId] = false;
       state.audioPending[messageId] = false;
-      updateAudioControl(messageId);
+      state.audioBusyMessageId = null;
+      refreshAllAudioControls();
       toast('Не удалось озвучить ответ: ' + (err.message || 'ошибка сервера'), 'error');
+      hydrateAudioStatuses(allMessages(state.tree), true);
     }
   }
 
@@ -1115,15 +1152,23 @@
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();
     });
-    $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
-      const action = btn.dataset.audioAction;
-      if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
-      else if (action === 'forward') {
-        const end = Number.isFinite(audio.duration) ? audio.duration : audio.currentTime + 10;
-        audio.currentTime = Math.min(end, (audio.currentTime || 0) + 10);
-      }
+    const seekBy = delta => {
+      const end = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Infinity;
+      audio.currentTime = Math.max(0, Math.min(end, (audio.currentTime || 0) + delta));
       updateAudioPlayerControls();
+    };
+    $('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+      const action = btn.dataset.audioAction;
+      if (action === 'back') seekBy(-10);
+      else if (action === 'forward') seekBy(10);
     }));
+    // Headset previous/next track presses seek 10 seconds rather than changing tracks.
+    if (navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function') {
+      try { navigator.mediaSession.setActionHandler('previoustrack', () => seekBy(-10)); } catch (e) { /* unsupported */ }
+      try { navigator.mediaSession.setActionHandler('nexttrack', () => seekBy(10)); } catch (e) { /* unsupported */ }
+      try { navigator.mediaSession.setActionHandler('seekbackward', () => seekBy(-10)); } catch (e) { /* unsupported */ }
+      try { navigator.mediaSession.setActionHandler('seekforward', () => seekBy(10)); } catch (e) { /* unsupported */ }
+    }
     $('#audio-progress')?.addEventListener('input', ev => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         audio.currentTime = (Number(ev.target.value) / 1000) * audio.duration;
@@ -3598,6 +3643,13 @@
 
     // The empty welcome screen needs no server data. Render it immediately
     // rather than waiting for the sidebar, files, models, memory and limits.
+    if (!state.audioStatusPoll) {
+      state.audioStatusPoll = window.setInterval(() => {
+        if (!document.hidden && state.user && state.currentChatId && !state.readonly) {
+          hydrateAudioStatuses(allMessages(state.tree).slice(-20), true);
+        }
+      }, 4000);
+    }
     const welcomeRenderedEarly = !state.currentChatId && allMessages(state.tree).length === 0;
     if (welcomeRenderedEarly) renderMessages();
 

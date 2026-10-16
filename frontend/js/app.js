@@ -764,7 +764,8 @@
     state.choices = {};
     const chat = state.chats.find(c => c.id === id);
     $('#chat-title').textContent = chat ? chat.title : 'Чат';
-    state.tree = await api.get('/api/chats/' + id + '/messages');
+    const loadedTree = await api.get('/api/chats/' + id + '/messages');
+    state.tree = Array.isArray(loadedTree) ? loadedTree : [];
     renderChatList();
     renderMessages();
     await loadUsage();
@@ -782,9 +783,13 @@
 
   // ---------- messages ----------
   function findNode(nodes, id) {
+    if (!Array.isArray(nodes) || id == null) return null;
     for (const n of nodes) {
+      // Histories can contain malformed/null rows; never let one break sending.
+      if (!n || typeof n !== 'object') continue;
       if (n.id === id) return n;
-      const f = findNode(n.children || [], id);
+      const children = Array.isArray(n.children) ? n.children : [];
+      const f = findNode(children, id);
       if (f) return f;
     }
     return null;
@@ -802,13 +807,21 @@
 
   function activePath(tree, choices) {
     const path = [];
-    let nodes = tree, parentKey = 'root';
-    while (nodes && nodes.length) {
-      let idx = choices[parentKey];
-      if (idx == null || idx >= nodes.length || idx < 0) idx = nodes.length - 1;
-      const node = nodes[idx];
-      path.push({ node, siblings: nodes, index: idx, parentKey });
-      nodes = (node.children && node.children.length) ? node.children : null;
+    let nodes = Array.isArray(tree) ? tree : [];
+    const selected = choices && typeof choices === 'object' ? choices : {};
+    let parentKey = 'root';
+    while (Array.isArray(nodes) && nodes.length) {
+      // Remove invalid entries before resolving a branch index or reading node.id.
+      const siblings = nodes.filter(node =>
+        node && typeof node === 'object' && typeof node.id === 'string' && node.id
+      );
+      if (!siblings.length) break;
+      const rawIndex = selected[parentKey];
+      let idx = rawIndex == null ? NaN : Number(rawIndex);
+      if (!Number.isInteger(idx) || idx >= siblings.length || idx < 0) idx = siblings.length - 1;
+      const node = siblings[idx];
+      path.push({ node, siblings, index: idx, parentKey });
+      nodes = Array.isArray(node.children) ? node.children : [];
       parentKey = node.id;
     }
     return path;
@@ -819,7 +832,8 @@
     const seen = new Set();
     const visit = (nodes) => {
       let siblings = (Array.isArray(nodes) ? nodes : [])
-        .filter(node => node && typeof node === 'object' && !seen.has(node));
+        .filter(node => node && typeof node === 'object' &&
+          typeof node.id === 'string' && node.id && !seen.has(node));
       const times = siblings.map(node => Date.parse(node.created_at || ''));
       // Keep all sibling generations together, oldest first when timestamps are available.
       if (times.length > 1 && times.every(Number.isFinite)) {

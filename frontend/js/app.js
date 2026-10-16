@@ -1004,7 +1004,7 @@
     }
     return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
       '<button class="answer-audio-generate" data-mact="generate-audio" data-id="' + id + '" title="Создать голосовую версию ответа">' +
-        icon('audio') + '<span>Прослушать ответ</span></button></div>';
+        icon('audio') + '<span>Аудиоверсия ответа</span></button></div>';
   }
 
   function updateAudioControl(messageId) {
@@ -1080,8 +1080,7 @@
     if (!shell || !audio) return;
     state.audioMessageId = messageId;
     const chat = state.chats.find(c => c.id === state.currentChatId);
-    $('#audio-player-title').textContent = 'Аудиоверсия ответа';
-    $('#audio-player-subtitle').textContent = (chat && chat.title) || 'Голосовая версия ответа';
+    $('#audio-player-title').textContent = (chat && chat.title) || 'Ответ';
     audio.pause();
     audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
     audio.load();
@@ -1118,8 +1117,7 @@
     });
     $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
       const action = btn.dataset.audioAction;
-      if (action === 'stop') { audio.pause(); audio.currentTime = 0; }
-      else if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
+      if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
       else if (action === 'forward') {
         const end = Number.isFinite(audio.duration) ? audio.duration : audio.currentTime + 10;
         audio.currentTime = Math.min(end, (audio.currentTime || 0) + 10);
@@ -3156,7 +3154,7 @@
       okText: 'Сохранить',
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
         'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, ' +
-        'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
+        'код-агенты, шаги агента, консилиум, запуск кода, озвучивание ответов, цена тарифа и цена токенов.</p>' +
         '<table class="lim-table"><thead><tr><th>Лимит</th>' +
         '<th>Free<button class="reset-plan" data-reset-plan="free">сбросить</button></th>' +
         '<th>Pro<button class="reset-plan" data-reset-plan="pro">сбросить</button></th>' +
@@ -3487,11 +3485,12 @@
 
   function planCompareHtml(lim, compare) {
     const pro = (compare && compare.pro) || {};
-    const order = ['budget_usd', 'window_hours', 'file_size', 'user_storage', 'files_count',
+    const order = ['budget_usd', 'window_hours', 'audio_generations', 'file_size', 'user_storage', 'files_count',
                    'chats_count', 'messages_per_day', 'code_agents',
                    'agent_steps', 'council_members', 'sandbox_seconds'];
     const labels = {
       budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
+      audio_generations: 'Голосовых ответов за окно',
       file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
       chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день',
       code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
@@ -3561,6 +3560,19 @@
         '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
     }).join('');
 
+    const audioUsed = Number(w && w.audio_generations || 0);
+    const audioCap = w && w.audio_limit !== undefined ? w.audio_limit : lim.audio_generations;
+    const audioUnlimited = audioCap === null || audioCap === undefined;
+    const audioHours = Number(w && w.hours || lim.window_hours || 5);
+    const audioPct = audioUnlimited ? 0 : Math.min(100, Math.round(audioUsed / Math.max(1, Number(audioCap)) * 100));
+    const audioRight = audioUnlimited
+      ? audioUsed + ' · без лимита'
+      : audioUsed + ' из ' + audioCap + ' за ' + audioHours + ' ч · осталось ' + Math.max(0, Number(audioCap) - audioUsed);
+    const audioRow = '<div class="lim-row ' + (audioUnlimited ? 'unlimited' : (audioPct >= 80 ? 'warn' : '')) + '">' +
+      '<div class="lr-top"><b>Голосовые ответы</b><i>' + audioRight + ' · ' +
+      (audioUnlimited ? '∞' : audioPct + '%') + '</i></div>' +
+      '<div class="lr-bar"><i style="width:' + (audioUnlimited ? 100 : audioPct) + '%"></i></div></div>';
+
     openModal({
       title: 'Лимиты подписки',
       okText: 'Понятно',
@@ -3571,7 +3583,7 @@
             ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
             : 'лимит по минутам и файлам') + '</em></div>' +
         '</div>' +
-        money + rows +
+        money + rows + audioRow +
         '<h4 class="sec">Что даёт подписка</h4>' +
         planCompareHtml(lim, data.compare) +
         '<p class="usage-note">Подписка оформляется у администратора — напишите ему в чат.</p>',

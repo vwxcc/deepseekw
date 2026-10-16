@@ -158,6 +158,23 @@ class Message(Base):
     )
 
 
+class AudioGeneration(Base):
+    """A successful-or-in-progress voice generation reservation for rolling quotas."""
+
+    __tablename__ = "audio_generations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    message_id: Mapped[str] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+
+
 class Attachment(Base):
     __tablename__ = "attachments"
 

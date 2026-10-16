@@ -1,12 +1,14 @@
 """Plan limits: read for everyone, edited by the administrator."""
 from __future__ import annotations
 
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_current_user, get_db, require_csrf
-from ..models import Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, User
+from ..models import AudioGeneration, Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, User, utcnow
 from ..services.limits import (
     LABELS,
     PLANS,
@@ -66,6 +68,13 @@ async def my_limits(
     window_spend, window_reqs = await _window_spend(
         db, user.id, window_hours, user.plan or "free"
     )
+    audio_cutoff = utcnow() - timedelta(hours=window_hours)
+    audio_generations = await db.scalar(
+        select(func.count()).select_from(AudioGeneration).where(
+            AudioGeneration.user_id == user.id,
+            AudioGeneration.created_at >= audio_cutoff,
+        )
+    )
     percent = round(min(100.0, window_spend / budget * 100.0), 1) if budget else 0.0
     return {
         "compare": await all_limits(db),
@@ -77,6 +86,8 @@ async def my_limits(
             "budget_usd": budget,
             "spend_usd": window_spend,
             "requests": window_reqs,
+            "audio_generations": int(audio_generations or 0),
+            "audio_limit": limits.get("audio_generations", 4),
             "percent": percent,
         },
         "usage": {

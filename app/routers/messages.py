@@ -6,7 +6,7 @@ import json
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +54,14 @@ import logging
 from ..services.usage import account, est
 from ..services.limits import get_limits
 from ..services.sandbox import list_project_files
+from ..services.tts import (
+    AUDIO_MEDIA_TYPES,
+    TTSGenerationError,
+    TTSNotConfiguredError,
+    audio_file_path,
+    generate_speech,
+    normalized_audio_format,
+)
 
 log = logging.getLogger("chatstudio.messages")
 
@@ -857,3 +865,89 @@ async def compress_chat(
     chat.compress_count = (chat.compress_count or 0) + 1
     await db.commit()
     return await _usage_payload(chat, db)
+
+
+# ---------- response audio / text-to-speech ----------
+
+@router.get("/messages/{message_id}/audio/status")
+async def message_audio_status(
+    message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Tell the authenticated owner whether a cached response audio file exists."""
+    try:
+        fmt = normalized_audio_format()
+        path = audio_file_path(user.id, message.id, fmt)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
+    return {
+        "ready": path.is_file(),
+        "url": f"/api/messages/{message.id}/audio/file",
+        "format": fmt,
+    }
+
+
+@router.get("/messages/{message_id}/audio/file")
+async def get_message_audio(
+    message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
+):
+    """Stream the generated audio only to the owner of the original message."""
+    try:
+        fmt = normalized_audio_format()
+        path = audio_file_path(user.id, message.id, fmt)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Аудиоверсия ещё не создана.")
+    return FileResponse(
+        path,
+        media_type=AUDIO_MEDIA_TYPES[fmt],
+        filename=f"answer-{message.id}.{fmt}",
+        content_disposition_type="inline",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/messages/{message_id}/audio")
+async def create_message_audio(
+    message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+) -> dict:
+    """Generate and persist a spoken version of a completed assistant response."""
+    if message.role != Role.assistant or message.status != MessageStatus.completed:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Озвучить можно только готовый ответ ассистента.")
+    source = (message.content or "").strip()
+    if not source:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "В ответе нет текста для озвучки.")
+    try:
+        fmt = normalized_audio_format()
+        path = audio_file_path(user.id, message.id, fmt)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
+
+    if not path.is_file():
+        try:
+            audio_bytes, generated_format = await generate_speech(source)
+        except TTSNotConfiguredError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        except TTSGenerationError as exc:
+            log.warning("TTS generation failed for message %s: %s", message.id, exc)
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+        if generated_format != fmt:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Формат аудио изменился во время генерации.")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(path.write_bytes, audio_bytes)
+        except OSError as exc:
+            log.exception("Could not persist TTS audio for message %s", message.id)
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Не удалось сохранить аудиофайл.") from exc
+    return {
+        "ready": True,
+        "url": f"/api/messages/{message.id}/audio/file",
+        "format": fmt,
+        "size": path.stat().st_size,
+    }

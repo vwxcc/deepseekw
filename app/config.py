@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     code_agent_max_steps: int = 10
     code_agent_timeout: int = 60
 
+    # --- Text-to-speech (OpenAI-compatible /audio/speech endpoint) ---
+    tts_base_url: str = ""
+    tts_api_key: str = ""
+    tts_model: str = "tts-1"
+    tts_voice: str = "alloy"
+    tts_response_format: str = "mp3"
+    tts_timeout: int = 180
+    tts_max_chars: int = 30000
+    tts_concurrency: int = 2
+
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file
     max_total_file_size: int = 100 * 1024 * 1024  # 100 MB per request

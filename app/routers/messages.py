@@ -388,7 +388,7 @@ async def send_message(
         db, user_msg.id, summary_upto=chat.summary_upto
     )
     history_messages, trimmed = _trim_history(
-        history_messages, await _model_context(db, data.model_set_id)
+        history_messages, await _model_context(db, None)
     )
 
     code_mode = (chat.mode or "chat") == "code"
@@ -772,41 +772,22 @@ async def compress_chat(
     if len(cut) < 2:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего сжимать")
 
-    from ..ai import model_sets as ms_mod
     from ..ai.providers import ProviderError, complete_chat
-    from ..ai.router import EntryConfig, pool
+    from ..ai.router import pool
 
-    mset = await ms_mod.get_model_set(db, RouteType.MAIN)
-    entries_db = await ms_mod.get_active_entries(db, mset.id) if mset else []
-    if not entries_db:
+    try:
+        # Use the same primary model as answers and titles; no separate compression chain.
+        _, _, chain = await ai_router._resolve_entries(RouteType.MAIN)
+    except ProviderError as exc:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Нет активной модели для сжатия"
-        )
-    chain = [
-        EntryConfig(
-            id=e.id,
-            model_set_id=e.model_set_id,
-            provider=e.provider,
-            base_url=e.base_url,
-            api_key=e.api_key,
-            model=e.model,
-            temperature=e.temperature,
-            max_tokens=e.max_tokens,
-            timeout=e.timeout,
-            max_parallel=int(getattr(e, "max_parallel", 2) or 2),
-            price_in=float(getattr(e, "price_in", 0.0) or 0.0),
-            price_out=float(getattr(e, "price_out", 0.0) or 0.0),
-            price_cache=float(getattr(e, "price_cache", 0.0) or 0.0),
-        )
-        for e in entries_db
-    ]
+            status.HTTP_400_BAD_REQUEST, "Нет активной основной модели для сжатия"
+        ) from exc
 
     transcript = "\n".join(
         f"{m.role.value}: {(m.content or '')[:1500]}" for m in cut if m.content
     )[:60000]
 
-    # compression follows the same chain rules: busy model -> next one,
-    # broken model -> next one
+    # Use the primary model only; failures are reported instead of switching models.
     summary = ""
     used = None
     last_error = "нет доступной модели"

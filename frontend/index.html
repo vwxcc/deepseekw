@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=37" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/12a6e50c4994fd7f55ce28689647f50e?family=Yandex+Sans+Text+Regular+Regular" />
+  <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/156984a3271ce6fcaf106dcc6395c99e?family=Yandex+Sans+Text+Web+Bold+Regular" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=38" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -69,6 +71,12 @@
         <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" required />
         <button class="primary" type="submit">Войти</button>
         <div class="switch">Нет аккаунта? <a data-mode="register">Зарегистрироваться</a></div>
+        <div class="auth-free-audio">
+          <svg class="gift-open" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 14h24v14H4zM3 10h26v5H3zM16 10v18M16 10H9.5a3.5 3.5 0 1 1 3.5-3.5c0 2 3 3.5 3 3.5ZM16 10h6.5A3.5 3.5 0 1 0 19 6.5c0 2-3 3.5-3 3.5Z"/>
+          </svg>
+          <span><strong>Бесплатная озвучка ответов</strong>Слушайте ответы в аудиоформате</span>
+        </div>
       </form>
 
       <form id="register-form" class="hidden">
@@ -231,6 +239,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=42"></script>
+  <script src="/assets/js/app.js?v=43"></script>
 </body>
 </html>

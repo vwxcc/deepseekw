@@ -1004,7 +1004,7 @@
     }
     return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
       '<button class="answer-audio-generate" data-mact="generate-audio" data-id="' + id + '" title="Создать голосовую версию ответа">' +
-        icon('audio') + '<span>Прослушать ответ</span></button></div>';
+        icon('audio') + '<span>Аудиоверсия ответа</span></button></div>';
   }
 
   function updateAudioControl(messageId) {
@@ -1080,8 +1080,7 @@
     if (!shell || !audio) return;
     state.audioMessageId = messageId;
     const chat = state.chats.find(c => c.id === state.currentChatId);
-    $('#audio-player-title').textContent = 'Аудиоверсия ответа';
-    $('#audio-player-subtitle').textContent = (chat && chat.title) || 'Голосовая версия ответа';
+    $('#audio-player-title').textContent = (chat && chat.title) || 'Ответ';
     audio.pause();
     audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
     audio.load();
@@ -1118,8 +1117,7 @@
     });
     $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
       const action = btn.dataset.audioAction;
-      if (action === 'stop') { audio.pause(); audio.currentTime = 0; }
-      else if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
+      if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
       else if (action === 'forward') {
         const end = Number.isFinite(audio.duration) ? audio.duration : audio.currentTime + 10;
         audio.currentTime = Math.min(end, (audio.currentTime || 0) + 10);

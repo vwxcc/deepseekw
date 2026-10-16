@@ -79,7 +79,7 @@ async def prepare_spoken_text(value: str) -> str:
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "Подготовь этот ответ к озвучке, сохранив содержание:\\n\\n" + source},
+            {"role": "user", "content": "Подготовь этот ответ к озвучке, сохранив содержание:\n\n" + source},
         ],
         "temperature": max(0.0, min(float(settings.tts_preprocess_temperature or 0.1), 0.5)),
         "max_tokens": max(256, min(int(settings.tts_preprocess_max_tokens or 12000), 24000)),

@@ -1,6 +1,6 @@
 """AI Router: per-action model chains, overload guard, fallback and streaming.
 
-Every action (answer, title, suggestions) owns its own chain of models taken from
+Each generated answer and the first chat title use their own chain of models taken from
 the matching Model Set. A chain is tried in order:
 
 * a model that is **saturated** (``max_parallel`` requests already running) is
@@ -8,9 +8,7 @@ the matching Model Set. A chain is tried in order:
 * if every model of the chain is saturated, the router **waits** for a free slot;
 * if a model **fails**, the next model of the chain takes over.
 
-The order of an exchange is strict: the answer first, then the chat title, then the
-follow-up suggestions. Each step is enqueued only after the previous one finished,
-so the queue never runs them in parallel.
+The order of an exchange is strict: the answer first, then the title on the first exchange.
 """
 from __future__ import annotations
 
@@ -23,7 +21,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from ..config import settings
 from ..database import SessionLocal
@@ -37,7 +35,6 @@ from ..models import (
     ModelSet,
     Role,
     RouteType,
-    Suggestion,
     User,
 )
 from ..services.files import detect_kind, sha256_bytes
@@ -199,17 +196,6 @@ def _clean_title(text: str) -> str:
     if len(t) > 80:
         return ""
     return t[:120]
-
-
-def _parse_suggestions(text: str) -> list[str]:
-    out: list[str] = []
-    for line in (text or "").splitlines():
-        t = line.strip().lstrip("-•*—").strip()
-        t = re.sub(r"^\d+[.)]\s*", "", t).strip().strip('"').strip("'").strip()
-        # keep only question-like, multi-word suggestions
-        if len(t) > 8 and " " in t:
-            out.append(t[:200])
-    return out[:3]
 
 
 class AIRouter:
@@ -858,24 +844,24 @@ class AIRouter:
                             ("ask", json.dumps({"question": ask}, ensure_ascii=False))
                         )
                     await job.output.put(("done", answer))
-                    # strict order: the title (first exchange only) runs next,
-                    # and the suggestions only after that
-                    await self.enqueue(
-                        Job(
-                            kind="followup",
-                            route_type=RouteType.TITLE,
-                            chat_id=job.chat_id,
-                            message_id=job.message_id,
-                            user_id=job.user_id,
-                            model_set_id=job.model_set_id,
-                            user_text=job.user_text,
-                            history=[
-                                *job.history_messages,
-                                {"role": "assistant", "content": answer},
-                            ],
-                            first_exchange=job.first_exchange,
+                    # Only the first exchange needs a title-generation job.
+                    if job.first_exchange:
+                        await self.enqueue(
+                            Job(
+                                kind="followup",
+                                route_type=RouteType.TITLE,
+                                chat_id=job.chat_id,
+                                message_id=job.message_id,
+                                user_id=job.user_id,
+                                model_set_id=job.model_set_id,
+                                user_text=job.user_text,
+                                history=[
+                                    *job.history_messages,
+                                    {"role": "assistant", "content": answer},
+                                ],
+                                first_exchange=True,
+                            )
                         )
-                    )
                     return
                 except asyncio.CancelledError:
                     await self._finish(
@@ -904,13 +890,12 @@ class AIRouter:
         await self._finish(job.message_id, MessageStatus.failed, error=last_error)
         await job.output.put(("error", last_error))
 
-    # --- title, then suggestions ------------------------------------------
+    # --- chat title --------------------------------------------------------
 
     async def _run_followup(self, job: Job) -> None:
-        """Title first (only on the first exchange), then the suggestions."""
+        """Generate the chat title after the first answer; never generate suggestions."""
         if job.first_exchange:
             await self._run_title(job)
-        await self._run_suggestions(job)
 
     async def _run_title(self, job: Job) -> None:
         try:
@@ -960,73 +945,6 @@ class AIRouter:
                     return
             except Exception as e:
                 log.warning("Title entry %s failed: %s", entry.label, e)
-                tried.add(entry.id)
-            finally:
-                await pool.release(entry)
-
-    async def _run_suggestions(self, job: Job) -> None:
-        if not job.message_id:
-            return
-        try:
-            _, _, entries = await self._resolve_entries(RouteType.SUGGESTIONS)
-        except ProviderError as e:
-            log.warning("Suggestions skipped: %s", e)
-            return
-
-        dialogue = [m for m in job.history if m.get("role") != "system"]
-        messages = [
-            {"role": "system", "content": prompts.SUGGESTIONS_SYSTEM},
-            *dialogue[-8:],
-        ]
-        tried: set[str] = set()
-        while len(tried) < len(entries):
-            entry = await pool.acquire(entries, tried)
-            if entry is None:
-                return
-            try:
-                raw = await complete_chat(
-                    messages=messages,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.6,
-                    max_tokens=220,
-                    timeout=min(entry.timeout, 60),
-                    disable_thinking=True,
-                )
-                items = _parse_suggestions(raw)
-                if items:
-                    async with SessionLocal() as db:
-                        await account(
-                            db,
-                            job.chat_id,
-                            entry.model_set_id,
-                            est(prompts.SUGGESTIONS_SYSTEM)
-                            + sum(est(m.get("content")) for m in dialogue[-8:]),
-                            est(raw),
-                            entry=entry,
-                            user_id=job.user_id,
-                            message_id=job.message_id,
-                            action="suggestions",
-                        )
-                        await db.execute(
-                            delete(Suggestion).where(
-                                Suggestion.message_id == job.message_id
-                            )
-                        )
-                        for i, text in enumerate(items):
-                            db.add(
-                                Suggestion(
-                                    message_id=job.message_id,
-                                    chat_id=job.chat_id,
-                                    position=i,
-                                    text=text,
-                                )
-                            )
-                        await db.commit()
-                    return
-            except Exception as e:
-                log.warning("Suggestions entry %s failed: %s", entry.label, e)
                 tried.add(entry.id)
             finally:
                 await pool.release(entry)

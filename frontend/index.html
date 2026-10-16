@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=34" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=35" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -25,6 +25,11 @@
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 12.5h9L17.5 7"/></symbol>
     <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5-4-4L4 16z"/><path d="M14.5 5.5l4 4"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5.5 15V6a2 2 0 0 1 2-2H15"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8v14.4L19 12z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM15 5h4v14h-4z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/></symbol>
+    <symbol id="i-back-10" viewBox="0 0 24 24"><path d="M4 7v5h5"/><path d="M4.5 12a8 8 0 1 1 1.9 5.2"/><text x="12" y="15" font-size="6.6" fill="currentColor" stroke="none" text-anchor="middle">10</text></symbol>
+    <symbol id="i-forward-10" viewBox="0 0 24 24"><path d="M20 7v5h-5"/><path d="M19.5 12a8 8 0 1 0-1.9 5.2"/><text x="12" y="15" font-size="6.6" fill="currentColor" stroke="none" text-anchor="middle">10</text></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4.5V10h-5.5"/></symbol>
     <symbol id="i-continue" viewBox="0 0 24 24"><path d="M12 5v14M12 12h7M19 9v6"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h4.5"/></symbol>
@@ -196,12 +201,40 @@
     </aside>
   </div>
 
+  <div id="audio-player-shell" class="audio-player-shell" aria-hidden="true">
+    <button class="audio-player-scrim" type="button" data-audio-close aria-label="Закрыть аудиоплеер"></button>
+    <section class="audio-player-sheet" role="dialog" aria-modal="true" aria-labelledby="audio-player-title" tabindex="-1">
+      <div class="audio-sheet-handle" aria-hidden="true"></div>
+      <div class="audio-sheet-head">
+        <div class="audio-sheet-art" aria-hidden="true"><svg class="ic"><use href="#i-audio"/></svg></div>
+        <div class="audio-sheet-titles">
+          <span class="audio-sheet-kicker">VOICE PLAYER</span>
+          <h2 id="audio-player-title">Аудиоверсия ответа</h2>
+          <p id="audio-player-subtitle">Голосовая версия ответа</p>
+        </div>
+        <button class="icon-btn audio-player-close" id="audio-close-btn" type="button" data-audio-close title="Закрыть плеер" aria-label="Закрыть плеер"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <audio id="audio-player-source" preload="metadata"></audio>
+      <div class="audio-progress-wrap">
+        <input id="audio-progress" class="audio-progress" type="range" min="0" max="1000" value="0" aria-label="Перемотка аудио" disabled />
+        <div class="audio-time"><span id="audio-current-time">0:00</span><span id="audio-total-time">0:00</span></div>
+      </div>
+      <div class="audio-player-controls">
+        <button class="audio-skip-btn" type="button" data-audio-action="back" title="Назад на 10 секунд" aria-label="Назад на 10 секунд"><svg class="ic"><use href="#i-back-10"/></svg></button>
+        <button class="audio-main-play" type="button" id="audio-play-toggle" title="Воспроизвести" aria-label="Воспроизвести"><svg class="ic"><use href="#i-play"/></svg></button>
+        <button class="audio-skip-btn" type="button" data-audio-action="stop" title="Остановить и в начало" aria-label="Остановить и в начало"><svg class="ic"><use href="#i-stop"/></svg></button>
+        <button class="audio-skip-btn" type="button" data-audio-action="forward" title="Вперёд на 10 секунд" aria-label="Вперёд на 10 секунд"><svg class="ic"><use href="#i-forward-10"/></svg></button>
+      </div>
+      <div class="audio-sheet-foot"><span class="audio-foot-dot"></span> Озвучка ответа · локальный плеер</div>
+    </section>
+  </div>
+
   <input type="file" id="file-input" multiple class="hidden-file" />
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=36"></script>
+  <script src="/assets/js/app.js?v=37"></script>
 </body>
 </html>

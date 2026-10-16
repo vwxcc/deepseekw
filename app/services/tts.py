@@ -32,10 +32,27 @@ class TTSGenerationError(RuntimeError):
     """Raised when the configured TTS provider cannot return usable audio."""
 
 
+def _validated_api_key(value: str, setting_name: str) -> str:
+    """Reject invalid Authorization header values with a clear config error.
+
+    Bearer credentials are HTTP header data and must be printable ASCII. Sending
+    Cyrillic inside an API key otherwise raises UnicodeEncodeError in the
+    HTTP transport, which was misreported to the browser as HTTP 400.
+    """
+    key = str(value or "").strip()
+    if any(ord(ch) < 33 or ord(ch) > 126 for ch in key):
+        raise TTSNotConfiguredError(
+            f"{setting_name} должен содержать только печатные ASCII-символы. "
+            "Проверьте значение ключа в Render → Environment: вставьте настоящий "
+            "API-ключ провайдера без кириллицы, пробелов и переносов строк."
+        )
+    return key
+
+
 async def prepare_spoken_text(value: str) -> str:
     """Use one explicitly configured OpenAI-compatible model to verbalize notation."""
     base_url = (settings.tts_preprocess_base_url or "").strip().rstrip("/")
-    api_key = (settings.tts_preprocess_api_key or "").strip()
+    api_key = _validated_api_key(settings.tts_preprocess_api_key, "TTS_PREPROCESS_API_KEY")
     model = (settings.tts_preprocess_model or "").strip()
     if not base_url or not model:
         raise TTSNotConfiguredError(
@@ -88,6 +105,12 @@ async def prepare_spoken_text(value: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15)) as client:
             response = await client.post(endpoint, headers=headers, json=payload)
+    except UnicodeEncodeError as exc:
+        raise TTSNotConfiguredError(
+            "Ошибка кодировки заголовка ИИ-подготовщика. Проверьте "
+            "TTS_PREPROCESS_API_KEY и TTS_PREPROCESS_BASE_URL; HTTP-заголовки "
+            "должны содержать только ASCII."
+        ) from exc
     except httpx.TimeoutException as exc:
         raise TTSGenerationError("ИИ-подготовщик текста для озвучки не ответил вовремя.") from exc
     except httpx.HTTPError as exc:
@@ -146,7 +169,7 @@ def clean_tts_text(value: str, max_chars: int | None = None) -> str:
 async def generate_speech(text: str) -> tuple[bytes, str]:
     """Generate audio via an OpenAI-compatible POST /audio/speech endpoint."""
     base_url = (settings.tts_base_url or "").strip().rstrip("/")
-    api_key = (settings.tts_api_key or "").strip()
+    api_key = _validated_api_key(settings.tts_api_key, "TTS_API_KEY")
     if not base_url:
         raise TTSNotConfiguredError("Задайте TTS_BASE_URL в переменных окружения сервиса.")
     fmt = normalized_audio_format()
@@ -169,6 +192,12 @@ async def generate_speech(text: str) -> tuple[bytes, str]:
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15)) as client:
                 response = await client.post(endpoint, headers=headers, json=payload)
+        except UnicodeEncodeError as exc:
+            raise TTSNotConfiguredError(
+                "Ошибка кодировки заголовка сервиса озвучки. Проверьте "
+                "TTS_API_KEY и TTS_BASE_URL; HTTP-заголовки должны содержать "
+                "только ASCII."
+            ) from exc
         except httpx.TimeoutException as exc:
             raise TTSGenerationError("Сервис озвучки не ответил вовремя.") from exc
         except httpx.HTTPError as exc:

@@ -1970,3 +1970,29 @@ body { font-weight: 400; }
   .audio-player-sheet, .audio-player-scrim, .audio-player-shell { transition: none; }
   .audio-preview-art i, .audio-loading-ring { animation: none; }
 }
+
+
+/* Keep the core assistant actions visible and readable directly under each answer. */
+.msg .meta button.message-action-labeled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--fg-muted);
+  font-size: 13.75px;
+  white-space: nowrap;
+}
+.msg .meta button.message-action-labeled .ic { width: 15px; height: 15px; flex: 0 0 15px; }
+.msg .meta button.message-action-labeled:hover,
+.msg .meta button.message-action-labeled:focus-visible {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+@media (max-width: 520px) {
+  .msg .meta button.message-action-labeled { padding: 6px 9px; gap: 5px; }
+}

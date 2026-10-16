@@ -56,4 +56,26 @@ jobs:
           if "/assets/js/app.js?v=37" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
+
+          js = Path("frontend/js/app.js").read_text(encoding="utf-8")
+          router = Path("app/ai/router.py").read_text(encoding="utf-8")
+          messages = Path("app/routers/messages.py").read_text(encoding="utf-8")
+          required_js = [
+              "$$('[data-audio-control]').find",
+              "$$('[data-audio-close]')",
+              "$$('[data-audio-action]')",
+              'data-mact="copy-user"',
+              'data-mact="generate-audio"',
+              'data-mact="play-audio"',
+          ]
+          missing = [token for token in required_js if token not in js]
+          if missing:
+              raise SystemExit("Missing message/audio interaction hooks: " + ", ".join(missing))
+          if 'data-sugg="' in js:
+              raise SystemExit("Post-answer follow-up suggestion buttons must stay removed")
+          if any(token in router for token in ("_run_suggestions", "_parse_suggestions")):
+              raise SystemExit("Post-answer suggestion generation must stay disabled")
+          if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:
+              raise SystemExit("Missing authenticated audio endpoints")
+          print("Audio player hooks and message copy actions are present; follow-up suggestions are disabled.")
           PY

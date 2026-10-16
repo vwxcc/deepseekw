@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
+from pathlib import Path
 
 import httpx
 
@@ -28,6 +30,14 @@ class TTSNotConfiguredError(RuntimeError):
 
 class TTSGenerationError(RuntimeError):
     """Raised when the configured TTS provider cannot return usable audio."""
+
+
+def audio_file_path(user_id: str, message_id: str, fmt: str | None = None) -> Path:
+    """Return a private, non-user-controlled path for a message's cached audio."""
+    audio_format = normalized_audio_format(fmt)
+    user_key = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:32]
+    message_key = hashlib.sha256(str(message_id).encode("utf-8")).hexdigest()[:40]
+    return settings.data_path / "audio" / user_key / (message_key + "." + audio_format)
 
 
 def normalized_audio_format(value: str | None = None) -> str:

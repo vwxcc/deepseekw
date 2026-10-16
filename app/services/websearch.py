@@ -270,4 +270,4 @@ def format_context(results: list[dict]) -> str:
         lines.append(f"    URL: {result['url']}")
         if result["snippet"]:
             lines.append(f"    {result['snippet']}")
-    return "\\n".join(lines)
+    return "\n".join(lines)

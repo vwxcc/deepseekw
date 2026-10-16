@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     sandbox_url: str = "http://chatstudio-sandbox:8000"
     # Set to the same high-entropy key on the app and the separate sandbox service.
     sandbox_api_key: str = ""
+    # Unsafe in a public multi-user app; use only for trusted local development.
+    sandbox_allow_local: bool = False
     sandbox_work_dir: str = "/app/data/sandbox"
     sandbox_concurrency: int = 2
     sandbox_queue_limit: int = 12

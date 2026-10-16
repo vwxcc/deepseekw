@@ -125,7 +125,7 @@ class Sandbox:
 
         root = settings.sandbox_path.resolve()
         rel_dir = str(data.get("dir") or data.get("run_id") or "")
-        rel_dir_path = PurePosixPath(rel_dir.replace("\\\\", "/"))
+        rel_dir_path = PurePosixPath(rel_dir.replace("\\", "/"))
         if not rel_dir or rel_dir_path.is_absolute() or any(
             part in {"", ".", ".."} for part in rel_dir_path.parts
         ):
@@ -140,7 +140,7 @@ class Sandbox:
         for raw_item in data.get("files") or []:
             item = dict(raw_item) if isinstance(raw_item, dict) else {}
             rel_name = str(item.get("path") or item.get("name") or "")
-            rel_path = PurePosixPath(rel_name.replace("\\\\", "/"))
+            rel_path = PurePosixPath(rel_name.replace("\\", "/"))
             if not rel_name or rel_path.is_absolute() or any(
                 part in {"", ".", ".."} for part in rel_path.parts
             ):
@@ -179,7 +179,7 @@ class Sandbox:
             note = "Не удалось перенести некоторые файлы из песочницы: " + ", ".join(
                 transfer_warnings[:6]
             )
-            data["stderr"] = (old_stderr + "\\n" + note).strip()[:MAX_OUTPUT_CHARS]
+            data["stderr"] = (old_stderr + "\n" + note).strip()[:MAX_OUTPUT_CHARS]
         return data
 
     @staticmethod

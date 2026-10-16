@@ -799,6 +799,29 @@
     return path;
   }
 
+  function allMessages(tree) {
+    const entries = [];
+    const seen = new Set();
+    const visit = (nodes) => {
+      (Array.isArray(nodes) ? nodes : []).forEach(node => {
+        if (!node || typeof node !== 'object' || seen.has(node)) return;
+        seen.add(node);
+        entries.push({ node, order: entries.length });
+        visit(node.children);
+      });
+    };
+    visit(tree);
+    entries.sort((a, b) => {
+      const ta = Date.parse(a.node.created_at || '');
+      const tb = Date.parse(b.node.created_at || '');
+      const validA = Number.isFinite(ta), validB = Number.isFinite(tb);
+      if (validA && validB && ta !== tb) return ta - tb;
+      if (validA !== validB) return validA ? -1 : 1;
+      return a.order - b.order;
+    });
+    return entries;
+  }
+
   function attsHtml(atts) {
     if (!atts || !atts.length) return '';
     return '<div class="msg-atts">' + atts.map(a => {
@@ -824,7 +847,6 @@
     return '<span class="gen-anim">' +
       '<span class="gen-anim-icon">' + thinkAnim() + '</span>' +
       '<span class="gen-anim-text">' + escapeHtml(label || 'Создаю чат…') + '</span>' +
-      '<span class="gen-anim-bar"><i></i></span>' +
       '</span>';
   }
 
@@ -890,19 +912,10 @@
             parts.push('<button data-mact="memory" data-id="' + n.id + '" title="Что записано в память">' +
               icon('sparkle') + 'Память</button>');
           }
-          parts.push('<button data-mact="delete" data-id="' + n.id + '" title="Удалить ответ">' + icon('trash') + '</button>');
         }
         parts.push('<button data-mact="retry" data-id="' + n.id + '">' + icon('refresh') + 'Повторить</button>');
       }
       meta = '<div class="meta">' + parts.join('') + '</div>';
-    }
-
-    let branch = '';
-    if (entry.siblings.length > 1) {
-      branch = '<div class="branch-nav" data-parent="' + entry.parentKey + '" data-index="' + entry.index + '">' +
-        '<button data-b="prev">' + icon('chevron', 'prev') + '</button>' +
-        '<span>' + (entry.index + 1) + ' / ' + entry.siblings.length + '</span>' +
-        '<button data-b="next">' + icon('chevron') + '</button></div>';
     }
 
     let sugg = '';
@@ -941,7 +954,7 @@
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      routeLine + tools + inner + askCard + branch + meta + sugg + memLine + '</div>';
+      routeLine + tools + inner + askCard + meta + sugg + memLine + '</div>';
   }
 
   function toolRunHtml(r, i) {
@@ -1005,7 +1018,7 @@
   function renderSuggestionChips() {
     const box = $('#sugg-chips');
     if (!box) return;
-    const total = SUGGESTIONS.length, n = 4;
+    const total = SUGGESTIONS.length, n = 2;
     const picks = [];
     for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
     state.suggIdx = (state.suggIdx + n) % total;
@@ -1043,14 +1056,20 @@
     if (state.tileTimer) { clearInterval(state.tileTimer); state.tileTimer = null; }
   }
 
+  function updateShareButtonVisibility() {
+    const button = $('#share-btn');
+    if (button) button.classList.toggle('hidden', !state.currentChatId || !!state.readonly);
+  }
+
   function renderMessages() {
     const box = $('#messages');
-    const path = activePath(state.tree, state.choices);
-    if (!path.length) { renderEmptyState(); return; }
+    updateShareButtonVisibility();
+    const entries = allMessages(state.tree);
+    if (!entries.length) { renderEmptyState(); return; }
     box.classList.remove('empty');
     stopRotation();
     box.innerHTML = '<div class="msg-wrap">' +
-      path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
+      entries.map((e, i) => msgHtml(e, i === entries.length - 1)).join('') + '</div>';
     bindMessageEvents();
     renderMath(box.querySelector('.msg-wrap'));
     scrollToBottom();
@@ -1125,16 +1144,6 @@
         if (n) openSources(n.sources || []);
       }
     }));
-
-    $$('.branch-nav').forEach(nav => {
-      nav.querySelectorAll('[data-b]').forEach(b => b.addEventListener('click', () => {
-        const parent = nav.dataset.parent;
-        let idx = parseInt(nav.dataset.index, 10);
-        if (b.dataset.b === 'prev') idx -= 1; else idx += 1;
-        state.choices[parent] = idx;
-        renderMessages();
-      }));
-    });
 
     $$('[data-copy]').forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
@@ -1309,6 +1318,7 @@
           // The combined endpoint tells the UI which chat now owns this stream.
           if (data && typeof data === 'object' && data.id) {
             state.currentChatId = data.id;
+            updateShareButtonVisibility();
             state.chats = (Array.isArray(state.chats) ? state.chats : [])
               .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
             const index = state.chats.findIndex(c => c.id === data.id);
@@ -2007,7 +2017,6 @@
   }
 
   function bindFiles() {
-    $('#models-btn').addEventListener('click', openModelStats);
     $('#mem-quick-btn').addEventListener('click', () => openMemory());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());
@@ -2316,7 +2325,6 @@
           (isAdmin ? '<div id="sys-block">' + systemRowsHtml() + '</div>' : '') +
           '<h4 class="sec">Разделы</h4>' +
           '<div class="settings-grid">' +
-          (isAdmin ? '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' : '') +
           '<button class="chip-btn" id="set-memory">' + icon('sparkle') + 'Память</button>' +
           '<button class="chip-btn" id="set-links">' + icon('link') + 'Мои ссылки</button>' +
           '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
@@ -2331,7 +2339,6 @@
         onOk: () => true,
       });
       const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
-      on('#set-models', () => { closeModal(); openModelStats(); });
       on('#set-memory', () => { closeModal(); openMemory(); });
       on('#set-links', () => { closeModal(); openLinks(); });
       on('#set-files', () => { closeModal(); toggleFiles(true); });
@@ -2817,40 +2824,6 @@
         $('#modal-root').innerHTML = '';
         openMemory();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-    });
-  }
-
-  // ---------- models & status ----------
-  async function openModelStats() {
-    let stats = [];
-    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
-    const card = (s) => {
-      const total = (s.rating_up + s.rating_down) || 0;
-      const good = total ? Math.round((s.rating_up / total) * 100) : 0;
-      return '<div class="model-card">' +
-        '<div class="mc-head"><b>' + escapeHtml(s.name) + '</b>' +
-        '<em class="route">' + escapeHtml(s.route_type) + '</em></div>' +
-        '<div class="mc-model">' + escapeHtml(s.model || '—') + '</div>' +
-        '<div class="mc-bar"><i style="width:' + Math.min(100, s.share) + '%"></i></div>' +
-        '<div class="mc-rows">' +
-        '<span>Доля запросов: <b>' + s.share + '%</b></span>' +
-        '<span>Запросов: <b>' + s.messages + '</b></span>' +
-        '<span>Вход: <b>' + fmtNum(s.tokens_in) + '</b></span>' +
-        '<span>Выход: <b>' + fmtNum(s.tokens_out) + '</b></span>' +
-        '<span>Из кэша: <b>' + fmtNum(s.tokens_cached) + '</b></span>' +
-        '<span>Оценки: 👍 <b>' + s.rating_up + '</b> · 👎 <b>' + s.rating_down + '</b></span>' +
-        '<span>Входов: <b>' + s.active_entries + '/' + s.entries + '</b></span>' +
-        '</div>' +
-        (total ? '<div class="mc-good">Довольных ответами: <b>' + good + '%</b></div>' : '') +
-        '</div>';
-    };
-    openModal({
-      title: 'Модели и статус',
-      okText: 'Закрыть',
-      body: '<p class="usage-note">Общая статистика по всем моделям — доступна всем пользователям.</p>' +
-        (stats.length ? '<div class="model-grid">' + stats.map(card).join('') + '</div>'
-                      : '<p>Моделей пока нет.</p>'),
-      onOk: () => true,
     });
   }
 
@@ -3407,7 +3380,6 @@
     applySidebar();
     if (state.user && state.user.is_admin) {
       $('#sidebar-limits-btn').classList.remove('hidden');
-      $('#models-btn').classList.remove('hidden');
       await loadSystem();
       setInterval(loadSystem, 20000);
     }

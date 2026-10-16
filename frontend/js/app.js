@@ -803,22 +803,23 @@
     const entries = [];
     const seen = new Set();
     const visit = (nodes) => {
-      (Array.isArray(nodes) ? nodes : []).forEach(node => {
-        if (!node || typeof node !== 'object' || seen.has(node)) return;
+      let siblings = (Array.isArray(nodes) ? nodes : [])
+        .filter(node => node && typeof node === 'object' && !seen.has(node));
+      const times = siblings.map(node => Date.parse(node.created_at || ''));
+      // Keep all sibling generations together, oldest first when timestamps are available.
+      if (times.length > 1 && times.every(Number.isFinite)) {
+        siblings = siblings.map((node, index) => ({ node, index, time: times[index] }))
+          .sort((a, b) => a.time - b.time || a.index - b.index)
+          .map(item => item.node);
+      }
+      siblings.forEach(node => {
         seen.add(node);
-        entries.push({ node, order: entries.length });
-        visit(node.children);
+        entries.push({ node });
       });
+      // Render alternatives first, then their descendants, so regenerated answers stay adjacent.
+      siblings.forEach(node => visit(node.children));
     };
     visit(tree);
-    entries.sort((a, b) => {
-      const ta = Date.parse(a.node.created_at || '');
-      const tb = Date.parse(b.node.created_at || '');
-      const validA = Number.isFinite(ta), validB = Number.isFinite(tb);
-      if (validA && validB && ta !== tb) return ta - tb;
-      if (validA !== validB) return validA ? -1 : 1;
-      return a.order - b.order;
-    });
     return entries;
   }
 

@@ -1057,7 +1057,7 @@
   }
 
   function bindMessageEvents() {
-    $('[data-tool-toggle]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-tool-toggle]').forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;
@@ -1066,7 +1066,7 @@
       const label = $('[data-tool-toggle-label]', btn);
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
-    $('.ask-card').forEach(card => {
+    $$('.ask-card').forEach(card => {
       const input = $('.ask-input', card);
       const send = () => {
         const value = (input.value || '').trim();

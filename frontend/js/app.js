@@ -455,6 +455,7 @@
     files: [],
     pendingAttachments: [],
     streaming: false,
+    sending: false,
     streamEl: null,
     streamBuf: '',
     streamStarted: false,
@@ -990,10 +991,6 @@
       if (tick % 2 === 0) rotateGreeting();
       renderSuggestionChips();
     }, 11000);
-    state.tileTimer = setInterval(() => {
-      if (!$('#tiles')) { if (state.tileTimer) clearInterval(state.tileTimer); return; }
-      rotateTiles();
-    }, 15000);
   }
 
   function stopRotation() {
@@ -1407,72 +1404,130 @@
     }
   }
 
+  function setSendPreparing(on) {
+    const btn = $('#send-btn');
+    if (!btn) return;
+    btn.disabled = !!on;
+    btn.classList.toggle('preparing', !!on);
+    btn.setAttribute('aria-busy', String(!!on));
+    btn.title = on ? 'Подготавливаю запрос…' : 'Отправить';
+  }
+
+  function restoreUnsentDraft(input, draft) {
+    if (!input) return;
+    const current = input.value || '';
+    if (!current.trim()) {
+      input.value = draft;
+    } else if (current !== draft && !current.includes(draft)) {
+      // Preserve both the failed request and any text typed while it was being prepared.
+      input.value = draft + '\n\n' + current;
+    }
+    autoGrow();
+    input.focus();
+  }
+
   async function sendCurrent() {
     const input = $('#input');
-    const content = input.value.trim();
-    if (!content || state.streaming) return;
-    // create the chat right away so the animation plays while the request runs
-    const isNewChat = !state.currentChatId;
-    if (isNewChat) {
-      const chat = await api.post('/api/chats', { title: 'Новый чат' });
-      state.chats.unshift(chat);
-      state.currentChatId = chat.id;
-      state.tree = []; state.choices = {};
-      $('#chat-title').textContent = chat.title;
-      renderChatList();
-    }
-    const attachments = state.pendingAttachments.map(f => f.id);
-    // continue the ACTIVE branch: the last message of the visible path
-    const path = activePath(state.tree, state.choices);
-    const parentId = path.length ? path[path.length - 1].node.id : null;
-    const attList = state.pendingAttachments.map(f => ({
+    const draft = input.value;
+    const content = draft.trim();
+    if (!content || state.streaming || state.sending) return;
+
+    // Freeze this request's attachment selection; newly added files stay for the next send.
+    const sentAttachments = state.pendingAttachments.slice();
+    const attachments = sentAttachments.map(f => f.id);
+    const attList = sentAttachments.map(f => ({
       file_id: f.id, name: f.original_name || f.name || 'файл',
       kind: f.kind || 'other', size: f.size || 0,
     }));
+    const isNewChat = !state.currentChatId;
 
-    // ---- optimistic render: show the messages at once, don't wait for the
-    // server round-trip (the 2nd message must appear immediately too) ----
-    const userId = 'tmp_u_' + Date.now().toString(36);
-    const asstId = 'tmp_a_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const userNode = {
-      id: userId, role: 'user', content, status: 'completed',
-      parent_message_id: parentId, attachments: attList, children: [],
-      created_at: new Date().toISOString(),
-    };
-    const asstNode = {
-      id: asstId, role: 'assistant', content: '', status: 'processing',
-      parent_message_id: userId, children: [],
-      created_at: new Date().toISOString(),
-      // first message of a new chat: creation animation until the stream starts
-      creating: isNewChat, creatingLabel: 'Создаю чат…',
-      error: null,
-    };
-    const parentNode = parentId ? findNode(state.tree, parentId) : null;
-    if (parentNode) {
-      parentNode.children = parentNode.children || [];
-      parentNode.children.push(userNode, asstNode);
-    } else {
-      state.tree.push(userNode, asstNode);
+    // Clear immediately so the click/Enter has visible feedback even if creating
+    // the first chat is slow. On a setup failure, restore the draft instead.
+    state.sending = true;
+    setSendPreparing(true);
+    input.value = '';
+    autoGrow();
+
+    let requestStarted = false;
+    try {
+      if (isNewChat) {
+        const chat = await api.post('/api/chats', { title: 'Новый чат' });
+        state.chats.unshift(chat);
+        state.currentChatId = chat.id;
+        state.tree = [];
+        state.choices = {};
+        $('#chat-title').textContent = chat.title;
+        renderChatList();
+      }
+
+      // Continue the active branch: the last message of the visible path.
+      const path = activePath(state.tree, state.choices);
+      const parentId = path.length ? path[path.length - 1].node.id : null;
+
+      // Optimistic render: show both messages before waiting for the server stream.
+      const userId = 'tmp_u_' + Date.now().toString(36);
+      const asstId = 'tmp_a_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const userNode = {
+        id: userId, role: 'user', content, status: 'completed',
+        parent_message_id: parentId, attachments: attList, children: [],
+        created_at: new Date().toISOString(),
+      };
+      const asstNode = {
+        id: asstId, role: 'assistant', content: '', status: 'processing',
+        parent_message_id: userId, children: [],
+        created_at: new Date().toISOString(),
+        creating: isNewChat, creatingLabel: 'Создаю чат…',
+        error: null,
+      };
+      const parentNode = parentId ? findNode(state.tree, parentId) : null;
+      if (parentNode) {
+        parentNode.children = parentNode.children || [];
+        parentNode.children.push(userNode, asstNode);
+      } else {
+        state.tree.push(userNode, asstNode);
+      }
+      state.activeAssistantId = asstId;
+      renderMessages();
+
+      // Remove only files included in this request; keep any newly added files.
+      const sentIds = new Set(attachments);
+      state.pendingAttachments = state.pendingAttachments.filter(f => !sentIds.has(f.id));
+      renderAttachments();
+
+      // The SSE handlers replace these temporary nodes in place.
+      state.tmpUser = { id: userId, content };
+      state.tmpAssistant = { id: asstId };
+      const request = streamRequest('/api/chats/' + state.currentChatId + '/messages',
+        {
+          content,
+          parent_message_id: parentId,
+          attachment_ids: attachments,
+          model_set_id: state.modelSetId || null,
+          web_search: true,
+          effort: state.effort,
+          style: state.style,
+        }, { optimistic: true });
+      requestStarted = true;
+      // streamRequest synchronously turns on the normal streaming/stop controls.
+      state.sending = false;
+      setSendPreparing(false);
+      await request;
+      state.tmpUser = null;
+      state.tmpAssistant = null;
+    } catch (err) {
+      console.error(err);
+      if (!requestStarted) {
+        restoreUnsentDraft(input, draft);
+        toast('Не удалось подготовить запрос. Текст сохранён: ' + (err && err.message ? err.message : 'неизвестная ошибка'), 'error');
+      } else {
+        toast('Запрос уже отправлен, но обновление интерфейса завершилось ошибкой: ' + (err && err.message ? err.message : 'неизвестная ошибка'), 'error');
+      }
+      state.tmpUser = null;
+      state.tmpAssistant = null;
+    } finally {
+      state.sending = false;
+      setSendPreparing(false);
     }
-    state.activeAssistantId = asstId;
-    renderMessages();
-
-    input.value = ''; autoGrow();
-    state.pendingAttachments = []; renderAttachments();
-    // remember which tmp node the server messages should replace
-    state.tmpUser = { id: userId, content };
-    state.tmpAssistant = { id: asstId };
-    await streamRequest('/api/chats/' + state.currentChatId + '/messages',
-      {
-        content,
-        parent_message_id: parentId,
-        attachment_ids: attachments,
-        model_set_id: state.modelSetId || null,
-        web_search: true,
-        effort: state.effort,
-        style: state.style,
-      }, { optimistic: true });
-    state.tmpUser = null; state.tmpAssistant = null;
   }
 
   // ---------- composer ----------
@@ -3034,9 +3089,13 @@
       'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
   }
 
-  function tileHtml(t) {
-    return '<button class="tile' + (t.locked ? ' locked' : '') + '" data-tile="' + t.id +
-      '" style="--tile:' + t.color + '">' +
+  function tileHtml(t, decorative) {
+    const actionAttrs = decorative
+      ? ' aria-hidden="true" tabindex="-1"'
+      : ' data-tile="' + t.id + '" aria-label="' + escapeHtml(t.label) + '"';
+    return '<button type="button" class="tile' + (t.locked ? ' locked' : '') + '"' +
+      actionAttrs + ' title="' + escapeHtml(t.label) + '"' +
+      ' style="--tile:' + t.color + '">' +
       '<span class="tile-ico">' + tileIcon(t.icon) + '</span>' +
       '<span class="tile-label">' + escapeHtml(t.label) + '</span>' +
       (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</button>';
@@ -3045,13 +3104,14 @@
   function renderTiles() {
     const box = $('#tiles');
     if (!box) return;
-    const picks = [];
-    const pool = ACTION_TILES.slice();
-    for (let i = 0; i < 6 && pool.length; i++) {
-      picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-    }
-    box.innerHTML = picks.map(tileHtml).join('');
+    const original = ACTION_TILES.map(t => tileHtml(t, false)).join('');
+    const duplicate = ACTION_TILES.map(t => tileHtml(t, true)).join('');
+    box.innerHTML = '<div class="tile-track">' +
+      '<div class="tile-sequence">' + original + '</div>' +
+      '<div class="tile-sequence" aria-hidden="true">' + duplicate + '</div>' +
+      '</div>';
   }
+
 
   function bindTiles() {
     $$('[data-tile]').forEach(b => b.addEventListener('click', () => {

@@ -1000,7 +1000,7 @@
   }
 
   function updateAudioControl(messageId) {
-    const wrapper = $('[data-audio-control]').find(el => el.dataset.audioControl === String(messageId));
+    const wrapper = $$('[data-audio-control]').find(el => el.dataset.audioControl === String(messageId));
     const entry = findNode(state.tree, messageId);
     if (wrapper && entry) wrapper.innerHTML = audioControlHtml(entry);
   }

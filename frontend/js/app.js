@@ -1572,12 +1572,6 @@
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.memories = (n.memories || []).concat(data.items || []);
           loadMemory();
-        } else if (ev === 'route') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) { n.route = data.name; n.routeBrief = data.brief || ''; }
-          renderMessages();
-          bindStreamRefs();
-          toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
         } else if (ev === 'tool_start') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) {

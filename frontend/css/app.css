@@ -270,7 +270,7 @@ a { color: var(--accent); }
 
 .msg { padding: 14px 0; }
 .msg .role { display: none; }
-.msg + .msg { border-top: 1px solid var(--border-soft); }
+.msg + .msg { border-top: 0; }
 
 .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
 .msg.user .bubble {
@@ -1038,10 +1038,10 @@ input[type="range"].orange-range { width: 100%; }
 #share-btn {
   width: auto; min-width: 132px; height: 38px; padding: 0 15px; gap: 9px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid #e2d0a8; border-radius: 999px;
-  background: #f3e7ca; color: #5b4828; font-size: 14.3px; font-weight: 500;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg-panel); color: var(--fg-muted); font-size: 14.3px; font-weight: 500;
 }
-#share-btn:hover { background: #ead9b2; border-color: #d7c398; color: #4f3d20; }
+#share-btn:hover { background: var(--bg-hover); border-color: var(--border); color: var(--fg); }
 #share-btn .share-label { display: inline; font-size: 14.3px; line-height: 1; }
 #share-btn .ic { width: 17px; height: 17px; }
 .head-right { gap: 8px; }
@@ -2108,3 +2108,96 @@ body { font-weight: 400; }
   margin-right: 0;
   flex: 0 0 34px;
 }
+
+
+/* User-requested visual polish: preserve behavior, only adjust surfaces and spacing. */
+.msg.assistant .content.md { font-size: 15.345px; }
+.msg.assistant .content.md h1 { font-size: 21.78px; }
+.msg.assistant .content.md h2 { font-size: 18.81px; }
+.msg.assistant .content.md h3 { font-size: 16.335px; }
+.msg.assistant .content.md table { font-size: 13.86px; }
+.msg.assistant .content.md code { font-size: 12.87px; }
+.msg.assistant .content.md .code-block pre,
+.msg.assistant .content.md .code-block pre code { font-size: 12.87px; }
+
+/* Remove the faint hairline between adjacent messages. */
+.msg + .msg { border-top: 0; }
+
+/* User's copy button sits slightly higher and aligns closer to the message text. */
+.user-copy-btn {
+  width: 32px; height: 32px; flex-basis: 32px; margin-bottom: 5px;
+  background: var(--bg-panel); border-color: var(--border-soft);
+}
+.user-copy-btn .ic { width: 16px; height: 16px; }
+
+/* The share, copy, save, source and question controls use the normal page surface. */
+#share-btn { background: var(--bg-panel); border-color: var(--border); color: var(--fg-muted); }
+#share-btn:hover { background: var(--bg-hover); color: var(--fg); }
+.msg .meta button.message-action-labeled {
+  background: var(--bg-panel); border-color: var(--border-soft); color: var(--fg-muted);
+}
+.msg .meta button.message-action-labeled:hover,
+.msg .meta button.message-action-labeled:focus-visible {
+  background: var(--bg-hover); border-color: var(--border); color: var(--fg);
+}
+.msg .meta button.icon-only-action {
+  background: var(--bg-panel); border-color: var(--border-soft);
+}
+.msg .meta button.icon-only-action:hover,
+.msg .meta button.icon-only-action:focus-visible,
+.msg .meta button.icon-only-action.copied {
+  background: var(--bg-hover); border-color: var(--border); color: var(--fg);
+}
+.ask-input { background: var(--bg-panel); border-color: var(--border); color: var(--fg); }
+.ask-input:focus { border-color: var(--border); box-shadow: 0 0 0 2px var(--bg-hover); }
+
+/* Put full-width audio below the response action buttons. */
+.msg-actions-row {
+  flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 10px;
+}
+.msg-actions-row .meta { width: 100%; flex: 0 0 auto; }
+.msg-actions-row .answer-audio-wrap {
+  display: flex; justify-content: stretch; align-self: stretch;
+  width: 100%; max-width: 100%; flex: 0 0 auto; margin: 0;
+}
+.msg-actions-row .answer-audio-generate,
+.msg-actions-row .answer-audio-preview {
+  width: 100%; min-width: 0; max-width: none; box-sizing: border-box;
+}
+.msg-actions-row .answer-audio-generate { justify-content: center; }
+
+/* Center the chat title with the audio mark, and keep close control separate. */
+.audio-sheet-handle { margin-bottom: 14px; }
+.audio-sheet-head {
+  position: relative; justify-content: center; gap: 13px;
+  padding: 0 50px; margin: 0 auto 22px;
+}
+.audio-sheet-titles { flex: 0 1 auto; text-align: center; }
+.audio-sheet-titles h2 {
+  max-width: min(56vw, 500px); margin: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.audio-player-close {
+  position: absolute; top: 0; right: 0; align-self: auto;
+  display: grid; place-items: center; width: 44px; height: 44px;
+  flex: 0 0 44px; padding: 0;
+}
+#audio-close-btn .ic { width: 27px; height: 27px; stroke-width: 3; }
+.audio-player-controls { gap: 24px; margin-top: 22px; }
+.audio-player-controls .audio-skip-btn { width: 80px; height: 80px; }
+.audio-player-controls .audio-skip-btn .ic { width: 37px; height: 37px; }
+@media (max-width: 620px) {
+  .audio-sheet-head { gap: 11px; padding-left: 44px; padding-right: 44px; }
+  .audio-sheet-art { width: 48px; height: 48px; flex-basis: 48px; }
+  .audio-sheet-titles h2 { max-width: 48vw; font-size: 16.5px; }
+  .audio-player-close { width: 42px; height: 42px; flex-basis: 42px; }
+  #audio-close-btn .ic { width: 26px; height: 26px; }
+  .audio-player-controls { gap: 12px; }
+  .audio-player-controls .audio-skip-btn { width: 80px; height: 80px; }
+  .msg-actions-row .answer-audio-wrap { margin-left: 0; }
+}
+.sidebar-memory {
+  width: 100%; justify-content: flex-start; gap: 9px; padding: 0 11px;
+  border-color: var(--border-soft); background: var(--bg-panel); color: var(--fg-muted);
+}
+.sidebar-memory:hover { background: var(--bg-hover); color: var(--fg); }

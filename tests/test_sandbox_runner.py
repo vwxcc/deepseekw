@@ -48,9 +48,12 @@ class SandboxRunnerTests(unittest.TestCase):
 
         handler = object.__new__(server.Handler)
         handler.headers = Message()
-        with (
-            patch.dict(os.environ, {"SANDBOX_API_KEY": "test-secret", "SANDBOX_REQUIRE_AUTH": "1"}),
+        with patch.object(
+            server.os,
+            "environ",
+            {"SANDBOX_API_KEY": "test-secret", "SANDBOX_REQUIRE_AUTH": "1"},
         ):
+            self.assertEqual(server.os.environ["SANDBOX_API_KEY"], "test-secret")
             self.assertFalse(handler._authorized())
             handler.headers["Authorization"] = "Bearer test-secret"
             self.assertTrue(handler._authorized())

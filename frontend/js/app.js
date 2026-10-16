@@ -1228,7 +1228,7 @@
       audio.currentTime = Math.max(0, Math.min(duration, current + offset));
       updateAudioPlayerControls();
     };
-    $('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
       if (btn.dataset.audioAction === 'back') seekAudio(-10);
       else if (btn.dataset.audioAction === 'forward') seekAudio(10);
     }));

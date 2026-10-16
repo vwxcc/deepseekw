@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=28" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=29" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -92,13 +92,15 @@
       </div>
 
       <div class="side-top">
-        <button class="side-item wide sidebar-limits hidden" id="sidebar-limits-btn" title="Настроить тарифы и лимиты">
-          <svg class="ic"><use href="#i-gauge"/></svg><span>Тарифы и лимиты</span>
-        </button>
-        <div class="side-row primary-actions">
+        <div class="side-row top-account-actions">
           <button class="side-item wide" id="settings-btn" title="Настройки и профиль">
             <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
           </button>
+          <button class="side-item wide sidebar-limits hidden" id="sidebar-limits-btn" title="Настроить тарифы и лимиты">
+            <svg class="ic"><use href="#i-gauge"/></svg><span>Лимиты</span>
+          </button>
+        </div>
+        <div class="side-row primary-actions">
           <button class="new-chat" id="new-chat-btn" title="Новый чат">
             <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
           </button>

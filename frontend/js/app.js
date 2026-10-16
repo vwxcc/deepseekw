@@ -1168,7 +1168,15 @@
     if (!shell || !audio) return;
     state.audioMessageId = messageId;
     const chat = state.chats.find(c => c.id === state.currentChatId);
-    $('#audio-player-title').textContent = (chat && chat.title) || 'Ответ';
+    const playerTitle = (chat && chat.title) || 'Ответ';
+    $('#audio-player-title').textContent = playerTitle;
+    if (navigator.mediaSession && typeof window.MediaMetadata === 'function') {
+      try {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: playerTitle, artist: 'ai-ch', album: 'Озвучка ответов',
+        });
+      } catch (e) { /* media metadata is optional */ }
+    }
     audio.pause();
     audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
     audio.load();

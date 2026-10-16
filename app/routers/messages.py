@@ -53,6 +53,11 @@ import logging
 
 from ..services.usage import account, est
 from ..services.limits import get_limits
+from ..services.audio_quota import (
+    AudioQuotaExceeded,
+    release_audio_generation,
+    reserve_audio_generation,
+)
 from ..services.sandbox import list_project_files
 from ..services.tts import (
     AUDIO_MEDIA_TYPES,
@@ -900,8 +905,9 @@ async def create_message_audio(
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Generate and persist a spoken version of a completed assistant response."""
+    """Generate a spoken version of a completed response, enforcing the rolling plan quota."""
     if message.role != Role.assistant or message.status != MessageStatus.completed:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Озвучить можно только готовый ответ ассистента.")
     source = (message.content or "").strip()
@@ -913,24 +919,50 @@ async def create_message_audio(
     except ValueError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
 
+    # A cached audio file can be replayed without consuming another generation slot.
     if not path.is_file():
         try:
-            audio_bytes, generated_format = await generate_speech(source)
-        except TTSNotConfiguredError as exc:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-        except TTSGenerationError as exc:
-            log.warning("TTS generation failed for message %s: %s", message.id, exc)
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
-        if generated_format != fmt:
-            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Формат аудио изменился во время генерации.")
+            reservation = await reserve_audio_generation(
+                db, user.id, message.id, user.plan or "free"
+            )
+        except AudioQuotaExceeded as exc:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
+
+        async def release_reservation() -> None:
+            try:
+                await release_audio_generation(db, reservation)
+            except Exception:
+                log.exception("Could not release audio quota reservation for message %s", message.id)
+
         try:
+            audio_bytes, generated_format = await generate_speech(source)
+            if generated_format != fmt:
+                raise HTTPException(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "Формат аудио изменился во время генерации.",
+                )
             path.parent.mkdir(parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, audio_bytes)
+        except TTSNotConfiguredError as exc:
+            await release_reservation()
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+        except ValueError as exc:
+            await release_reservation()
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        except TTSGenerationError as exc:
+            await release_reservation()
+            log.warning("TTS generation failed for message %s: %s", message.id, exc)
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
         except OSError as exc:
+            await release_reservation()
             log.exception("Could not persist TTS audio for message %s", message.id)
-            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Не удалось сохранить аудиофайл.") from exc
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR, "Не удалось сохранить аудиофайл."
+            ) from exc
+        except BaseException:
+            await release_reservation()
+            raise
+
     return {
         "ready": True,
         "url": f"/api/messages/{message.id}/audio/file",

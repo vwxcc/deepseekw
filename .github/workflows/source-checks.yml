@@ -1,0 +1,51 @@
+name: Validate source syntax
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Python syntax
+        run: python -m compileall -q app sandbox
+      - name: Check browser JavaScript syntax
+        run: node --check frontend/js/app.js
+      - name: Check static HTML IDs and cache references
+        run: |
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class IdCheck(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.ids = []
+              def handle_starttag(self, tag, attrs):
+                  self.ids.extend(value for key, value in attrs if key == "id")
+
+          html = Path("frontend/index.html").read_text(encoding="utf-8")
+          parser = IdCheck()
+          parser.feed(html)
+          duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
+          if duplicates:
+              raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
+          if "/assets/css/app.css?v=34" not in html:
+              raise SystemExit("Unexpected CSS cache reference")
+          if "/assets/js/app.js?v=36" not in html:
+              raise SystemExit("Unexpected JS cache reference")
+          print("HTML IDs are unique; static asset references are current.")
+          PY

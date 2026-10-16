@@ -1289,8 +1289,14 @@
       if (n) n.thinkCollapsed = box.classList.contains('collapsed');
     }));
 
-    $$('[data-mact]').forEach(btn => btn.addEventListener('click', async () => {
-      const id = btn.dataset.id, act = btn.dataset.mact;
+    // Delegate message actions because individual controls may be replaced dynamically.
+    const messageActions = $('#messages');
+    if (messageActions && !messageActions.dataset.actionsBound) {
+      messageActions.dataset.actionsBound = 'true';
+      messageActions.addEventListener('click', async (event) => {
+        const btn = event.target.closest('[data-mact]');
+        if (!btn || !messageActions.contains(btn) || btn.disabled) return;
+        const id = btn.dataset.id, act = btn.dataset.mact;
       if (act === 'copy') {
         const n = findNode(state.tree, id);
         if (n) await copyWithFeedback(btn, n.content || '');
@@ -1325,9 +1331,10 @@
         const n = findNode(state.tree, id);
         if (n) openSources(n.sources || []);
       }
-    }));
+      });
+    }
 
-    $$('[data-copy]').forEach(b => b.addEventListener('click', () => {
+    $('[data-copy]').forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
     }));

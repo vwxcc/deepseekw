@@ -756,12 +756,12 @@ a { color: var(--accent); }
 /* ============================================================
    Greeting / chips rotation
    ============================================================ */
-.empty-state h2.greet { animation: greetIn 1.1s cubic-bezier(.2, .8, .3, 1); }
+.empty-state h2.greet { animation: greetIn .16s ease-out both; }
 @keyframes greetIn {
   from { opacity: 0; transform: translateY(12px); filter: blur(7px); }
   to { opacity: 1; transform: none; filter: none; }
 }
-.chips button.chip-in { animation: chipIn .7s cubic-bezier(.2, .8, .3, 1) backwards; }
+.chips button.chip-in { animation: chipIn .14s ease-out both; }
 @keyframes chipIn {
   from { opacity: 0; transform: translateY(8px) scale(.96); }
   to { opacity: 1; transform: none; }

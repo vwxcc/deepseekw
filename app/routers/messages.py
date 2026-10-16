@@ -53,6 +53,7 @@ import logging
 
 from ..services.usage import account, est
 from ..services.limits import get_limits
+from ..services.sandbox import list_project_files
 
 log = logging.getLogger("chatstudio.messages")
 
@@ -638,7 +639,11 @@ async def seed_chat(
 async def chat_project(
     chat: Chat = Depends(get_owned_chat), db: AsyncSession = Depends(get_db)
 ) -> dict:
-    """File tree of a code-agent project (lives in the shared sandbox directory)."""
+    """File tree of a code-agent project (remote runner or shared local directory)."""
+    remote_files = await list_project_files(chat.id)
+    if remote_files is not None:
+        return {"chat_id": chat.id, "mode": chat.mode or "chat", "files": remote_files}
+
     root = settings.sandbox_path / "projects" / chat.id
     files: list[dict] = []
     if root.is_dir():

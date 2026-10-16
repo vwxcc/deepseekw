@@ -516,6 +516,7 @@
     audioReady: Object.create(null),
     audioPending: Object.create(null),
     audioStatusRequested: new Set(),
+    audioStatusChatId: null,
     audioRequestInFlight: Object.create(null),
     audioBusyMessageId: null,
     audioStatusPollTimer: null,
@@ -1041,6 +1042,11 @@
       state.audioBusyMessageId = String(result.generating_message_id);
     } else if (!result.busy && !(previousBusyId && state.audioRequestInFlight[previousBusyId])) {
       state.audioBusyMessageId = null;
+      if (previousBusyId && String(previousBusyId) !== String(messageId) && !state.audioRequestInFlight[previousBusyId]) {
+        state.audioPending[previousBusyId] = false;
+        state.audioStatusRequested.delete(previousBusyId);
+        updateAudioControl(previousBusyId);
+      }
     }
 
     if (result.ready) {
@@ -1093,12 +1099,17 @@
 
   function hydrateAudioStatuses(entries) {
     if (state.readonly) return;
+    if (state.audioStatusChatId !== state.currentChatId) {
+      state.audioStatusRequested.clear();
+      state.audioStatusChatId = state.currentChatId;
+    }
     let hasCompletedAnswer = false;
     entries.forEach(entry => {
       const n = entry.node;
       if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
       hasCompletedAnswer = true;
-      if (state.audioStatusRequested.has(n.id)) return;
+      if (state.audioStatusRequested.has(n.id) && !state.audioPending[n.id] &&
+          String(state.audioBusyMessageId || '') !== String(n.id)) return;
       state.audioStatusRequested.add(n.id);
       refreshAudioStatus(n.id);
     });

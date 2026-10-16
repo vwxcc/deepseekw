@@ -816,7 +816,8 @@
         node && typeof node === 'object' && typeof node.id === 'string' && node.id
       );
       if (!siblings.length) break;
-      let idx = Number(selected[parentKey]);
+      const rawIndex = selected[parentKey];
+      let idx = rawIndex == null ? NaN : Number(rawIndex);
       if (!Number.isInteger(idx) || idx >= siblings.length || idx < 0) idx = siblings.length - 1;
       const node = siblings[idx];
       path.push({ node, siblings, index: idx, parentKey });

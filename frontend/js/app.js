@@ -1882,7 +1882,7 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
-    // the model picker is gone — the server runs the chain per action itself
+    // The server uses one primary model for all AI tasks.
     if ($('#context-btn')) $('#context-btn').addEventListener('click', openUsageModal);
     if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
@@ -2376,7 +2376,7 @@
   }
 
   function addEntryForm(root, setId, done) {
-    adminForm(root, 'Новая модель (шаг fallback)', [
+    adminForm(root, 'Добавить модель в набор', [
       { id: 'me-url', label: 'Base URL', placeholder: 'https://…/v1' },
       { id: 'me-model', label: 'Модель', placeholder: 'qwen36-35b' },
       { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
@@ -3434,11 +3434,9 @@
   }
 
   // ---------- model choice ----------
-  // The picker is gone from the interface: every action (answer, title,
-  // suggestions) runs its own chain of models on the server — base API first,
-  // next model when one is at its parallel limit, waiting when all are busy.
+  // There is no model picker: the backend uses one primary MAIN model for every AI task.
   function currentModelSet() {
-    return (state.modelSets || []).find(x => x.id === state.modelSetId) || null;
+    return null;
   }
 
   function updateModelButton() {

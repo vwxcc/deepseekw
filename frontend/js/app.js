@@ -1829,7 +1829,6 @@
     $('#wall-btn').addEventListener('click', openWall);
     $('#publish-btn').addEventListener('click', publishCurrentChat);
     $('#mem-quick-btn').addEventListener('click', () => openMemory());
-    $('#toggle-files-btn').addEventListener('click', () => toggleFiles());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());
     $('#file-search').addEventListener('input', (e) => {

@@ -687,12 +687,12 @@
     box.innerHTML = state.chats.map(c =>
       '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
         '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
-        '<span class="chat-meta">' +
-          (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
-          (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
-          (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
-          (c.model_name ? '<em class="model-tag">' + escapeHtml(c.model_name) + '</em>' : '') +
-        '</span>' +
+        ((c.mode === 'code' || c.mode === 'council' || (c.bundle_id && c.mode !== 'council')) ?
+          '<span class="chat-meta">' +
+            (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
+            (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
+            (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
+          '</span>' : '') +
         '<span class="acts">' +
           '<button data-act="rename" title="Переименовать">' + icon('pencil') + '</button>' +
           '<button data-act="delete" title="Удалить">' + icon('trash') + '</button>' +
@@ -922,11 +922,6 @@
       if (generating) {
         parts.push('<button data-mact="stop" data-id="' + n.id + '">' + icon('stop') + 'Остановить</button>');
       } else {
-        if (n.sources && n.sources.length) {
-          parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="sources" data-id="' + escapeHtml(n.id) +
-            '" title="Источники из интернета" aria-label="Источники из интернета">' +
-            icon('globe') + '<b class="cnt">' + n.sources.length + '</b></button>');
-        }
         if (n.content) {
           parts.push('<button class="message-action-labeled" data-mact="copy" data-id="' + escapeHtml(n.id) +
             '" title="Копировать ответ" aria-label="Копировать ответ">' + icon('copy') + '<span>Копировать</span></button>');
@@ -937,8 +932,11 @@
               '" title="Что записано в память" aria-label="Память">' + icon('sparkle') + '</button>');
           }
         }
-        parts.push('<button class="message-action-labeled" data-mact="retry" data-id="' + escapeHtml(n.id) +
-          '" title="Повторить ответ" aria-label="Повторить ответ">' + icon('refresh') + '<span>Повторить</span></button>');
+        if (n.sources && n.sources.length) {
+          parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="sources" data-id="' + escapeHtml(n.id) +
+            '" title="Источники из интернета" aria-label="Источники из интернета">' +
+            icon('globe') + '<b class="cnt">' + n.sources.length + '</b></button>');
+        }
       }
       meta = '<div class="meta">' + parts.join('') + '</div>';
     }
@@ -954,13 +952,6 @@
       tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
     }
 
-    let routeLine = '';
-    if (!isUser && n.route) {
-      routeLine = '<div class="route-line">' + icon('sparkle') +
-        '<span>Auto → <b>' + escapeHtml(n.route) + '</b>' +
-        (n.routeBrief ? ' · ' + escapeHtml(n.routeBrief) : '') + '</span></div>';
-    }
-
     let askCard = '';
     if (!isUser && n.ask) {
       askCard = '<div class="ask-card">' +
@@ -974,9 +965,12 @@
     const audioCtl = !isUser && !state.readonly && n.status === 'completed' && String(n.content || '').trim()
       ? audioControlHtml(n) : '';
 
+    const actionsRow = !isUser && !state.readonly && (meta || audioCtl)
+      ? '<div class="msg-actions-row">' + meta + audioCtl + '</div>' : '';
+
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      routeLine + tools + inner + askCard + audioCtl + meta + memLine + '</div>';
+      tools + inner + askCard + actionsRow + memLine + '</div>';
   }
 
   function audioControlHtml(n) {
@@ -1578,12 +1572,6 @@
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.memories = (n.memories || []).concat(data.items || []);
           loadMemory();
-        } else if (ev === 'route') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) { n.route = data.name; n.routeBrief = data.brief || ''; }
-          renderMessages();
-          bindStreamRefs();
-          toast('Auto → «' + (data.name || '') + '»' + (data.brief ? ': ' + data.brief : ''));
         } else if (ev === 'tool_start') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) {
@@ -1894,7 +1882,7 @@
       if (files.length) await uploadFiles(files);
       e.target.value = '';
     });
-    // the model picker is gone — the server runs the chain per action itself
+    // The server uses one primary model for all AI tasks.
     if ($('#context-btn')) $('#context-btn').addEventListener('click', openUsageModal);
     if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
@@ -2134,11 +2122,9 @@
     } catch (e) {
       state.modelSets = [];
     }
-    // The picker is gone: the server picks models itself per action.
-    // We keep the list only for the admin panel.
-    const mains = (state.modelSets || []).filter(s => s.route_type === 'MAIN');
-    const auto = mains.find(s => s.is_router) || mains[0];
-    state.modelSetId = auto ? auto.id : '';
+    // The client no longer selects a model set; the server always uses one primary MAIN model.
+    // Keep the set list for admin tools only, never send the Auto Routing set as a selection.
+    state.modelSetId = '';
   }
 
   // ---------- files ----------
@@ -2390,7 +2376,7 @@
   }
 
   function addEntryForm(root, setId, done) {
-    adminForm(root, 'Новая модель (шаг fallback)', [
+    adminForm(root, 'Добавить модель в набор', [
       { id: 'me-url', label: 'Base URL', placeholder: 'https://…/v1' },
       { id: 'me-model', label: 'Модель', placeholder: 'qwen36-35b' },
       { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
@@ -3448,11 +3434,9 @@
   }
 
   // ---------- model choice ----------
-  // The picker is gone from the interface: every action (answer, title,
-  // suggestions) runs its own chain of models on the server — base API first,
-  // next model when one is at its parallel limit, waiting when all are busy.
+  // There is no model picker: the backend uses one primary MAIN model for every AI task.
   function currentModelSet() {
-    return (state.modelSets || []).find(x => x.id === state.modelSetId) || null;
+    return null;
   }
 
   function updateModelButton() {

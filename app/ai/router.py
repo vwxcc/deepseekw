@@ -1,14 +1,7 @@
-"""AI Router: per-action model chains, overload guard, fallback and streaming.
+"""Single-primary-model AI worker with bounded concurrency and streaming.
 
-Each generated answer and the first chat title use their own chain of models taken from
-the matching Model Set. A chain is tried in order:
-
-* a model that is **saturated** (``max_parallel`` requests already running) is
-  skipped and the next one is used;
-* if every model of the chain is saturated, the router **waits** for a free slot;
-* if a model **fails**, the next model of the chain takes over.
-
-The order of an exchange is strict: the answer first, then the title on the first exchange.
+All answer, title, and compression tasks resolve to the first active entry in
+one active non-router MAIN model set. Other sets and fallback entries are ignored.
 """
 from __future__ import annotations
 
@@ -132,11 +125,7 @@ class Job:
 
 
 class ModelPool:
-    """Keeps at most ``max_parallel`` requests on each model at a time.
-
-    Asking for a busy model while a free one exists is what the chain ordering is
-    for: the router simply moves to the next model instead of queueing behind it.
-    """
+    """Keeps concurrency bounded for the single selected primary model."""
 
     def __init__(self) -> None:
         self._used: dict[str, int] = {}
@@ -161,7 +150,7 @@ class ModelPool:
                     if self._used.get(entry.id, 0) < limit:
                         self._used[entry.id] = self._used.get(entry.id, 0) + 1
                         return entry
-            # every model of the chain is busy right now — wait for a release
+            # The configured primary is at its concurrency limit; wait for its slot.
             try:
                 async with self._cond:
                     await asyncio.wait_for(self._cond.wait(), timeout=0.5)
@@ -238,35 +227,45 @@ class AIRouter:
         job.cancel.set()
         return True
 
-    # --- model chains ------------------------------------------------------
+    # --- single primary model ---------------------------------------------
 
     async def _resolve_entries(
         self, route_type: RouteType, model_set_id: str | None = None
     ) -> tuple[str, str, list[EntryConfig]]:
-        """Active models of the set serving this action, in chain order."""
+        """Resolve every AI task to the same single primary model.
+
+        Per-action model sets, client-supplied set IDs, router sets, and fallback
+        entries are intentionally ignored. The primary is the first active
+        non-router MAIN set (stable alphabetical order) and its first active entry.
+        A failed or busy primary is never silently replaced by another model.
+        """
+        del route_type, model_set_id
         async with SessionLocal() as db:
+            result = await db.execute(
+                select(ModelSet)
+                .where(
+                    ModelSet.route_type == RouteType.MAIN,
+                    ModelSet.is_active.is_(True),
+                    ModelSet.is_router.is_(False),
+                )
+                .order_by(ModelSet.name, ModelSet.id)
+            )
+            candidates = result.scalars().all()
             mset = None
-            if model_set_id:
-                candidate = await db.get(ModelSet, model_set_id)
-                if candidate is not None and candidate.is_active:
+            entries = []
+            for candidate in candidates:
+                active_entries = await ms.get_active_entries(db, candidate.id)
+                if active_entries:
                     mset = candidate
-            if mset is None:
-                mset = await ms.get_model_set(db, route_type)
-            if mset is None:
+                    # The first configured entry is the primary. No fallback chain.
+                    entries = active_entries[:1]
+                    break
+            if mset is None or not entries:
                 raise ProviderError(
-                    f"Нет активного Model Set для маршрута {route_type.value}"
+                    "Нет активной основной модели. Включите основной MAIN-набор "
+                    "без Auto Routing и добавьте в него активную модель."
                 )
-            entries = await ms.get_active_entries(db, mset.id)
-            if not entries and route_type is not RouteType.MAIN:
-                # a missing title/suggestions set falls back to the answer chain
-                main_set = await ms.get_model_set(db, RouteType.MAIN)
-                if main_set is not None:
-                    mset = main_set
-                    entries = await ms.get_active_entries(db, main_set.id)
-            if not entries:
-                raise ProviderError(
-                    f"Model Set «{mset.name}» не содержит активных моделей"
-                )
+            e = entries[0]
             configs = [
                 EntryConfig(
                     id=e.id,
@@ -283,11 +282,10 @@ class AIRouter:
                     price_out=float(getattr(e, "price_out", 0.0) or 0.0),
                     price_cache=float(getattr(e, "price_cache", 0.0) or 0.0),
                 )
-                for e in entries
             ]
             return mset.id, mset.name, configs
 
-    async def _acquire_with_fallback(
+    async def _acquire_primary(
         self, job: Job, entries: list[EntryConfig], skip: set[str]
     ) -> EntryConfig | None:
         return await pool.acquire(entries, skip, job.cancel)
@@ -612,81 +610,6 @@ class AIRouter:
 
     # --- main generation ---------------------------------------------------
 
-    async def _is_router_set(self, mset_id: str | None) -> bool:
-        if not mset_id:
-            return False
-        async with SessionLocal() as db:
-            obj = await db.get(ModelSet, mset_id)
-            return bool(obj and getattr(obj, "is_router", False))
-
-    async def _route(self, job: Job, entry: EntryConfig) -> tuple[str | None, str, str]:
-        """Ask the routing model to compress the request and pick a cluster."""
-        async with SessionLocal() as db:
-            rows = (
-                await db.execute(
-                    select(ModelSet).where(
-                        ModelSet.route_type == RouteType.MAIN,
-                        ModelSet.is_active.is_(True),
-                    )
-                )
-            ).scalars().all()
-        candidates = [s for s in rows if not getattr(s, "is_router", False)]
-        if not candidates:
-            return None, "", ""
-        listing = "\n".join(f"{s.id} — {s.name}" for s in candidates)
-        brief = ""
-        chosen = None
-        try:
-            answer = await complete_chat(
-                messages=[
-                    {"role": "system", "content": prompts.ROUTER_SYSTEM},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Запрос пользователя:\n{job.user_text or '(пусто)'}\n\n"
-                            f"Доступные кластеры:\n{listing}"
-                        ),
-                    },
-                ],
-                base_url=entry.base_url,
-                api_key=entry.api_key,
-                model=entry.model,
-                temperature=0.0,
-                max_tokens=300,
-                timeout=min(entry.timeout, 90),
-                disable_thinking=True,
-            )
-            text = (answer or "").strip()
-            match = re.search(r"\{[\s\S]*\}", text)
-            data = json.loads(match.group(0)) if match else {}
-            brief = str(data.get("brief") or "")[:300]
-            raw_cluster = str(data.get("cluster") or "")
-            for s in candidates:
-                if s.id == raw_cluster.strip() or (raw_cluster and s.id in raw_cluster):
-                    chosen = s
-                    break
-            if chosen is None:
-                for s in candidates:
-                    if s.name and s.name.lower() in text.lower():
-                        chosen = s
-                        break
-        except (ProviderError, json.JSONDecodeError, ValueError) as e:
-            log.warning("Router failed: %s", e)
-        if chosen is None:
-            chosen = candidates[0]
-        try:
-            async with SessionLocal() as db:
-                await account(
-                    db, job.chat_id, chosen.id,
-                    est(job.user_text) + est(listing), est(brief),
-                    entry=entry, user_id=job.user_id, message_id=job.message_id,
-                    action="routing",
-                )
-                await db.commit()
-        except Exception as e:  # noqa: BLE001 - accounting must never break a chat
-            log.warning("Router accounting failed: %s", e)
-        return chosen.id, chosen.name, brief
-
     async def _run_message(self, job: Job) -> None:
         blocked = await self._budget_error(job)
         if blocked:
@@ -702,21 +625,6 @@ class AIRouter:
             await self._finish(job.message_id, MessageStatus.failed, error=str(e))
             await job.output.put(("error", str(e)))
             return
-
-        # Auto (Routing): let the router cluster pick a concrete model set first
-        if await self._is_router_set(mset_id):
-            chosen_id, chosen_name, brief = await self._route(job, entries[0])
-            if chosen_id:
-                await job.output.put(
-                    ("route", json.dumps(
-                        {"id": chosen_id, "name": chosen_name, "brief": brief},
-                        ensure_ascii=False,
-                    ))
-                )
-                job.model_set_id = chosen_id
-                mset_id, mset_name, entries = await self._resolve_entries(
-                    RouteType.MAIN, chosen_id
-                )
 
         await self._set_status(
             job.message_id, MessageStatus.processing, mset_id, mset_name
@@ -738,7 +646,7 @@ class AIRouter:
         while rounds < 2:
             rounds += 1
             while len(tried) < len(entries):
-                entry = await self._acquire_with_fallback(job, entries, tried)
+                entry = await self._acquire_primary(job, entries, tried)
                 if entry is None:
                     await self._finish(
                         job.message_id, MessageStatus.cancelled,
@@ -746,14 +654,6 @@ class AIRouter:
                     )
                     await job.output.put(("cancelled", ""))
                     return
-                if tried:
-                    # a fallback is in play — let the UI show which model stepped in
-                    await job.output.put(
-                        ("route", json.dumps(
-                            {"name": entry.label, "brief": "резервная модель"},
-                            ensure_ascii=False,
-                        ))
-                    )
                 try:
                     messages, sources = await self._prepare_history(job, entry)
                     answer = ""
@@ -880,10 +780,10 @@ class AIRouter:
                 finally:
                     await pool.release(entry)
 
-            # every model failed once — retry the whole chain one more time
+            # The same primary model failed once; retry it once without switching models.
             if rounds >= 2 or job.cancel.is_set():
                 break
-            log.warning("Retrying the chain once: %s", last_error)
+            log.warning("Retrying the primary model once: %s", last_error)
             tried.clear()
             await job.output.put(("step", json.dumps({"n": 0, "retry": True})))
 

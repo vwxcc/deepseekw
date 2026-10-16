@@ -8,6 +8,7 @@ from app.services.tts import (
     clean_tts_text,
     generate_speech,
     normalized_audio_format,
+    _provider_error_detail,
 )
 
 
@@ -140,7 +141,7 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("voice", request["json"])
         self.assertEqual(request["json"]["response_format"], "mp3")
 
-    async def test_fish_audio_custom_voice_reference_is_preserved(self):
+    async def test_fish_audio_omits_any_legacy_voice_value(self):
         FakeClient.last_request = None
         FakeClient.requests = []
         with (
@@ -150,12 +151,27 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
             patch.object(settings, "tts_base_url", "https://openrouter.ai/api/v1"),
             patch.object(settings, "tts_api_key", "openrouter-secret"),
             patch.object(settings, "tts_model", "fish-audio/s2.1-pro-free:free"),
-            patch.object(settings, "tts_voice", "fish-reference-id"),
+            patch.object(settings, "tts_voice", "ru-RU"),
             patch.object(settings, "tts_response_format", "mp3"),
             patch("app.services.tts.httpx.AsyncClient", FakeClient),
         ):
             await generate_speech("Привет, мир.")
-        self.assertEqual(FakeClient.last_request["json"]["voice"], "fish-reference-id")
+        self.assertNotIn("voice", FakeClient.last_request["json"])
+
+    def test_provider_error_detail_is_short_and_redacts_keys(self):
+        class ErrorResponse:
+            def json(self):
+                return {"error": {"message": "Invalid voice for API key secret-key-value" + chr(10) + "Try another voice."}}
+
+        with (
+            patch.object(settings, "tts_api_key", "secret-key-value"),
+            patch.object(settings, "tts_preprocess_api_key", "prep-secret"),
+        ):
+            detail = _provider_error_detail(ErrorResponse())
+        self.assertIn("[redacted]", detail)
+        self.assertNotIn("secret-key-value", detail)
+        self.assertNotIn(chr(10), detail)
+        self.assertLessEqual(len(detail), 360)
 
     async def test_openai_compatible_audio_request(self):
         FakeClient.last_request = None

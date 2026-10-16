@@ -22,7 +22,7 @@ _USER_AGENT = (
 
 def _clean_text(raw: str) -> str:
     raw = re.sub(r"<[^>]+>", " ", raw or "")
-    return re.sub(r"\\s+", " ", html.unescape(raw)).strip()
+    return re.sub(r"\s+", " ", html.unescape(raw)).strip()
 
 
 def _valid_http_url(value: str) -> str:
@@ -177,11 +177,11 @@ async def duckduckgo_search(query: str, count: int) -> list[dict]:
     ]
     out: list[dict] = []
     seen: set[str] = set()
-    for match in re.finditer(r"<a\\b([^>]*)>(.*?)</a>", source, re.S | re.I):
+    for match in re.finditer(r"<a\b([^>]*)>(.*?)</a>", source, re.S | re.I):
         attrs, title = match.group(1), _clean_text(match.group(2))
         if "result-link" not in attrs:
             continue
-        href = re.search(r'href=["\\']([^"\\']+)', attrs, re.I)
+        href = re.search(r"""href=["']([^"']+)""", attrs, re.I)
         if not href:
             continue
         url = _valid_http_url(_unwrap(href.group(1)))
@@ -227,13 +227,13 @@ async def bing_search(query: str, count: int, timeout: float = 5) -> list[dict]:
     # Search result cards are marked with b_algo. Each is parsed independently
     # so navigation links and unrelated page links are not offered as results.
     blocks = re.findall(
-        r'<li\\b[^>]*class=["\\'][^"\\']*\\bb_algo\\b[^"\\']*["\\'][^>]*>(.*?)(?=<li\\b[^>]*class=["\\'][^"\\']*\\bb_algo\\b|</ol>)',
+        r"""<li\b[^>]*class=["'][^"']*\bb_algo\b[^"']*["'][^>]*>(.*?)(?=<li\b[^>]*class=["'][^"']*\bb_algo\b|</ol>)""",
         source,
         re.S | re.I,
     )
     for block in blocks:
         match = re.search(
-            r'<h2[^>]*>\\s*<a[^>]*href=["\\']([^"\\']+)["\\'][^>]*>(.*?)</a>',
+            r"""<h2[^>]*>\s*<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>""",
             block,
             re.S | re.I,
         )

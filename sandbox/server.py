@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -226,37 +227,46 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
     run_options = {
         "cwd": workdir,
         "env": env,
-        "capture_output": True,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
         "text": True,
-        "timeout": timeout,
         "preexec_fn": _limits(timeout),
         "user": uid,
         "group": gid,
+        "start_new_session": True,
     }
-    # The service process can manage /work, while generated code runs under a
-    # restricted per-project/run identity. The service API key is never passed
-    # in the child environment.
+    # The service API key is never passed in the child environment. A separate
+    # process group lets a timeout stop grandchildren as well as the main script.
 
     timed_out = False
     returncode = 0
     stdout = ""
     stderr = ""
+
+    def _as_text(value) -> str:
+        if value is None:
+            return ""
+        return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
+
     try:
-        proc = subprocess.run([sys.executable, "-u", "main.py"], **run_options)
-        returncode = proc.returncode
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-    except subprocess.TimeoutExpired as e:
-        timed_out = True
-        returncode = -1
-
-        def _as_text(v):
-            if v is None:
-                return ""
-            return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
-
-        stdout = _as_text(e.stdout)
-        stderr = _as_text(e.stderr) + f"\nПревышен лимит времени ({timeout} с) — процесс остановлен."
+        proc = subprocess.Popen([sys.executable, "-u", "main.py"], **run_options)
+        try:
+            out_text, err_text = proc.communicate(timeout=timeout)
+            returncode = proc.returncode or 0
+            stdout = out_text or ""
+            stderr = err_text or ""
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            returncode = -1
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                proc.kill()
+            out_text, err_text = proc.communicate()
+            stdout = _as_text(out_text or e.output)
+            stderr = _as_text(err_text or e.stderr) + (
+                f"\nПревышен лимит времени ({timeout} с) — процесс и его дочерние процессы остановлены."
+            )
     except Exception as e:  # pragma: no cover
         returncode = -1
         stderr = f"Ошибка запуска: {type(e).__name__}: {e}"

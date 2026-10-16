@@ -169,11 +169,33 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
             "timed_out": False, "returncode": -1, "files": [],
         }
 
-    with open(os.path.join(workdir, "main.py"), "w", encoding="utf-8") as f:
-        f.write(code)
+    main_path = os.path.join(workdir, "main.py")
+    try:
+        # A previous run may have produced a symlink with this name. Never
+        # follow it while writing the next script as the privileged runner.
+        if os.path.islink(main_path):
+            os.unlink(main_path)
+        elif os.path.isdir(main_path):
+            raise OSError("main.py path is a directory")
+        elif os.path.exists(main_path):
+            os.unlink(main_path)
+        with open(main_path, "x", encoding="utf-8") as script_file:
+            script_file.write(code)
 
-    mpl_dir = os.path.join(workdir, ".mpl")
-    os.makedirs(mpl_dir, exist_ok=True)
+        # The cache is disposable. Replace any previous file/symlink/directory
+        # so no child-controlled path is chowned by the service process.
+        mpl_dir = os.path.join(workdir, ".mpl")
+        if os.path.islink(mpl_dir) or os.path.isfile(mpl_dir):
+            os.unlink(mpl_dir)
+        elif os.path.isdir(mpl_dir):
+            shutil.rmtree(mpl_dir)
+        os.makedirs(mpl_dir, mode=0o700, exist_ok=False)
+    except OSError as e:
+        return {
+            "ok": False, "run_id": run_id, "dir": rel_dir, "stdout": "",
+            "stderr": f"Не удалось подготовить рабочую папку: {type(e).__name__}",
+            "timed_out": False, "returncode": -1, "files": [],
+        }
     env = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/local/sbin:/usr/bin:/bin"),
         "LANG": "C.UTF-8",
@@ -212,11 +234,8 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
                 # For chmod recursion, os.walk will visit children below.
             os.chown(root, uid, gid)
             os.chmod(root, 0o700)
-        # Matplotlib cache is private to the current workspace.
-        mpl_dir = os.path.join(workdir, ".mpl")
-        os.makedirs(mpl_dir, exist_ok=True)
-        os.chown(mpl_dir, uid, gid)
-        os.chmod(mpl_dir, 0o700)
+        # The private cache was created before ownership was changed and was
+        # already included in the workspace ownership walk.
     except OSError as e:
         return {
             "ok": False, "run_id": run_id, "dir": rel_dir, "stdout": "",

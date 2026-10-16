@@ -161,7 +161,7 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
     def test_provider_error_detail_is_short_and_redacts_keys(self):
         class ErrorResponse:
             def json(self):
-                return {"error": {"message": "Invalid voice for API key secret-key-value\\nTry another voice."}}
+                return {"error": {"message": "Invalid voice for API key secret-key-value" + chr(10) + "Try another voice."}}
 
         with (
             patch.object(settings, "tts_api_key", "secret-key-value"),
@@ -170,7 +170,7 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
             detail = _provider_error_detail(ErrorResponse())
         self.assertIn("[redacted]", detail)
         self.assertNotIn("secret-key-value", detail)
-        self.assertNotIn("\\n", detail)
+        self.assertNotIn(chr(10), detail)
         self.assertLessEqual(len(detail), 360)
 
     async def test_openai_compatible_audio_request(self):

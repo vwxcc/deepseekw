@@ -869,6 +869,7 @@
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
+    const generating = !isUser && (n.status === 'queued' || n.status === 'processing');
     let inner;
     if (isUser) {
       inner = attsHtml(n.attachments) +
@@ -879,7 +880,6 @@
         '</div>';
     } else {
       const failed = n.status === 'failed';
-      const generating = n.status === 'queued' || n.status === 'processing';
       const hasThink = !!(n.thinking && String(n.thinking).trim());
       const draft = n.draft || '';
 
@@ -1103,12 +1103,12 @@
     audio.addEventListener('play', updateAudioPlayerControls);
     audio.addEventListener('pause', updateAudioPlayerControls);
     audio.addEventListener('ended', updateAudioPlayerControls);
-    $('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
+    $$('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
     $('#audio-play-toggle')?.addEventListener('click', () => {
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();
     });
-    $('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
       const action = btn.dataset.audioAction;
       if (action === 'stop') { audio.pause(); audio.currentTime = 0; }
       else if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);

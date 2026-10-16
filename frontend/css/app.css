@@ -1793,3 +1793,18 @@ body { font-weight: 400; }
   .empty-state { padding-left: 16px; padding-right: 16px; }
   .empty-state h2.greet { font-size: 26.62px; }
 }
+
+
+/* ---- Focused readability update: +25% chat title and welcome greeting ---- */
+#chat-header .chat-title { font-size: 20.625px; }
+.empty-state h2.greet { font-size: 45.375px; }
+#messages.empty #sugg-chips { margin-top: 14px; }
+
+@media (max-width: 860px) {
+  #chat-header .chat-title { font-size: 20.625px; }
+  .empty-state h2.greet { font-size: 37.8125px; }
+}
+@media (max-width: 620px) {
+  #chat-header .chat-title { font-size: 20.625px; }
+  .empty-state h2.greet { font-size: 33.275px; }
+}

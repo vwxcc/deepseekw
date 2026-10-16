@@ -173,7 +173,7 @@ async def duckduckgo_search(query: str, count: int) -> list[dict]:
 
     snippets = [
         _clean_text(x) for x in re.findall(
-            r'class=["\\']result-snippet["\\'][^>]*>(.*?)</td>',
+            r"""class=["']result-snippet["'][^>]*>(.*?)</td>""",
             source,
             re.S | re.I,
         )

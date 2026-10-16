@@ -971,7 +971,7 @@ input[type="range"].orange-range { width: 100%; }
 
 @media (prefers-color-scheme: dark) {
   .tariff { background: #2a2a28; }
-  .mem-line { background: #3a3324; border-color: #6b5a33; color: #b0ada3; }
+  .mem-line { background: #343330; border-color: #77756f; color: #b0ada3; }
 }
 
 /* ============================================================

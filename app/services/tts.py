@@ -49,8 +49,8 @@ def _provider_error_detail(response: httpx.Response) -> str:
         detail = data.get("message") or data.get("detail")
     if not isinstance(detail, str):
         return ""
-    detail = re.sub(r"[\\x00-\\x1f\\x7f]+", " ", detail)
-    detail = re.sub(r"\\s+", " ", detail).strip()
+    detail = "".join(ch if ch.isprintable() else " " for ch in detail)
+    detail = " ".join(detail.split())
     # Error payloads should not echo credentials, but redact them defensively.
     for secret in (settings.tts_api_key, settings.tts_preprocess_api_key):
         secret = str(secret or "").strip()

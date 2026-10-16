@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     tts_timeout: int = 180
     tts_max_chars: int = 30000
     tts_concurrency: int = 2
+    # Separate, explicitly configured model that verbalizes notation before TTS.
+    tts_preprocess_base_url: str = ""
+    tts_preprocess_api_key: str = ""
+    tts_preprocess_model: str = ""
+    tts_preprocess_timeout: int = 180
+    tts_preprocess_max_tokens: int = 12000
+    tts_preprocess_temperature: float = 0.1
 
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file

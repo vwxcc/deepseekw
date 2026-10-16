@@ -426,29 +426,46 @@
       const controller = timeoutMs > 0 ? new AbortController() : null;
       let timeoutId = null;
       if (controller) timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      let res;
       try {
-        res = await fetch(path, {
+        const res = await fetch(path, {
           method, headers, credentials: 'same-origin',
           body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
           ...(controller ? { signal: controller.signal } : {}),
         });
+        if (res.status === 401) { showAuth(); throw new Error('Сессия истекла. Войдите снова.'); }
+        if (res.status === 204) return null;
+
+        const raw = await res.text();
+        if (!res.ok) {
+          let parsed = null;
+          try { parsed = raw ? JSON.parse(raw) : null; } catch (e) { /* keep raw response */ }
+          let detail = parsed && typeof parsed === 'object' ? parsed.detail : null;
+          let message = detail != null ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : raw.trim();
+          if (!message || message === 'null' || message === 'undefined' || message === '{}') {
+            message = 'Сервер вернул пустое описание ошибки';
+          }
+          throw new Error('HTTP ' + res.status + ': ' + message);
+        }
+        if (!raw.trim()) {
+          throw new Error('Сервер вернул пустой ответ на ' + method + ' ' + path + ' (HTTP ' + res.status + ')');
+        }
+        try {
+          return JSON.parse(raw);
+        } catch (parseError) {
+          throw new Error('Сервер вернул некорректный JSON на ' + method + ' ' + path + ' (HTTP ' + res.status + ')');
+        }
       } catch (err) {
         if (controller && err && err.name === 'AbortError') {
-          throw new Error('Сервер не ответил за ' + Math.round(timeoutMs / 1000) + ' секунд');
+          throw new Error('Истекло время ожидания ответа сервера (' + Math.round(timeoutMs / 1000) + ' с)');
         }
-        throw err;
+        if (err instanceof Error) throw err;
+        const message = err == null || err === 'null' || err === 'undefined'
+          ? 'Сервер не вернул описание ошибки'
+          : String(err);
+        throw new Error(message);
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
       }
-      if (res.status === 401) { showAuth(); throw new Error('unauthorized'); }
-      if (res.status === 204) return null;
-      if (!res.ok) {
-        let msg = res.status + '';
-        try { const j = await res.json(); msg = j.detail || JSON.stringify(j); } catch (e) { /* noop */ }
-        throw new Error(msg);
-      }
-      return res.json();
     },
     get(p) { return api.req('GET', p); },
     post(p, b) { return api.req('POST', p, b === undefined ? {} : b); },
@@ -1406,7 +1423,7 @@
         ? (responseReceived
           ? 'Ответ остановился без новых событий более 150 секунд. Можно отправить запрос ещё раз.'
           : 'Сервер не начал ответ за 35 секунд. Текст запроса сохранён — попробуйте ещё раз.')
-        : ((err && err.message) ? err.message : 'неизвестная ошибка');
+        : usefulErrorMessage(err, 'Неизвестная ошибка при отправке запроса');
       if (!responseReceived && opts && opts.optimistic && opts.input) {
         restoreUnsentDraft(opts.input, opts.draft || '');
       }
@@ -1454,6 +1471,15 @@
     }
   }
 
+  function usefulErrorMessage(err, fallback) {
+    const raw = err && typeof err.message === 'string' ? err.message : (typeof err === 'string' ? err : '');
+    const value = raw.trim();
+    if (!value || value === 'null' || value === 'undefined' || value === '[object Object]') {
+      return fallback || 'Неизвестная ошибка сервера';
+    }
+    return value;
+  }
+
   function setSendPreparing(on) {
     const btn = $('#send-btn');
     if (!btn) return;
@@ -1491,28 +1517,35 @@
     }));
     const isNewChat = !state.currentChatId;
 
-    // Clear immediately so the click/Enter has visible feedback even if creating
-    // the first chat is slow. On a setup failure, restore the draft instead.
+    // Keep the draft in the composer until the new-chat API confirms a valid chat.
+    // The preparing state blocks duplicate submissions but doesn't erase user text.
     state.sending = true;
     setSendPreparing(true);
-    input.value = '';
-    autoGrow();
-
     let requestStarted = false;
     try {
       if (isNewChat) {
         const chat = await api.postTimed('/api/chats', { title: 'Новый чат' }, 20000);
+        if (!chat || typeof chat !== 'object' || !chat.id) {
+          throw new Error('API /api/chats вернул пустой ответ: чат не создан. Проверьте журнал сервера.');
+        }
         state.chats.unshift(chat);
         state.currentChatId = chat.id;
         state.tree = [];
         state.choices = {};
-        $('#chat-title').textContent = chat.title;
+        $('#chat-title').textContent = chat.title || 'Новый чат';
         renderChatList();
       }
 
       // Continue the active branch: the last message of the visible path.
       const path = activePath(state.tree, state.choices);
       const parentId = path.length ? path[path.length - 1].node.id : null;
+
+      // Only clear the composer if it still contains the draft being sent.
+      // Text typed during chat creation is preserved for the next message.
+      if (input.value === draft) {
+        input.value = '';
+        autoGrow();
+      }
 
       // Optimistic render: show both messages before waiting for the server stream.
       const userId = 'tmp_u_' + Date.now().toString(36);
@@ -1526,7 +1559,7 @@
         id: asstId, role: 'assistant', content: '', status: 'processing',
         parent_message_id: userId, children: [],
         created_at: new Date().toISOString(),
-        creating: isNewChat, creatingLabel: 'Создаю чат…',
+        creating: isNewChat, creatingLabel: isNewChat ? 'Отправляю запрос…' : 'Запрос отправляется…',
         error: null,
       };
       const parentNode = parentId ? findNode(state.tree, parentId) : null;
@@ -1566,11 +1599,14 @@
       state.tmpAssistant = null;
     } catch (err) {
       console.error(err);
+      const message = usefulErrorMessage(err, 'Неизвестная ошибка при подготовке запроса');
       if (!requestStarted) {
-        restoreUnsentDraft(input, draft);
-        toast('Не удалось подготовить запрос. Текст сохранён: ' + (err && err.message ? err.message : 'неизвестная ошибка'), 'error');
+        // Since the input wasn't cleared before the chat was created, don't
+        // overwrite a newer draft the user may have started typing meanwhile.
+        if (!(input.value || '').trim()) restoreUnsentDraft(input, draft);
+        toast('Не удалось подготовить запрос: ' + message + '. Текст сохранён.', 'error');
       } else {
-        toast('Запрос уже отправлен, но обновление интерфейса завершилось ошибкой: ' + (err && err.message ? err.message : 'неизвестная ошибка'), 'error');
+        toast('Ошибка при отправке запроса: ' + message, 'error');
       }
       state.tmpUser = null;
       state.tmpAssistant = null;
@@ -1579,6 +1615,7 @@
       setSendPreparing(false);
     }
   }
+
 
   // ---------- composer ----------
   function autoGrow() {
@@ -3139,26 +3176,23 @@
       'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
   }
 
-  function tileHtml(t, decorative) {
-    const actionAttrs = decorative
-      ? ' aria-hidden="true" tabindex="-1"'
-      : ' data-tile="' + t.id + '" aria-label="' + escapeHtml(t.label) + '"';
-    return '<button type="button" class="tile' + (t.locked ? ' locked' : '') + '"' +
-      actionAttrs + ' title="' + escapeHtml(t.label) + '"' +
+  function tileHtml(t) {
+    return '<span class="tile' + (t.locked ? ' locked' : '') + '"' +
+      ' aria-hidden="true" title="' + escapeHtml(t.label) + '"' +
       ' style="--tile:' + t.color + '">' +
       '<span class="tile-ico">' + tileIcon(t.icon) + '</span>' +
       '<span class="tile-label">' + escapeHtml(t.label) + '</span>' +
-      (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</button>';
+      (t.locked ? '<span class="tile-lock">' + icon('lock') + '</span>' : '') + '</span>';
   }
 
   function renderTiles() {
     const box = $('#tiles');
     if (!box) return;
-    const original = ACTION_TILES.map(t => tileHtml(t, false)).join('');
-    const duplicate = ACTION_TILES.map(t => tileHtml(t, true)).join('');
+    const sequence = ACTION_TILES.map(tileHtml).join('');
+    // Duplicate artwork only to make the moving row loop smoothly; no icon is a button.
     box.innerHTML = '<div class="tile-track">' +
-      '<div class="tile-sequence">' + original + '</div>' +
-      '<div class="tile-sequence" aria-hidden="true">' + duplicate + '</div>' +
+      '<div class="tile-sequence">' + sequence + '</div>' +
+      '<div class="tile-sequence" aria-hidden="true">' + sequence + '</div>' +
       '</div>';
   }
 

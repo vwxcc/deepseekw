@@ -1295,7 +1295,7 @@ input[type="range"].orange-range { width: 100%; }
 }
 .tile-track {
   display: flex; align-items: center; width: max-content;
-  will-change: transform; animation: tileMarquee 46s linear infinite;
+  will-change: transform; animation: tileMarquee 36s linear infinite;
 }
 .tile-sequence {
   display: flex; align-items: center; gap: 18px; flex: 0 0 auto; padding-right: 18px;
@@ -1304,14 +1304,12 @@ input[type="range"].orange-range { width: 100%; }
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
-.tiles:hover .tile-track, .tiles:focus-within .tile-track { animation-play-state: paused; }
 .tile {
   display: inline-flex; align-items: center; justify-content: center; position: relative;
   flex: 0 0 38px; width: 38px; height: 38px; min-width: 38px;
-  border: 0; border-radius: 11px; padding: 2px; background: transparent; cursor: pointer;
-  transition: transform .18s ease, opacity .18s ease;
+  border: 0; border-radius: 11px; padding: 2px; background: transparent; cursor: default;
+  pointer-events: none; transition: opacity .18s ease;
 }
-.tile:hover { transform: translateY(-2px); border-color: transparent; background: transparent; box-shadow: none; }
 .tile-ico {
   display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
   flex: 0 0 auto; background: var(--tile, #e2b96a); color: #fff;

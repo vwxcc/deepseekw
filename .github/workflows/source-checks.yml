@@ -37,6 +37,7 @@ jobs:
           python - <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
+          import re
 
           class IdCheck(HTMLParser):
               def __init__(self):
@@ -53,11 +54,19 @@ jobs:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
           if "/assets/css/app.css?v=35" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=39" not in html:
+          if "/assets/js/app.js?v=40" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
           js = Path("frontend/js/app.js").read_text(encoding="utf-8")
+          # A single-element $() selector may return null; only $() is iterable.
+          bad_for_each = [
+              f"{line_no}: {line.strip()}"
+              for line_no, line in enumerate(js.splitlines(), 1)
+              if re.search(r"(?<!\$)\$\([^)]*\)\s*\.forEach\s*\(", line)
+          ]
+          if bad_for_each:
+              raise SystemExit("Single-element selector used with forEach:\n" + "\n".join(bad_for_each))
           router = Path("app/ai/router.py").read_text(encoding="utf-8")
           messages = Path("app/routers/messages.py").read_text(encoding="utf-8")
           required_js = [

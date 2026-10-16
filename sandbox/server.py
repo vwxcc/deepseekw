@@ -14,6 +14,8 @@ API:
 """
 from __future__ import annotations
 
+import base64
+import hmac
 import json
 import os
 import re
@@ -29,6 +31,8 @@ PROJECTS = os.path.join(WORK, "projects")
 MAX_OUTPUT = int(os.environ.get("SANDBOX_MAX_OUTPUT", "12000"))
 MAX_FILES = int(os.environ.get("SANDBOX_MAX_FILES", "24"))
 MAX_FILE_BYTES = int(os.environ.get("SANDBOX_MAX_FILE_BYTES", str(30 * 1024 * 1024)))
+MAX_INLINE_FILE_BYTES = int(os.environ.get("SANDBOX_MAX_INLINE_FILE_BYTES", str(4 * 1024 * 1024)))
+MAX_INLINE_TOTAL_BYTES = int(os.environ.get("SANDBOX_MAX_INLINE_TOTAL_BYTES", str(8 * 1024 * 1024)))
 KEEP_RUNS = int(os.environ.get("SANDBOX_KEEP_RUNS", "40"))
 DEFAULT_TIMEOUT = 40
 PROJECT_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -61,6 +65,9 @@ def _collect(workdir: str, since: float | None = None) -> list[dict]:
                 continue
             path = os.path.join(root, name)
             rel = os.path.relpath(path, workdir)
+            # Never serve a symlink target outside the generated workspace.
+            if os.path.islink(path):
+                continue
             try:
                 st = os.stat(path)
             except OSError:
@@ -73,6 +80,35 @@ def _collect(workdir: str, since: float | None = None) -> list[dict]:
             if len(out) >= MAX_FILES:
                 return out
     return out
+
+
+def _attach_inline_contents(workdir: str, files: list[dict]) -> None:
+    """Attach small file contents so separate Render services need no shared disk."""
+    total = 0
+    for item in files:
+        name = str(item.get("path") or "")
+        if not name:
+            item["transfer_error"] = "Некорректное имя файла"
+            continue
+        full = os.path.realpath(os.path.join(workdir, name))
+        base = os.path.realpath(workdir)
+        if os.path.commonpath([base, full]) != base or os.path.islink(os.path.join(workdir, name)):
+            item["transfer_error"] = "Путь файла выходит за пределы рабочей папки"
+            continue
+        try:
+            size = os.path.getsize(full)
+            if size > MAX_INLINE_FILE_BYTES or total + size > MAX_INLINE_TOTAL_BYTES:
+                item["transfer_error"] = "Файл больше лимита передачи через API"
+                continue
+            with open(full, "rb") as fh:
+                payload = fh.read(MAX_INLINE_FILE_BYTES + 1)
+            if len(payload) > MAX_INLINE_FILE_BYTES:
+                item["transfer_error"] = "Файл больше лимита передачи через API"
+                continue
+            item["content_base64"] = base64.b64encode(payload).decode("ascii")
+            total += len(payload)
+        except OSError:
+            item["transfer_error"] = "Не удалось прочитать созданный файл"
 
 
 def _prune() -> None:
@@ -146,20 +182,36 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
         "TMPDIR": "/tmp",
     }
 
+    run_options = {
+        "cwd": workdir,
+        "env": env,
+        "capture_output": True,
+        "text": True,
+        "timeout": timeout,
+        "preexec_fn": _limits(timeout),
+    }
+    # The service process can manage /work, while generated code runs as an
+    # unprivileged account. Do not pass the API key or service env to code.
+    exec_uid = os.environ.get("SANDBOX_EXEC_UID", "").strip()
+    if exec_uid:
+        try:
+            uid = int(exec_uid)
+            gid = int(os.environ.get("SANDBOX_EXEC_GID", exec_uid))
+            run_options["user"] = uid
+            run_options["group"] = gid
+        except ValueError:
+            return {
+                "ok": False, "run_id": run_id, "dir": rel_dir, "stdout": "",
+                "stderr": "Неверная конфигурация SANDBOX_EXEC_UID/GID",
+                "timed_out": False, "returncode": -1, "files": [],
+            }
+
     timed_out = False
     returncode = 0
     stdout = ""
     stderr = ""
     try:
-        proc = subprocess.run(
-            [sys.executable, "-u", "main.py"],
-            cwd=workdir,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            preexec_fn=_limits(timeout),
-        )
+        proc = subprocess.run([sys.executable, "-u", "main.py"], **run_options)
         returncode = proc.returncode
         stdout = proc.stdout or ""
         stderr = proc.stderr or ""
@@ -180,6 +232,7 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
 
     # in a persistent project only report what this run touched
     files = _collect(workdir, since=started if persistent else None)
+    _attach_inline_contents(workdir, files)
     for item in files:
         try:
             os.chmod(os.path.join(workdir, item["path"]), 0o666)
@@ -208,6 +261,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # keep the container log quiet-ish
         sys.stderr.write("[sandbox] " + (fmt % args) + "\n")
 
+    def _authorized(self) -> bool:
+        expected = os.environ.get("SANDBOX_API_KEY", "").strip()
+        required = os.environ.get("SANDBOX_REQUIRE_AUTH", "0").strip().lower() in {
+            "1", "true", "yes",
+        }
+        if not expected:
+            return not required
+        received = self.headers.get("Authorization", "")
+        if not received.startswith("Bearer "):
+            return False
+        return hmac.compare_digest(received[7:].strip(), expected)
+
     def _json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -217,17 +282,36 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path.startswith("/health"):
+        path = self.path.split("?", 1)[0]
+        if path == "/health":
             self._json(200, {"ok": True})
-        else:
-            self._json(404, {"error": "not found"})
+            return
+        if path.startswith("/project/"):
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
+                return
+            project = path[len("/project/"):]
+            if not PROJECT_RE.fullmatch(project):
+                self._json(400, {"error": "invalid project"})
+                return
+            workdir = os.path.join(PROJECTS, project)
+            files = _collect(workdir) if os.path.isdir(workdir) else []
+            self._json(200, {"ok": True, "project": project, "files": files})
+            return
+        self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if not self.path.startswith("/run"):
+        if self.path.split("?", 1)[0] != "/run":
             self._json(404, {"error": "not found"})
+            return
+        if not self._authorized():
+            self._json(401, {"error": "unauthorized"})
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
+            if length < 0 or length > 256 * 1024:
+                self._json(413, {"error": "code payload too large"})
+                return
             raw = self.rfile.read(length) if length else b"{}"
             data = json.loads(raw or b"{}")
         except Exception as e:
@@ -256,7 +340,7 @@ def main() -> None:
         os.chmod(PROJECTS, 0o777)
     except OSError:
         pass
-    port = int(os.environ.get("SANDBOX_PORT", "8000"))
+    port = int(os.environ.get("SANDBOX_PORT") or os.environ.get("PORT") or "8000")
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     sys.stderr.write(f"[sandbox] listening on :{port}, work={WORK}\n")
     server.serve_forever()

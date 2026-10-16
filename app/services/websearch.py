@@ -100,11 +100,14 @@ async def web_search(query: str, limit: int | None = None) -> list[dict]:
                 log.warning("SearXNG unavailable; using public fallback: %s", type(e).__name__)
 
     remaining = deadline - asyncio.get_running_loop().time()
-    if remaining > 0.25:
+    # Reserve part of the total time budget for a second provider instead of
+    # letting a stalled DuckDuckGo request consume the whole search window.
+    ddg_timeout = min(remaining, max(1.5, min(4.5, remaining * 0.55)))
+    if ddg_timeout > 0.25:
         try:
             results = await asyncio.wait_for(
                 duckduckgo_search(query, count),
-                timeout=remaining,
+                timeout=ddg_timeout,
             )
             if results:
                 log.info("DuckDuckGo returned %d results", len(results))

@@ -67,6 +67,9 @@ jobs:
               'data-mact="copy-user"',
               'data-mact="generate-audio"',
               'data-mact="play-audio"',
+              "if (!Array.isArray(nodes) || id == null) return null;",
+              "const rawIndex = selected[parentKey];",
+              "typeof node.id === 'string' && node.id",
           ]
           missing = [token for token in required_js if token not in js]
           if missing:

@@ -79,8 +79,18 @@
   }
 
   async function copyWithFeedback(btn, text, okLabel) {
-    const original = btn.textContent;
     const ok = await copyText(text);
+    if (btn && btn.hasAttribute('data-icon-only')) {
+      if (ok) {
+        btn.classList.add('copied');
+        toast('Скопировано');
+        setTimeout(() => btn.classList.remove('copied'), 1100);
+      } else {
+        toast('Не удалось скопировать', 'error');
+      }
+      return;
+    }
+    const original = btn.textContent;
     btn.textContent = ok ? (okLabel || 'Скопировано') : 'Не удалось';
     if (!ok) toast('Не удалось скопировать', 'error');
     setTimeout(() => { btn.textContent = original; }, 1300);
@@ -503,6 +513,11 @@
     readonly: false,
     publicToken: null,
     greetTimer: null,
+    audioReady: Object.create(null),
+    audioPending: Object.create(null),
+    audioStatusRequested: new Set(),
+    audioMessageId: null,
+    audioDuration: 0,
     greetIdx: Math.floor(Math.random() * 100),
     suggIdx: Math.floor(Math.random() * 50),
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
@@ -856,7 +871,12 @@
     const isUser = n.role === 'user';
     let inner;
     if (isUser) {
-      inner = attsHtml(n.attachments) + '<div class="bubble">' + escapeHtml(n.content) + '</div>';
+      inner = attsHtml(n.attachments) +
+        '<div class="user-message-row">' +
+          '<button class="user-copy-btn" data-mact="copy-user" data-icon-only="1" data-id="' + escapeHtml(n.id) +
+            '" title="Копировать сообщение" aria-label="Копировать сообщение">' + icon('copy') + '</button>' +
+          '<div class="bubble">' + escapeHtml(n.content) + '</div>' +
+        '</div>';
     } else {
       const failed = n.status === 'failed';
       const generating = n.status === 'queued' || n.status === 'processing';
@@ -903,26 +923,24 @@
         parts.push('<button data-mact="stop" data-id="' + n.id + '">' + icon('stop') + 'Остановить</button>');
       } else {
         if (n.sources && n.sources.length) {
-          parts.push('<button data-mact="sources" data-id="' + n.id + '" title="Источники из интернета">' +
-            icon('globe') + 'Источники <b class="cnt">' + n.sources.length + '</b></button>');
+          parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="sources" data-id="' + escapeHtml(n.id) +
+            '" title="Источники из интернета" aria-label="Источники из интернета">' +
+            icon('globe') + '<b class="cnt">' + n.sources.length + '</b></button>');
         }
         if (n.content) {
-          parts.push('<button data-mact="copy" data-id="' + n.id + '">' + icon('copy') + 'Копировать</button>');
-          parts.push('<button data-mact="save" data-id="' + n.id + '" title="Сохранить как">' + icon('download') + 'Сохранить</button>');
+          parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="copy" data-id="' + escapeHtml(n.id) +
+            '" title="Копировать ответ" aria-label="Копировать ответ">' + icon('copy') + '</button>');
+          parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="save" data-id="' + escapeHtml(n.id) +
+            '" title="Сохранить ответ" aria-label="Сохранить ответ">' + icon('download') + '</button>');
           if (n.memories && n.memories.length) {
-            parts.push('<button data-mact="memory" data-id="' + n.id + '" title="Что записано в память">' +
-              icon('sparkle') + 'Память</button>');
+            parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="memory" data-id="' + escapeHtml(n.id) +
+              '" title="Что записано в память" aria-label="Память">' + icon('sparkle') + '</button>');
           }
         }
-        parts.push('<button data-mact="retry" data-id="' + n.id + '">' + icon('refresh') + 'Повторить</button>');
+        parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="retry" data-id="' + escapeHtml(n.id) +
+          '" title="Повторить ответ" aria-label="Повторить ответ">' + icon('refresh') + '</button>');
       }
       meta = '<div class="meta">' + parts.join('') + '</div>';
-    }
-
-    let sugg = '';
-    if (!isUser && isLast && n.status === 'completed' && n.suggestions && n.suggestions.length) {
-      sugg = '<div class="chips left">' + n.suggestions.map(s =>
-        '<button data-sugg="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>').join('') + '</div>';
     }
 
     let memLine = '';
@@ -953,9 +971,161 @@
         '</div></div>';
     }
 
+    const audioCtl = !isUser && !state.readonly && n.status === 'completed' && String(n.content || '').trim()
+      ? audioControlHtml(n) : '';
+
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      routeLine + tools + inner + askCard + meta + sugg + memLine + '</div>';
+      routeLine + tools + inner + askCard + audioCtl + meta + memLine + '</div>';
+  }
+
+  function audioControlHtml(n) {
+    const id = escapeHtml(n.id);
+    if (state.audioPending[n.id]) {
+      return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
+        '<button class="answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
+          '<span class="audio-loading-ring"></span><span>Создаю озвучку…</span></button></div>';
+    }
+    if (state.audioReady[n.id]) {
+      return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
+        '<button class="answer-audio-preview" data-mact="play-audio" data-id="' + id + '" title="Открыть аудиоплеер">' +
+          '<span class="audio-preview-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
+          '<span class="audio-preview-copy"><b>Аудиоверсия ответа</b><small>Нажмите, чтобы слушать</small></span>' +
+          '<span class="audio-preview-play">' + icon('play') + '</span>' +
+        '</button></div>';
+    }
+    return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
+      '<button class="answer-audio-generate" data-mact="generate-audio" data-id="' + id + '" title="Создать голосовую версию ответа">' +
+        icon('audio') + '<span>Прослушать ответ</span></button></div>';
+  }
+
+  function updateAudioControl(messageId) {
+    const wrapper = $('[data-audio-control]').find(el => el.dataset.audioControl === String(messageId));
+    const entry = findNode(state.tree, messageId);
+    if (wrapper && entry) wrapper.innerHTML = audioControlHtml(entry);
+  }
+
+  function hydrateAudioStatuses(entries) {
+    if (state.readonly) return;
+    entries.forEach(entry => {
+      const n = entry.node;
+      if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
+      if (state.audioStatusRequested.has(n.id)) return;
+      state.audioStatusRequested.add(n.id);
+      api.get('/api/messages/' + encodeURIComponent(n.id) + '/audio/status')
+        .then(result => {
+          if (result && result.ready) {
+            state.audioReady[n.id] = true;
+            updateAudioControl(n.id);
+          }
+        })
+        .catch(() => { /* audio is optional; keep the generate button available */ });
+    });
+  }
+
+  async function generateAnswerAudio(messageId) {
+    if (state.audioPending[messageId]) return;
+    state.audioPending[messageId] = true;
+    updateAudioControl(messageId);
+    try {
+      const result = await api.post('/api/messages/' + encodeURIComponent(messageId) + '/audio', {});
+      state.audioPending[messageId] = false;
+      state.audioReady[messageId] = !!(result && result.ready);
+      state.audioStatusRequested.add(messageId);
+      updateAudioControl(messageId);
+      toast('Озвучка готова — нажмите на аудиокарточку');
+    } catch (err) {
+      state.audioPending[messageId] = false;
+      updateAudioControl(messageId);
+      toast('Не удалось озвучить ответ: ' + (err.message || 'ошибка сервера'), 'error');
+    }
+  }
+
+  function formatAudioTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const s = Math.floor(seconds);
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  function updateAudioPlayerControls() {
+    const audio = $('#audio-player-source');
+    const play = $('#audio-play-toggle');
+    if (!audio || !play) return;
+    play.innerHTML = icon(audio.paused ? 'play' : 'pause');
+    play.title = audio.paused ? 'Воспроизвести' : 'Пауза';
+    play.setAttribute('aria-label', play.title);
+    const progress = $('#audio-progress');
+    if (progress) {
+      const max = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+      progress.value = max ? Math.round((audio.currentTime / max) * 1000) : 0;
+      progress.disabled = !max;
+    }
+    const current = $('#audio-current-time'), total = $('#audio-total-time');
+    if (current) current.textContent = formatAudioTime(audio.currentTime || 0);
+    if (total) total.textContent = formatAudioTime(audio.duration || 0);
+  }
+
+  function openAudioPlayer(messageId, autoplay) {
+    const n = findNode(state.tree, messageId);
+    if (!n || !state.audioReady[messageId]) return;
+    const shell = $('#audio-player-shell'), audio = $('#audio-player-source');
+    if (!shell || !audio) return;
+    state.audioMessageId = messageId;
+    const chat = state.chats.find(c => c.id === state.currentChatId);
+    $('#audio-player-title').textContent = 'Аудиоверсия ответа';
+    $('#audio-player-subtitle').textContent = (chat && chat.title) || 'Голосовая версия ответа';
+    audio.pause();
+    audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
+    audio.load();
+    shell.classList.add('open');
+    shell.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('audio-player-open');
+    updateAudioPlayerControls();
+    if (autoplay) audio.play().catch(() => toast('Нажмите воспроизведение, чтобы запустить аудио.', 'error'));
+    requestAnimationFrame(() => $('#audio-close-btn')?.focus());
+  }
+
+  function closeAudioPlayer() {
+    const shell = $('#audio-player-shell'), audio = $('#audio-player-source');
+    if (audio) audio.pause();
+    if (shell) {
+      shell.classList.remove('open');
+      shell.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('audio-player-open');
+  }
+
+  function bindAudioPlayer() {
+    const audio = $('#audio-player-source');
+    if (!audio) return;
+    audio.addEventListener('loadedmetadata', updateAudioPlayerControls);
+    audio.addEventListener('timeupdate', updateAudioPlayerControls);
+    audio.addEventListener('play', updateAudioPlayerControls);
+    audio.addEventListener('pause', updateAudioPlayerControls);
+    audio.addEventListener('ended', updateAudioPlayerControls);
+    $('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
+    $('#audio-play-toggle')?.addEventListener('click', () => {
+      if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
+      else audio.pause();
+    });
+    $('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+      const action = btn.dataset.audioAction;
+      if (action === 'stop') { audio.pause(); audio.currentTime = 0; }
+      else if (action === 'back') audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
+      else if (action === 'forward') {
+        const end = Number.isFinite(audio.duration) ? audio.duration : audio.currentTime + 10;
+        audio.currentTime = Math.min(end, (audio.currentTime || 0) + 10);
+      }
+      updateAudioPlayerControls();
+    }));
+    $('#audio-progress')?.addEventListener('input', ev => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        audio.currentTime = (Number(ev.target.value) / 1000) * audio.duration;
+      }
+    });
+    document.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape' && $('#audio-player-shell')?.classList.contains('open')) closeAudioPlayer();
+    });
   }
 
   function toolRunHtml(r, i) {
@@ -1074,6 +1244,7 @@
       entries.map((e, i) => msgHtml(e, i === entries.length - 1)).join('') + '</div>';
     bindMessageEvents();
     renderMath(box.querySelector('.msg-wrap'));
+    hydrateAudioStatuses(entries);
 
     if (opts.focusMessageId) {
       const target = $('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
@@ -1129,6 +1300,13 @@
       if (act === 'copy') {
         const n = findNode(state.tree, id);
         if (n) await copyWithFeedback(btn, n.content || '');
+      } else if (act === 'copy-user') {
+        const n = findNode(state.tree, id);
+        if (n) await copyWithFeedback(btn, n.content || '');
+      } else if (act === 'generate-audio') {
+        await generateAnswerAudio(id);
+      } else if (act === 'play-audio') {
+        openAudioPlayer(id, true);
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
@@ -1171,11 +1349,6 @@
       openTableMenu(rows);
     }));
 
-    $$('[data-sugg]').forEach(b => b.addEventListener('click', () => {
-      $('#input').value = b.dataset.sugg;
-      autoGrow();
-      sendCurrent();
-    }));
   }
 
   function scrollToBottom() {
@@ -3416,7 +3589,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

@@ -87,6 +87,32 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(TTSNotConfiguredError):
                 await generate_speech("Проверка")
 
+    async def test_non_ascii_preprocess_api_key_fails_with_actionable_config_error(self):
+        with (
+            patch.object(settings, "tts_preprocess_base_url", "https://prep.example/v1"),
+            patch.object(settings, "tts_preprocess_api_key", "ключ-с-кириллицей"),
+            patch.object(settings, "tts_preprocess_model", "verbalizer"),
+            patch("app.services.tts.httpx.AsyncClient", FakeClient) as client,
+        ):
+            with self.assertRaises(TTSNotConfiguredError) as raised:
+                await generate_speech("Проверка")
+        self.assertIn("TTS_PREPROCESS_API_KEY", str(raised.exception))
+        client.assert_not_called()
+
+    async def test_non_ascii_tts_api_key_fails_with_actionable_config_error(self):
+        with (
+            patch.object(settings, "tts_base_url", "https://speech.example/v1"),
+            patch.object(settings, "tts_api_key", "ключ-с-кириллицей"),
+            patch.object(settings, "tts_preprocess_base_url", "https://prep.example/v1"),
+            patch.object(settings, "tts_preprocess_api_key", "valid-ascii-token"),
+            patch.object(settings, "tts_preprocess_model", "verbalizer"),
+            patch("app.services.tts.httpx.AsyncClient", FakeClient) as client,
+        ):
+            with self.assertRaises(TTSNotConfiguredError) as raised:
+                await generate_speech("Проверка")
+        self.assertIn("TTS_API_KEY", str(raised.exception))
+        client.assert_not_called()
+
     async def test_openai_compatible_audio_request(self):
         FakeClient.last_request = None
         FakeClient.requests = []

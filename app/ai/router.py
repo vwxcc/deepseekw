@@ -150,7 +150,7 @@ class ModelPool:
                     if self._used.get(entry.id, 0) < limit:
                         self._used[entry.id] = self._used.get(entry.id, 0) + 1
                         return entry
-            # every model of the chain is busy right now — wait for a release
+            # The configured primary is at its concurrency limit; wait for its slot.
             try:
                 async with self._cond:
                     await asyncio.wait_for(self._cond.wait(), timeout=0.5)
@@ -285,7 +285,7 @@ class AIRouter:
             ]
             return mset.id, mset.name, configs
 
-    async def _acquire_with_fallback(
+    async def _acquire_primary(
         self, job: Job, entries: list[EntryConfig], skip: set[str]
     ) -> EntryConfig | None:
         return await pool.acquire(entries, skip, job.cancel)
@@ -646,7 +646,7 @@ class AIRouter:
         while rounds < 2:
             rounds += 1
             while len(tried) < len(entries):
-                entry = await self._acquire_with_fallback(job, entries, tried)
+                entry = await self._acquire_primary(job, entries, tried)
                 if entry is None:
                     await self._finish(
                         job.message_id, MessageStatus.cancelled,
@@ -780,10 +780,10 @@ class AIRouter:
                 finally:
                     await pool.release(entry)
 
-            # every model failed once — retry the whole chain one more time
+            # The same primary model failed once; retry it once without switching models.
             if rounds >= 2 or job.cancel.is_set():
                 break
-            log.warning("Retrying the chain once: %s", last_error)
+            log.warning("Retrying the primary model once: %s", last_error)
             tried.clear()
             await job.output.put(("step", json.dumps({"n": 0, "retry": True})))
 

@@ -181,12 +181,18 @@ async def generate_speech(text: str) -> tuple[bytes, str]:
     headers = {"Accept": AUDIO_MEDIA_TYPES[fmt]}
     if api_key:
         headers["Authorization"] = "Bearer " + api_key
+    model = (settings.tts_model or "tts-1").strip()
+    voice = (settings.tts_voice or "").strip()
     payload = {
-        "model": (settings.tts_model or "tts-1").strip(),
-        "voice": (settings.tts_voice or "alloy").strip(),
+        "model": model,
         "input": cleaned,
         "response_format": fmt,
     }
+    # Fish Audio has no OpenAI-style preset voices such as "alloy". When the
+    # legacy/default value is present, omit it so Fish Audio can choose its
+    # provider default. A real Fish Audio reference ID is still passed through.
+    if voice and not (model.startswith("fish-audio/") and voice.lower() == "alloy"):
+        payload["voice"] = voice
     timeout = max(10, min(int(settings.tts_timeout or 180), 600))
     async with _slots:
         try:

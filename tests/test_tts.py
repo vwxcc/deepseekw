@@ -117,6 +117,46 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("TTS_API_KEY", str(raised.exception))
         self.assertEqual(FakeClient.requests, [])
 
+    async def test_fish_audio_omits_openai_default_voice(self):
+        FakeClient.last_request = None
+        FakeClient.requests = []
+        with (
+            patch.object(settings, "tts_preprocess_base_url", "https://prep.example/v1"),
+            patch.object(settings, "tts_preprocess_api_key", "prep-secret"),
+            patch.object(settings, "tts_preprocess_model", "verbalizer"),
+            patch.object(settings, "tts_base_url", "https://openrouter.ai/api/v1"),
+            patch.object(settings, "tts_api_key", "openrouter-secret"),
+            patch.object(settings, "tts_model", "fish-audio/s2.1-pro-free:free"),
+            patch.object(settings, "tts_voice", "alloy"),
+            patch.object(settings, "tts_response_format", "mp3"),
+            patch("app.services.tts.httpx.AsyncClient", FakeClient),
+        ):
+            audio, fmt = await generate_speech("Привет, мир.")
+        self.assertEqual(audio, b"fake-mp3-bytes")
+        self.assertEqual(fmt, "mp3")
+        request = FakeClient.last_request
+        self.assertEqual(request["url"], "https://openrouter.ai/api/v1/audio/speech")
+        self.assertEqual(request["json"]["model"], "fish-audio/s2.1-pro-free:free")
+        self.assertNotIn("voice", request["json"])
+        self.assertEqual(request["json"]["response_format"], "mp3")
+
+    async def test_fish_audio_custom_voice_reference_is_preserved(self):
+        FakeClient.last_request = None
+        FakeClient.requests = []
+        with (
+            patch.object(settings, "tts_preprocess_base_url", "https://prep.example/v1"),
+            patch.object(settings, "tts_preprocess_api_key", "prep-secret"),
+            patch.object(settings, "tts_preprocess_model", "verbalizer"),
+            patch.object(settings, "tts_base_url", "https://openrouter.ai/api/v1"),
+            patch.object(settings, "tts_api_key", "openrouter-secret"),
+            patch.object(settings, "tts_model", "fish-audio/s2.1-pro-free:free"),
+            patch.object(settings, "tts_voice", "fish-reference-id"),
+            patch.object(settings, "tts_response_format", "mp3"),
+            patch("app.services.tts.httpx.AsyncClient", FakeClient),
+        ):
+            await generate_speech("Привет, мир.")
+        self.assertEqual(FakeClient.last_request["json"]["voice"], "fish-reference-id")
+
     async def test_openai_compatible_audio_request(self):
         FakeClient.last_request = None
         FakeClient.requests = []

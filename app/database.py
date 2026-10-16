@@ -48,6 +48,11 @@ async def init_db() -> None:
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_chats_share_token ON chats (share_token)"
         )
+        # One active audio generation per user, including concurrent requests from other devices.
+        await conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_audio_generations_active_user "
+            "ON audio_generations (user_id) WHERE status = 'generating'"
+        )
 
 
 # table -> {column: ddl}
@@ -90,5 +95,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "avatar": "INTEGER DEFAULT 0",
         "github_user": "VARCHAR(120)",
         "github_token": "VARCHAR(255)",
+    },
+    "audio_generations": {
+        # Existing quota entries are historical events, not active jobs.
+        "status": "VARCHAR(16) DEFAULT 'completed'",
     },
 }

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
@@ -23,6 +24,7 @@ from ..deps import (
 from ..config import settings
 from ..models import (
     Attachment,
+    AudioGeneration,
     Chat,
     File,
     Memory,
@@ -54,6 +56,7 @@ import logging
 from ..services.usage import account, est
 from ..services.limits import get_limits
 from ..services.audio_quota import (
+    AudioGenerationInProgress,
     AudioQuotaExceeded,
     release_audio_generation,
     reserve_audio_generation,
@@ -864,15 +867,42 @@ async def compress_chat(
 async def message_audio_status(
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Tell the authenticated owner whether a cached response audio file exists."""
+    """Return cached and in-progress audio state shared between devices."""
     try:
         fmt = normalized_audio_format()
         path = audio_file_path(user.id, message.id, fmt)
     except ValueError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
+
+    active_cutoff = utcnow() - timedelta(minutes=15)
+    # Recover stale state after an interrupted worker.
+    await db.execute(
+        update(AudioGeneration)
+        .where(
+            AudioGeneration.user_id == user.id,
+            AudioGeneration.status == "generating",
+            AudioGeneration.created_at < active_cutoff,
+        )
+        .values(status="completed")
+    )
+    active = await db.scalar(
+        select(AudioGeneration)
+        .where(
+            AudioGeneration.user_id == user.id,
+            AudioGeneration.status == "generating",
+            AudioGeneration.created_at >= active_cutoff,
+        )
+        .limit(1)
+    )
+    ready = path.is_file()
+    await db.commit()
     return {
-        "ready": path.is_file(),
+        "ready": ready,
+        "generating": bool(active and active.message_id == message.id and not ready),
+        "busy": active is not None,
+        "active_message_id": active.message_id if active else None,
         "url": f"/api/messages/{message.id}/audio/file",
         "format": fmt,
     }
@@ -925,6 +955,8 @@ async def create_message_audio(
             reservation = await reserve_audio_generation(
                 db, user.id, message.id, user.plan or "free"
             )
+        except AudioGenerationInProgress as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except AudioQuotaExceeded as exc:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
 
@@ -943,6 +975,9 @@ async def create_message_audio(
                 )
             path.parent.mkdir(parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, audio_bytes)
+            # Preserve this successful quota event but release the generation lock.
+            reservation.status = "completed"
+            await db.commit()
         except TTSNotConfiguredError as exc:
             await release_reservation()
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc

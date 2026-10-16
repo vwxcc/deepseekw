@@ -1062,8 +1062,9 @@
     if (button) button.classList.toggle('hidden', !state.currentChatId || !!state.readonly);
   }
 
-  function renderMessages() {
+  function renderMessages(options) {
     const box = $('#messages');
+    const opts = options || {};
     updateShareButtonVisibility();
     const entries = allMessages(state.tree);
     if (!entries.length) { renderEmptyState(); return; }
@@ -1073,7 +1074,15 @@
       entries.map((e, i) => msgHtml(e, i === entries.length - 1)).join('') + '</div>';
     bindMessageEvents();
     renderMath(box.querySelector('.msg-wrap'));
-    scrollToBottom();
+
+    if (opts.focusMessageId) {
+      const target = $('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
+      const content = target ? $('.content.md', target) : null;
+      if (content) content.classList.add('answer-arrive');
+      requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
+    } else {
+      scrollToBottom();
+    }
   }
 
   function bindMessageEvents() {
@@ -1173,6 +1182,18 @@
     const box = $('#messages');
     box.scrollTop = box.scrollHeight;
     state.stickBottom = true;
+  }
+
+  function scrollToMessageStart(messageId) {
+    const box = $('#messages');
+    if (!box || messageId == null) return;
+    const target = $('.msg', box).find(el => el.dataset.mid === String(messageId));
+    if (!target) return;
+    const boxTop = box.getBoundingClientRect().top;
+    const targetTop = target.getBoundingClientRect().top;
+    const top = Math.max(0, box.scrollTop + targetTop - boxTop - 4);
+    state.stickBottom = false;
+    box.scrollTo({ top, behavior: 'smooth' });
   }
 
   function maybeScroll() {
@@ -1440,7 +1461,7 @@
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
           }
-          renderMessages();
+          renderMessages({ focusMessageId: n ? n.id : null });
           loadUsage();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id) ||

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.database import Base
 from app.models import AudioGeneration, Chat, Message, MessageStatus, Role, User, utcnow
 from app.services.audio_quota import (
+    AudioGenerationInProgress,
     AudioQuotaExceeded,
     release_audio_generation,
     reserve_audio_generation,
@@ -49,15 +50,22 @@ class AudioQuotaTests(unittest.IsolatedAsyncioTestCase):
         await self.db.close()
         await self.engine.dispose()
 
+    async def test_parallel_generations_for_one_user_are_rejected(self):
+        await reserve_audio_generation(self.db, self.user.id, self.message_ids[0], "free")
+        with self.assertRaises(AudioGenerationInProgress):
+            await reserve_audio_generation(self.db, self.user.id, self.message_ids[1], "free")
+
     async def test_free_and_pro_each_allow_four_generations_per_window(self):
         for plan in ("free", "pro"):
             await self.db.execute(delete(AudioGeneration))
             await self.db.commit()
 
             for message_id in self.message_ids[:4]:
-                await reserve_audio_generation(
+                reservation = await reserve_audio_generation(
                     self.db, self.user.id, message_id, plan
                 )
+                reservation.status = "completed"
+                await self.db.commit()
 
             with self.assertRaises(AudioQuotaExceeded) as raised:
                 await reserve_audio_generation(
@@ -90,11 +98,12 @@ class AudioQuotaTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_generation_can_return_its_reserved_slot(self):
         reservations = []
         for message_id in self.message_ids[:4]:
-            reservations.append(
-                await reserve_audio_generation(
-                    self.db, self.user.id, message_id, "free"
-                )
+            reservation = await reserve_audio_generation(
+                self.db, self.user.id, message_id, "free"
             )
+            reservation.status = "completed"
+            await self.db.commit()
+            reservations.append(reservation)
         with self.assertRaises(AudioQuotaExceeded):
             await reserve_audio_generation(
                 self.db, self.user.id, self.message_ids[4], "free"

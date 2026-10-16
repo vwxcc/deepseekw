@@ -8,13 +8,15 @@ back through a directory that is mounted into both containers.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import shutil
 import subprocess
 import sys
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from urllib.parse import quote
 
 import httpx
 
@@ -104,25 +106,80 @@ class Sandbox:
         payload: dict = {"code": code, "timeout": timeout}
         if project:
             payload["project"] = project
+        headers = {}
+        if settings.sandbox_api_key:
+            headers["Authorization"] = "Bearer " + settings.sandbox_api_key
         try:
-            async with httpx.AsyncClient(timeout=timeout + 25) as client:
-                resp = await client.post(url, json=payload)
+            # Allow for a cold start of an external free Render web service.
+            async with httpx.AsyncClient(timeout=timeout + 90) as client:
+                resp = await client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
         except Exception as e:
             self.failed += 1
-            log.warning("Sandbox request failed: %s", e)
-            return self._fail(f"Песочница недоступна: {e}")
+            log.warning("Sandbox request failed: %s", type(e).__name__)
+            return self._fail(
+                "Песочница недоступна. Проверьте SANDBOX_URL и SANDBOX_API_KEY "
+                "в настройках сервера."
+            )
 
+        root = settings.sandbox_path.resolve()
         rel_dir = str(data.get("dir") or data.get("run_id") or "")
-        base = (settings.sandbox_path / rel_dir) if rel_dir else None
+        rel_dir_path = PurePosixPath(rel_dir.replace("\\\\", "/"))
+        if not rel_dir or rel_dir_path.is_absolute() or any(
+            part in {"", ".", ".."} for part in rel_dir_path.parts
+        ):
+            return self._fail("Песочница вернула некорректный путь к рабочей папке.")
+        base = (root.joinpath(*rel_dir_path.parts)).resolve()
+        if base == root or root not in base.parents:
+            return self._fail("Песочница вернула путь за пределами рабочей папки.")
+        base.mkdir(parents=True, exist_ok=True)
+
         files: list[dict] = []
-        if base is not None:
-            for item in data.get("files") or []:
-                abs_path = base / str(item.get("path") or item.get("name") or "")
-                files.append({**item, "abs": str(abs_path)})
+        transfer_warnings: list[str] = []
+        for raw_item in data.get("files") or []:
+            item = dict(raw_item) if isinstance(raw_item, dict) else {}
+            rel_name = str(item.get("path") or item.get("name") or "")
+            rel_path = PurePosixPath(rel_name.replace("\\\\", "/"))
+            if not rel_name or rel_path.is_absolute() or any(
+                part in {"", ".", ".."} for part in rel_path.parts
+            ):
+                log.warning("Ignoring unsafe sandbox result path")
+                continue
+            abs_path = (base.joinpath(*rel_path.parts)).resolve()
+            if abs_path == base or base not in abs_path.parents:
+                log.warning("Ignoring sandbox result outside workdir")
+                continue
+
+            encoded = item.pop("content_base64", None)
+            if encoded:
+                try:
+                    raw_bytes = base64.b64decode(encoded, validate=True)
+                    if len(raw_bytes) > MAX_FILE_BYTES:
+                        raise ValueError("artifact exceeds transfer limit")
+                    abs_path.parent.mkdir(parents=True, exist_ok=True)
+                    abs_path.write_bytes(raw_bytes)
+                except Exception:
+                    transfer_warnings.append(str(item.get("name") or rel_name)[:120])
+                    continue
+
+            # Shared-volume deployments already have the file; Render transfers
+            # bounded file contents as base64 and materialises them on the app side.
+            if abs_path.is_file():
+                files.append({**item, "path": rel_name, "abs": str(abs_path)})
+            elif item.get("transfer_error"):
+                transfer_warnings.append(str(item.get("name") or rel_name)[:120])
+            else:
+                transfer_warnings.append(str(item.get("name") or rel_name)[:120])
+
         data["files"] = files
-        data["workdir"] = str(base) if base else None
+        data["workdir"] = str(base)
+        if transfer_warnings:
+            old_stderr = str(data.get("stderr") or "")
+            note = "Не удалось перенести некоторые файлы из песочницы: " + ", ".join(
+                transfer_warnings[:6]
+            )
+            data["stderr"] = (old_stderr + "\\n" + note).strip()[:MAX_OUTPUT_CHARS]
         return data
 
     @staticmethod
@@ -216,11 +273,50 @@ async def run_python(code: str, timeout: int | None = None, project: str | None 
     return await sandbox.run(code, timeout, project)
 
 
+async def list_project_files(project: str) -> list[dict] | None:
+    """Read persistent project metadata from a remote runner (or None on failure)."""
+    if not settings.sandbox_url:
+        return None
+    if not project or not all(ch.isalnum() or ch in "_-" for ch in project):
+        return []
+    headers = {}
+    if settings.sandbox_api_key:
+        headers["Authorization"] = "Bearer " + settings.sandbox_api_key
+    url = settings.sandbox_url.rstrip("/") + "/project/" + quote(project, safe="")
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+        rows = data.get("files") if isinstance(data, dict) else []
+        if not isinstance(rows, list):
+            return []
+        return [
+            {
+                "path": str(item.get("path") or "").replace("\\\\", "/"),
+                "name": str(item.get("name") or ""),
+                "size": max(0, int(item.get("size") or 0)),
+            }
+            for item in rows
+            if isinstance(item, dict) and item.get("path")
+        ][:400]
+    except Exception as e:
+        log.warning("Remote project listing failed: %s", type(e).__name__)
+        return None
+
+
 def cleanup(workdir: str | None) -> None:
-    """Local fallback cleans up; the isolated runner prunes itself."""
-    if not workdir or settings.sandbox_url:
+    """Remove temporary app-side copies; never delete persistent project folders."""
+    if not workdir:
         return
     try:
-        shutil.rmtree(workdir, ignore_errors=True)
+        root = settings.sandbox_path.resolve()
+        target = Path(workdir).resolve()
+        if target == root or root not in target.parents:
+            return
+        relative = target.relative_to(root)
+        if relative.parts and relative.parts[0] == "projects":
+            return
+        shutil.rmtree(target, ignore_errors=True)
     except Exception:  # pragma: no cover
         pass

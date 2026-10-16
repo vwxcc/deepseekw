@@ -15,6 +15,7 @@ API:
 from __future__ import annotations
 
 import base64
+import hashlib
 import hmac
 import json
 import os
@@ -167,7 +168,7 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
     with open(os.path.join(workdir, "main.py"), "w", encoding="utf-8") as f:
         f.write(code)
 
-    mpl_dir = "/tmp/mpl"
+    mpl_dir = os.path.join(workdir, ".mpl")
     os.makedirs(mpl_dir, exist_ok=True)
     env = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/local/sbin:/usr/bin:/bin"),
@@ -182,6 +183,43 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
         "TMPDIR": "/tmp",
     }
 
+    # Use a stable UID for a persistent project and a distinct UID per one-off
+    # run. This prevents one generated process from reading another project's
+    # workdir even though both jobs share the same runner container.
+    principal = "project:" + project if persistent else "run:" + run_id
+    uid = 10000 + int(hashlib.sha256(principal.encode("utf-8")).hexdigest()[:12], 16) % 50000
+    gid = uid
+
+    try:
+        os.chown(workdir, uid, gid)
+        os.chmod(workdir, 0o700)
+        for root, dirs, names in os.walk(workdir, topdown=True, followlinks=False):
+            dirs[:] = [name for name in dirs if not os.path.islink(os.path.join(root, name))]
+            for name in names:
+                full = os.path.join(root, name)
+                if os.path.islink(full):
+                    continue
+                os.chown(full, uid, gid)
+                os.chmod(full, 0o600)
+            for name in dirs:
+                full = os.path.join(root, name)
+                os.chown(full, uid, gid)
+                os.chmod(full, 0o700)
+                # For chmod recursion, os.walk will visit children below.
+            os.chown(root, uid, gid)
+            os.chmod(root, 0o700)
+        # Matplotlib cache is private to the current workspace.
+        mpl_dir = os.path.join(workdir, ".mpl")
+        os.makedirs(mpl_dir, exist_ok=True)
+        os.chown(mpl_dir, uid, gid)
+        os.chmod(mpl_dir, 0o700)
+    except OSError as e:
+        return {
+            "ok": False, "run_id": run_id, "dir": rel_dir, "stdout": "",
+            "stderr": f"Не удалось изолировать рабочую папку: {type(e).__name__}",
+            "timed_out": False, "returncode": -1, "files": [],
+        }
+
     run_options = {
         "cwd": workdir,
         "env": env,
@@ -189,22 +227,12 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
         "text": True,
         "timeout": timeout,
         "preexec_fn": _limits(timeout),
+        "user": uid,
+        "group": gid,
     }
-    # The service process can manage /work, while generated code runs as an
-    # unprivileged account. Do not pass the API key or service env to code.
-    exec_uid = os.environ.get("SANDBOX_EXEC_UID", "").strip()
-    if exec_uid:
-        try:
-            uid = int(exec_uid)
-            gid = int(os.environ.get("SANDBOX_EXEC_GID", exec_uid))
-            run_options["user"] = uid
-            run_options["group"] = gid
-        except ValueError:
-            return {
-                "ok": False, "run_id": run_id, "dir": rel_dir, "stdout": "",
-                "stderr": "Неверная конфигурация SANDBOX_EXEC_UID/GID",
-                "timed_out": False, "returncode": -1, "files": [],
-            }
+    # The service process can manage /work, while generated code runs under a
+    # restricted per-project/run identity. The service API key is never passed
+    # in the child environment.
 
     timed_out = False
     returncode = 0
@@ -336,10 +364,13 @@ def main() -> None:
     os.makedirs(WORK, exist_ok=True)
     os.makedirs(PROJECTS, exist_ok=True)
     os.makedirs("/tmp/mpl", exist_ok=True)
-    try:
-        os.chmod(PROJECTS, 0o777)
-    except OSError:
-        pass
+    # Only the runner process (root inside this service) can list or change
+    # workspace directories. Child code gets execute/traverse access only.
+    for path, mode in ((WORK, 0o711), (PROJECTS, 0o711)):
+        try:
+            os.chmod(path, mode)
+        except OSError:
+            pass
     port = int(os.environ.get("SANDBOX_PORT") or os.environ.get("PORT") or "8000")
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     sys.stderr.write(f"[sandbox] listening on :{port}, work={WORK}\n")

@@ -1275,7 +1275,7 @@
     };
     // The API should begin the SSE response promptly. Once connected, allow
     // longer model think time, but never leave the composer locked forever.
-    armWatchdog(35000);
+    armWatchdog(120000);
     try {
       const headers = { 'X-CSRF-Token': api.csrf() };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -1287,10 +1287,10 @@
       if (res.status === 401) { showAuth(); return; }
       if (!res.ok) { const t = await res.text(); throw new Error(t); }
       responseReceived = true;
-      armWatchdog(150000);
+      armWatchdog(330000);
 
       await consumeSse(res, (ev, data) => {
-        armWatchdog(150000);
+        armWatchdog(330000);
         state.lastEvent = Date.now();
         if (ev === 'user_message' || ev === 'assistant_message') {
           const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
@@ -1421,8 +1421,8 @@
       console.error(err);
       const friendlyError = watchdogExpired
         ? (responseReceived
-          ? 'Ответ остановился без новых событий более 150 секунд. Можно отправить запрос ещё раз.'
-          : 'Сервер не начал ответ за 35 секунд. Текст запроса сохранён — попробуйте ещё раз.')
+          ? 'Ответ остановился без новых событий более 330 секунд. Можно отправить запрос ещё раз.'
+          : 'Сервер не начал ответ за 120 секунд. Текст запроса сохранён — попробуйте ещё раз.')
         : usefulErrorMessage(err, 'Неизвестная ошибка при отправке запроса');
       if (!responseReceived && opts && opts.optimistic && opts.input) {
         restoreUnsentDraft(opts.input, opts.draft || '');
@@ -1524,7 +1524,7 @@
     let requestStarted = false;
     try {
       if (isNewChat) {
-        const chat = await api.postTimed('/api/chats', { title: 'Новый чат' }, 20000);
+        const chat = await api.postTimed('/api/chats', { title: 'Новый чат' }, 120000);
         if (!chat || typeof chat !== 'object' || !chat.id) {
           throw new Error('API /api/chats вернул пустой ответ: чат не создан. Проверьте журнал сервера.');
         }

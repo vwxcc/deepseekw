@@ -2933,7 +2933,7 @@
     });
   }
 
-  // ---------- main page: action tiles + rotating showcase ----------
+  // ---------- main page: action tiles ----------
   const ACTION_TILES = [
     {
       id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',

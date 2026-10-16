@@ -1007,7 +1007,6 @@
     const path = activePath(state.tree, state.choices);
     if (!path.length) { renderEmptyState(); return; }
     stopRotation();
-    stopShowcase();
     box.innerHTML = '<div class="msg-wrap">' +
       path.map((e, i) => msgHtml(e, i === path.length - 1)).join('') + '</div>';
     bindMessageEvents();
@@ -1530,7 +1529,6 @@
     const defs = [
       ['files', 'files_count', 'Файлы', 'шт'],
       ['storage', 'user_storage', 'Хранилище', ' Б'],
-      ['posts', 'posts', 'Посты', 'шт'],
       ['requests', 'messages_per_day', 'Запросы в день', 'шт'],
     ];
     const rows = [];
@@ -1826,8 +1824,6 @@
 
   function bindFiles() {
     $('#models-btn').addEventListener('click', openModelStats);
-    $('#wall-btn').addEventListener('click', openWall);
-    $('#publish-btn').addEventListener('click', publishCurrentChat);
     $('#mem-quick-btn').addEventListener('click', () => openMemory());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());
@@ -2087,6 +2083,7 @@
   }
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
+    $('#sidebar-limits-btn').addEventListener('click', openLimits);
     // Код-агент и Консилиум убраны из интерфейса — обработчиков больше нет
     $('#collapse-btn').addEventListener('click', () => {
       state.sidebarCollapsed = true;
@@ -2136,15 +2133,13 @@
           '<h4 class="sec">Разделы</h4>' +
           '<div class="settings-grid">' +
           '<button class="chip-btn" id="set-models">' + icon('chart') + 'Модели и статус</button>' +
-          '<button class="chip-btn" id="set-wall">' + icon('globe-box') + 'Стенка постов</button>' +
           '<button class="chip-btn" id="set-memory">' + icon('sparkle') + 'Память</button>' +
           '<button class="chip-btn" id="set-links">' + icon('link') + 'Мои ссылки</button>' +
           '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
           (isAdmin
             ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
               '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
-              '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>' +
-              '<button class="chip-btn" id="open-limits">' + icon('gauge') + 'Тарифы и лимиты</button>'
+              '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>'
             : '') +
           '</div>' +
           '<div style="margin-top:18px"><button class="chip-btn danger" id="set-logout">' +
@@ -2153,14 +2148,12 @@
       });
       const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
       on('#set-models', () => { closeModal(); openModelStats(); });
-      on('#set-wall', () => { closeModal(); openWall(); });
       on('#set-memory', () => { closeModal(); openMemory(); });
       on('#set-links', () => { closeModal(); openLinks(); });
       on('#set-files', () => { closeModal(); toggleFiles(true); });
       on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
       on('#open-stats', () => { closeModal(); openAdminStats(); });
       on('#open-allchats', () => { closeModal(); openAdminChats(); });
-      on('#open-limits', () => { closeModal(); openLimits(); });
       on('#set-logout', async () => {
         try { await api.post('/api/auth/logout'); } catch (e) { /* noop */ }
         location.reload();
@@ -2677,180 +2670,6 @@
     });
   }
 
-  // ---------- wall of posts ----------
-  function postCard(p, compact) {
-    const img = p.image_file_id
-      ? '<img class="post-img" src="/api/files/' + p.image_file_id + '/download?inline=1" alt="" loading="lazy" />'
-      : '';
-    return '<div class="post-card" data-post="' + p.id + '">' +
-      img +
-      '<div class="post-body">' +
-      '<div class="post-head"><b>' + escapeHtml(p.title || 'Пост') + '</b>' +
-      '<em>' + escapeHtml(p.author || '') + ' · ' + timeAgo(p.created_at) + '</em></div>' +
-      '<p class="post-preview">' + escapeHtml((p.preview || '').slice(0, compact ? 180 : 420)) + '</p>' +
-      '<div class="post-foot">' +
-      '<button class="pv" data-vote="1" data-id="' + p.id + '"' + (p.my_vote > 0 ? ' class="on"' : '') + '>👍 <b>' + p.likes + '</b></button>' +
-      '<button class="pv" data-vote="-1" data-id="' + p.id + '"' + (p.my_vote < 0 ? ' class="on"' : '') + '>👎 <b>' + p.dislikes + '</b></button>' +
-      '<span class="pv-ro">💬 <b>' + p.comments + '</b></span>' +
-      '<span class="pv-ro">👁 <b>' + p.views + '</b></span>' +
-      '<span class="pv-ro" data-open-post="' + p.id + '">Открыть</span>' +
-      (p.can_delete ? '<button class="pv del" data-del-post="' + p.id + '">Удалить</button>' : '') +
-      '</div></div></div>';
-  }
-
-  function bindPostCards(root) {
-    $$('[data-vote]', root).forEach(b => b.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = b.dataset.id;
-      const value = parseInt(b.dataset.vote, 10);
-      const cards = $$('.post-card[data-post="' + id + '"]');
-      const cur = cards[0] && cards[0].querySelector('.pv.on[data-vote]');
-      const next = cur && parseInt(cur.dataset.vote, 10) === value ? 0 : value;
-      try {
-        const upd = await api.post('/api/posts/' + id + '/vote', { value: next });
-        cards.forEach(card => card.outerHTML = postCard(upd, card.classList.contains('compact')));
-        bindPostCards(root);
-      } catch (err) { toast('Ошибка: ' + err.message, 'error'); }
-    }));
-    $$('[data-open-post]', root).forEach(b => b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openPost(b.dataset.openPost);
-    }));
-    $$('[data-del-post]', root).forEach(b => b.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!confirm('Удалить пост со стенки?')) return;
-      try {
-        await api.del('/api/posts/' + b.dataset.delPost);
-        toast('Пост удалён');
-        closeModal();
-        openWall();
-      } catch (err) { toast('Ошибка: ' + err.message, 'error'); }
-    }));
-  }
-
-  async function openWall() {
-    let items = [];
-    try { items = await api.get('/api/posts?limit=60'); } catch (e) { items = []; }
-    openModal({
-      title: 'Стенка постов',
-      okText: 'Закрыть',
-      body: '<div class="wall-top">' +
-        '<span class="usage-note">Публичные ответы. Лайки, дизлайки и комментарии — для авторизованных.</span>' +
-        '<button class="chip-btn" id="wall-publish">' + icon('share') + 'Опубликовать чат</button>' +
-        '</div>' +
-        (items.length ? '<div class="wall-grid">' + items.map(p => postCard(p, true)).join('') + '</div>'
-                      : '<p>Пока постов нет. Открой чат и нажми «Опубликовать».</p>'),
-      onOk: () => true,
-    });
-    bindPostCards($('#modal-root'));
-    const pub = $('#wall-publish');
-    if (pub) pub.addEventListener('click', () => publishCurrentChat());
-  }
-
-  async function openPost(id) {
-    let p;
-    try { p = await api.get('/api/posts/' + id); }
-    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    if (!p.chat_id) {
-      toast('Чат недоступен', 'error');
-      return;
-    }
-    // viewing a post counts a view and opens the full chat read-only
-    api.post('/api/posts/' + id + '/view').catch(() => {});
-    const chat = await api.get('/api/chats/' + p.chat_id).catch(() => null);
-    const token = chat && chat.share_token;
-    if (!token) { toast('Ссылка недоступна', 'error'); return; }
-    window.open('/?share=' + token, '_blank');
-  }
-
-  async function publishCurrentChat() {
-    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
-    const chat = state.chats.find(c => c.id === state.currentChatId) || {};
-    openModal({
-      title: 'Опубликовать на стенке',
-      okText: 'Опубликовать',
-      body: '<p class="usage-note">Чат станет публичным (ссылка только для чтения), ' +
-        'а его последний ответ появится на стенке с превью.</p>' +
-        '<input id="post-title" value="' + escapeHtml(chat.title || 'Пост') + '" placeholder="Заголовок" />',
-      onOk: async (root) => {
-        const title = ($('#post-title', root) || {}).value ? $('#post-title', root).value.trim() : '';
-        try {
-          await api.post('/api/posts', { chat_id: state.currentChatId, title });
-          await loadWallCount();
-          toast('Опубликовано на стенке');
-          return true;
-        } catch (e) { toast('Ошибка: ' + e.message, 'error'); return false; }
-      },
-    });
-  }
-
-  async function loadWallCount() {
-    try {
-      const items = await api.get('/api/posts?limit=100');
-      const btn = $('#wall-btn');
-      const badge = btn && btn.querySelector('.wall-count');
-      if (badge) badge.textContent = items.length ? String(items.length) : '';
-    } catch (e) { /* noop */ }
-  }
-
-  // ---------- main page showcase: model + top post, both visible, refreshed ----------
-  let showcaseTimer = null;
-
-  function modelCardHtml(s) {
-    if (!s) return '<div class="show-empty">Модели недоступны</div>';
-    const total = (s.rating_up + s.rating_down) || 0;
-    const good = total ? Math.round((s.rating_up / total) * 100) : 0;
-    return '<div class="model-card compact">' +
-      '<div class="mc-head"><b>' + escapeHtml(s.name) + '</b>' +
-      '<em class="route">' + escapeHtml(s.route_type) + '</em></div>' +
-      '<div class="mc-model">' + escapeHtml(s.model || '—') + '</div>' +
-      '<div class="mc-bar"><i style="width:' + Math.min(100, s.share) + '%"></i></div>' +
-      '<div class="mc-rows"><span>Запросов: <b>' + s.messages + '</b></span>' +
-      '<span>Доля: <b>' + s.share + '%</b></span>' +
-      '<span>Вход/выход: <b>' + fmtNum(s.tokens_in) + ' / ' + fmtNum(s.tokens_out) + '</b></span>' +
-      '<span>Оценки: 👍 <b>' + s.rating_up + '</b> · 👎 <b>' + s.rating_down + '</b></span>' +
-      (total ? '<span>Довольных: <b>' + good + '%</b></span>' : '') +
-      '</div></div>';
-  }
-
-  async function startShowcase() {
-    stopShowcase();
-    let posts = [];
-    let stats = [];
-    try { posts = await api.get('/api/posts?limit=6'); } catch (e) { posts = []; }
-    try { stats = await api.get('/api/models/stats'); } catch (e) { stats = []; }
-    const top = stats.length ? stats[Math.floor(Math.random() * stats.length)] : null;
-
-    const slides = (posts || []).slice(0, 5);
-    const track = slides.length
-      ? '<div class="carousel"><div class="car-track" id="car-track">' +
-        slides.map(p => '<div class="car-item">' +
-          postCard(Object.assign({}, p, { can_delete: false }), true) + '</div>').join('') +
-        '</div></div>'
-      : '<div class="show-empty">Постов пока нет — нажми «Опубликовать» в чате</div>';
-
-    const box = $('#empty-showcase');
-    if (!box) return;
-    box.innerHTML =
-      '<div class="show-col"><div class="show-label">Модель дня</div>' + modelCardHtml(top) + '</div>' +
-      '<div class="show-col"><div class="show-label">Стенка постов</div>' + track + '</div>';
-    bindPostCards(box);
-
-    if (slides.length > 1) {
-      let i = 0;
-      showcaseTimer = setInterval(() => {
-        const el = $('#car-track');
-        if (!el) { stopShowcase(); return; }
-        i = (i + 1) % slides.length;
-        el.style.transform = 'translateX(' + (-i * 100) + '%)';
-      }, 8000);
-    }
-  }
-
-  function stopShowcase() {
-    if (showcaseTimer) { clearInterval(showcaseTimer); showcaseTimer = null; }
-  }
-
   // ---------- code-agent project panel ----------
   function toggleProjectPanel(show) {
     const panel = $('#project-panel');
@@ -2960,7 +2779,7 @@
     };
     const lf = data.limits.free || {};
     const lp = data.limits.pro || {};
-    const tableKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp))));
+    const tableKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp)))).filter(key => key !== 'posts');
     const rowFor = (key) => '<tr><td class="lk">' + escapeHtml(labels[key] || key) +
       (bytes[key] ? ' <em>МБ</em>' : '') + '</td>' +
       '<td>' + field('free', key, lf[key]) + '</td>' +
@@ -2972,7 +2791,7 @@
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, посты, ' +
+        'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, ' +
         'код-агенты, шаги агента, консилиум, запуск кода, цена тарифа и цена токенов.</p>' +
         '<table class="lim-table"><thead><tr><th>Лимит</th>' +
         '<th>Free<button class="reset-plan" data-reset-plan="free">сбросить</button></th>' +
@@ -3174,7 +2993,6 @@
       questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
     { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
       questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
-    { id: 'wall', label: 'Посмотреть посты', icon: 'i-globe-box', color: '#b8862f', action: 'wall' },
   ];
 
   // inline tile icon paths — drawn directly, so they render everywhere
@@ -3239,7 +3057,6 @@
   }
 
   async function useTile(t) {
-    if (t.action === 'wall') { openWall(); return; }
     let chat;
     try {
       chat = await api.post('/api/chats', { title: t.title || t.label });
@@ -3307,12 +3124,12 @@
   function planCompareHtml(lim, compare) {
     const pro = (compare && compare.pro) || {};
     const order = ['budget_usd', 'window_hours', 'file_size', 'user_storage', 'files_count',
-                   'chats_count', 'messages_per_day', 'posts', 'code_agents',
+                   'chats_count', 'messages_per_day', 'code_agents',
                    'agent_steps', 'council_members', 'sandbox_seconds'];
     const labels = {
       budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
       file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
-      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день', posts: 'Постов',
+      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день',
       code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
       council_members: 'Участников консилиума', sandbox_seconds: 'Секунд на код',
     };
@@ -3363,7 +3180,6 @@
     const defs = [
       ['files', 'files_count', 'Файлы'],
       ['storage', 'user_storage', 'Хранилище'],
-      ['posts', 'posts', 'Посты'],
       ['requests', 'messages_per_day', 'Сообщений в день'],
     ];
     const rows = defs.map(d => {
@@ -3403,12 +3219,12 @@
   async function boot() {
     showApp();
     applySidebar();
+    if (state.user && state.user.is_admin) $('#sidebar-limits-btn').classList.remove('hidden');
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
     await loadChats();
     await loadFiles();
     await loadModelSets();
     await loadMemory();
-    await loadWallCount();
     await loadLimits();
     await loadUsage();
     renderMessages();

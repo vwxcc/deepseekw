@@ -368,11 +368,6 @@ a { color: var(--accent); }
 .send-btn.stop:hover { background: #3f3d38; }
 .send-btn .ic { width: 17px; height: 17px; stroke-width: 2; }
 
-.composer-hint {
-  max-width: var(--col); margin: 8px auto 0; text-align: center;
-  font-size: 12.65px; color: var(--fg-soft);
-}
-
 .chip-btn {
   display: inline-flex; align-items: center; gap: 7px;
   border: 1px solid var(--border); background: var(--bg-panel);
@@ -1049,7 +1044,7 @@ input[type="range"].orange-range { width: 100%; }
 }
 
 /* ============================================================
-   Profile / settings / model stats / wall of posts
+   Profile / settings / model stats
    ============================================================ */
 .chip-btn.mem-quick { gap: 5px; font-size: 14.3px; }
 .chip-btn.mem-quick .mem-count {
@@ -1060,14 +1055,15 @@ input[type="range"].orange-range { width: 100%; }
 .chip-btn.danger { color: #b4432f; border-color: #e0b3ab; }
 .chip-btn.danger:hover { background-image: linear-gradient(135deg, #fbe3dd, #f3c3b8 45%, #fbe3dd); }
 
-.icon-btn #publish-btn, #publish-btn { width: auto; padding: 0 10px; gap: 6px; display: inline-flex; }
-#publish-btn .pub-label, #share-btn .pub-label { font-size: 13.2px; }
-#share-btn { width: auto; padding: 0 10px; gap: 6px; display: inline-flex; }
-.head-right { gap: 5px; }
-@media (max-width: 1240px) {
-  #publish-btn .pub-label, #share-btn .pub-label { display: none; }
-  #publish-btn, #share-btn { width: 34px; padding: 0; }
+#share-btn {
+  width: auto; min-width: 132px; height: 38px; padding: 0 15px; gap: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg-panel); color: var(--fg); font-size: 14.3px; font-weight: 500;
 }
+#share-btn .share-label { display: inline; font-size: 14.3px; line-height: 1; }
+#share-btn .ic { width: 17px; height: 17px; }
+.head-right { gap: 8px; }
 
 .profile-box { display: flex; align-items: center; gap: 13px; margin-bottom: 6px; }
 .profile-ava {
@@ -1105,44 +1101,7 @@ input[type="range"].orange-range { width: 100%; }
 .mc-rows b { color: var(--fg); }
 .mc-good { font-size: 13.2px; color: #3f7a3f; }
 
-.wall-top { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  flex-wrap: wrap; margin-bottom: 12px; }
-.wall-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
-.post-card {
-  border: 1px solid var(--border-soft); border-radius: 12px; overflow: hidden;
-  background: var(--bg-panel); display: flex; flex-direction: column;
-  transition: border-color .25s ease, box-shadow .3s ease;
-}
-.post-card:hover { border-color: #e2b96a; box-shadow: 0 4px 18px rgba(226, 185, 106, .28); }
-.post-img { width: 100%; max-height: 150px; object-fit: cover; display: block; }
-.post-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
-.post-head { display: flex; flex-direction: column; gap: 1px; }
-.post-head b { font-size: 14.85px; }
-.post-head em { font-style: normal; font-size: 12.1px; color: var(--fg-soft); }
-.post-preview { font-size: 13.75px; color: var(--fg-muted); margin: 0; flex: 1; }
-.post-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-.post-foot .pv, .post-foot .pv-ro {
-  border: 1px solid var(--border); background: var(--bg-panel); color: var(--fg-muted);
-  border-radius: 999px; font-size: 12.65px; padding: 3px 9px; display: inline-flex;
-  align-items: center; gap: 4px;
-}
-.post-foot .pv { cursor: pointer; }
-.post-foot .pv.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-.post-foot .pv-ro[data-open-post] { cursor: pointer; color: var(--accent); }
-.post-foot .pv:hover { border-color: #e2b96a; }
-.post-foot .pv.del { color: #b4432f; border-color: #e0b3ab; }
-
-.showcase { margin-top: 26px; width: 100%; max-width: 560px; }
-.show-label {
-  font-size: 12.65px; text-transform: uppercase; letter-spacing: .08em;
-  color: var(--fg-soft); margin-bottom: 7px;
-}
 .modal.wide { max-width: 720px; }
-#post-title {
-  width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
-  font: inherit; font-size: 14.85px; background: var(--bg-panel); color: var(--fg);
-}
-
 @media (prefers-color-scheme: dark) {
   .model-card { background: #272725; }
   .mc-good { color: #8fc98f; }
@@ -1326,7 +1285,7 @@ input[type="range"].orange-range { width: 100%; }
 .file-item .fi-btn .ic { width: 14px; height: 14px; }
 
 /* ============================================================
-   Main page tiles + post carousel + ask card
+   Main page tiles + ask card
    ============================================================ */
 .tiles {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -1388,10 +1347,6 @@ input[type="range"].orange-range { width: 100%; }
   margin-left: 4px;
 }
 
-.carousel { overflow: hidden; border-radius: 12px; }
-.car-track { display: flex; transition: transform .9s cubic-bezier(.4, 0, .2, 1); }
-.car-item { flex: 0 0 100%; min-width: 100%; }
-
 .ask-card {
   border: 1px solid #cfe0f5; background: #eef5fd; border-radius: 12px;
   padding: 12px 13px; margin-top: 10px; display: flex; flex-direction: column; gap: 9px;
@@ -1440,16 +1395,6 @@ input[type="range"].orange-range { width: 100%; }
 .model-select:hover { border-color: #e2b96a; box-shadow: 0 2px 12px rgba(226, 185, 106, .35); }
 .model-select:focus { outline: none; border-color: #e2b96a; }
 
-.showcase {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px; margin-top: 26px; width: 100%; max-width: 760px; align-items: start;
-}
-.show-col { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
-.show-empty {
-  border: 1px dashed var(--border); border-radius: 12px; padding: 18px 14px;
-  font-size: 13.75px; color: var(--fg-soft); text-align: center;
-}
-
 /* ============================================================
    Mobile / small-screen tightening
    ============================================================ */
@@ -1458,7 +1403,6 @@ input[type="range"].orange-range { width: 100%; }
   .composer-row { gap: 6px; }
   .effort-wrap { min-width: 0; flex: 1 1 auto; }
   .model-select { max-width: 130px; }
-  .showcase { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 620px) {
@@ -1477,12 +1421,10 @@ input[type="range"].orange-range { width: 100%; }
   .chips button { font-size: 13.75px; padding: 7px 11px; }
   .msg .meta button { font-size: 12.65px; padding: 3px 8px; }
   .msg .meta button span { display: none; }
-  .showcase { margin-top: 18px; }
-  .model-grid, .wall-grid { grid-template-columns: 1fr; }
+  .model-grid { grid-template-columns: 1fr; }
   .usage-grid { grid-template-columns: repeat(2, 1fr); }
   .modal { max-width: 100%; }
   .project-panel { width: 100%; }
-  .pub-label { display: none; }
 }
 
 
@@ -1565,17 +1507,10 @@ body { font-weight: 400; }
 #input { font-family: var(--font-lit); font-size: 17.05px; }
 #input::placeholder { font-family: var(--font-lit); font-style: italic; opacity: .75; }
 
-/* header: title to the left, action buttons compact and further left */
+/* header: keep the chat title aligned left and use a clear share action */
 .chat-title-wrap { justify-content: flex-start; }
 .chat-title { text-align: left; }
-.head-right { gap: 4px; }
-#publish-btn, #share-btn { padding: 0 9px; gap: 5px; }
-#publish-btn .pub-label, #share-btn .pub-label { font-size: 12.65px; }
 .head-left { gap: 4px; }
-@media (max-width: 1360px) {
-  #publish-btn .pub-label, #share-btn .pub-label { display: none; }
-  #publish-btn, #share-btn { width: 34px; padding: 0; }
-}
 
 /* sidebar footer: two shortcuts on one row */
 .side-row.two { display: flex; gap: 6px; }
@@ -1586,8 +1521,8 @@ body { font-weight: 400; }
 /* Sidebar keeps the original system stack; only the ChatStudio wordmark uses the new font */
 #sidebar, #sidebar button, #sidebar input, #sidebar select,
 #sidebar .side-item, #sidebar .new-chat, #sidebar .chat-item,
-#sidebar .chat-title-text, #sidebar .side-empty, #sidebar .wall-count,
-#sidebar .mem-count, #sidebar .side-head, #sidebar .side-foot button {
+#sidebar .chat-title-text, #sidebar .side-empty, #sidebar .mem-count,
+#sidebar .side-head, #sidebar .side-foot button {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
 }
@@ -1633,7 +1568,6 @@ body { font-weight: 400; }
   flex: 0 0 auto; width: 40px; justify-content: center; padding: 8px 0;
   position: relative;
 }
-.side-row.foot .side-item.icon-only .wall-count,
 .side-row.foot .side-item.icon-only .mem-count {
   position: absolute; top: 1px; right: 3px; font-size: 10.45px; line-height: 1;
   padding: 1px 4px; border-radius: 999px; background: var(--bg-user); color: var(--fg-muted);
@@ -1783,3 +1717,19 @@ body { font-weight: 400; }
 }
 .chip-btn.usage-mini { padding: 0 10px; gap: 7px; }
 .chip-btn.usage-mini b { line-height: 1; }
+
+
+/* ---- Focused layout update: compact top shortcuts and lifted composer ---- */
+#sidebar .side-top { gap: 8px; padding-top: 8px; }
+.side-row.primary-actions { display: flex; align-items: stretch; gap: 6px; }
+.side-row.primary-actions .side-item.wide { flex: 1 1 0; min-width: 0; justify-content: center; gap: 5px; padding: 8px 6px; }
+.side-row.primary-actions .side-item.wide span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-row.primary-actions .side-item.wide .ic { width: 15px; height: 15px; flex: 0 0 auto; }
+.side-row.primary-actions .new-chat { flex: 1.15 1 0; min-width: 0; justify-content: center; gap: 5px; padding: 8px 6px; white-space: nowrap; font-size: 13.75px; }
+.side-row.primary-actions .new-chat span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-row.primary-actions .side-item.icon-only { flex: 0 0 34px; width: 34px; min-width: 34px; justify-content: center; padding: 0; }
+#sidebar-limits-btn { width: 100%; min-height: 35px; justify-content: flex-start; gap: 8px; padding: 8px 10px; border-color: var(--border-soft); background: transparent; color: var(--fg-muted); }
+#sidebar-limits-btn:hover { background: var(--bg-hover); color: var(--fg); }
+#composer { margin-bottom: 28px; }
+@media (max-width: 860px) { #composer { margin-bottom: 22px; } }
+@media (max-width: 620px) { #composer { margin-bottom: 14px; } #share-btn { min-width: 36px; width: 36px; height: 36px; padding: 0; } #share-btn .share-label { display: none; } }

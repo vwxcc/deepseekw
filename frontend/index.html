@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=27" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=28" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -92,9 +92,18 @@
       </div>
 
       <div class="side-top">
-        <div class="side-row one">
+        <button class="side-item wide sidebar-limits hidden" id="sidebar-limits-btn" title="Настроить тарифы и лимиты">
+          <svg class="ic"><use href="#i-gauge"/></svg><span>Тарифы и лимиты</span>
+        </button>
+        <div class="side-row primary-actions">
+          <button class="side-item wide" id="settings-btn" title="Настройки и профиль">
+            <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
+          </button>
           <button class="new-chat" id="new-chat-btn" title="Новый чат">
-            <svg class="ic"><use href="#i-plus"/></svg><span>Новый</span>
+            <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
+          </button>
+          <button class="side-item icon-only" id="models-btn" title="Модели и статус">
+            <svg class="ic"><use href="#i-chart"/></svg>
           </button>
         </div>
         <div class="search-box">
@@ -108,19 +117,6 @@
         <div id="chat-list"></div>
       </div>
 
-      <div class="side-foot">
-        <div class="side-row foot">
-          <button class="side-item wide" id="settings-btn" title="Настройки и профиль">
-            <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
-          </button>
-          <button class="side-item icon-only" id="wall-btn" title="Стенка постов">
-            <svg class="ic"><use href="#i-globe-box"/></svg>
-          </button>
-          <button class="side-item icon-only" id="models-btn" title="Модели и статус">
-            <svg class="ic"><use href="#i-chart"/></svg>
-          </button>
-        </div>
-      </div>
     </aside>
 
     <main id="chat-area">
@@ -132,8 +128,7 @@
         <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">ChatStudio</div>
         <div class="head-right">
           <button class="icon-btn hidden" id="project-btn" title="Панель проекта"><svg class="ic"><use href="#i-terminal"/></svg></button>
-          <button class="icon-btn" id="publish-btn" title="Опубликовать чат на стенке"><svg class="ic"><use href="#i-share"/></svg><span class="pub-label">Опубликовать</span></button>
-          <button class="icon-btn" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-link"/></svg><span class="pub-label">Поделиться</span></button>
+          <button class="icon-btn share-button" id="share-btn" title="Поделиться ссылкой"><svg class="ic"><use href="#i-share"/></svg><span class="share-label">Поделиться</span></button>
         </div>
       </header>
 
@@ -166,7 +161,6 @@
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
           </div>
         </div>
-        <p class="composer-hint">ChatStudio всегда прав.</p>
       </div>
     </main>
 
@@ -206,6 +200,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=27"></script>
+  <script src="/assets/js/app.js?v=28"></script>
 </body>
 </html>

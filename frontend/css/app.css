@@ -295,20 +295,6 @@ a { color: var(--accent); }
 .msg .meta .ic { width: 14px; height: 14px; }
 .msg .status { font-size: 13.75px; color: var(--fg-soft); }
 
-.branch-nav {
-  display: inline-flex; align-items: center; gap: 12px; margin-top: 12px;
-  font-size: 13.75px; color: var(--fg-soft);
-}
-.branch-nav button {
-  border: 1px solid var(--border); background: var(--bg-panel);
-  border-radius: 7px; width: 27px; height: 27px; color: var(--fg-muted);
-  display: grid; place-items: center;
-}
-.branch-nav span { min-width: 40px; text-align: center; padding: 0 4px; letter-spacing: .03em; }
-.branch-nav button:hover { background: var(--bg-hover); }
-.branch-nav .ic { width: 14px; height: 14px; }
-.branch-nav .ic.prev { transform: rotate(180deg); }
-
 .thinking { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
 .thinking i { width: 6px; height: 6px; border-radius: 50%; background: #e07a52; display: inline-block;
   animation: blink 2.4s infinite ease-in-out; }
@@ -613,7 +599,7 @@ a { color: var(--accent); }
   #chat-header { background: rgba(38, 38, 36, .86); }
   .md code { background: #3a3936; color: #ecebe6; }
   .auth-card input, .modal input, .modal select, .modal textarea { background: #262624; color: var(--fg); }
-  .new-chat, .chips button, .msg .meta button, .msg-att, .chip-btn, .branch-nav button { background: var(--bg-panel); color: var(--fg); }
+  .new-chat, .chips button, .msg .meta button, .msg-att, .chip-btn { background: var(--bg-panel); color: var(--fg); }
   .side-scroll::-webkit-scrollbar-thumb, #messages::-webkit-scrollbar-thumb { background: #45433d; }
   .chat-item:hover, .chat-item .acts button:hover { background: var(--bg-hover); }
   .drop-zone.over { background: #33291f; }
@@ -742,23 +728,6 @@ a { color: var(--accent); }
 .gen-anim-text {
   font-size: 14.3px; color: var(--fg-muted); white-space: nowrap;
 }
-.gen-anim-bar {
-  position: relative; flex: 1 1 auto; height: 4px; min-width: 70px;
-  border-radius: 999px; overflow: hidden; background: var(--border-soft);
-}
-.gen-anim-bar i {
-  position: absolute; inset: 0 auto 0 0; width: 40%;
-  border-radius: 999px; background: linear-gradient(90deg, #e07a52, #e2b96a);
-  animation: genSlide 1.15s ease-in-out infinite;
-}
-@keyframes genSlide {
-  0% { transform: translateX(-110%); }
-  100% { transform: translateX(360%); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .gen-anim-bar i { animation: none; width: 100%; opacity: .6; }
-}
-
 /* ============================================================
    Composer controls
    ============================================================ */
@@ -1058,9 +1027,10 @@ input[type="range"].orange-range { width: 100%; }
 #share-btn {
   width: auto; min-width: 132px; height: 38px; padding: 0 15px; gap: 9px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border); border-radius: 999px;
-  background: var(--bg-panel); color: var(--fg); font-size: 14.3px; font-weight: 500;
+  border: 1px solid #e2d0a8; border-radius: 999px;
+  background: #f3e7ca; color: #5b4828; font-size: 14.3px; font-weight: 500;
 }
+#share-btn:hover { background: #ead9b2; border-color: #d7c398; color: #4f3d20; }
 #share-btn .share-label { display: inline; font-size: 14.3px; line-height: 1; }
 #share-btn .ic { width: 17px; height: 17px; }
 .head-right { gap: 8px; }
@@ -1289,10 +1259,12 @@ input[type="range"].orange-range { width: 100%; }
    ============================================================ */
 .tiles {
   display: block; position: relative; width: min(100%, 760px); max-width: 760px;
-  margin: 12px auto 4px; overflow: hidden; white-space: nowrap;
+  margin: 12px auto 4px; overflow: hidden; overflow-x: hidden; white-space: nowrap;
+  scrollbar-width: none; -ms-overflow-style: none;
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%);
   mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%);
 }
+.tiles::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .tile-track {
   display: flex; align-items: center; width: max-content;
   will-change: transform; animation: tileMarquee 36s linear infinite;
@@ -1328,8 +1300,9 @@ input[type="range"].orange-range { width: 100%; }
 }
 .tile-lock .ic { width: 10px; height: 10px; }
 @media (prefers-reduced-motion: reduce) {
-  .tile-track { animation: none; }
-  .tiles { overflow-x: auto; -webkit-mask-image: none; mask-image: none; }
+  /* The icon row must keep moving; overflow remains clipped so no scrollbar appears. */
+  .tile-track { animation: tileMarquee 36s linear infinite; }
+  .tiles { overflow: hidden; overflow-x: hidden; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%); }
 }
 
 /* Immediate feedback while the first chat is being created. */

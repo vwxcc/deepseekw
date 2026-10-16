@@ -54,9 +54,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=37" not in html:
+          if "/assets/css/app.css?v=38" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=42" not in html:
+          if "/assets/js/app.js?v=43" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -91,5 +91,9 @@ jobs:
               raise SystemExit("Post-answer suggestion generation must stay disabled")
           if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:
               raise SystemExit("Missing authenticated audio endpoints")
-          print("Audio player hooks and message copy actions are present; follow-up suggestions are disabled.")
+          if '"active_message_id": active.message_id' not in messages or 'AudioGenerationInProgress' not in messages:
+              raise SystemExit("Missing shared audio status or generation exclusion")
+          if "ux_audio_generations_active_user" not in Path("app/database.py").read_text(encoding="utf-8"):
+              raise SystemExit("Missing database guard against parallel audio generations")
+          print("Audio controls, shared progress and the single-generation lock are present; follow-up suggestions are disabled.")
           PY

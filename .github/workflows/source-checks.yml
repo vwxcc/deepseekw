@@ -23,11 +23,13 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall -q app sandbox tests
       - name: Install lightweight search-test dependencies
-        run: python -m pip install httpx==0.28.1 pydantic-settings==2.7.1 python-dotenv==1.0.1
+        run: python -m pip install httpx==0.28.1 pydantic-settings==2.7.1 python-dotenv==1.0.1 sqlalchemy==2.0.36 aiosqlite==0.20.0
       - name: Test web search parsing and provider fallbacks
         run: python -m unittest discover -s tests -p 'test_websearch.py' -v
       - name: Test TTS text cleanup and API request
         run: python -m unittest discover -s tests -p 'test_tts.py' -v
+      - name: Test rolling audio generation quota
+        run: python -m unittest discover -s tests -p 'test_audio_quota.py' -v
       - name: Test isolated sandbox execution and authentication
         run: sudo python -m unittest discover -s tests -p 'test_sandbox_runner.py' -v
       - name: Check browser JavaScript syntax
@@ -52,9 +54,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=35" not in html:
+          if "/assets/css/app.css?v=36" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=40" not in html:
+          if "/assets/js/app.js?v=41" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 

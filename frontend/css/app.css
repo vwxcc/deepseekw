@@ -1336,6 +1336,7 @@ input[type="range"].orange-range { width: 100%; }
 
 /* Immediate feedback while the first chat is being created. */
 .send-btn.preparing { opacity: .72; cursor: wait; }
+.send-btn:disabled { pointer-events: none; }
 .send-btn.preparing .ic { animation: sendPreparingPulse .9s ease-in-out infinite; }
 @keyframes sendPreparingPulse {
   50% { opacity: .35; transform: translateY(-1px) scale(.9); }

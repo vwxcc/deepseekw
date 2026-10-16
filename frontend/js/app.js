@@ -419,14 +419,28 @@
   // ---------- api ----------
   const api = {
     csrf() { return window.__csrf || getCookie('chatstudio_csrf') || ''; },
-    async req(method, path, body, isForm) {
+    async req(method, path, body, isForm, timeoutMs) {
       const headers = {};
       if (!isForm && body !== undefined) headers['Content-Type'] = 'application/json';
       if (method !== 'GET') headers['X-CSRF-Token'] = api.csrf();
-      const res = await fetch(path, {
-        method, headers, credentials: 'same-origin',
-        body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
-      });
+      const controller = timeoutMs > 0 ? new AbortController() : null;
+      let timeoutId = null;
+      if (controller) timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      let res;
+      try {
+        res = await fetch(path, {
+          method, headers, credentials: 'same-origin',
+          body: isForm ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+      } catch (err) {
+        if (controller && err && err.name === 'AbortError') {
+          throw new Error('Сервер не ответил за ' + Math.round(timeoutMs / 1000) + ' секунд');
+        }
+        throw err;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
       if (res.status === 401) { showAuth(); throw new Error('unauthorized'); }
       if (res.status === 204) return null;
       if (!res.ok) {
@@ -438,6 +452,7 @@
     },
     get(p) { return api.req('GET', p); },
     post(p, b) { return api.req('POST', p, b === undefined ? {} : b); },
+    postTimed(p, b, timeoutMs) { return api.req('POST', p, b === undefined ? {} : b, false, timeoutMs); },
     postForm(p, fd) { return api.req('POST', p, fd, true); },
     patch(p, b) { return api.req('PATCH', p, b); },
     put(p, b) { return api.req('PUT', p, b === undefined ? {} : b); },
@@ -1230,17 +1245,35 @@
         (idle > 45 ? ' · модель долго думает…' : '');
       el.classList.toggle('warn', idle > 45);
     }, 1000);
+    const controller = new AbortController();
+    let watchdog = null;
+    let watchdogExpired = false;
+    let responseReceived = false;
+    const armWatchdog = (delay) => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        watchdogExpired = true;
+        controller.abort();
+      }, delay);
+    };
+    // The API should begin the SSE response promptly. Once connected, allow
+    // longer model think time, but never leave the composer locked forever.
+    armWatchdog(35000);
     try {
       const headers = { 'X-CSRF-Token': api.csrf() };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
       const res = await fetch(path, {
         method: 'POST', headers, credentials: 'same-origin',
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
       if (res.status === 401) { showAuth(); return; }
       if (!res.ok) { const t = await res.text(); throw new Error(t); }
+      responseReceived = true;
+      armWatchdog(150000);
 
       await consumeSse(res, (ev, data) => {
+        armWatchdog(150000);
         state.lastEvent = Date.now();
         if (ev === 'user_message' || ev === 'assistant_message') {
           const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
@@ -1255,11 +1288,16 @@
             }
           }
           if (!node) node = insertMessage(state.tree, data);
-          renderMessages();
           if (ev === 'assistant_message') {
+            // Chat creation and request acceptance are finished at this point.
+            // Do not leave the optimistic bubble saying "Создаю чат…" while
+            // the model is thinking or waiting in a queue.
+            node.creating = true;
+            node.creatingLabel = 'Запрос принят · ожидаю ответ модели…';
             state.activeAssistantId = node.id;
-            bindStreamRefs();
           }
+          renderMessages();
+          if (ev === 'assistant_message') bindStreamRefs();
         } else if (ev === 'stage') {
           // search / routing stages: the bubble keeps the creation animation,
           // the label tells what is happening right now
@@ -1364,7 +1402,15 @@
       });
     } catch (err) {
       console.error(err);
-      toast('Ошибка: ' + err.message, 'error');
+      const friendlyError = watchdogExpired
+        ? (responseReceived
+          ? 'Ответ остановился без новых событий более 150 секунд. Можно отправить запрос ещё раз.'
+          : 'Сервер не начал ответ за 35 секунд. Текст запроса сохранён — попробуйте ещё раз.')
+        : ((err && err.message) ? err.message : 'неизвестная ошибка');
+      if (!responseReceived && opts && opts.optimistic && opts.input) {
+        restoreUnsentDraft(opts.input, opts.draft || '');
+      }
+      toast('Ошибка: ' + friendlyError, 'error');
       // the optimistic messages must not hang — turn them into a plain error
       const a = state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null;
       if (a && a.status !== 'completed' && a.status !== 'cancelled') {
@@ -1375,19 +1421,23 @@
       // if the server never answered at all, the synthetic bubble is a ghost:
       // drop it and re-sync from the real history so nothing stays on screen
       const ghost = state.tmpAssistant ? findNode(state.tree, state.tmpAssistant.id) : null;
-      if (ghost && /^tmp_/.test(ghost.id)) {
-        try { if (state.currentChatId) await openChat(state.currentChatId); }
-        catch (e) { /* noop */ }
+      if (ghost && /^tmp_/.test(ghost.id) && state.currentChatId) {
+        // Recovery must never block finally/state reset; the network call itself
+        // may be the reason this request failed in the first place.
+        const recoveryChatId = state.currentChatId;
+        openChat(recoveryChatId).catch((e) => console.warn('Chat recovery failed:', e));
       }
       // forget temporary ids so a retry starts a clean branch
       state.tmpUser = null; state.tmpAssistant = null;
     } finally {
+      if (watchdog) clearTimeout(watchdog);
       setStreaming(false);
-      // limits must move the moment the answer lands
-      setTimeout(() => { loadLimits().then(loadUsage); }, 250);
+      // Limits and sidebar refresh happen in the background and cannot hold the
+      // send controls hostage if a secondary endpoint is slow.
+      setTimeout(() => { loadLimits().then(loadUsage).catch((e) => console.warn('Limits refresh failed:', e)); }, 250);
       if (state.genTimer) { clearInterval(state.genTimer); state.genTimer = null; }
       state.streamEl = null;
-      await loadChats();
+      loadChats().catch((e) => console.warn('Chat list refresh failed:', e));
       // refresh title (generated in background)
       if (state.currentChatId) {
         setTimeout(async () => {
@@ -1451,7 +1501,7 @@
     let requestStarted = false;
     try {
       if (isNewChat) {
-        const chat = await api.post('/api/chats', { title: 'Новый чат' });
+        const chat = await api.postTimed('/api/chats', { title: 'Новый чат' }, 20000);
         state.chats.unshift(chat);
         state.currentChatId = chat.id;
         state.tree = [];
@@ -1506,7 +1556,7 @@
           web_search: true,
           effort: state.effort,
           style: state.style,
-        }, { optimistic: true });
+        }, { optimistic: true, input, draft });
       requestStarted = true;
       // streamRequest synchronously turns on the normal streaming/stop controls.
       state.sending = false;

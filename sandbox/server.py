@@ -207,6 +207,11 @@ def execute(code: str, timeout: int, project: str | None = None) -> dict:
         "MPLCONFIGDIR": mpl_dir,
         "HOME": workdir,
         "TMPDIR": workdir,
+        # Avoid multi-threaded BLAS oversubscribing a small free-tier container.
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
     }
 
     # Use a stable UID for a persistent project and a distinct UID per one-off

@@ -32,6 +32,33 @@ class TTSGenerationError(RuntimeError):
     """Raised when the configured TTS provider cannot return usable audio."""
 
 
+def _provider_error_detail(response: httpx.Response) -> str:
+    """Extract a short, safe provider error message without exposing credentials."""
+    try:
+        data = response.json()
+    except (ValueError, TypeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    error = data.get("error")
+    if isinstance(error, dict):
+        detail = error.get("message") or error.get("detail") or error.get("type")
+    elif isinstance(error, str):
+        detail = error
+    else:
+        detail = data.get("message") or data.get("detail")
+    if not isinstance(detail, str):
+        return ""
+    detail = re.sub(r"[\\x00-\\x1f\\x7f]+", " ", detail)
+    detail = re.sub(r"\\s+", " ", detail).strip()
+    # Error payloads should not echo credentials, but redact them defensively.
+    for secret in (settings.tts_api_key, settings.tts_preprocess_api_key):
+        secret = str(secret or "").strip()
+        if secret:
+            detail = detail.replace(secret, "[redacted]")
+    return detail[:360]
+
+
 def _validated_api_key(value: str, setting_name: str) -> str:
     """Reject invalid Authorization header values with a clear config error.
 
@@ -116,7 +143,11 @@ async def prepare_spoken_text(value: str) -> str:
     except httpx.HTTPError as exc:
         raise TTSGenerationError("Не удалось связаться с ИИ-подготовщиком озвучки.") from exc
     if response.status_code < 200 or response.status_code >= 300:
-        raise TTSGenerationError(f"ИИ-подготовщик озвучки вернул HTTP {response.status_code}.")
+        detail = _provider_error_detail(response)
+        suffix = f": {detail}" if detail else ""
+        raise TTSGenerationError(
+            f"ИИ-подготовщик озвучки вернул HTTP {response.status_code}{suffix}"
+        )
     try:
         data = response.json()
         prepared = data["choices"][0]["message"]["content"]
@@ -188,10 +219,10 @@ async def generate_speech(text: str) -> tuple[bytes, str]:
         "input": cleaned,
         "response_format": fmt,
     }
-    # Fish Audio has no OpenAI-style preset voices such as "alloy". When the
-    # legacy/default value is present, omit it so Fish Audio can choose its
-    # provider default. A real Fish Audio reference ID is still passed through.
-    if voice and not (model.startswith("fish-audio/") and voice.lower() == "alloy"):
+    # OpenRouter's Fish Audio models do not expose preset voice IDs. The
+    # voice-cloning path uses input_references instead, so do not forward any
+    # legacy TTS_VOICE value (alloy, ru-RU, or otherwise) to Fish Audio.
+    if voice and not model.startswith("fish-audio/"):
         payload["voice"] = voice
     timeout = max(10, min(int(settings.tts_timeout or 180), 600))
     async with _slots:
@@ -210,8 +241,9 @@ async def generate_speech(text: str) -> tuple[bytes, str]:
             raise TTSGenerationError("Не удалось связаться с сервисом озвучки.") from exc
 
     if response.status_code < 200 or response.status_code >= 300:
-        # Never return a provider response body: it might echo request data.
-        raise TTSGenerationError(f"Сервис озвучки вернул HTTP {response.status_code}.")
+        detail = _provider_error_detail(response)
+        suffix = f": {detail}" if detail else ""
+        raise TTSGenerationError(f"Сервис озвучки вернул HTTP {response.status_code}{suffix}")
     audio = response.content
     if not audio:
         raise TTSGenerationError("Сервис озвучки вернул пустой аудиофайл.")

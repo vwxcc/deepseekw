@@ -197,14 +197,14 @@ def clean_tts_text(value: str, max_chars: int | None = None) -> str:
     return text
 
 
-async def generate_speech(text: str) -> tuple[bytes, str]:
-    """Generate audio via an OpenAI-compatible POST /audio/speech endpoint."""
+async def generate_speech(text: str, *, prepared: bool = False) -> tuple[bytes, str]:
+    """Generate audio; prepared=True reuses text already verbalized and cached."""
     base_url = (settings.tts_base_url or "").strip().rstrip("/")
     api_key = _validated_api_key(settings.tts_api_key, "TTS_API_KEY")
     if not base_url:
         raise TTSNotConfiguredError("Задайте TTS_BASE_URL в переменных окружения сервиса.")
     fmt = normalized_audio_format()
-    cleaned = await prepare_spoken_text(text)
+    cleaned = clean_tts_text(text) if prepared else await prepare_spoken_text(text)
     if not cleaned:
         raise ValueError("В ответе нет текста для озвучки.")
 

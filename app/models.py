@@ -175,6 +175,23 @@ class AudioGeneration(Base):
     )
 
 
+class AudioGenerationLock(Base):
+    """Cross-worker lock: at most one active TTS generation per account."""
+
+    __tablename__ = "audio_generation_locks"
+
+    # A primary key on user_id makes the database enforce account-level exclusivity.
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    message_id: Mapped[str] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+
+
 class Attachment(Base):
     __tablename__ = "attachments"
 

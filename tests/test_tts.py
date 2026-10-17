@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.config import settings
 from app.services.tts import (
@@ -117,6 +117,28 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
                 await generate_speech("Проверка")
         self.assertIn("TTS_API_KEY", str(raised.exception))
         self.assertEqual(FakeClient.requests, [])
+
+
+    async def test_prepared_text_is_not_preprocessed_twice(self):
+        FakeClient.requests = []
+        with (
+            patch.object(settings, "tts_base_url", "https://speech.example/v1"),
+            patch.object(settings, "tts_api_key", "speech-secret"),
+            patch.object(settings, "tts_preprocess_base_url", ""),
+            patch.object(settings, "tts_preprocess_api_key", ""),
+            patch.object(settings, "tts_preprocess_model", ""),
+            patch.object(settings, "tts_model", "tts-1"),
+            patch.object(settings, "tts_voice", "alloy"),
+            patch("app.services.tts.prepare_spoken_text", new_callable=AsyncMock) as preprocess,
+            patch("app.services.tts.httpx.AsyncClient", FakeClient),
+        ):
+            audio, fmt = await generate_speech("Уже читабельный текст.", prepared=True)
+        preprocess.assert_not_awaited()
+        self.assertEqual(audio, b"fake-mp3-bytes")
+        self.assertEqual(fmt, "mp3")
+        self.assertEqual(len(FakeClient.requests), 1)
+        self.assertEqual(FakeClient.requests[0]["url"], "https://speech.example/v1/audio/speech")
+        self.assertEqual(FakeClient.requests[0]["json"]["input"], "Уже читабельный текст.")
 
     async def test_fish_audio_omits_openai_default_voice(self):
         FakeClient.last_request = None

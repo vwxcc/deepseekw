@@ -160,14 +160,14 @@ def extract_memories(text: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 DRAW_SKILL = (
-    "\\n\\nСкилл графики и чертежей (SVG). Если для понимания полезны схема, чертёж, " 
+    "\n\nСкилл графики и чертежей (SVG). Если для понимания полезны схема, чертёж, " 
     "план помещения, блок-схема, последовательность, инженерный эскиз или объясняющий рисунок, " 
     "построй SVG-подобное описание через JSON в блоке кода с языком draw. По умолчанию это " 
     "минималистичный монохромный line-art: только контуры и линии оттенка #77756e, текст #66645d, " 
     "толщина 1–1.8 px, прозрачный фон, никакой заливки, цветных акцентов, теней, градиентов, рамки " 
     "вокруг всей схемы или декоративного фона. Ясные метки, аккуратные выравнивания и размерные " 
-    "линии важнее украшений. Заливку используй только если пользователь явно просит цветной рисунок.\\n"
-    "```draw\\n"
+    "линии важнее украшений. Заливку используй только если пользователь явно просит цветной рисунок.\n"
+    "```draw\n"
     '{"width":640,"height":360,"background":"transparent","shapes":['
     '{"type":"rect","x":60,"y":100,"w":180,"h":110,"fill":"none","stroke":"#77756e","width":1.5},'
     '{"type":"line","x1":60,"y1":100,"x2":150,"y2":45,"stroke":"#77756e","width":1.5},'
@@ -175,7 +175,7 @@ DRAW_SKILL = (
     '{"type":"arrow","x1":270,"y1":155,"x2":365,"y2":155,"stroke":"#77756e","width":1.5},'
     '{"type":"dim","x1":60,"y1":235,"x2":240,"y2":235,"text":"180","stroke":"#77756e","width":1.2},'
     '{"type":"text","x":60,"y":260,"text":"Размер / название","size":14,"fill":"#66645d"}]}'
-    "\\n```\\n"
+    "\n```\n"
     "Фигуры: rect (x,y,w,h,rx), circle (cx,cy,r), ellipse (cx,cy,rx,ry), line (x1,y1,x2,y2), "
     "arrow (x1,y1,x2,y2), polyline (points), polygon (points), path (d), arc (cx,cy,r,start,end), "
     "star (cx,cy,r,points), dim (x1,y1,x2,y2,text), text (x,y,text,size). "
@@ -371,23 +371,23 @@ DOC_SKILL = """
 
 
 ACTIVITY_STREAM_SKILL = (
-    "\\n\\nПротокол статусов интерфейса ai-ch. Это отдельные короткие сообщения о текущем " 
+    "\n\nПротокол статусов интерфейса ai-ch. Это отдельные короткие сообщения о текущем " 
     "действии, а не финальный ответ и не скрытые рассуждения. Маркеры пиши отдельной строкой " 
-    "и только когда действие действительно соответствует текущему этапу:\\n"
-    "[[AICH_STATUS: Готовлю структуру презентации]]\\n"
-    "[[AICH_ACTION: book|1. Читаю прикреплённую книгу]]\\n"
+    "и только когда действие действительно соответствует текущему этапу:\n"
+    "[[AICH_STATUS: Готовлю структуру презентации]]\n"
+    "[[AICH_ACTION: book|1. Читаю прикреплённую книгу]]\n"
     "STATUS — лаконичный текущий статус. ACTION — понятный пользователю пункт списка; до вертикальной " 
     "черты укажи имя серой контурной иконки. Можно давать 1., 2. и т. п. для реальных этапов. " 
     "Не спамь: обычно 1 маркер на существенный этап, до 20 маркеров на ответ. Не объявляй поиск, " 
     "чтение, запуск или проверку, если этого фактически не происходит. Эти маркеры автоматически " 
     "отделяются сервером и не попадут в финальный текст. Не пиши в них chain-of-thought, подробные " 
-    "внутренние рассуждения, догадки или скрытые планы — только короткие статусы и действия.\\n"
+    "внутренние рассуждения, догадки или скрытые планы — только короткие статусы и действия.\n"
     "Доступные имена контурных иконок: book, book-open, bookmark, file-text, file-search, file-code, "
     "presentation, code, calculator, ruler, pencil-ruler, layers, database, list-checks, compass, "
     "lightbulb, check-circle, chart-line, pie-chart, image, palette, map, calendar, clock, shield-check, "
     "package, network, microscope, flask, graduation-cap, target, workflow, upload, wrench, scan, table, "
     "type, eye, puzzle, notebook, arrow-right, search-code, list-todo, pen-tool, brain, sparkle, globe, "
-    "terminal, folder, link, file, chart, sheet, slides, search, check, refresh, lock, user, settings.\\n"
+    "terminal, folder, link, file, chart, sheet, slides, search, check, refresh, lock, user, settings.\n"
     "Всегда подписывай язык в начале каждого блока кода после трёх обратных кавычек: например "
     "python, html, css, javascript, typescript, bash, powershell, sql, json, yaml, java, c, cpp, csharp, "
     "go, rust, ruby, php, swift, kotlin, dart, r, julia, lua, dockerfile, diff, markdown или text. "

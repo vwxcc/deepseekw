@@ -46,7 +46,12 @@ from .prompts import (
     strip_run_blocks,
     strip_sandbox_paths,
 )
-from .providers import ProviderError, complete_chat, stream_chat
+from .providers import (
+    ProviderError,
+    complete_chat,
+    is_model_unavailable_error,
+    stream_chat,
+)
 
 log = logging.getLogger("chatstudio.ai")
 
@@ -681,6 +686,7 @@ class AIRouter:
 
         while rounds < 2:
             rounds += 1
+            retryable_error = True
             while len(tried) < len(entries):
                 entry = await self._acquire_primary(job, entries, tried)
                 if entry is None:
@@ -819,6 +825,7 @@ class AIRouter:
                     return
                 except ProviderError as e:
                     last_error = str(e)
+                    retryable_error = not is_model_unavailable_error(e)
                     tried.add(entry.id)
                     log.warning("Model %s failed: %s", entry.label, e)
                 except Exception as e:
@@ -829,7 +836,7 @@ class AIRouter:
                     await pool.release(entry)
 
             # The same primary model failed once; retry it once without switching models.
-            if rounds >= 2 or job.cancel.is_set():
+            if not retryable_error or rounds >= 2 or job.cancel.is_set():
                 break
             log.warning("Retrying the primary model once: %s", last_error)
             tried.clear()

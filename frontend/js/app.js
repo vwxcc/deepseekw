@@ -990,12 +990,23 @@
     const audioCtl = !isUser && !state.readonly && n.status === 'completed' && String(n.content || '').trim()
       ? audioControlHtml(n) : '';
 
-    const actionsRow = !isUser && !state.readonly && (meta || audioCtl)
-      ? '<div class="msg-actions-row">' + meta + audioCtl + '</div>' : '';
+    const deviceAudioCtl = !isUser && !state.readonly &&
+      n.status === 'completed' && String(n.content || '').trim()
+      ? deviceAudioControlHtml(n) : '';
+
+    const actionsRow = !isUser && !state.readonly && (meta || audioCtl || deviceAudioCtl)
+      ? '<div class="msg-actions-row">' + meta + audioCtl + deviceAudioCtl + '</div>' : '';
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
       tools + inner + askCard + actionsRow + memLine + '</div>';
+  }
+
+  function deviceAudioControlHtml(n) {
+    return '<div class="device-audio-wrap">' +
+      '<button class="device-audio-button" data-mact="device-audio" data-id="' +
+      escapeHtml(n.id) + '" title="Озвучить системным голосом телефона">' +
+      icon('audio') + '<span>Воспроизвести устройством <small>(beta)</small></span></button></div>';
   }
 
   function audioControlHtml(n) {
@@ -1470,6 +1481,8 @@
         await generateAnswerAudio(id);
       } else if (act === 'play-audio') {
         openAudioPlayer(id, true);
+      } else if (act === 'device-audio') {
+        startDeviceSpeech(id);
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }

@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     sandbox_concurrency: int = 2
     sandbox_queue_limit: int = 12
     # code-agent mode: persistent project per chat, more steps
-    code_agent_max_steps: int = 10
+    code_agent_max_steps: int = 3
     code_agent_timeout: int = 60
 
     # --- Text-to-speech (OpenAI-compatible /audio/speech endpoint) ---

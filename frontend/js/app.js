@@ -605,7 +605,9 @@
   };
   const DEVICE_SPEECH_CHUNK_SIZE = 20;
   const deviceCodeFileUrls = [];
-  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const append = value => { out.textContent += String(value) + \"\\n\"; };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message)}, \"*\"); } catch (e) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".xls\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\",\".ppt_\",\".doc_\",\".xls_\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function importUsed(moduleName) {\n    const lines = source.split(/\\r?\\n/);\n    return lines.some(line => {\n      const value = line.trim();\n      if (!value || value.startsWith('#')) return false;\n      const imported = value.match(/^import\\s+(.+?)\\s*(?:#.*)?$/);\n      if (imported) return imported[1].split(',').some(item => item.trim().split(/\\s+as\\s+/)[0].split('.')[0] === moduleName);\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      return !!fromImport && fromImport[1].split('.')[0] === moduleName;\n    });\n  }\n  const externalPackages = {\n    \"docx\":\"python-docx\",\n    \"openpyxl\":\"openpyxl\",\n    \"pypdf\":\"pypdf\",\n    \"pptx\":\"python-pptx\",\n    \"xlsxwriter\":\"XlsxWriter\",\n    \"markdown\":\"Markdown\",\n    \"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\n    \"docxtpl\":\"docxtpl\",\n    \"jinja2\":\"Jinja2\",\n    \"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\n    \"tabulate\":\"tabulate\",\n    \"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\n    \"cssselect2\":\"cssselect2\",\n    \"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\n    \"barcode\":\"python-barcode\",\n    \"python_barcode\":\"python-barcode\",\n    \"toml\":\"toml\",\n    \"tomli\":\"tomli\",\n    \"tomli_w\":\"tomli-w\",\n    \"xmltodict\":\"xmltodict\",\n    \"markdown_it\":\"markdown-it-py\",\n    \"mistune\":\"mistune\",\n    \"seaborn\":\"seaborn\",\n    \"more_itertools\":\"more-itertools\",\n    \"colorama\":\"colorama\"\n  };\n  const pyodideAliases = {\n    \"PIL\":\"pillow\", \"cv2\":\"opencv-python\", \"sklearn\":\"scikit-learn\",\n    \"skimage\":\"scikit-image\", \"bs4\":\"beautifulsoup4\", \"yaml\":\"pyyaml\",\n    \"dateutil\":\"python-dateutil\", \"lxml\":\"lxml\", \"numpy\":\"numpy\",\n    \"pandas\":\"pandas\", \"matplotlib\":\"matplotlib\", \"scipy\":\"scipy\",\n    \"sympy\":\"sympy\", \"networkx\":\"networkx\", \"altair\":\"altair\",\n    \"bokeh\":\"bokeh\", \"statsmodels\":\"statsmodels\", \"svgwrite\":\"svgwrite\",\n    \"jsonschema\":\"jsonschema\", \"pydantic\":\"pydantic\", \"pygments\":\"Pygments\",\n    \"requests\":\"requests\", \"regex\":\"regex\", \"openai\":\"openai\",\n    \"pyarrow\":\"pyarrow\", \"polars\":\"polars\", \"xarray\":\"xarray\",\n    \"tqdm\":\"tqdm\", \"pytz\":\"pytz\", \"pytest\":\"pytest\"\n  };\n  function sourceImportNames() {\n    const found = new Set();\n    for (const line of source.split(/\\r?\\n/)) {\n      const value = line.trim();\n      if (!value || value.startsWith(\"#\")) continue;\n      const imported = value.match(/^import\\s+(.+?)(?:\\s+#.*)?$/);\n      if (imported) {\n        for (const item of imported[1].split(\",\")) {\n          const name = item.trim().split(/\\s+as\\s+/)[0].split(\".\")[0];\n          if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n        }\n        continue;\n      }\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      if (fromImport) {\n        const name = fromImport[1].split(\".\")[0];\n        if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n      }\n    }\n    return [...found];\n  }\n  const requestedImports = sourceImportNames();\n  try {\n    if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n  } catch (e) {\n    append(\"Предупреждение загрузки встроенных пакетов: \" + String(e && e.message || e));\n  }\n\n  // Always explicitly request detected Pyodide packages. Do not depend on the\n  // import scanner either succeeding completely or throwing before this fallback.\n  const nativeLoadFailed = new Set();\n  const nativePackages = [...new Set(requestedImports\n    .filter(name => Object.prototype.hasOwnProperty.call(pyodideAliases, name))\n    .map(name => pyodideAliases[name]))];\n  for (const packageName of nativePackages) {\n    try {\n      notify(\"Проверяю встроенный модуль \" + packageName + \"…\");\n      await py.loadPackage(packageName);\n    } catch (packageError) {\n      nativeLoadFailed.add(packageName);\n      append(\"⚠ Не удалось загрузить модуль Pyodide \" + packageName + \": \" +\n        String(packageError && packageError.message || packageError));\n    }\n  }\n\n  // Preload native dependencies used by common document-generation libraries.\n  // python-docx/python-pptx need lxml; office/PDF/image work often embeds pictures.\n  const builtinDependencies = [];\n  if (requestedImports.includes(\"docx\") || requestedImports.includes(\"pptx\") ||\n      requestedImports.includes(\"docxtpl\")) builtinDependencies.push(\"lxml\");\n  if (requestedImports.includes(\"docx\") || requestedImports.includes(\"pptx\") ||\n      requestedImports.includes(\"qrcode\") || requestedImports.includes(\"fpdf\") ||\n      requestedImports.includes(\"PIL\")) builtinDependencies.push(\"pillow\");\n  for (const packageName of [...new Set(builtinDependencies)]) {\n    try {\n      notify(\"Подготавливаю зависимость документа \" + packageName + \"…\");\n      await py.loadPackage(packageName);\n    } catch (packageError) {\n      nativeLoadFailed.add(packageName);\n      append(\"⚠ Встроенная зависимость \" + packageName + \" недоступна: \" +\n        String(packageError && packageError.message || packageError));\n    }\n  }\n\n  // Ask Python for its own stdlib list so built-ins such as json/os/pathlib are\n  // never incorrectly sent to PyPI as third-party packages.\n  let stdlibModules = new Set();\n  try {\n    const stdlibText = await py.runPythonAsync(\"import sys, json\\njson.dumps(sorted(sys.stdlib_module_names))\");\n    stdlibModules = new Set(JSON.parse(stdlibText));\n  } catch (e) {\n    append(\"⚠ Не удалось получить список встроенных модулей Python: \" + String(e && e.message || e));\n  }\n\n  const wanted = new Set(Object.keys(externalPackages)\n    .filter(importUsed)\n    .map(name => externalPackages[name]));\n  nativeLoadFailed.forEach(packageName => wanted.add(packageName));\n  if (requestedImports.includes(\"openpyxl\")) wanted.add(\"et_xmlfile\");\n  if (requestedImports.includes(\"docxtpl\")) wanted.add(\"Jinja2\");\n\n  // For other third-party imports, make a best-effort PyPI attempt. Names which\n  // differ from their distributions are covered by the explicit maps above.\n  const localProjectModules = new Set([\"designs\", \"app\", \"sandbox\", \"project\", \"helpers\", \"utils\"]);\n  for (const moduleName of requestedImports) {\n    if (stdlibModules.has(moduleName)) continue;\n    if (Object.prototype.hasOwnProperty.call(pyodideAliases, moduleName)) continue;\n    if (Object.prototype.hasOwnProperty.call(externalPackages, moduleName)) continue;\n    if (localProjectModules.has(moduleName) || moduleName.startsWith(\"_\")) continue;\n    wanted.add(moduleName);\n  }\n\n  if (wanted.size) {\n    try {\n      await py.loadPackage(\"micropip\");\n      const micropip = py.pyimport(\"micropip\");\n      for (const packageName of [...wanted]) {\n        notify(\"Загружаю библиотеку \" + packageName + \"…\");\n        try {\n          await micropip.install(packageName);\n          append(\"✓ Библиотека загружена: \" + packageName);\n        } catch (e) {\n          append(\"⚠ Не удалось установить \" + packageName + \": \" +\n            String(e && e.message || e) +\n            \". Для бинарных модулей может требоваться версия, собранная специально для Pyodide.\");\n        }\n      }\n      micropip.destroy();\n    } catch (e) {\n      append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n    }\n  }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Загрузка завершена. Выполняю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n    }\n    let exported = 0;\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const paths = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      }).sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\", csv:\"text/csv\", tsv:\"text/tab-separated-values\", txt:\"text/plain\",\n          json:\"application/json\", jsonl:\"application/jsonl\", html:\"text/html\", htm:\"text/html\",\n          svg:\"image/svg+xml\", png:\"image/png\", jpg:\"image/jpeg\", jpeg:\"image/jpeg\", webp:\"image/webp\",\n          gif:\"image/gif\", zip:\"application/zip\", md:\"text/markdown\", xml:\"application/xml\", rtf:\"application/rtf\",\n          epub:\"application/epub+zip\", tex:\"application/x-tex\", bib:\"text/plain\", ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\", yml:\"text/yaml\", npy:\"application/octet-stream\", npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\", pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size || size > 8 * 1024 * 1024 || totalBytes + size > 12 * 1024 * 1024) {\n          append(\"⚠ Файл пропущен: лимит 8 МБ на файл и 12 МБ суммарно. \" + name);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    if (exported) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки для скачивания появятся над окном кода.\");\n      notify(\"Python завершён. Документов и изображений подготовлено: \" + exported + \".\");\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен. Когда код создаст документ или изображение, здесь появится ссылка для скачивания.\");\n    }\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и дополнительные модули.\";\n    notify(\"Не удалось загрузить Python или библиотеку: \" + String(e && e.message || e));\n  }\n})();";
+  let deviceCodeLastError = '';
+  let deviceCodeErrorUrl = null;
+  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const append = value => { out.textContent += String(value) + \"\\n\"; };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message)}, \"*\"); } catch (e) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".xls\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\",\".ppt_\",\".doc_\",\".xls_\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function importUsed(moduleName) {\n    const lines = source.split(/\\r?\\n/);\n    return lines.some(line => {\n      const value = line.trim();\n      if (!value || value.startsWith('#')) return false;\n      const imported = value.match(/^import\\s+(.+?)\\s*(?:#.*)?$/);\n      if (imported) return imported[1].split(',').some(item => item.trim().split(/\\s+as\\s+/)[0].split('.')[0] === moduleName);\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      return !!fromImport && fromImport[1].split('.')[0] === moduleName;\n    });\n  }\n  const externalPackages = {\n    \"docx\":\"python-docx\",\n    \"openpyxl\":\"openpyxl\",\n    \"pypdf\":\"pypdf\",\n    \"pptx\":\"python-pptx\",\n    \"xlsxwriter\":\"XlsxWriter\",\n    \"markdown\":\"Markdown\",\n    \"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\n    \"docxtpl\":\"docxtpl\",\n    \"jinja2\":\"Jinja2\",\n    \"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\n    \"tabulate\":\"tabulate\",\n    \"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\n    \"cssselect2\":\"cssselect2\",\n    \"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\n    \"barcode\":\"python-barcode\",\n    \"python_barcode\":\"python-barcode\",\n    \"toml\":\"toml\",\n    \"tomli\":\"tomli\",\n    \"tomli_w\":\"tomli-w\",\n    \"xmltodict\":\"xmltodict\",\n    \"markdown_it\":\"markdown-it-py\",\n    \"mistune\":\"mistune\",\n    \"seaborn\":\"seaborn\",\n    \"more_itertools\":\"more-itertools\",\n    \"colorama\":\"colorama\"\n  };\n  const pyodideAliases = {\n    \"PIL\":\"pillow\", \"cv2\":\"opencv-python\", \"sklearn\":\"scikit-learn\",\n    \"skimage\":\"scikit-image\", \"bs4\":\"beautifulsoup4\", \"yaml\":\"pyyaml\",\n    \"dateutil\":\"python-dateutil\", \"lxml\":\"lxml\", \"numpy\":\"numpy\",\n    \"pandas\":\"pandas\", \"matplotlib\":\"matplotlib\", \"scipy\":\"scipy\",\n    \"sympy\":\"sympy\", \"networkx\":\"networkx\", \"altair\":\"altair\",\n    \"bokeh\":\"bokeh\", \"statsmodels\":\"statsmodels\", \"svgwrite\":\"svgwrite\",\n    \"jsonschema\":\"jsonschema\", \"pydantic\":\"pydantic\", \"pygments\":\"Pygments\",\n    \"requests\":\"requests\", \"regex\":\"regex\", \"openai\":\"openai\",\n    \"pyarrow\":\"pyarrow\", \"polars\":\"polars\", \"xarray\":\"xarray\",\n    \"tqdm\":\"tqdm\", \"pytz\":\"pytz\", \"pytest\":\"pytest\"\n  };\n  function sourceImportNames() {\n    const found = new Set();\n    for (const line of source.split(/\\r?\\n/)) {\n      const value = line.trim();\n      if (!value || value.startsWith(\"#\")) continue;\n      const imported = value.match(/^import\\s+(.+?)(?:\\s+#.*)?$/);\n      if (imported) {\n        for (const item of imported[1].split(\",\")) {\n          const name = item.trim().split(/\\s+as\\s+/)[0].split(\".\")[0];\n          if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n        }\n        continue;\n      }\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      if (fromImport) {\n        const name = fromImport[1].split(\".\")[0];\n        if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n      }\n    }\n    return [...found];\n  }\n  const requestedImports = sourceImportNames();\n  try {\n    if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n  } catch (e) {\n    append(\"Предупреждение загрузки встроенных пакетов: \" + String(e && e.message || e));\n  }\n\n  // Always explicitly request detected Pyodide packages. Do not depend on the\n  // import scanner either succeeding completely or throwing before this fallback.\n  const nativeLoadFailed = new Set();\n  const nativePackages = [...new Set(requestedImports\n    .filter(name => Object.prototype.hasOwnProperty.call(pyodideAliases, name))\n    .map(name => pyodideAliases[name]))];\n  for (const packageName of nativePackages) {\n    try {\n      notify(\"Проверяю встроенный модуль \" + packageName + \"…\");\n      await py.loadPackage(packageName);\n    } catch (packageError) {\n      nativeLoadFailed.add(packageName);\n      append(\"⚠ Не удалось загрузить модуль Pyodide \" + packageName + \": \" +\n        String(packageError && packageError.message || packageError));\n    }\n  }\n\n  // Preload native dependencies used by common document-generation libraries.\n  // python-docx/python-pptx need lxml; office/PDF/image work often embeds pictures.\n  const builtinDependencies = [];\n  if (requestedImports.includes(\"docx\") || requestedImports.includes(\"pptx\") ||\n      requestedImports.includes(\"docxtpl\")) builtinDependencies.push(\"lxml\");\n  if (requestedImports.includes(\"docx\") || requestedImports.includes(\"pptx\") ||\n      requestedImports.includes(\"qrcode\") || requestedImports.includes(\"fpdf\") ||\n      requestedImports.includes(\"PIL\")) builtinDependencies.push(\"pillow\");\n  for (const packageName of [...new Set(builtinDependencies)]) {\n    try {\n      notify(\"Подготавливаю зависимость документа \" + packageName + \"…\");\n      await py.loadPackage(packageName);\n    } catch (packageError) {\n      nativeLoadFailed.add(packageName);\n      append(\"⚠ Встроенная зависимость \" + packageName + \" недоступна: \" +\n        String(packageError && packageError.message || packageError));\n    }\n  }\n\n  // Ask Python for its own stdlib list so built-ins such as json/os/pathlib are\n  // never incorrectly sent to PyPI as third-party packages.\n  let stdlibModules = new Set();\n  try {\n    const stdlibText = await py.runPythonAsync(\"import sys, json\\njson.dumps(sorted(sys.stdlib_module_names))\");\n    stdlibModules = new Set(JSON.parse(stdlibText));\n  } catch (e) {\n    append(\"⚠ Не удалось получить список встроенных модулей Python: \" + String(e && e.message || e));\n  }\n\n  const wanted = new Set(Object.keys(externalPackages)\n    .filter(importUsed)\n    .map(name => externalPackages[name]));\n  nativeLoadFailed.forEach(packageName => wanted.add(packageName));\n  if (requestedImports.includes(\"openpyxl\")) wanted.add(\"et_xmlfile\");\n  if (requestedImports.includes(\"docxtpl\")) wanted.add(\"Jinja2\");\n\n  // For other third-party imports, make a best-effort PyPI attempt. Names which\n  // differ from their distributions are covered by the explicit maps above.\n  const localProjectModules = new Set([\"designs\", \"app\", \"sandbox\", \"project\", \"helpers\", \"utils\"]);\n  for (const moduleName of requestedImports) {\n    if (stdlibModules.has(moduleName)) continue;\n    if (Object.prototype.hasOwnProperty.call(pyodideAliases, moduleName)) continue;\n    if (Object.prototype.hasOwnProperty.call(externalPackages, moduleName)) continue;\n    if (localProjectModules.has(moduleName) || moduleName.startsWith(\"_\")) continue;\n    wanted.add(moduleName);\n  }\n\n  if (wanted.size) {\n    try {\n      await py.loadPackage(\"micropip\");\n      const micropip = py.pyimport(\"micropip\");\n      for (const packageName of [...wanted]) {\n        notify(\"Загружаю библиотеку \" + packageName + \"…\");\n        try {\n          await micropip.install(packageName);\n          append(\"✓ Библиотека загружена: \" + packageName);\n        } catch (e) {\n          append(\"⚠ Не удалось установить \" + packageName + \": \" +\n            String(e && e.message || e) +\n            \". Для бинарных модулей может требоваться версия, собранная специально для Pyodide.\");\n        }\n      }\n      micropip.destroy();\n    } catch (e) {\n      append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n    }\n  }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Загрузка завершена. Выполняю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n      try { parent.postMessage({type:\"device-code-error\", message:String(e && (e.stack || e.message) || e)}, \"*\"); } catch (_) {}\n    }\n    let exported = 0;\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const paths = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      }).sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\", csv:\"text/csv\", tsv:\"text/tab-separated-values\", txt:\"text/plain\",\n          json:\"application/json\", jsonl:\"application/jsonl\", html:\"text/html\", htm:\"text/html\",\n          svg:\"image/svg+xml\", png:\"image/png\", jpg:\"image/jpeg\", jpeg:\"image/jpeg\", webp:\"image/webp\",\n          gif:\"image/gif\", zip:\"application/zip\", md:\"text/markdown\", xml:\"application/xml\", rtf:\"application/rtf\",\n          epub:\"application/epub+zip\", tex:\"application/x-tex\", bib:\"text/plain\", ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\", yml:\"text/yaml\", npy:\"application/octet-stream\", npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\", pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size || size > 8 * 1024 * 1024 || totalBytes + size > 12 * 1024 * 1024) {\n          append(\"⚠ Файл пропущен: лимит 8 МБ на файл и 12 МБ суммарно. \" + name);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    if (exported) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки для скачивания появятся над окном кода.\");\n      notify(\"Python завершён. Документов и изображений подготовлено: \" + exported + \".\");\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен. Когда код создаст документ или изображение, здесь появится ссылка для скачивания.\");\n    }\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и дополнительные модули.\";\n    notify(\"Не удалось загрузить Python или библиотеку: \" + String(e && e.message || e));\n    try { parent.postMessage({type:\"device-code-error\", message:String(e && (e.stack || e.message) || e)}, \"*\"); } catch (_) {}\n  }\n})();";
 
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
@@ -1191,12 +1193,25 @@
 
     let askCard = '';
     if (!isUser && n.ask) {
-      askCard = '<div class="ask-card">' +
-        '<div class="ask-q">' + icon('sparkle') + '<span>' + escapeHtml(n.ask) + '</span></div>' +
-        '<div class="ask-row">' +
-        '<input type="text" class="ask-input" placeholder="Ваш ответ…" />' +
-        '<button class="chip-btn ask-send">' + icon('arrow-up') + 'Ответить</button>' +
-        '</div></div>';
+      const askItems = (Array.isArray(n.ask) ? n.ask : [{ question: String(n.ask), options: [] }])
+        .slice(0, 6).map(item => item && typeof item === 'object' ? item : { question: String(item || ''), options: [] })
+        .filter(item => String(item.question || '').trim());
+      if (askItems.length) {
+        const questionHtml = askItems.map((item, index) => {
+          const question = String(item.question || '').slice(0, 500);
+          const options = Array.isArray(item.options) ? item.options.map(value => String(value || '').trim()).filter(Boolean).slice(0, 8) : [];
+          return '<section class="ask-question" data-ask-index="' + index + '">' +
+            (askItems.length > 1 ? '<b class="ask-question-label">' + escapeHtml(question) + '</b>' : '<span class="ask-question-label">' + escapeHtml(question) + '</span>') +
+            (options.length ? '<div class="ask-options" role="group" aria-label="' + escapeHtml(question) + '">' +
+              options.map(option => '<button type="button" class="ask-option" data-ask-option="' + escapeHtml(option) +
+                '" aria-pressed="false">' + escapeHtml(option) + '</button>').join('') + '</div>' : '') +
+            '<input type="text" class="ask-input" placeholder="' + (options.length ? 'Или свой ответ…' : 'Ваш ответ…') +
+            '" aria-label="' + escapeHtml(question) + '" /></section>';
+        }).join('');
+        askCard = '<div class="ask-card"><div class="ask-q">' + icon('sparkle') +
+          '<span>' + (askItems.length > 1 ? 'Ответьте на вопросы' : 'Уточнение') + '</span></div>' +
+          questionHtml + '<div class="ask-row"><button class="chip-btn ask-send">' + icon('arrow-up') + 'Ответить</button></div></div>';
+      }
     }
 
     const hasSpeechActions = !isUser && !state.readonly &&
@@ -1631,6 +1646,7 @@
     installFileAudioMediaSessionHandlers();
     audio.pause();
     audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
+    audio.playbackRate = Number($('#audio-player-rate') && $('#audio-player-rate').value) || 1;
     audio.load();
     shell.classList.add('open');
     shell.setAttribute('aria-hidden', 'false');
@@ -2019,7 +2035,9 @@
     audio.addEventListener('play', updateAudioPlayerControls);
     audio.addEventListener('pause', updateAudioPlayerControls);
     audio.addEventListener('ended', updateAudioPlayerControls);
-    $$('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
+    const rateSelect = $('#audio-player-rate');
+    if (rateSelect) rateSelect.addEventListener('change', () => { audio.playbackRate = Number(rateSelect.value) || 1; });
+    $('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
     $('#audio-play-toggle')?.addEventListener('click', () => {
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();
@@ -2050,11 +2068,13 @@
     const frame = $('#device-code-frame');
     const status = $('#device-code-status');
     const fileBox = $('#device-code-files');
+    const errorBox = $('#device-code-errors');
     if (!shell || !frame || !item) return;
 
     deviceCodeFileUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* no-op */ } });
-    deviceCodeFileUrls.length = 0;
-    if (fileBox) fileBox.replaceChildren();
+    deviceCodeFileUrls.length = 0; deviceCodeLastError = ''; deviceCodeErrorUrl = null;
+    if (fileBox) { fileBox.replaceChildren(); fileBox.hidden = true; }
+    if (errorBox) { errorBox.replaceChildren(); errorBox.hidden = true; }
 
     const lang = String(item.lang || '').trim().toLowerCase();
     const code = String(item.code || '');
@@ -2067,7 +2087,7 @@
       '.demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.demo-card{padding:16px;border:1px solid #e5e3dd;border-radius:12px;background:#faf9f6}' +
       '.demo-button{border:0;border-radius:10px;padding:10px 15px;background:#34332e;color:#fff;font:inherit}' +
       '.demo-pill{display:inline-block;border:1px solid #dedbd2;border-radius:999px;padding:4px 9px;font-size:12px}' +
-      '</style></head><body>';
+      '</style>' + '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>' + '</head><body>';
     const output = '<pre id="output" aria-live="polite">Запуск…</pre>';
     let doc = '';
     let message = '';
@@ -2110,8 +2130,15 @@
       return;
     }
 
+    if (['html', 'htm'].includes(lang)) {
+      if (/<head[^>]*>/i.test(doc)) doc = doc.replace(/<head[^>]*>/i, head => head + '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>');
+      else if (/<body[^>]*>/i.test(doc)) doc = doc.replace(/<body[^>]*>/i, body => body + '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>');
+      else doc += '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>';
+    }
     if (status) status.textContent = message;
     if (fileBox) fileBox.hidden = true;
+    if (lang === 'html' || lang === 'htm') frame.onload = () => { if (status && shell.classList.contains('open')) status.textContent = 'Интерактивный результат загружен и готов к работе на устройстве.'; };
+    else frame.onload = null;
     shell.classList.add('open');
     shell.setAttribute('aria-hidden', 'false');
     document.body.classList.add('device-code-open');
@@ -2129,6 +2156,8 @@
     }
     if (frame) frame.srcdoc = '';
     if (fileBox) { fileBox.replaceChildren(); fileBox.hidden = true; }
+    const errorBox = $('#device-code-errors'); if (errorBox) { errorBox.replaceChildren(); errorBox.hidden = true; }
+    deviceCodeLastError = ''; deviceCodeErrorUrl = null;
     deviceCodeFileUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* no-op */ } });
     deviceCodeFileUrls.length = 0;
     document.body.classList.remove('device-code-open');
@@ -2143,6 +2172,32 @@
       const status = $('#device-code-status');
       if (data.type === 'device-code-status') {
         if (status && typeof data.message === 'string') status.textContent = data.message.slice(0, 500);
+        return;
+      }
+      if (data.type === 'device-code-error') {
+        const errorBox = $('#device-code-errors');
+        if (!errorBox) return;
+        const message = String(data.message || 'Неизвестная ошибка выполнения').slice(0, 50000);
+        deviceCodeLastError = [deviceCodeLastError, message].filter(Boolean).join('\n\n---\n\n').slice(-100000);
+        errorBox.hidden = false;
+        let log = $('.device-code-error-log', errorBox);
+        if (!log) {
+          errorBox.replaceChildren();
+          log = document.createElement('pre'); log.className = 'device-code-error-log'; errorBox.appendChild(log);
+          const actions = document.createElement('div'); actions.className = 'device-code-error-actions';
+          const download = document.createElement('a'); download.className = 'device-code-error-download'; download.textContent = 'Скачать логи ошибки'; download.download = 'ai-ch-error-logs.txt'; actions.appendChild(download);
+          const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Скопировать логи ошибки'; copy.addEventListener('click', async () => {
+            const ok = await copyText(deviceCodeLastError); toast(ok ? 'Логи ошибки скопированы' : 'Не удалось скопировать логи', ok ? '' : 'error');
+          });
+          actions.appendChild(copy); errorBox.appendChild(actions);
+        }
+        log.textContent = deviceCodeLastError;
+        if (deviceCodeErrorUrl) { try { URL.revokeObjectURL(deviceCodeErrorUrl); } catch (e) {} }
+        deviceCodeErrorUrl = URL.createObjectURL(new Blob([deviceCodeLastError], {type:'text/plain;charset=utf-8'}));
+        deviceCodeFileUrls.push(deviceCodeErrorUrl);
+        const download = $('.device-code-error-download', errorBox);
+        if (download) download.href = deviceCodeErrorUrl;
+        if (status) status.textContent = 'Ошибка выполнения. Логи можно скачать или скопировать ниже.';
         return;
       }
       if (data.type !== 'device-code-file' || typeof data.name !== 'string' || !data.bytes) return;
@@ -2167,8 +2222,11 @@
         const link = document.createElement('a');
         link.href = url;
         link.download = normalizedName.replace(/[\\/\\0-\\x1f]/g, '_').slice(0, 180) || 'output.bin';
-        link.textContent = 'Скачать ' + link.download + ' · ' + formatSize(blob.size);
+        link.className = 'device-code-file-download';
+        link.textContent = 'Скачать · ' + link.download;
         card.appendChild(link);
+        const size = document.createElement('small');
+        size.className = 'device-code-file-size'; size.textContent = formatSize(blob.size); card.appendChild(size);
         if (/^image\/(png|jpeg|webp|gif|svg\+xml)$/i.test(blob.type)) {
           const preview = document.createElement('img');
           preview.className = 'device-code-file-preview';
@@ -2367,22 +2425,37 @@
       const label = $('[data-tool-toggle-label]', btn);
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
-    $$('.ask-card', scope).forEach(card => {
-      const input = $('.ask-input', card);
+    $('.ask-card', scope).forEach(card => {
+      const questions = $('.ask-question', card);
       const send = () => {
-        const value = (input.value || '').trim();
-        if (!value) return;
-        $('#input').value = value;
-        autoGrow();
-        sendCurrent();
+        const answers = questions.map(question => {
+          const label = $('.ask-question-label', question), input = $('.ask-input', question);
+          return { question: label ? label.textContent.trim() : '', value: input ? String(input.value || '').trim() : '' };
+        });
+        if (!answers.length) return;
+        if (answers.some(answer => !answer.value)) { toast(answers.length > 1 ? 'Ответьте на каждый вопрос или выберите вариант.' : 'Выберите вариант или введите ответ.', 'error'); return; }
+        $('#input').value = answers.map(answer => answer.question + ': ' + answer.value).join('\n');
+        autoGrow(); sendCurrent();
       };
+      $('.ask-option', card).forEach(option => option.addEventListener('click', () => {
+        const question = option.closest('.ask-question');
+        if (!question) return;
+        $('.ask-option', question).forEach(other => {
+          const selected = other === option; other.classList.toggle('is-selected', selected); other.setAttribute('aria-pressed', String(selected));
+        });
+        const input = $('.ask-input', question);
+        if (input) { input.value = option.dataset.askOption || ''; input.focus(); }
+      }));
+      $('.ask-input', card).forEach(input => {
+        input.addEventListener('input', () => {
+          if (!input.value.trim()) return;
+          const question = input.closest('.ask-question');
+          if (question) $('.ask-option', question).forEach(option => { option.classList.remove('is-selected'); option.setAttribute('aria-pressed', 'false'); });
+        });
+        input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } });
+      });
       const btn = $('.ask-send', card);
       if (btn) btn.addEventListener('click', send);
-      if (input) {
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); send(); }
-        });
-      }
     });
 
     $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
@@ -2581,10 +2654,25 @@
     }
   }
 
+  function bindFastResponseButton() {
+    const button = $('#fast-response-btn');
+    if (!button || button.dataset.bound === 'true') return;
+    button.dataset.bound = 'true';
+    button.addEventListener('click', () => {
+      if (!state.streaming) return;
+      button.classList.add('is-active');
+      button.setAttribute('aria-pressed', 'true');
+    });
+  }
+
   function setStreaming(on) {
     state.streaming = on;
     $('#send-btn').classList.toggle('hidden', on);
     $('#stop-btn').classList.toggle('hidden', !on);
+    const fastWrap = $('#fast-response-wrap');
+    if (fastWrap) fastWrap.hidden = !on;
+    const fastButton = $('#fast-response-btn');
+    if (fastButton && !on) { fastButton.classList.remove('is-active'); fastButton.setAttribute('aria-pressed', 'false'); }
     $('#input').disabled = false;
   }
 
@@ -2854,7 +2942,7 @@
           bindStreamRefs();
         } else if (ev === 'ask') {
           const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.ask = data.question;
+          if (n) n.ask = Array.isArray(data.questions) ? data.questions : (data.question ? [{ question: data.question, options: [] }] : null);
           renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'done') {
@@ -2871,6 +2959,13 @@
           }
           if (n && state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(n.id, null, { focusMessageId: n.id });
+            if (n.execution_target === 'device') {
+              const messageEl = $('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
+              const runButton = messageEl && $('[data-run-device]', messageEl);
+              const runnable = runButton && (window.__codeStore || {})[runButton.dataset.runDevice];
+              if (runnable) openDeviceCodeRunner(runnable);
+              else toast('Ответ получен, но в нём нет поддерживаемого блока кода для запуска на устройстве.', 'error');
+            }
             const entries = allMessages(state.tree);
             hydrateAudioStatuses(entries);
             hydrateReadableTextStatuses(entries);
@@ -4946,7 +5041,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner(); bindFastResponseButton();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=43&rev=44" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=43&rev=45" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -211,6 +211,11 @@
         <pre class="pp-logs" id="pp-logs"></pre>
       </aside>
 
+      <div id="fast-response-wrap" class="fast-response-wrap" hidden aria-live="polite">
+        <button type="button" id="fast-response-btn" class="fast-response-btn" aria-pressed="false" title="Только визуальная анимация ожидания">
+          <span class="fast-response-rocket" aria-hidden="true">🚀</span><span>Ответить быстрее</span>
+        </button>
+      </div>
       <div id="composer">
         <div class="composer-inner">
           <div class="attach-list" id="attach-list"></div>
@@ -276,6 +281,15 @@
         <button class="audio-main-play" type="button" id="audio-play-toggle" title="Воспроизвести" aria-label="Воспроизвести"><svg class="ic"><use href="#i-play"/></svg></button>
         <button class="audio-skip-btn" type="button" data-audio-action="forward" title="Вперёд на 10 секунд" aria-label="Вперёд на 10 секунд"><svg class="ic"><use href="#i-forward-10"/></svg></button>
       </div>
+      <label class="audio-rate-label" for="audio-player-rate">Скорость воспроизведения
+        <select id="audio-player-rate" aria-label="Скорость воспроизведения аудио">
+          <option value="0.5">0,5×</option><option value="0.6">0,6×</option><option value="0.75">0,75×</option>
+          <option value="0.8">0,8×</option><option value="0.9">0,9×</option><option value="1" selected>1×</option>
+          <option value="1.1">1,1×</option><option value="1.25">1,25×</option><option value="1.5">1,5×</option>
+          <option value="1.75">1,75×</option><option value="2">2×</option><option value="2.25">2,25×</option>
+          <option value="2.5">2,5×</option><option value="3">3×</option>
+        </select>
+      </label>
     </section>
   </div>
 
@@ -304,7 +318,7 @@
       </div>
       <label class="device-audio-rate-label" for="device-audio-rate">Скорость речи
         <select id="device-audio-rate" aria-label="Скорость системной озвучки">
-          <option value="0.8">0,8×</option><option value="1" selected>1×</option><option value="1.2">1,2×</option><option value="1.5">1,5×</option><option value="1.8">1,8×</option>
+          <option value="0.5">0,5×</option><option value="0.6">0,6×</option><option value="0.75">0,75×</option><option value="0.85">0,85×</option><option value="1" selected>1×</option><option value="1.1">1,1×</option><option value="1.25">1,25×</option><option value="1.5">1,5×</option><option value="1.75">1,75×</option><option value="2">2×</option><option value="2.25">2,25×</option><option value="2.5">2,5×</option>
         </select>
       </label>
       <p class="usage-note device-speech-note">Переходы в наушниках работают по фрагментам примерно по 20 слов. Доступность управления при выключенном экране зависит от браузера и устройства.</p>
@@ -319,6 +333,7 @@
         <button class="icon-btn" type="button" data-device-code-close title="Закрыть" aria-label="Закрыть песочницу"><svg class="ic"><use href="#i-x"/></svg></button>
       </header>
       <div id="device-code-files" class="device-code-files" aria-live="polite" hidden></div>
+      <div id="device-code-errors" class="device-code-errors" aria-live="polite" hidden></div>
       <iframe id="device-code-frame" title="Локальная кодовая песочница" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
     </section>
   </div>
@@ -329,6 +344,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=54&rev=55"></script>
+  <script src="/assets/js/app.js?v=54&rev=56"></script>
 </body>
 </html>

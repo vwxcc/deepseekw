@@ -252,17 +252,56 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
     return settings.model_context_len
 
 
-async def _memory_block(db: AsyncSession, user_id: str) -> str:
-    """Facts + preferences. Preferences are sent with EVERY request on purpose."""
+def _search_context(history_messages: list[dict], current_text: str) -> str:
+    """Give search-query generation recent chat context while prioritising the latest ask."""
+    parts: list[str] = []
+    latest = (current_text or "").strip()
+    if latest:
+        parts.append("Последний запрос пользователя: " + latest[:1100])
+    count = 0
+    for item in reversed(history_messages or []):
+        role = str(item.get("role") or "").lower()
+        content = str(item.get("content") or "").strip()
+        if not content or role not in {"user", "assistant"}:
+            continue
+        if role == "user" and latest and content.strip() == latest:
+            continue
+        parts.append(("Пользователь" if role == "user" else "Ассистент") +
+                     ": " + content[:650])
+        count += 1
+        if count >= 5:
+            break
+    return "\n".join(parts)[:3500]
+
+
+async def _memory_block(db: AsyncSession, user_id: str, chat_id: str) -> str:
+    """Use facts from this chat plus explicitly global, manually saved preferences."""
     res = await db.execute(
         select(Memory)
-        .where(Memory.user_id == user_id)
+        .where(
+            Memory.user_id == user_id,
+            or_(
+                Memory.chat_id == chat_id,
+                and_(
+                    Memory.chat_id.is_(None),
+                    Memory.message_id.is_(None),
+                    Memory.kind == "preference",
+                ),
+            ),
+        )
         .order_by(Memory.created_at.desc())
         .limit(60)
     )
     rows = [m for m in res.scalars().all() if m.content]
-    facts = [m.content for m in rows if (m.kind or "fact") == "fact"]
-    prefs = [m.content for m in rows if (m.kind or "fact") == "preference"]
+    facts = [
+        m.content for m in rows
+        if (m.kind or "fact") == "fact" and m.chat_id == chat_id
+    ]
+    prefs = [
+        m.content for m in rows
+        if (m.kind or "fact") == "preference"
+        and m.chat_id is None and m.message_id is None
+    ]
     out = ""
     if facts:
         out += (
@@ -299,7 +338,7 @@ async def _spawn(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
     if user_id:
-        system_prompt += await _memory_block(db, user_id)
+        system_prompt += await _memory_block(db, user_id, chat.id)
 
     assistant = Message(
         chat_id=chat.id,
@@ -421,7 +460,7 @@ async def send_message(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
 
-    system_prompt += await _memory_block(db, user.id)
+    system_prompt += await _memory_block(db, user.id, chat.id)
 
     # The answer must start immediately: web search runs inside the worker, which
     # is also where the query-writing call is billed.

@@ -244,7 +244,7 @@ async def limits_update(
     if plan not in PLANS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неизвестный тариф")
     # Preserve decimal dollars; blank inputs clear their stored overrides.
-    float_keys = {"budget_usd", "cost_per_1k", "price"}
+    float_keys = {"budget_usd", "price"}
     allowed_keys = set((await get_limits(db, plan)).keys())
     values: dict[str, int | float | None] = {}
     for key, raw in (data or {}).items():

@@ -301,8 +301,18 @@
     let spec;
     try { spec = JSON.parse(code); } catch (e) { return codeBlockHtml('draw', code); }
     const w = spec.width || 420, h = spec.height || 300;
-    const bg = spec.background || 'transparent';
-    const shapes = (spec.shapes || []).map(shapeSvg).join('');
+    const bg = spec.background == null ? 'transparent' : spec.background;
+    const shapes = (spec.shapes || []).map(shape => {
+      const item = Object.assign({}, shape || {});
+      if (item.stroke == null) item.stroke = '#77756e';
+      if (item.width == null) item.width = 1.5;
+      if (item.type === 'text') {
+        if (item.fill == null) item.fill = '#66645d';
+      } else if (item.fill == null) {
+        item.fill = 'none';
+      }
+      return shapeSvg(item);
+    }).join('');
     return '<div class="draw-block"><svg viewBox="0 0 ' + w + ' ' + h +
       '" width="100%" style="max-width:' + w + 'px;background:' + bg + '">' + shapes + '</svg></div>';
   }
@@ -820,6 +830,11 @@
     // If the user opened another chat while this request was pending, ignore this old response.
     if (requestToken !== state.chatOpenToken || state.currentChatId !== id) return;
     state.tree = Array.isArray(loadedTree) ? loadedTree : [];
+    const liveStream = window.__aichActiveStream;
+    if (state.streaming && liveStream) {
+      state.activeAssistantId = liveStream.chatId === id ? liveStream.assistantId : null;
+      if (liveStream.chatId === id && liveStream.assistantId) bindStreamRefs();
+    }
     const chat = state.chats.find(c => c.id === id);
     $('#chat-title').textContent = chat ? chat.title : 'Чат';
     renderChatList();
@@ -959,8 +974,10 @@
           n.activities = saved.filter(item => item && ['status', 'action'].includes(item.kind) &&
             typeof item.text === 'string').slice(-60);
         }
-        const started = Number(localStorage.getItem(activityStorageKey(n.id) + ':started'));
-        const elapsed = Number(localStorage.getItem(activityStorageKey(n.id) + ':elapsed'));
+        const savedStarted = localStorage.getItem(activityStorageKey(n.id) + ':started');
+        const savedElapsed = localStorage.getItem(activityStorageKey(n.id) + ':elapsed');
+        const started = savedStarted === null ? NaN : Number(savedStarted);
+        const elapsed = savedElapsed === null ? NaN : Number(savedElapsed);
         if (Number.isFinite(started) && started > 0) n.activityStartedAt = started;
         if (Number.isFinite(elapsed) && elapsed >= 0) n.activityElapsedMs = elapsed;
       } catch (e) { /* unavailable storage must not interrupt chat rendering */ }
@@ -2586,6 +2603,7 @@
       assistantId: null,
       node: null,
     };
+    window.__aichActiveStream = streamContext;
     state.streamEl = null; state.thinkBody = null; state.draftTail = null;
     state.streamBuf = ''; state.streamStarted = false;
     state.genStart = Date.now();
@@ -2760,18 +2778,23 @@
           if (n) n.memories = (n.memories || []).concat(data.items || []);
           loadMemory();
         } else if (ev === 'tool_start') {
-          const n = findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.tool_runs = (n.tool_runs || []).concat([
               { code: data.code || '', running: true, ok: true, files: [] },
             ]);
+            appendActivity(n, { kind: 'status', text: 'Запускаю код в изолированной песочнице' });
           }
-          renderMessageInPlace(state.activeAssistantId);
-          bindStreamRefs();
+          if (state.currentChatId === streamContext.chatId) {
+            renderMessageInPlace(streamContext.assistantId);
+            bindStreamRefs();
+          }
           if (isCurrentCodeAgent()) setProjectStatus('Готовлю файлы проекта…');
           else appendLog('▶ Подготавливаю результат…');
         } else if (ev === 'tool') {
-          const n = findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             const runs = n.tool_runs || [];
             const idx = runs.findIndex(r => r.running);
@@ -2781,10 +2804,16 @@
               n.attachments = (n.attachments || []).concat(data.files.map(f => ({
                 id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
               })));
+              appendActivity(n, { kind: 'status', text: 'Файлы созданы · проверяю результат' });
+            } else {
+              appendActivity(n, { kind: 'status', text: data.ok && !data.timed_out
+                ? 'Результат выполнения готов · завершаю проверку' : 'Проверяю ошибку выполнения' });
             }
           }
-          renderMessageInPlace(state.activeAssistantId);
-          bindStreamRefs();
+          if (state.currentChatId === streamContext.chatId) {
+            renderMessageInPlace(streamContext.assistantId);
+            bindStreamRefs();
+          }
           if (isCurrentCodeAgent()) {
             if (!data.ok || data.timed_out) {
               setProjectStatus('Проверяю результат и исправляю обнаруженную проблему…');
@@ -2891,6 +2920,7 @@
       state.tmpUser = null; state.tmpAssistant = null;
     } finally {
       if (watchdog) clearTimeout(watchdog);
+      if (window.__aichActiveStream === streamContext) window.__aichActiveStream = null;
       setStreaming(false);
       // Limits and sidebar refresh happen in the background and cannot hold the
       // send controls hostage if a secondary endpoint is slow.

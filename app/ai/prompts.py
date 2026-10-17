@@ -160,26 +160,29 @@ def extract_memories(text: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 DRAW_SKILL = (
-    "\n\nСкилл рисования (SVG). Если пользователь просит рисунок, чертёж, схему, план, "
-    "блок-схему, диаграмму, иконку или иллюстрацию — ВСЕГДА используй этот скилл, "
-    "а не текстовое описание. Выведи блок кода с языком draw и JSON-описанием фигур:\n"
-    "```draw\n"
-    '{"width":420,"height":320,"background":"#faf9f5","shapes":['
-    '{"type":"rect","x":30,"y":120,"w":160,"h":120,"fill":"#e8d5b7","stroke":"#8B4513","width":2},'
-    '{"type":"polygon","points":[[20,120],[110,50],[200,120]],"fill":"#c96442"},'
-    '{"type":"circle","cx":340,"cy":70,"r":34,"fill":"#f2c14e"},'
-    '{"type":"dim","x1":30,"y1":265,"x2":190,"y2":265,"text":"160 см","stroke":"#1f1e1d"},'
-    '{"type":"arrow","x1":235,"y1":185,"x2":305,"y2":120,"stroke":"#2f6fb0","width":3},'
-    '{"type":"text","x":30,"y":300,"text":"Дом","size":18}]}\n'
-    "```\n"
+    "\\n\\nСкилл графики и чертежей (SVG). Если для понимания полезны схема, чертёж, " 
+    "план помещения, блок-схема, последовательность, инженерный эскиз или объясняющий рисунок, " 
+    "построй SVG-подобное описание через JSON в блоке кода с языком draw. По умолчанию это " 
+    "минималистичный монохромный line-art: только контуры и линии оттенка #77756e, текст #66645d, " 
+    "толщина 1–1.8 px, прозрачный фон, никакой заливки, цветных акцентов, теней, градиентов, рамки " 
+    "вокруг всей схемы или декоративного фона. Ясные метки, аккуратные выравнивания и размерные " 
+    "линии важнее украшений. Заливку используй только если пользователь явно просит цветной рисунок.\\n"
+    "```draw\\n"
+    '{"width":640,"height":360,"background":"transparent","shapes":['
+    '{"type":"rect","x":60,"y":100,"w":180,"h":110,"fill":"none","stroke":"#77756e","width":1.5},'
+    '{"type":"line","x1":60,"y1":100,"x2":150,"y2":45,"stroke":"#77756e","width":1.5},'
+    '{"type":"line","x1":240,"y1":100,"x2":150,"y2":45,"stroke":"#77756e","width":1.5},'
+    '{"type":"arrow","x1":270,"y1":155,"x2":365,"y2":155,"stroke":"#77756e","width":1.5},'
+    '{"type":"dim","x1":60,"y1":235,"x2":240,"y2":235,"text":"180","stroke":"#77756e","width":1.2},'
+    '{"type":"text","x":60,"y":260,"text":"Размер / название","size":14,"fill":"#66645d"}]}'
+    "\\n```\\n"
     "Фигуры: rect (x,y,w,h,rx), circle (cx,cy,r), ellipse (cx,cy,rx,ry), line (x1,y1,x2,y2), "
-    "arrow (x1,y1,x2,y2 — со стрелкой), polyline (points), polygon (points), path (d), "
-    "arc (cx,cy,r,start,end — дуга в градусах), star (cx,cy,r,points), "
-    "dim (x1,y1,x2,y2,text — размерная линия, как на чертеже), text (x,y,text,size).\n"
-    "Общие свойства: fill, stroke, width, opacity, dash (пунктир), rotate (градусы).\n"
-    "Координаты — в пикселях внутри width/height. Комбинируй фигуры: так получаются "
-    "чертежи (с размерными линиями), блок-схемы (rect + стрелки), изометрия и простые "
-    "3D-объекты. Если нужен ТОЧНЫЙ график по числам — используй скилл run с matplotlib."
+    "arrow (x1,y1,x2,y2), polyline (points), polygon (points), path (d), arc (cx,cy,r,start,end), "
+    "star (cx,cy,r,points), dim (x1,y1,x2,y2,text), text (x,y,text,size). "
+    "Свойства: fill, stroke, width, opacity, dash (пунктир), rotate. Для line-art явно ставь "
+    "fill='none' фигурам, указывай серый stroke и прозрачный background. Координаты — пиксели "
+    "внутри width/height. Чертёж должен быть содержательным, с ровными линиями и читаемыми "
+    "размерами; не добавляй лишних фигур. Для числовых графиков используй run + matplotlib."
 )
 
 COUNCIL_PERSONAS: dict[str, tuple[str, str]] = {
@@ -367,6 +370,31 @@ DOC_SKILL = """
 """
 
 
+ACTIVITY_STREAM_SKILL = (
+    "\\n\\nПротокол статусов интерфейса ai-ch. Это отдельные короткие сообщения о текущем " 
+    "действии, а не финальный ответ и не скрытые рассуждения. Маркеры пиши отдельной строкой " 
+    "и только когда действие действительно соответствует текущему этапу:\\n"
+    "[[AICH_STATUS: Готовлю структуру презентации]]\\n"
+    "[[AICH_ACTION: book|1. Читаю прикреплённую книгу]]\\n"
+    "STATUS — лаконичный текущий статус. ACTION — понятный пользователю пункт списка; до вертикальной " 
+    "черты укажи имя серой контурной иконки. Можно давать 1., 2. и т. п. для реальных этапов. " 
+    "Не спамь: обычно 1 маркер на существенный этап, до 20 маркеров на ответ. Не объявляй поиск, " 
+    "чтение, запуск или проверку, если этого фактически не происходит. Эти маркеры автоматически " 
+    "отделяются сервером и не попадут в финальный текст. Не пиши в них chain-of-thought, подробные " 
+    "внутренние рассуждения, догадки или скрытые планы — только короткие статусы и действия.\\n"
+    "Доступные имена контурных иконок: book, book-open, bookmark, file-text, file-search, file-code, "
+    "presentation, code, calculator, ruler, pencil-ruler, layers, database, list-checks, compass, "
+    "lightbulb, check-circle, chart-line, pie-chart, image, palette, map, calendar, clock, shield-check, "
+    "package, network, microscope, flask, graduation-cap, target, workflow, upload, wrench, scan, table, "
+    "type, eye, puzzle, notebook, arrow-right, search-code, list-todo, pen-tool, brain, sparkle, globe, "
+    "terminal, folder, link, file, chart, sheet, slides, search, check, refresh, lock, user, settings.\\n"
+    "Всегда подписывай язык в начале каждого блока кода после трёх обратных кавычек: например "
+    "python, html, css, javascript, typescript, bash, powershell, sql, json, yaml, java, c, cpp, csharp, "
+    "go, rust, ruby, php, swift, kotlin, dart, r, julia, lua, dockerfile, diff, markdown или text. "
+    "Не оставляй язык пустым, если он известен."
+)
+
+
 VISUALIZATION_SKILL = (
     "\n\nВизуализация. Не ограничивайся текстом, когда наглядный результат заметно облегчает понимание. "
     "Для объяснения сложной темы, сравнения вариантов, устройства системы, алгоритма, причинно-следственных "
@@ -380,6 +408,7 @@ VISUALIZATION_SKILL = (
 
 MAIN_SYSTEM = (
     IDENTITY
+    + ACTIVITY_STREAM_SKILL
     + AGENT_MODE
     + VISUALIZATION_SKILL
     + DRAW_SKILL
@@ -393,6 +422,7 @@ MAIN_SYSTEM = (
 
 CODE_SYSTEM = (
     IDENTITY
+    + ACTIVITY_STREAM_SKILL
     + VISUALIZATION_SKILL
     + "\n\nСейчас ты работаешь в режиме Код-агента: у тебя есть ПОСТОЯННАЯ папка проекта, "
     "которая сохраняется между сообщениями, и ты создаёшь готовые рабочие файлы.\n"

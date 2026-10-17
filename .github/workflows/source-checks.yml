@@ -160,6 +160,9 @@ jobs:
           prompts = Path("app/ai/prompts.py").read_text(encoding="utf-8")
           if "ActivityMarkupParser" not in activity or "ACTIVITY_STREAM_SKILL" not in prompts:
               raise SystemExit("Streaming activity markers are not connected to the model prompt")
+          lifecycle = Path("app/ai/stream_lifecycle.py").read_text(encoding="utf-8")
+          if "drain_output_until_terminal" not in lifecycle or "detach_output_drain" not in messages:
+              raise SystemExit("Detached SSE clients must drain events while the main generation finishes")
           if any(token in router for token in ("_run_suggestions", "_parse_suggestions")):
               raise SystemExit("Post-answer suggestion generation must stay disabled")
           if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:

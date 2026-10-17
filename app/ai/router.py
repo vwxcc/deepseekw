@@ -189,6 +189,19 @@ def _clean_title(text: str) -> str:
     return t[:120]
 
 
+def _local_code_chat_title(user_text: str | None) -> str:
+    """Build a useful project title without an extra model request."""
+    text = re.sub(r"\\s+", " ", (user_text or "").strip())
+    if not text:
+        return "Код-проект"
+    # Prefer the first sentence, but never scan or copy an unbounded prompt.
+    text = re.split(r"(?<=[.!?])\\s+", text[:500], maxsplit=1)[0].strip()
+    if len(text) > 48:
+        shortened = text[:45].rsplit(" ", 1)[0].rstrip(" ,;:-")
+        text = (shortened or text[:45]) + "…"
+    return _clean_title(text) or "Код-проект"
+
+
 class AIRouter:
     def __init__(self, concurrency: int) -> None:
         self.concurrency = max(1, concurrency)
@@ -757,9 +770,21 @@ class AIRouter:
                         await job.output.put(
                             ("ask", json.dumps({"question": ask}, ensure_ascii=False))
                         )
+                    if job.first_exchange and code_mode:
+                        # The Code Agent already has a 2-3 turn budget. Make a useful
+                        # title locally so title generation does not add a fourth model call.
+                        try:
+                            async with SessionLocal() as db:
+                                chat = await db.get(Chat, job.chat_id)
+                                if chat is not None and (chat.title or "") in ("", "Новый чат"):
+                                    chat.title = _local_code_chat_title(job.user_text)
+                                    await db.commit()
+                        except Exception as title_error:
+                            log.warning("Local Code Agent title update failed: %s", title_error)
                     await job.output.put(("done", answer))
-                    # Only the first exchange needs a title-generation job.
-                    if job.first_exchange:
+                    # Normal chats keep model-generated titles. The Code Agent uses
+                    # a deterministic local title to avoid an extra provider request.
+                    if job.first_exchange and not code_mode:
                         await self.enqueue(
                             Job(
                                 kind="followup",

@@ -147,7 +147,7 @@
       if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
       if (s.rotate) push('transform', 'rotate(' + s.rotate + ' ' + (s.cx || s.x || 0) + ' ' + (s.cy || s.y || 0) + ')');
     };
-    const pts = (list) => (list || []).map(p => (p[0] || 0) + ',' + (p[1] || 0)).join(' ');
+    const pts = (list) => (Array.isArray(list) ? list : []).filter(p => Array.isArray(p) && p.length >= 2).map(p => (p[0] || 0) + ',' + (p[1] || 0)).join(' ');
     switch (String(s.type)) {
       case 'rect':
         push('x', s.x || 0); push('y', s.y || 0);
@@ -300,9 +300,11 @@
   function drawBlockHtml(code) {
     let spec;
     try { spec = JSON.parse(code); } catch (e) { return codeBlockHtml('draw', code); }
-    const w = spec.width || 420, h = spec.height || 300;
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return codeBlockHtml('draw', code);
+    const w = Number.isFinite(Number(spec.width)) ? Math.max(1, Math.min(2000, Number(spec.width))) : 420;
+    const h = Number.isFinite(Number(spec.height)) ? Math.max(1, Math.min(1600, Number(spec.height))) : 300;
     const bg = spec.background == null ? 'transparent' : spec.background;
-    const shapes = (spec.shapes || []).map(shape => {
+    const shapes = (Array.isArray(spec.shapes) ? spec.shapes : []).map(shape => {
       const item = Object.assign({}, shape || {});
       if (item.stroke == null) item.stroke = '#77756e';
       if (item.width == null) item.width = 1.5;
@@ -385,6 +387,85 @@
       '</div>';
   }
 
+
+  function safeHttpUrl(value) {
+    const raw = String(value || '').trim();
+    if (!/^https?:\\/\\//i.test(raw)) return '';
+    try {
+      const url = new URL(raw);
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+    } catch (e) { return ''; }
+  }
+
+  function imageResultsHtml(sources) {
+    const rows = (Array.isArray(sources) ? sources : [])
+      .filter(item => item && typeof item === 'object' && item.kind === 'image')
+      .map(item => {
+        const imageUrl = safeHttpUrl(item.thumbnail_url || item.image_url);
+        const sourceUrl = safeHttpUrl(item.url);
+        if (!imageUrl) return '';
+        const title = String(item.title || 'Изображение из интернета').slice(0, 180);
+        let domain = '';
+        try { domain = sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\\./i, '') : ''; } catch (e) {}
+        const image = '<img src="' + escapeHtml(imageUrl) + '" alt="' + escapeHtml(title) +
+          '" loading="lazy" decoding="async" referrerpolicy="no-referrer" />';
+        const media = sourceUrl
+          ? '<a class="aich-web-image-media" href="' + escapeHtml(sourceUrl) +
+            '" target="_blank" rel="noopener noreferrer" aria-label="' + escapeHtml('Источник изображения: ' + title) + '">' + image + '</a>'
+          : '<div class="aich-web-image-media">' + image + '</div>';
+        return '<figure class="aich-web-image-card">' + media +
+          '<figcaption><span>' + escapeHtml(title) + '</span>' +
+          (domain ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer">' +
+            escapeHtml(domain) + '</a>' : '') + '</figcaption></figure>';
+      }).filter(Boolean).slice(0, 6);
+    if (!rows.length) return '';
+    return '<section class="aich-web-images" aria-label="Изображения из интернет-поиска">' +
+      '<div class="aich-web-images-title"><span aria-hidden="true">🖼️</span> Изображения из интернета</div>' +
+      '<div class="aich-web-images-grid">' + rows.join('') + '</div></section>';
+  }
+
+  function interactiveUiBlockHtml(code) {
+    let spec;
+    try { spec = JSON.parse(code); } catch (e) { return codeBlockHtml('json', code); }
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return codeBlockHtml('json', code);
+    const cleanText = (value, max) => String(value == null ? '' : value).trim().slice(0, max);
+    const emoji = escapeHtml(cleanText(spec.emoji || '✨', 12));
+    const title = cleanText(spec.title, 180);
+    const body = cleanText(spec.text, 1600);
+    const tone = ['info', 'success', 'warning', 'neutral'].includes(spec.tone) ? spec.tone : 'neutral';
+    if (spec.type === 'callout') {
+      return '<aside class="aich-ui-callout tone-' + tone + '" role="note">' +
+        '<span class="aich-ui-emoji" aria-hidden="true">' + emoji + '</span><div class="aich-ui-copy">' +
+        (title ? '<strong>' + escapeHtml(title) + '</strong>' : '') +
+        (body ? '<div>' + escapeHtml(body).replace(/\\n/g, '<br>') + '</div>' : '') +
+        '</div></aside>';
+    }
+    const actionButton = item => {
+      if (!item || typeof item !== 'object') return '';
+      const action = ['copy', 'fill', 'open'].includes(item.action) ? item.action : '';
+      const label = cleanText(item.label, 120);
+      const value = cleanText(item.value, 2000);
+      if (!action || !label || !value) return '';
+      if (action === 'open' && !safeHttpUrl(value)) return '';
+      const glyph = escapeHtml(cleanText(item.emoji || '↗️', 12));
+      return '<button type="button" class="aich-ui-action" data-ui-action="' + action +
+        '" data-ui-value="' + escapeHtml(value) + '"><span class="aich-ui-action-emoji" aria-hidden="true">' +
+        glyph + '</span><span>' + escapeHtml(label) + '</span><span class="aich-ui-action-arrow" aria-hidden="true">↗</span></button>';
+    };
+    if (spec.type === 'button') {
+      const button = actionButton(spec);
+      return button ? '<div class="aich-ui-actions">' + button + '</div>' : codeBlockHtml('json', code);
+    }
+    if (spec.type === 'actions' && Array.isArray(spec.items)) {
+      const buttons = spec.items.slice(0, 6).map(actionButton).filter(Boolean);
+      return buttons.length ? '<section class="aich-ui-actions" aria-label="' +
+        escapeHtml(title || 'Интерактивные действия') + '">' +
+        (title ? '<div class="aich-ui-actions-heading"><span aria-hidden="true">' + emoji + '</span><strong>' + escapeHtml(title) + '</strong></div>' : '') +
+        buttons.join('') + '</section>' : codeBlockHtml('json', code);
+    }
+    return codeBlockHtml('json', code);
+  }
+
   function renderMarkdown(src) {
     if (!src) return '';
     const codes = [];
@@ -421,7 +502,9 @@
       if (cm) {
         flushPara(); closeList(); closeQuote();
         const b = codes[+cm[1]];
-        out.push(b.lang === 'draw' ? drawBlockHtml(b.code) : codeBlockHtml(b.lang, b.code));
+        const langKey = String(b.lang || '').trim().toLowerCase().split(/\\s+/)[0];
+        out.push(langKey === 'draw' ? drawBlockHtml(b.code) :
+          (['ui', 'aich-ui'].includes(langKey) ? interactiveUiBlockHtml(b.code) : codeBlockHtml(b.lang, b.code)));
         continue;
       }
       if (!line.trim()) { flushPara(); closeList(); closeQuote(); continue; }
@@ -776,9 +859,11 @@
       upsertChat(chat);
       // Respect a later user selection made while the create request was in flight.
       if (selectionToken === state.chatOpenToken) {
-        await openChat(chat.id);
-        const input = $('#input');
-        if (input) input.focus();
+        const opened = await openChat(chat.id);
+        if (opened) {
+          const input = $('#input');
+          if (input) input.focus();
+        }
       } else {
         renderChatList();
       }
@@ -824,29 +909,61 @@
   }
 
   async function openChat(id) {
-    if (typeof id !== 'string' || !id) return;
+    if (typeof id !== 'string' || !id.trim()) return false;
     const requestToken = ++state.chatOpenToken;
-    state.currentChatId = id;
-    state.choices = {};
-    const loadedTree = await api.get('/api/chats/' + encodeURIComponent(id) + '/messages');
-    // If the user opened another chat while this request was pending, ignore this old response.
-    if (requestToken !== state.chatOpenToken || state.currentChatId !== id) return;
-    state.tree = Array.isArray(loadedTree) ? loadedTree : [];
-    const liveStream = window.__aichActiveStream;
-    if (state.streaming && liveStream) {
-      state.activeAssistantId = liveStream.chatId === id ? liveStream.assistantId : null;
+    state.chatLoading = true;
+    $$('.chat-item').forEach(item => item.removeAttribute('aria-busy'));
+    const clickedItem = $$('.chat-item').find(item => item.dataset.id === id);
+    if (clickedItem) clickedItem.setAttribute('aria-busy', 'true');
+    const sendButton = $('#send-btn');
+    if (sendButton) {
+      sendButton.disabled = true;
+      sendButton.setAttribute('aria-busy', 'true');
     }
-    const chat = state.chats.find(c => c.id === id);
-    $('#chat-title').textContent = chat ? chat.title : 'Чат';
-    renderChatList();
-    renderMessages();
-    if (state.streaming && liveStream && liveStream.chatId === id && liveStream.assistantId) bindStreamRefs();
-    const meta = state.chats.find(c => c.id === id) || {};
-    const isCode = meta.mode === 'code';
-    $('#project-btn').classList.toggle('hidden', !isCode);
-    if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
-    closeMobileSidebar();
-    await loadUsage();
+    try {
+      // Keep the old active chat until the requested history has loaded successfully.
+      const loadedTree = await api.get('/api/chats/' + encodeURIComponent(id) + '/messages');
+      if (requestToken !== state.chatOpenToken) return false;
+      if (!Array.isArray(loadedTree)) throw new Error('Сервер вернул некорректную историю чата');
+
+      state.currentChatId = id;
+      state.choices = {};
+      state.tree = loadedTree.filter(node => node && typeof node === 'object' && !Array.isArray(node));
+      const liveStream = window.__aichActiveStream;
+      if (state.streaming && liveStream) {
+        state.activeAssistantId = liveStream.chatId === id ? liveStream.assistantId : null;
+      }
+      const chat = (Array.isArray(state.chats) ? state.chats : [])
+        .find(c => c && typeof c === 'object' && c.id === id);
+      $('#chat-title').textContent = chat ? (chat.title || 'Новый чат') : 'Чат';
+      renderChatList();
+      renderMessages();
+      if (state.streaming && liveStream && liveStream.chatId === id && liveStream.assistantId) bindStreamRefs();
+      const isCode = !!(chat && chat.mode === 'code');
+      $('#project-btn').classList.toggle('hidden', !isCode);
+      if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
+      closeMobileSidebar();
+      // A secondary usage endpoint failure must not undo a successfully loaded chat.
+      loadUsage().catch(error => console.warn('Usage refresh after chat switch failed:', error));
+      return true;
+    } catch (error) {
+      if (requestToken === state.chatOpenToken) {
+        console.error('Chat history load failed:', error);
+        toast('Не удалось открыть чат: ' + usefulErrorMessage(error, 'ошибка загрузки истории') +
+          '. Предыдущий чат сохранён — нажмите ещё раз, чтобы повторить загрузку.', 'error');
+      }
+      return false;
+    } finally {
+      if (requestToken === state.chatOpenToken) {
+        state.chatLoading = false;
+        $$('.chat-item').forEach(item => item.removeAttribute('aria-busy'));
+        const button = $('#send-btn');
+        if (button) {
+          button.disabled = !!(state.streaming || state.sending);
+          button.setAttribute('aria-busy', 'false');
+        }
+      }
+    }
   }
 
   async function renameCurrentChat() {
@@ -1163,7 +1280,7 @@
         const raw = String(n.content || '');
         const truncated = raw.length > FULL_RENDER_LIMIT && !n.showFull;
         const body = truncated ? raw.slice(0, FULL_RENDER_LIMIT) : raw;
-        inner = activityHtml(n, false) + '<div class="content md">' + renderMarkdown(body) + '</div>' +
+        inner = activityHtml(n, false) + '<div class="content md">' + renderMarkdown(body) + imageResultsHtml(n.sources) + '</div>' +
           (truncated
             ? '<div class="more-note">Показано ' + FULL_RENDER_LIMIT.toLocaleString('ru-RU') +
               ' из ' + raw.length.toLocaleString('ru-RU') + ' символов — ' +
@@ -2490,6 +2607,22 @@
     if (messageActions && !messageActions.dataset.actionsBound) {
       messageActions.dataset.actionsBound = 'true';
       messageActions.addEventListener('click', async (event) => {
+        const uiButton = event.target.closest('[data-ui-action]');
+        if (uiButton && messageActions.contains(uiButton)) {
+          const action = uiButton.dataset.uiAction;
+          const value = uiButton.dataset.uiValue || '';
+          if (action === 'copy') {
+            const ok = await copyText(value);
+            toast(ok ? 'Скопировано' : 'Не удалось скопировать', ok ? '' : 'error');
+          } else if (action === 'fill') {
+            const input = $('#input');
+            if (input) { input.value = value; autoGrow(); input.focus(); toast('Текст перенесён в поле ввода'); }
+          } else if (action === 'open') {
+            const url = safeHttpUrl(value);
+            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+          }
+          return;
+        }
         const deviceRun = event.target.closest('[data-run-device]');
         if (deviceRun && messageActions.contains(deviceRun)) {
           const item = (window.__codeStore || {})[deviceRun.dataset.runDevice];
@@ -2670,28 +2803,11 @@
     }
   }
 
-  function bindFastResponseButton() {
-    const button = $('#fast-response-btn');
-    if (!button || button.dataset.bound === 'true') return;
-    button.dataset.bound = 'true';
-    button.addEventListener('click', () => {
-      if (!state.streaming) return;
-      button.classList.add('is-active');
-      button.setAttribute('aria-pressed', 'true');
-    });
-  }
 
   function setStreaming(on) {
     state.streaming = on;
     $('#send-btn').classList.toggle('hidden', on);
     $('#stop-btn').classList.toggle('hidden', !on);
-    const fastWrap = $('#fast-response-wrap');
-    if (fastWrap) fastWrap.hidden = !on;
-    const fastButton = $('#fast-response-btn');
-    if (fastButton && !on) {
-      fastButton.classList.remove('is-active');
-      fastButton.setAttribute('aria-pressed', 'false');
-    }
     $('#input').disabled = false;
   }
 
@@ -3153,7 +3269,7 @@
     if (!input) return;
     const draft = input.value;
     const content = draft.trim();
-    if (!content || state.streaming || state.sending) return;
+    if (!content || state.streaming || state.sending || state.chatLoading) return;
     if (!executionTarget && shouldAskExecutionTarget(content)) {
       askExecutionTarget();
       return;
@@ -5066,7 +5182,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner(); bindFastResponseButton();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

@@ -643,7 +643,14 @@ class AIRouter:
         base_steps = plan_steps or (
             settings.code_agent_max_steps if code_mode else settings.agent_max_steps
         )
-        max_steps = max(1, base_steps) if agent_on else 1
+        if not agent_on:
+            max_steps = 1
+        elif code_mode:
+            # Keep the code-agent workflow to at most three model turns:
+            # implement in one pass, verify/fix in one pass, then finalize.
+            max_steps = min(3, max(1, int(base_steps)))
+        else:
+            max_steps = max(1, int(base_steps))
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
 
         tried: set[str] = set()

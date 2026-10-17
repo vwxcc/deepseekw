@@ -438,7 +438,7 @@ async def _spawn(
     execution_target = execution_target if execution_target in {"site", "device"} else "site"
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
-    system_prompt += prompts.skill_context(_last_user_text(history_messages), code_mode=mode == "code")
+    system_prompt += prompts.skills_for(_last_user_text(history_messages))
     history_messages, trimmed = _trim_history(
         history_messages, settings.model_context_len
     )
@@ -577,7 +577,7 @@ async def send_message(
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
-    system_prompt += prompts.skill_context(content, code_mode=code_mode)
+    system_prompt += prompts.skills_for(content)
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     if trimmed:
         system_prompt += prompts.CONTEXT_LIMIT_NOTE

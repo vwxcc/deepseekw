@@ -8,7 +8,7 @@ from app.services.tts import (
     clean_tts_text,
     generate_speech,
     normalized_audio_format,
-    _provider_error_detail,,
+    _provider_error_detail,
     prepare_spoken_text
 )
 

@@ -198,7 +198,7 @@ a { color: var(--accent); }
 }
 .chat-item .mode-tag { background: #55544f; color: #f2f0e9; }
 .new-chat.code-mode {
-  background: #f7f2e4; border: 1px solid var(--border); color: var(--fg);
+  background: var(--bg-user); border: 1px solid var(--border); color: var(--fg);
 }
 .new-chat.code-mode .ic { color: #55544f; }
 .new-chat.code-mode:hover { border-color: #77756f; }
@@ -673,8 +673,8 @@ a { color: var(--accent); }
 .icon-btn { transition: background .3s ease, color .3s ease, transform .24s ease; }
 .icon-btn:hover { transform: translateY(-1px); }
 
-/* ---------- gold hover fill (noticeable) ---------- */
-@keyframes goldFlow {
+/* ---------- neutral dark-gray hover fill ---------- */
+@keyframes grayFlow {
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
 }
@@ -683,7 +683,7 @@ a { color: var(--accent); }
 .modal .row .ghost:hover {
   background-image: linear-gradient(135deg, #343431, #55544f 45%, #343431 100%);
   background-size: 240% 240%;
-  animation: goldFlow 3.4s ease infinite;
+  animation: grayFlow 3.4s ease infinite;
   border-color: #77756f;
   color: #f2f0e9;
   box-shadow: 0 2px 12px rgba(40, 40, 38, .45);
@@ -901,7 +901,7 @@ input[type="range"].orange-range { width: 100%; }
 .fmt-btn span { font-size: 12.65px; color: var(--fg-soft); }
 .fmt-btn:hover {
   background-image: linear-gradient(135deg, #343431, #55544f 45%, #343431 100%);
-  background-size: 240% 240%; animation: goldFlow 3.4s ease infinite;
+  background-size: 240% 240%; animation: grayFlow 3.4s ease infinite;
   border-color: #77756f; transform: translateY(-1px);
 }
 .fmt-btn:hover span { color: #f2f0e9; }
@@ -1204,7 +1204,7 @@ input[type="range"].orange-range { width: 100%; }
 }
 .effort-wrap:hover {
   background-image: linear-gradient(135deg, #343431, #55544f 45%, #343431 100%);
-  background-size: 240% 240%; animation: goldFlow 3.4s ease infinite;
+  background-size: 240% 240%; animation: grayFlow 3.4s ease infinite;
   border-color: #77756f; box-shadow: 0 2px 12px rgba(40, 40, 38, .45);
 }
 .effort-wrap .ic { width: 13px; height: 13px; color: var(--fg-muted); flex: 0 0 auto; }
@@ -2217,3 +2217,48 @@ body { font-weight: 400; }
   border-color: var(--border-soft); background: var(--bg-panel); color: var(--fg-muted);
 }
 .sidebar-memory:hover { background: var(--bg-hover); color: var(--fg); }
+
+
+/* Final visual pass: neutral surfaces for answer actions and sources. */
+.msg .meta button.message-action-labeled,
+.msg .meta button.icon-only-action,
+.msg .meta button.icon-only-action .cnt {
+  background-color: var(--bg);
+}
+.msg .meta button.message-action-labeled:hover,
+.msg .meta button.icon-only-action:hover,
+.msg .meta button.icon-only-action:focus-visible,
+.msg .meta button.icon-only-action.copied {
+  background-color: var(--bg-hover);
+  background-image: none;
+  color: var(--fg);
+  box-shadow: none;
+}
+.src-row {
+  background: var(--bg);
+}
+.src-row:hover {
+  background: var(--bg-hover);
+}
+
+/* Dark-gray focus animation, including Safari's masked composer ring. */
+.composer-inner:focus-within::after {
+  background: conic-gradient(from var(--cs-angle),
+    transparent 0deg, rgba(52, 52, 50, .98) 40deg, rgba(82, 82, 78, .72) 85deg,
+    transparent 135deg, transparent 360deg);
+}
+
+/* Yandex Sans for answers and a deliberately bold Yandex Sans reading player. */
+.msg.assistant .content.md {
+  font-family: var(--font-ui);
+}
+.audio-player-sheet,
+.audio-player-sheet button,
+.audio-player-sheet input,
+.audio-sheet-titles h2,
+.audio-sheet-titles p,
+.audio-time,
+.audio-sheet-foot {
+  font-family: var(--font-ui);
+  font-weight: 700;
+}

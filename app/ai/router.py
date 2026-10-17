@@ -537,17 +537,16 @@ class AIRouter:
                 await self._finish(
                     job.message_id,
                     MessageStatus.cancelled,
-                    content=(full or thinking),
+                    content=full,
                     error="Остановлено пользователем",
                     usage=usage,
                 )
-                await job.output.put(("cancelled", full or thinking))
+                await job.output.put(("cancelled", full))
                 return None
             if kind == "thinking":
-                # The provider may supply a private reasoning channel. Keep it in its
-                # existing internal field; never turn it into activity-list events.
+                # Keep provider-private reasoning internal; the client receives only
+                # the explicit activity markers and the public answer stream.
                 thinking += piece
-                await job.output.put(("thinking", piece))
             else:
                 await emit_items(markup.feed(piece))
         await emit_items(markup.finish())

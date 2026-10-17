@@ -997,7 +997,7 @@
 
     let tools = '';
     if (!isUser && n.tool_runs && n.tool_runs.length) {
-      tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
+      tools = toolRunsHtml(n.tool_runs);
     }
 
     let askCard = '';
@@ -1992,30 +1992,48 @@
     });
   }
 
-  function toolRunHtml(r, i) {
-    const running = !!r.running;
-    const files = (r.files || []).map(f => {
-      const url = '/api/files/' + f.file_id + '/download';
-      if (f.kind === 'image') {
+  function toolRunsHtml(runs) {
+    const items = Array.isArray(runs) ? runs.filter(r => r && typeof r === 'object') : [];
+    if (!items.length) return '';
+
+    // Present internal executions as one result panel. Do not expose an operation count.
+    const running = items.some(r => r.running);
+    const last = items[items.length - 1];
+    const failed = !running && (last.ok === false || !!last.timed_out);
+    const timedOut = !running && !!last.timed_out;
+    const uniqueFiles = new Map();
+    items.forEach(run => (Array.isArray(run.files) ? run.files : []).forEach(file => {
+      if (!file || typeof file !== 'object' || !file.file_id) return;
+      const key = String(file.file_id);
+      if (!uniqueFiles.has(key)) uniqueFiles.set(key, file);
+    }));
+    const files = [...uniqueFiles.values()].map(file => {
+      const url = '/api/files/' + encodeURIComponent(String(file.file_id)) + '/download';
+      if (file.kind === 'image') {
         return '<a class="tool-file img" href="' + url + '" target="_blank" rel="noopener">' +
-          '<img src="' + url + '?inline=1" alt="' + escapeHtml(f.name) + '" loading="lazy" /></a>';
+          '<img src="' + url + '?inline=1" alt="' + escapeHtml(file.name || 'Изображение') + '" loading="lazy" /></a>';
       }
       return '<a class="tool-file" href="' + url + '" target="_blank" rel="noopener">' +
-        icon('download') + '<span>' + escapeHtml(f.name) + '</span>' +
-        '<em>' + formatSize(f.size) + '</em></a>';
+        icon('download') + '<span>' + escapeHtml(file.name || 'Созданный файл') + '</span>' +
+        '<em>' + formatSize(file.size) + '</em></a>';
     }).join('');
-    return '<div class="tool-box collapsed' + (r.ok ? '' : ' err') + '">' +
+    const code = items.map(run => String(run.code || '').trim()).filter(Boolean).join('\\n\\n# Подготовка результата\\n');
+    const stdout = items.map(run => String(run.stdout || '').trim()).filter(Boolean).join('\\n\\n');
+    const stderr = items.map(run => String(run.stderr || '').trim()).filter(Boolean).join('\\n\\n');
+
+    return '<div class="tool-box collapsed' + (failed ? ' err' : '') + '">' +
       '<div class="tool-head">' +
       (running ? thinkAnim() : icon('terminal')) +
-      '<span class="tool-title">Шаг ' + (i + 1) + ' — ' +
-      (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
-      (r.timed_out ? '<em class="warn">таймаут</em>' : '') +
-      '<button type="button" class="tool-toggle" data-tool-toggle aria-expanded="false" title="Развернуть вывод">' +
-      icon('chevron-down') + '<span data-tool-toggle-label>Развернуть</span></button></div>' +
+      '<span class="tool-title">' +
+      (running ? 'Подготавливаю результат…' : (failed ? 'Проверка результата требует внимания' : 'Результат подготовлен')) +
+      '</span>' +
+      (timedOut ? '<em class="warn">таймаут</em>' : '') +
+      '<button type="button" class="tool-toggle" data-tool-toggle aria-expanded="false" title="Показать подробности">' +
+      icon('chevron-down') + '<span data-tool-toggle-label>Подробности</span></button></div>' +
       '<div class="tool-content">' +
-      '<pre class="tool-code">' + escapeHtml(r.code || '') + '</pre>' +
-      (r.stdout ? '<pre class="tool-out">' + escapeHtml(r.stdout) + '</pre>' : '') +
-      (r.stderr ? '<pre class="tool-err">' + escapeHtml(r.stderr) + '</pre>' : '') +
+      (code ? '<pre class="tool-code">' + escapeHtml(code) + '</pre>' : '') +
+      (stdout ? '<pre class="tool-out">' + escapeHtml(stdout) + '</pre>' : '') +
+      (stderr ? '<pre class="tool-err">' + escapeHtml(stderr) + '</pre>' : '') +
       (files ? '<div class="tool-files">' + files + '</div>' : '') +
       '</div></div>';
   }
@@ -2503,7 +2521,8 @@
           }
           renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
-          appendLog('▶ запуск кода…');
+          if (isCurrentCodeAgent()) setProjectStatus('Готовлю файлы проекта…');
+          else appendLog('▶ Подготавливаю результат…');
         } else if (ev === 'tool') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) {
@@ -2519,10 +2538,21 @@
           }
           renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
-          if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
-          if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
-          if (data.files && data.files.length) {
-            appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
+          if (isCurrentCodeAgent()) {
+            if (!data.ok || data.timed_out) {
+              setProjectStatus('Проверяю результат и исправляю обнаруженную проблему…');
+            } else if (data.files && data.files.length) {
+              setProjectStatus('Файлы проекта подготовлены; завершаю проверку…');
+            } else {
+              setProjectStatus('Проверяю и оформляю результат…');
+            }
+          } else {
+            if (data.stderr && (!data.ok || data.timed_out)) {
+              appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
+            }
+            if (data.files && data.files.length) {
+              appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
+            }
           }
           loadProject(false);
         } else if (ev === 'step') {
@@ -3996,6 +4026,16 @@
         : '<div class="pp-empty">Файлов пока нет — попроси агента создать проект.</div>';
       if (resetLogs) $('#pp-logs').textContent = '';
     } catch (e) { /* noop */ }
+  }
+
+  function isCurrentCodeAgent() {
+    const chat = state.chats.find(item => item && item.id === state.currentChatId);
+    return !!chat && chat.mode === 'code';
+  }
+
+  function setProjectStatus(text) {
+    const box = $('#pp-logs');
+    if (box) box.textContent = String(text || '');
   }
 
   function appendLog(text) {

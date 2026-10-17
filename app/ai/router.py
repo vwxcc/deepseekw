@@ -549,11 +549,15 @@ class AIRouter:
             "про", "также", "тоже", "very", "with", "from", "that", "this", "what",
             "when", "where", "about", "into", "your", "have", "will",
             "последний", "запрос", "пользователя", "ассистент", "контекст", "реплик",
+            "in", "on", "as", "at", "by", "is", "an", "or", "to", "of", "be", "we",
+            "he", "it", "do", "so", "if", "up", "no", "my", "me", "us", "am", "you",
+            "на", "по", "из", "не", "да", "но", "от", "до", "за", "во", "ни", "ли",
+            "же", "бы", "то", "их", "мы", "вы", "он", "она", "его", "ее", "эта",
         }
         ranked: dict[str, tuple[int, dict]] = {}
         for q in queries:
             query_terms = {
-                word for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", q.lower())
+                word for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{2,}", q.lower())
                 if word not in stopwords
             }
             try:
@@ -565,7 +569,7 @@ class AIRouter:
                         str(item.get("title") or "") + " " + str(item.get("snippet") or "")
                     ).lower()
                     result_terms = set(re.findall(
-                        r"[A-Za-zА-Яа-яЁё0-9]{3,}", title_snippet
+                        r"[A-Za-zА-Яа-яЁё0-9]{2,}", title_snippet
                     ))
                     score = sum(
                         1 for term in query_terms
@@ -591,7 +595,7 @@ class AIRouter:
         has_query_terms = any(
             any(
                 word not in stopwords
-                for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", q.lower())
+                for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{2,}", q.lower())
             )
             for q in queries
         )

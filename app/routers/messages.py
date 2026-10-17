@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
@@ -44,6 +44,8 @@ from ..schemas import (
     RateIn,
     UsageOut,
 )
+from ..services.memory_scope import _memory_block
+from ..services.search_context import _search_context
 from ..services.chats import (
     ancestor_chain,
     build_message_tree,
@@ -250,76 +252,6 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
     if row is not None and (row.context_len or 0) > 0:
         return int(row.context_len)
     return settings.model_context_len
-
-
-def _search_context(history_messages: list[dict], current_text: str) -> str:
-    """Give search-query generation recent chat context while prioritising the latest ask."""
-    parts: list[str] = []
-    latest = (current_text or "").strip()
-    if latest:
-        parts.append("Последний запрос пользователя: " + latest[:1100])
-    count = 0
-    for item in reversed(history_messages or []):
-        role = str(item.get("role") or "").lower()
-        content = str(item.get("content") or "").strip()
-        if not content or role not in {"user", "assistant"}:
-            continue
-        if role == "user" and latest and content.strip() == latest:
-            continue
-        parts.append(("Пользователь" if role == "user" else "Ассистент") +
-                     ": " + content[:650])
-        count += 1
-        if count >= 5:
-            break
-    return "\n".join(parts)[:3500]
-
-
-async def _memory_block(db: AsyncSession, user_id: str, chat_id: str) -> str:
-    """Use facts from this chat plus explicitly global, manually saved preferences."""
-    res = await db.execute(
-        select(Memory)
-        .where(
-            Memory.user_id == user_id,
-            or_(
-                Memory.chat_id == chat_id,
-                and_(Memory.chat_id.is_(None), Memory.message_id.is_(None)),
-            ),
-        )
-        .order_by((Memory.chat_id == chat_id).desc(), Memory.created_at.desc())
-        .limit(60)
-    )
-    rows = [m for m in res.scalars().all() if m.content]
-    facts = [
-        m.content for m in rows
-        if (m.kind or "fact") == "fact"
-        and (m.chat_id == chat_id or (m.chat_id is None and m.message_id is None))
-    ]
-    prefs = [
-        m.content for m in rows
-        if (m.kind or "fact") == "preference"
-        and m.chat_id is None and m.message_id is None
-    ]
-    chat_prefs = [
-        m.content for m in rows
-        if (m.kind or "fact") == "preference" and m.chat_id == chat_id
-    ]
-    out = ""
-    if facts:
-        out += (
-            "\n\n[Что ты помнишь о пользователе]\n"
-            + "\n".join("- " + x for x in reversed(facts))
-        )
-    if prefs:
-        out += (
-            "\n\n[ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ — соблюдай их ВСЕГДА, в каждом ответе]\n"
-            + "\n".join("- " + x for x in reversed(prefs))
-        )
-    if chat_prefs:
-        out += (
-            "\n\n[ПРЕДПОЧТЕНИЯ, СОХРАНЁННЫЕ ТОЛЬКО В ЭТОМ ЧАТЕ]\n"
-            + "\n".join("- " + x for x in reversed(chat_prefs))
-        )
-    return out
 
 
 async def _spawn(

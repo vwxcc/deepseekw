@@ -110,6 +110,7 @@ class Job:
     effort: str | None = None
     user_id: str | None = None
     mode: str = "chat"
+    execution_target: str = "site"
     project: str | None = None
     depends_on: list[str] = field(default_factory=list)
     max_steps: int | None = None
@@ -537,7 +538,7 @@ class AIRouter:
                 disable_thinking=True,
             )
             text = (answer or "").strip()
-            if text and "NONE" not in text.upper():
+            if text and not re.search(r"(?im)^\s*NONE\s*$", text):
                 for line in text.splitlines():
                     q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
                     q = q.replace("\u00ab", "").replace("\u00bb", "")
@@ -561,18 +562,41 @@ class AIRouter:
             queries = [" ".join(key) if key else (job.search_query or "").strip()]
         queries = [q for q in queries if q][:3]
 
-        results: list[dict] = []
-        seen: set[str] = set()
+        stopwords = {
+            "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
+            "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
+            "мне", "нужно", "хочу", "можно", "есть", "это", "для", "или", "если",
+            "про", "также", "тоже", "very", "with", "from", "that", "this", "what",
+            "when", "where", "about", "into", "your", "have", "will",
+        }
+        ranked: dict[str, tuple[int, dict]] = {}
         for q in queries:
+            query_terms = {
+                word for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", q.lower())
+                if word not in stopwords
+            }
             try:
-                for item in await web_search(q):
+                for item in await web_search(q, limit=4):
                     url = item.get("url") or ""
-                    if url and url not in seen:
-                        seen.add(url)
-                        results.append(item)
+                    if not url:
+                        continue
+                    title_snippet = (
+                        str(item.get("title") or "") + " " + str(item.get("snippet") or "")
+                    ).lower()
+                    score = sum(1 for word in query_terms if word in title_snippet)
+                    previous = ranked.get(url)
+                    if previous is None or score > previous[0]:
+                        ranked[url] = (score, item)
             except Exception as e:  # noqa: BLE001
                 log.warning("Search failed for %r: %s", q[:60], e)
-        log.info("Search queries=%s results=%d", queries, len(results))
+
+        ordered = sorted(ranked.values(), key=lambda pair: pair[0], reverse=True)
+        relevant = [pair for pair in ordered if pair[0] > 0]
+        if len(relevant) >= 2:
+            ordered = relevant
+        results = [item for _score, item in ordered[:6]]
+        log.info("Search queries=%s results=%d relevant=%d", queries, len(results),
+                 sum(1 for score, _item in ordered if score > 0))
 
         # the query-writing call itself is billed too
         if answer:
@@ -630,7 +654,7 @@ class AIRouter:
             job.message_id, MessageStatus.processing, mset_id, mset_name
         )
 
-        agent_on = bool(settings.agent_enabled)
+        agent_on = bool(settings.agent_enabled) and job.execution_target != "device"
         code_mode = job.mode == "code"
         plan_steps = job.max_steps
         base_steps = plan_steps or (
@@ -720,6 +744,7 @@ class AIRouter:
                                         content=value[:2000],
                                         kind=kind,
                                         message_id=job.message_id,
+                                        chat_id=job.chat_id,
                                     )
                                 )
                             await db.commit()
@@ -914,11 +939,13 @@ class AIRouter:
 
 
 SEARCH_QUERIES_SYSTEM = (
-    "Ты составляешь поисковые запросы для интернет-поиска. На входе — сообщение "
-    "пользователя. Верни от 1 до 3 коротких поисковых запросов (2-5 слов каждый), "
-    "по одному на строку, без нумерации, кавычек и пояснений — только то, что реально "
-    "надо найти. Если поиск не нужен (простой вопрос, математика, рассуждение, код) — "
-    "верни ровно одно слово NONE."
+    "Ты составляешь поисковые запросы для интернет-поиска по последнему запросу "
+    "пользователя и, при необходимости, контексту предыдущих реплик. Сначала учитывай "
+    "последний запрос; используй предыдущий контекст только для разрешения местоимений "
+    "и коротких продолжений. Верни от 1 до 3 точных поисковых запросов (2-5 слов каждый), "
+    "по одному на строку, без нумерации, кавычек и пояснений. Не добавляй сайты или темы, "
+    "не связанные с последним запросом. Если интернет-поиск не нужен (простая математика, "
+    "рассуждение, обычный код) — верни ровно одно слово NONE."
 )
 
 

@@ -118,5 +118,46 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results, [GOOD_RESULT])
 
 
+    def test_bing_image_parser_extracts_safe_image_and_source_urls(self) -> None:
+        import json
+        metadata = {
+            "murl": "https://cdn.example.org/image.jpg",
+            "turl": "https://cdn.example.org/thumb.jpg",
+            "purl": "https://example.org/article",
+            "t": "Example image",
+            "desc": "A useful image",
+        }
+        page = '<a class="iusc" m="' + json.dumps(metadata).replace('"', '&quot;') + '"></a>'
+        results = websearch._parse_bing_image_results(page, 3)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["kind"], "image")
+        self.assertEqual(results[0]["image_url"], "https://cdn.example.org/image.jpg")
+        self.assertEqual(results[0]["url"], "https://example.org/article")
+
+    def test_bing_image_parser_rejects_non_http_urls(self) -> None:
+        import json
+        metadata = {
+            "murl": "javascript:alert(1)",
+            "turl": "https://cdn.example.org/thumb.jpg",
+            "purl": "https://example.org/article",
+            "t": "Unsafe image",
+        }
+        page = '<a class="iusc" m="' + json.dumps(metadata).replace('"', '&quot;') + '"></a>'
+        self.assertEqual(websearch._parse_bing_image_results(page, 3), [])
+
+    def test_image_context_contains_direct_image_and_source_links(self) -> None:
+        image = {
+            "kind": "image", "title": "Example image",
+            "url": "https://example.org/article",
+            "image_url": "https://cdn.example.org/image.jpg",
+            "thumbnail_url": "https://cdn.example.org/thumb.jpg",
+            "snippet": "A useful image",
+        }
+        block = websearch.format_context([image])
+        self.assertIn("https://cdn.example.org/image.jpg", block)
+        self.assertIn("https://example.org/article", block)
+        self.assertIn("[Изображение 1]", block)
+
+
 if __name__ == "__main__":
     unittest.main()

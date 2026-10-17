@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 import re
 import urllib.parse
@@ -259,16 +260,89 @@ async def bing_search(query: str, count: int, timeout: float = 5) -> list[dict]:
     return out
 
 
+def _parse_bing_image_results(source: str, limit: int = 4) -> list[dict]:
+    """Parse Bing image cards without trusting arbitrary markup or non-HTTP URLs."""
+    count = max(1, min(int(limit or 4), 8))
+    out: list[dict] = []
+    seen: set[str] = set()
+    cards = re.finditer(
+        r"""<a\b([^>]*\bclass=["'][^"']*\biusc\b[^"']*["'][^>]*)>""",
+        source or "",
+        re.S | re.I,
+    )
+    for card in cards:
+        match = re.search(r"""\bm\s*=\s*(["'])(.*?)\1""", card.group(1), re.S | re.I)
+        if not match:
+            continue
+        try:
+            metadata = json.loads(html.unescape(match.group(2)))
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        image_url = _valid_http_url(metadata.get("murl") or "")
+        page_url = _valid_http_url(metadata.get("purl") or metadata.get("surl") or "")
+        thumbnail_url = _valid_http_url(metadata.get("turl") or "")
+        if not image_url or not page_url or image_url in seen:
+            continue
+        seen.add(image_url)
+        out.append({
+            "kind": "image",
+            "title": _clean_text(str(metadata.get("t") or metadata.get("desc") or "Изображение"))[:200],
+            "url": page_url,
+            "image_url": image_url,
+            "thumbnail_url": thumbnail_url or image_url,
+            "snippet": _clean_text(str(metadata.get("desc") or ""))[:300],
+        })
+        if len(out) >= count:
+            break
+    return out
+
+
+async def image_search(query: str, limit: int = 4) -> list[dict]:
+    """Best-effort Bing Images lookup. Image-provider failures never fail a chat."""
+    query = (query or "").strip()
+    if not settings.web_search_enabled or not query:
+        return []
+    timeout = max(2.0, min(float(settings.web_search_timeout or 8), 8.0))
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+            },
+        ) as client:
+            response = await client.get(
+                "https://www.bing.com/images/search",
+                params={"q": query[:160], "setlang": "ru", "form": "HDRSC2"},
+            )
+            response.raise_for_status()
+            source = response.text
+        return _parse_bing_image_results(source, limit)
+    except Exception as e:  # search is optional and the provider may rate-limit
+        log.warning("Bing image search unavailable: %s", type(e).__name__)
+        return []
+
 def format_context(results: list[dict]) -> str:
     """Render search results as a context block for the model."""
     if not results:
         return ""
     lines = [
-        "Ниже — актуальные результаты поиска в интернете. "
-        "Используй их как источник фактов и ссылайся на URL.",
+        "Ниже — результаты интернет-поиска. Используй веб-страницы как источники фактов "
+        "и ссылайся на URL. Для записей [Изображение] доступна прямая ссылка на найденное "
+        "изображение; изображения будут показаны пользователю отдельными карточками.",
         "",
     ]
     for i, result in enumerate(results, 1):
+        if result.get("kind") == "image":
+            lines.append(f"[Изображение {i}] {result['title']}")
+            lines.append(f"    Страница-источник: {result['url']}")
+            lines.append(f"    Прямая ссылка на изображение: {result['image_url']}")
+            if result.get("snippet"):
+                lines.append(f"    Описание: {result['snippet']}")
+            continue
         lines.append(f"[{i}] {result['title']}")
         lines.append(f"    URL: {result['url']}")
         if result["snippet"]:

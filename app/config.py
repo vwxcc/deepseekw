@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     qwen_model_id: str = ""  # optional explicit external model ID; takes priority over QWEN_MODEL
     qwen_temperature: float = 0.2
     qwen_max_tokens: int = 32000
+    # Optional usage prices in USD per 1,000,000 tokens. None preserves the
+    # price saved on the primary MAIN model entry in the database.
+    qwen_price_in: float | None = None
+    qwen_price_out: float | None = None
+    qwen_price_cache: float | None = None
 
     # --- Admin bootstrap (optional) ---
     admin_email: str = ""

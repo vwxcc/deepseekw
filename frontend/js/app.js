@@ -2789,7 +2789,7 @@
   }
 
   function bindFiles() {
-    $('#mem-quick-btn').addEventListener('click', () => openMemory());
+    $('#mem-quick-btn').addEventListener('click', () => openMemory(null, state.currentChatId || null));
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => $('#file-input').click());
     $('#file-search').addEventListener('input', (e) => {
@@ -3523,19 +3523,31 @@
     });
   }
 
-  async function openMemory(filterMessageId) {
+  async function openMemory(filterMessageId, filterChatId) {
     let items = [];
-    try { items = await api.get('/api/memory'); } catch (e) { items = []; }
-    if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
+    const params = new URLSearchParams();
+    if (filterMessageId) {
+      params.set('message_id', filterMessageId);
+      const owningChatId = filterChatId || state.currentChatId;
+      if (owningChatId) params.set('chat_id', owningChatId);
+    } else if (filterChatId) {
+      params.set('chat_id', filterChatId);
+    }
+    const suffix = params.toString() ? '?' + params.toString() : '';
+    try { items = await api.get('/api/memory' + suffix); } catch (e) { items = []; }
     const facts = items.filter(m => (m.kind || 'fact') === 'fact');
     const prefs = items.filter(m => m.kind === 'preference');
     const row = (m) => '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
       '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>';
 
-    openModal({
-      title: filterMessageId ? 'Что записано по этому ответу' : 'Память о вас',
-      okText: 'Закрыть',
-      body:
+    let body;
+    if (filterMessageId) {
+      body = '<h4 class="sec">Память, связанная только с этим ответом</h4>' +
+        (items.length ? '<div class="mem-list">' + items.map(row).join('') + '</div>' :
+          '<p class="usage-note">Для этого ответа ничего не было сохранено в память. Записи других чатов здесь не показываются.</p>');
+    } else {
+      body =
+        (filterChatId ? '<p class="usage-note">Показана память этого чата и вручную сохранённые общие заметки.</p>' : '') +
         '<h4 class="sec">Предпочтения · уходят в каждый запрос</h4>' +
         (prefs.length
           ? '<div class="mem-list">' + prefs.map(row).join('') + '</div>'
@@ -3548,9 +3560,15 @@
           : '<p class="usage-note">Пока пусто.</p>') +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить факт</button>' +
-        (items.length && !filterMessageId
+        (!filterChatId && items.length
           ? '<button class="chip-btn" id="mem-clear">' + icon('trash') + 'Очистить всё</button>' : '') +
-        '</div>',
+        '</div>';
+    }
+
+    openModal({
+      title: filterMessageId ? 'Что записано по этому ответу' : (filterChatId ? 'Память чата' : 'Память о вас'),
+      okText: 'Закрыть',
+      body,
       onOk: () => true,
     });
 
@@ -3559,7 +3577,7 @@
         await api.del('/api/memory/' + b.dataset.delMem);
         $('#modal-root').innerHTML = '';
         await loadMemory();
-        openMemory(filterMessageId);
+        openMemory(filterMessageId, filterChatId);
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     }));
 
@@ -3568,15 +3586,17 @@
         title,
         okText: 'Сохранить',
         body: '<textarea id="mem-text" rows="3" placeholder="' +
-          (kind === 'preference' ? 'Например: отвечай кратко и по делу' : 'Например: меня зовут Тимур') +
+          (kind === 'preference' ? 'Например: отвечай кратко и по делу' : 'Например: важная информация для этого чата') +
           '"></textarea>',
         onOk: async (root) => {
           const val = ($('#mem-text', root) || {}).value ? $('#mem-text', root).value.trim() : '';
           if (!val) return false;
-          await api.post('/api/memory', { content: val, kind });
+          const payload = { content: val, kind };
+          if (filterChatId && kind !== 'preference') payload.chat_id = filterChatId;
+          await api.post('/api/memory', payload);
           await loadMemory();
           $('#modal-root').innerHTML = '';
-          openMemory();
+          openMemory(null, filterChatId);
           toast(kind === 'preference' ? 'Предпочтение сохранено' : 'Факт сохранён');
           return true;
         },
@@ -3586,26 +3606,16 @@
     if (addF) addF.addEventListener('click', () => addFor('fact', 'Добавить факт'));
     const addP = $('#mem-add-pref');
     if (addP) addP.addEventListener('click', () => addFor('preference', 'Добавить предпочтение'));
-
-    const clr = $('#mem-clear');
-    if (clr) clr.addEventListener('click', async () => {
-      if (!confirm('Очистить всю память о вас?')) return;
+    const clear = $('#mem-clear');
+    if (clear) clear.addEventListener('click', async () => {
+      if (!confirm('Удалить всю память?')) return;
       try {
         await api.del('/api/memory');
         await loadMemory();
         $('#modal-root').innerHTML = '';
-        openMemory();
+        toast('Память очищена');
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     });
-  }
-
-  // ---------- code-agent project panel ----------
-  function toggleProjectPanel(show) {
-    const panel = $('#project-panel');
-    if (!panel) return;
-    const visible = show === undefined ? panel.classList.contains('hidden') : !!show;
-    panel.classList.toggle('hidden', !visible);
-    if (visible) loadProject(true);
   }
 
   async function loadProject(resetLogs) {

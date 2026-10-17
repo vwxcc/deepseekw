@@ -530,6 +530,12 @@
     audioStatusPollRunning: false,
     audioMessageId: null,
     audioDuration: 0,
+    readableText: Object.create(null),
+    readableTextStatusRequested: new Set(),
+    readableTextChatId: null,
+    readableTextRequestInFlight: Object.create(null),
+    readableTextStatusPollTimer: null,
+    readableTextStatusPollRunning: false,
     greetIdx: Math.floor(Math.random() * 100),
     suggIdx: Math.floor(Math.random() * 50),
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
@@ -998,60 +1004,131 @@
         '</div></div>';
     }
 
-    const audioCtl = !isUser && !state.readonly && n.status === 'completed' && String(n.content || '').trim()
-      ? audioControlHtml(n) : '';
+    const hasSpeechActions = !isUser && !state.readonly &&
+      n.status === 'completed' && String(n.content || '').trim();
+    const audioCtl = hasSpeechActions ? audioControlHtml(n) : '';
+    const deviceAudioCtl = hasSpeechActions ? deviceAudioControlHtml(n) : '';
+    const readableTextStatusCtl = hasSpeechActions ? readableTextStatusHtml(n) : '';
 
-    const deviceAudioCtl = !isUser && !state.readonly &&
-      n.status === 'completed' && String(n.content || '').trim()
-      ? deviceAudioControlHtml(n) : '';
-
-    const actionsRow = !isUser && !state.readonly && (meta || audioCtl || deviceAudioCtl)
-      ? '<div class="msg-actions-row">' + meta + audioCtl + '</div>' + deviceAudioCtl : '';
+    const actionsRow = !isUser && !state.readonly && (meta || hasSpeechActions)
+      ? '<div class="msg-actions-row">' + meta +
+        (hasSpeechActions
+          ? readableTextStatusCtl + '<div class="speech-actions">' + audioCtl + deviceAudioCtl + '</div>'
+          : '') + '</div>' : '';
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
       tools + inner + askCard + actionsRow + memLine + '</div>';
   }
 
+  function audioQuotaSnapshot() {
+    const limitsWindow = state.limits && state.limits.window;
+    if (!limitsWindow || limitsWindow.hours == null) {
+      return { label: '', remaining: null, hours: null };
+    }
+    const hours = Math.max(1, Number(limitsWindow.hours) || 5);
+    const used = Math.max(0, Number(limitsWindow.audio_generations) || 0);
+    if (limitsWindow.audio_limit == null) {
+      return { label: 'без лимита на ' + hours + ' ч.', remaining: null, hours };
+    }
+    const limit = Number(limitsWindow.audio_limit);
+    if (!Number.isFinite(limit)) {
+      return { label: 'лимит недоступен', remaining: null, hours };
+    }
+    const remaining = Math.max(0, Math.floor(limit - used));
+    return {
+      label: remaining > 0 ? 'осталось ' + remaining + ' на ' + hours + ' ч.' : 'лимит исчерпан на ' + hours + ' ч.',
+      remaining,
+      hours,
+    };
+  }
+
+  function readableTextStatusLabel(messageId) {
+    const record = state.readableText[messageId];
+    if (!record) return 'Проверяю читабельный текст…';
+    if (record.status === 'ready') return 'Текст готов';
+    if (record.status === 'missing') return 'Читабельный текст ещё не создан. Нажмите прослушивание для подготовки.';
+    if (record.status === 'failed') {
+      const detail = String(record.error || 'ошибка сервиса').trim();
+      return 'Не удалось создать читабельный текст: ' + detail.slice(0, 260);
+    }
+    return 'Создаю читабельный текст…';
+  }
+
+  function readableTextStatusHtml(n) {
+    const record = state.readableText[n.id];
+    const cls = record && record.status === 'ready' ? ' is-ready' :
+      record && record.status === 'failed' ? ' is-error' : '';
+    return '<div class="readable-text-status-wrap" data-readable-status="' + escapeHtml(n.id) + '">' +
+      '<span class="readable-text-status' + cls + '" role="status" aria-live="polite">' +
+      escapeHtml(readableTextStatusLabel(n.id)) + '</span></div>';
+  }
+
+  function updateReadableTextUi(messageId) {
+    const status = $$('[data-readable-status]').find(el => el.dataset.readableStatus === String(messageId));
+    const record = state.readableText[messageId];
+    if (status) {
+      const label = $('.readable-text-status', status);
+      if (label) {
+        label.textContent = readableTextStatusLabel(messageId);
+        label.classList.toggle('is-ready', !!(record && record.status === 'ready'));
+        label.classList.toggle('is-error', !!(record && record.status === 'failed'));
+      }
+    }
+    updateAudioControl(messageId);
+    updateDeviceAudioControl(messageId);
+  }
+
   function deviceAudioControlHtml(n) {
-    return '<div class="device-audio-wrap">' +
-      '<button class="device-audio-button" data-mact="device-audio" data-id="' +
-      escapeHtml(n.id) + '" title="Озвучить системным голосом телефона">' +
-      icon('audio') + '<span>Воспроизвести устройством <small>(beta)</small></span></button></div>';
+    const id = escapeHtml(n.id);
+    return '<div class="device-audio-wrap" data-device-audio-control="' + id + '">' +
+      '<button class="speech-action-button device-audio-button" data-mact="device-audio" data-id="' +
+      id + '" title="Слушать читабельную версию ответа на устройстве">' +
+      icon('audio') + '<span class="speech-button-copy"><b>Слушать ответ</b>' +
+      '<small>(создаёт ваше устройство)</small></span></button></div>';
   }
 
   function audioControlHtml(n) {
     const id = escapeHtml(n.id);
+    const quota = audioQuotaSnapshot();
+    const quotaLabel = quota.label ? '(' + quota.label + ')' : 'создать голосовую версию';
     if (state.audioPending[n.id]) {
       return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
-        '<button class="answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
-          '<span class="audio-loading-ring"></span><span>Создаю озвучку…</span></button></div>';
+        '<button class="speech-action-button answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
+        '<span class="audio-loading-ring"></span><span class="speech-button-copy"><b>Озвучка ИИ</b><small>Создаю аудио…</small></span></button></div>';
     }
     if (state.audioReady[n.id]) {
       return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
-        '<button class="answer-audio-preview" data-mact="play-audio" data-id="' + id + '" title="Открыть аудиоплеер">' +
-          '<span class="audio-preview-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
-          '<span class="audio-preview-copy"><b>Аудиоверсия ответа</b><small>Нажмите, чтобы слушать</small></span>' +
-          '<span class="audio-preview-play">' + icon('play') + '</span>' +
-        '</button></div>';
+        '<button class="speech-action-button answer-audio-generate is-ready" data-mact="play-audio" data-id="' + id + '" title="Слушать готовую ИИ-озвучку">' +
+        icon('play') + '<span class="speech-button-copy"><b>Озвучка ИИ</b><small>Аудио готово · слушать</small></span></button></div>';
     }
     if (state.audioBusyMessageId) {
       const sameMessage = String(state.audioBusyMessageId) === String(n.id);
       return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
-        '<button class="answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
-          '<span class="audio-loading-ring"></span><span>' +
-          (sameMessage ? 'Создаю озвучку…' : 'Другая озвучка уже создаётся…') +
-          '</span></button></div>';
+        '<button class="speech-action-button answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
+        '<span class="audio-loading-ring"></span><span class="speech-button-copy"><b>Озвучка ИИ</b><small>' +
+        (sameMessage ? 'Создаю аудио…' : 'Другая озвучка уже создаётся…') + '</small></span></button></div>';
+    }
+    if (quota.remaining === 0) {
+      return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
+        '<button class="speech-action-button answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
+        icon('audio') + '<span class="speech-button-copy"><b>Озвучка ИИ</b><small>' + escapeHtml(quotaLabel) + '</small></span></button></div>';
     }
     return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
-      '<button class="answer-audio-generate" data-mact="generate-audio" data-id="' + id + '" title="Создать голосовую версию ответа">' +
-        icon('audio') + '<span>Аудиоверсия ответа</span></button></div>';
+      '<button class="speech-action-button answer-audio-generate" data-mact="generate-audio" data-id="' + id + '" title="Создать ИИ-озвучку">' +
+      icon('audio') + '<span class="speech-button-copy"><b>Озвучка ИИ</b><small>' + escapeHtml(quotaLabel) + '</small></span></button></div>';
   }
 
   function updateAudioControl(messageId) {
     const wrapper = $$('[data-audio-control]').find(el => el.dataset.audioControl === String(messageId));
     const entry = findNode(state.tree, messageId);
-    if (wrapper && entry) wrapper.innerHTML = audioControlHtml(entry);
+    if (wrapper && entry) wrapper.outerHTML = audioControlHtml(entry);
+  }
+
+  function updateDeviceAudioControl(messageId) {
+    const wrapper = $('[data-device-audio-control]').find(el => el.dataset.deviceAudioControl === String(messageId));
+    const entry = findNode(state.tree, messageId);
+    if (wrapper && entry) wrapper.outerHTML = deviceAudioControlHtml(entry);
   }
 
   function updateAllAudioControls() {
@@ -1146,7 +1223,117 @@
     if (hasCompletedAnswer) startAudioStatusPolling();
   }
 
+  async function refreshReadableTextStatus(messageId) {
+    try {
+      const result = await api.get('/api/messages/' + encodeURIComponent(messageId) + '/readable-text');
+      if (!result || !result.status) return null;
+      const current = state.readableText[messageId];
+      if (result.status === 'missing' && (
+        state.readableTextRequestInFlight[messageId] ||
+        (current && (current.status === 'ready' || current.status === 'generating'))
+      )) return current;
+      state.readableText[messageId] = result;
+      updateReadableTextUi(messageId);
+      if (result.status === 'generating') startReadableTextStatusPolling();
+      return result;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function startReadableTextStatusPolling() {
+    if (state.readonly || state.readableTextStatusPollTimer) return;
+    state.readableTextStatusPollTimer = window.setInterval(async () => {
+      if (state.readableTextStatusPollRunning || state.readonly) return;
+      const pending = allMessages(state.tree)
+        .map(entry => entry && entry.node)
+        .filter(n => n && n.role === 'assistant' && n.status === 'completed' &&
+          state.readableText[n.id] && state.readableText[n.id].status === 'generating');
+      if (!pending.length) {
+        window.clearInterval(state.readableTextStatusPollTimer);
+        state.readableTextStatusPollTimer = null;
+        return;
+      }
+      state.readableTextStatusPollRunning = true;
+      try {
+        await Promise.all(pending.slice(-8).map(n => refreshReadableTextStatus(n.id)));
+      } finally {
+        state.readableTextStatusPollRunning = false;
+      }
+    }, 2500);
+  }
+
+  function hydrateReadableTextStatuses(entries) {
+    if (state.readonly) return;
+    if (state.readableTextChatId !== state.currentChatId) {
+      state.readableTextStatusRequested.clear();
+      state.readableTextChatId = state.currentChatId;
+    }
+    entries.forEach(entry => {
+      const n = entry && entry.node;
+      if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
+      if (state.readableTextStatusRequested.has(n.id)) return;
+      state.readableTextStatusRequested.add(n.id);
+      refreshReadableTextStatus(n.id);
+    });
+    const hasPending = entries.some(entry => {
+      const n = entry && entry.node;
+      return n && state.readableText[n.id] && state.readableText[n.id].status === 'generating';
+    });
+    if (hasPending) startReadableTextStatusPolling();
+  }
+
+  async function generateReadableText(messageId, force) {
+    const current = state.readableText[messageId];
+    if (current && current.status === 'ready' && String(current.text || '').trim()) return current;
+    if (state.readableTextRequestInFlight[messageId]) return current || null;
+    if (current && current.status === 'generating' && !force) return current;
+
+    state.readableText[messageId] = { status: 'generating', text: null, error: null };
+    state.readableTextRequestInFlight[messageId] = true;
+    updateReadableTextUi(messageId);
+    startReadableTextStatusPolling();
+    try {
+      const result = await api.post('/api/messages/' + encodeURIComponent(messageId) + '/readable-text', {});
+      state.readableText[messageId] = result && result.status ? result : { status: 'generating', text: null, error: null };
+      updateReadableTextUi(messageId);
+      if (state.readableText[messageId].status === 'generating') startReadableTextStatusPolling();
+      return state.readableText[messageId];
+    } catch (err) {
+      const latest = await refreshReadableTextStatus(messageId);
+      if (latest && latest.status !== 'missing') return latest;
+      state.readableText[messageId] = {
+        status: 'failed',
+        text: null,
+        error: usefulErrorMessage(err, 'не удалось связаться с сервером'),
+      };
+      updateReadableTextUi(messageId);
+      return state.readableText[messageId];
+    } finally {
+      state.readableTextRequestInFlight[messageId] = false;
+    }
+  }
+
+  function ensureReadableTextBeforePlayback(messageId) {
+    const record = state.readableText[messageId];
+    if (record && record.status === 'ready' && String(record.text || '').trim()) return true;
+    if (!record || record.status === 'missing' || record.status === 'failed') {
+      generateReadableText(messageId, true);
+      toast(record && record.status === 'failed'
+        ? 'Повторно создаю читабельный текст. Статус появится под ответом.'
+        : 'Создаю читабельный текст перед прослушиванием.');
+    } else {
+      toast('Читабельный текст ещё создаётся. Статус виден под ответом.');
+    }
+    return false;
+  }
+
   async function generateAnswerAudio(messageId) {
+    const readable = state.readableText[messageId];
+    if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
+      toast('Сначала дождитесь создания читабельного текста.', 'error');
+      return;
+    }
     if (state.audioPending[messageId] || state.audioRequestInFlight[messageId]) return;
     if (state.audioBusyMessageId && String(state.audioBusyMessageId) !== String(messageId)) {
       toast('Уже создаётся другая озвучка. Дождитесь завершения.', 'error');
@@ -1165,7 +1352,8 @@
       state.audioStatusRequested.add(messageId);
       state.audioBusyMessageId = null;
       updateAllAudioControls();
-      toast('Озвучка готова — нажмите на аудиокарточку');
+      await loadLimits();
+      toast('Озвучка ИИ готова — нажмите «Озвучка ИИ», чтобы слушать.');
     } catch (err) {
       state.audioRequestInFlight[messageId] = false;
       state.audioPending[messageId] = false;
@@ -1173,6 +1361,7 @@
       updateAllAudioControls();
       toast('Не удалось озвучить ответ: ' + (err.message || 'ошибка сервера'), 'error');
       await refreshAudioStatus(messageId);
+      await loadLimits();
     }
   }
 
@@ -1538,7 +1727,12 @@
     if (!node || !String(node.content || '').trim()) return;
     if ($('#audio-player-shell') && $('#audio-player-shell').classList.contains('open')) closeAudioPlayer();
     if (deviceSpeechState.active) closeDeviceSpeechPlayer();
-    const text = readableSpeechText(node.content);
+    const readable = state.readableText[messageId];
+    if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
+      toast('Сначала дождитесь создания читабельного текста.', 'error');
+      return;
+    }
+    const text = String(readable.text);
     const words = text.match(/\S+/g) || [];
     if (!words.length) {
       toast('В этом ответе нет текста для озвучивания.', 'error');
@@ -1882,6 +2076,7 @@
     bindMessageEvents();
     renderMath(box.querySelector('.msg-wrap'));
     hydrateAudioStatuses(entries);
+    hydrateReadableTextStatuses(entries);
 
     if (opts.focusMessageId) {
       const target = $('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
@@ -1953,11 +2148,11 @@
         const n = findNode(state.tree, id);
         if (n) await copyWithFeedback(btn, n.content || '');
       } else if (act === 'generate-audio') {
-        await generateAnswerAudio(id);
+        if (ensureReadableTextBeforePlayback(id)) await generateAnswerAudio(id);
       } else if (act === 'play-audio') {
         openAudioPlayer(id, true);
       } else if (act === 'device-audio') {
-        startDeviceSpeech(id);
+        if (ensureReadableTextBeforePlayback(id)) startDeviceSpeech(id);
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
@@ -2281,10 +2476,10 @@
             n.draft = ''; n.creating = false;
           }
           renderMessages({ focusMessageId: n ? n.id : null });
-          // Start the complete preprocess -> TTS pipeline as soon as the final
-          // answer arrives. It runs in the background and never blocks the chat.
-          if (n && !state.readonly && String(n.content || '').trim() && !state.audioReady[n.id] && !state.audioPending[n.id]) {
-            generateAnswerAudio(n.id).catch((err) => console.warn('Automatic answer audio failed:', err));
+          // Prepare one cached, readable version immediately after the main answer.
+          // Both AI voice and device speech use this exact text; neither blocks chat rendering.
+          if (n && !state.readonly && String(n.content || '').trim()) {
+            generateReadableText(n.id, false).catch((err) => console.warn('Readable-text preparation failed:', err));
           }
           loadUsage();
         } else if (ev === 'error') {
@@ -2679,6 +2874,7 @@
   async function loadLimits() {
     try { state.limits = await api.get('/api/limits'); }
     catch (e) { state.limits = null; }
+    updateAllAudioControls();
   }
 
   async function openContextMenu() {

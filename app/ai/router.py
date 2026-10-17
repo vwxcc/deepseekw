@@ -523,6 +523,7 @@ class AIRouter:
         """Let the model write the queries, then search with each of them."""
         queries: list[str] = []
         answer = ""
+        search_declined = False
         try:
             answer = await complete_chat(
                 messages=[
@@ -538,7 +539,8 @@ class AIRouter:
                 disable_thinking=True,
             )
             text = (answer or "").strip()
-            if text and not re.search(r"(?im)^\s*NONE\s*$", text):
+            search_declined = bool(re.fullmatch(r"NONE", text, flags=re.IGNORECASE))
+            if text and not search_declined:
                 for line in text.splitlines():
                     q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
                     q = q.replace("\u00ab", "").replace("\u00bb", "")
@@ -548,7 +550,7 @@ class AIRouter:
         except Exception as e:  # noqa: BLE001 - search must never break a chat
             log.warning("Query generation failed: %s", e)
 
-        if not queries:
+        if not queries and not search_declined:
             words = re.findall(
                 r"[A-Za-zА-Яа-яЁё0-9]{3,}", (job.search_query or "").lower()
             )

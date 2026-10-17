@@ -2283,12 +2283,45 @@
     input.focus();
   }
 
-  async function sendCurrent() {
+  function shouldAskExecutionTarget(text) {
+    const value = String(text || '');
+    const asksToRun = /run|execute|compile|test|запуст|выполн|исполн|скомпилируй|протестируй|проверь.{0,20}код/i.test(value);
+    const hasFence = value.indexOf(String.fromCharCode(96).repeat(3)) >= 0;
+    const refersToCode = /python|javascript|typescript|html|script|код|скрипт|программ|<script|<html/i.test(value);
+    return asksToRun && (hasFence || refersToCode);
+  }
+
+  function askExecutionTarget() {
+    openModal({
+      title: 'Где выполнить код?',
+      okText: 'Продолжить',
+      body: '<div class="execution-target-options">' +
+        '<label><input type="radio" name="execution-target" value="site" checked />' +
+        '<span><b>На сайте</b><small>Изолированная серверная песочница. Подходит для Python и создания файлов.</small></span></label>' +
+        '<label><input type="radio" name="execution-target" value="device" />' +
+        '<span><b>На устройстве</b><small>Код выполняется в браузере этого телефона или компьютера. Некоторые языки потребуют загрузки runtime.</small></span></label>' +
+        '</div>',
+      onOk: async (root) => {
+        const selected = $('input[name="execution-target"]:checked', root);
+        const target = selected && selected.value === 'device' ? 'device' : 'site';
+        closeModal();
+        await sendCurrent(target);
+        return false;
+      },
+    });
+  }
+
+  async function sendCurrent(executionTarget) {
     const input = $('#input');
     if (!input) return;
     const draft = input.value;
     const content = draft.trim();
     if (!content || state.streaming || state.sending) return;
+    if (!executionTarget && shouldAskExecutionTarget(content)) {
+      askExecutionTarget();
+      return;
+    }
+    const selectedExecutionTarget = executionTarget === 'device' ? 'device' : 'site';
 
     // Validate pending attachments before reading IDs; a stale/null item must not abort sending.
     const pending = Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [];
@@ -2339,6 +2372,7 @@
         parent_message_id: userId, children: [],
         created_at: new Date().toISOString(),
         creating: true, creatingLabel: isNewChat ? 'Создаю чат и отправляю запрос…' : 'Запрос отправляется…',
+        execution_target: selectedExecutionTarget,
         error: null,
       };
       const parentNode = parentId ? findNode(state.tree, parentId) : null;
@@ -2366,6 +2400,7 @@
         attachment_ids: attachments,
         model_set_id: state.modelSetId || null,
         web_search: true,
+        execution_target: selectedExecutionTarget,
         effort: state.effort,
         style: state.style,
       }, { optimistic: true, input, draft, attachments: sentAttachments });

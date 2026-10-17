@@ -219,7 +219,7 @@ def validate_plan(plan: Any) -> dict[str, Any]:
         raw_blocks = []
     if not isinstance(raw_blocks, list):
         raise ValueError("blocks/slides/sections должны быть списком команд.")
-    max_blocks = 36 if fmt in ("docx", "pdf", "md", "txt") else 24
+    max_blocks = 36 if fmt in ("docx", "pdf", "md", "txt") else 16 if fmt in ("svg", "png") else 24
     if len(raw_blocks) > max_blocks:
         raise ValueError(f"Слишком много блоков ({len(raw_blocks)}); предел для {fmt} — {max_blocks}.")
     clean["blocks"] = [_normalise_block(b) for b in raw_blocks]
@@ -241,6 +241,11 @@ def validate_plan(plan: Any) -> dict[str, Any]:
                 raise ValueError(f"Таблица в блоке {i + 1}: максимум 40 столбцов.")
             if len(rows) > 1500:
                 raise ValueError(f"Таблица в блоке {i + 1}: максимум 1500 строк.")
+            columns = max([len(head)] + [len(row) for row in rows] + [0])
+            if fmt in ("svg", "png") and (columns > 6 or len(rows) > 5):
+                raise ValueError(f"Таблица для {fmt.upper()} в блоке {i + 1} должна быть не более 6 столбцов и 5 строк; раздели её на несколько блоков.")
+            if fmt == "pdf" and columns > 8:
+                raise ValueError(f"Таблица PDF в блоке {i + 1} должна быть не более 8 столбцов; раздели её на несколько таблиц.")
         if block["kind"] == "metrics":
             items = block.get("items") or []
             if not isinstance(items, list) or len(items) > 4:
@@ -283,6 +288,21 @@ def validate_plan(plan: Any) -> dict[str, Any]:
                     block["kind"] = "table"
                 else:
                     raise ValueError(f"Блок документа {i + 1}: неподдерживаемый тип {block['kind']}.")
+    elif fmt in ("svg", "png"):
+        supported = {"section", "bullets", "metrics", "table", "quote", "text", "h1", "h2", "h3"}
+        for i, block in enumerate(clean["blocks"]):
+            if block["kind"] not in supported:
+                raise ValueError(f"Блок инфографики {i + 1}: неподдерживаемый тип {block['kind']}.")
+            if block["kind"] == "bullets" and len(block.get("items") or []) > 3:
+                raise ValueError(f"Блок инфографики {i + 1}: оставь до 3 коротких тезисов или раздели их на блоки.")
+    elif fmt in ("md", "txt"):
+        supported = {"h1", "h2", "h3", "text", "bullets", "numbers", "table", "pagebreak", "callout", "quote", "section"}
+        for i, block in enumerate(clean["blocks"]):
+            if block["kind"] not in supported:
+                raise ValueError(f"Текстовый документ, блок {i + 1}: неподдерживаемый тип {block['kind']}.")
+    elif fmt in ("csv", "json"):
+        # These formats are driven by their explicit tabular/data payload.
+        pass
     elif fmt == "xlsx":
         sheets = plan.get("sheets")
         if sheets is None:
@@ -315,9 +335,6 @@ def validate_plan(plan: Any) -> dict[str, Any]:
         if total_rows > 5000:
             raise ValueError("Слишком много строк для одного плана (общий предел 5000).")
         clean["sheets"] = normal_sheets
-    else:
-        clean["blocks"] = clean["blocks"][:16]
-
     palette_style, palette_tuple = _normalise_palette(plan.get("palette"), style)
     clean["_resolved_style"] = palette_style
     clean["_palette_tuple"] = palette_tuple
@@ -336,7 +353,7 @@ def _slug(title: str) -> str:
 def _render_svg(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
     width = min(2400, max(900, int(plan.get("width") or 1600)))
     blocks = plan.get("blocks") or []
-    height = min(2800, max(900, 250 + 175 * max(1, len(blocks))))
+    height = min(4400, max(900, 300 + 250 * max(1, len(blocks)), int(plan.get("height") or 0)))
     fg = html.escape(p["text"])
     bg = html.escape(p["bg"])
     primary = html.escape(p["primary"])
@@ -456,7 +473,7 @@ def _render_png(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
 
     width = min(2400, max(900, int(plan.get("width") or 1600)))
     blocks = plan.get("blocks") or []
-    height = min(2800, max(900, int(plan.get("height") or (300 + 170 * max(1, len(blocks))))))
+    height = min(4400, max(900, int(plan.get("height") or 0), 300 + 250 * max(1, len(blocks))))
     image = Image.new("RGB", (width, height), p["bg"])
     draw = ImageDraw.Draw(image)
     title_font = _font_for_size(max(30, width // 28))

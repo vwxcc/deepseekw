@@ -390,7 +390,7 @@
 
   function safeHttpUrl(value) {
     const raw = String(value || '').trim();
-    if (!/^https?:\\/\\//i.test(raw)) return '';
+    if (!/^https?:\/\//i.test(raw)) return '';
     try {
       const url = new URL(raw);
       return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
@@ -406,7 +406,7 @@
         if (!imageUrl) return '';
         const title = String(item.title || 'Изображение из интернета').slice(0, 180);
         let domain = '';
-        try { domain = sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\\./i, '') : ''; } catch (e) {}
+        try { domain = sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\./i, '') : ''; } catch (e) {}
         const image = '<img src="' + escapeHtml(imageUrl) + '" alt="' + escapeHtml(title) +
           '" loading="lazy" decoding="async" referrerpolicy="no-referrer" />';
         const media = sourceUrl
@@ -437,7 +437,7 @@
       return '<aside class="aich-ui-callout tone-' + tone + '" role="note">' +
         '<span class="aich-ui-emoji" aria-hidden="true">' + emoji + '</span><div class="aich-ui-copy">' +
         (title ? '<strong>' + escapeHtml(title) + '</strong>' : '') +
-        (body ? '<div>' + escapeHtml(body).replace(/\\n/g, '<br>') + '</div>' : '') +
+        (body ? '<div>' + escapeHtml(body).replace(/\n/g, '<br>') + '</div>' : '') +
         '</div></aside>';
     }
     const actionButton = item => {
@@ -502,7 +502,7 @@
       if (cm) {
         flushPara(); closeList(); closeQuote();
         const b = codes[+cm[1]];
-        const langKey = String(b.lang || '').trim().toLowerCase().split(/\\s+/)[0];
+        const langKey = String(b.lang || '').trim().toLowerCase().split(/\s+/)[0];
         out.push(langKey === 'draw' ? drawBlockHtml(b.code) :
           (['ui', 'aich-ui'].includes(langKey) ? interactiveUiBlockHtml(b.code) : codeBlockHtml(b.lang, b.code)));
         continue;

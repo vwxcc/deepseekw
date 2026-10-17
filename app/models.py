@@ -146,6 +146,7 @@ class Message(Base):
     rating: Mapped[int] = mapped_column(Integer, default=0)
     sources: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_runs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_target: Mapped[str] = mapped_column(String(16), default="site")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")
@@ -323,6 +324,7 @@ class Memory(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     kind: Mapped[str] = mapped_column(String(16), default="fact")
     message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    chat_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

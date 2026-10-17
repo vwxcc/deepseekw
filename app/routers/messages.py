@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
 from ..ai.router import Job, router as ai_router
+from ..ai.stream_lifecycle import detach_output_drain
 from ..ai.providers import ProviderError, complete_chat
 from ..deps import (
     get_current_user,
@@ -202,11 +203,9 @@ async def _stream_job(
                 break
     finally:
         if not finished:
-            # Disconnecting or switching away from this browser view must not cancel
-            # the durable main generation. The worker continues, persists the final
-            # assistant message, and explicit POST /messages/{id}/stop remains the
-            # only user-facing cancellation path.
-            pass
+            # Keep the primary generation alive after the browser disconnects, but
+            # drain its unbounded event queue until the worker persists the result.
+            detach_output_drain(job.output)
 
 
 def _estimate_chars(messages: list[dict]) -> int:

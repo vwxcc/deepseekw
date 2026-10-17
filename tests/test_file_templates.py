@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -52,10 +53,15 @@ class FileTemplateTests(unittest.TestCase):
             ],
         }
         with tempfile.TemporaryDirectory() as tmp:
-            svg_result = templates.build_from_plan(tmp, plan)
+            # Mirror the production router: plans reach the renderer as JSON text.
+            svg_result = templates.build_from_plan(tmp, json.dumps(plan, ensure_ascii=False))
             svg_path = Path(svg_result["files"][0])
             self.assertTrue(svg_path.is_file())
-            self.assertIn("<svg", svg_path.read_text(encoding="utf-8"))
+            self.assertEqual(svg_result["template_id"], "vector.infographic")
+            self.assertEqual(svg_result["title"], "Сравнение вариантов")
+            svg_source = svg_path.read_text(encoding="utf-8")
+            self.assertIn("<svg", svg_source)
+            self.assertIn("#F7F1E6", svg_source)
             png_result = templates.build_from_plan(tmp, {**plan, "format": "png",
                 "template_id": "image.infographic", "filename": "comparison.png"})
             png_path = Path(png_result["files"][0])

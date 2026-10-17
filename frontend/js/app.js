@@ -3538,6 +3538,10 @@
     try { items = await api.get('/api/memory' + suffix); } catch (e) { items = []; }
     const facts = items.filter(m => (m.kind || 'fact') === 'fact');
     const prefs = items.filter(m => m.kind === 'preference');
+    const globalFacts = facts.filter(m => !m.chat_id && !m.message_id);
+    const chatFacts = filterChatId ? facts.filter(m => m.chat_id === filterChatId) : facts;
+    const globalPrefs = prefs.filter(m => !m.chat_id && !m.message_id);
+    const chatPrefs = filterChatId ? prefs.filter(m => m.chat_id === filterChatId) : [];
     const row = (m) => '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
       '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>';
 
@@ -3546,22 +3550,43 @@
       body = '<h4 class="sec">Память, связанная только с этим ответом</h4>' +
         (items.length ? '<div class="mem-list">' + items.map(row).join('') + '</div>' :
           '<p class="usage-note">Для этого ответа ничего не было сохранено в память. Записи других чатов здесь не показываются.</p>');
+    } else if (filterChatId) {
+      body =
+        '<p class="usage-note">Автоматические воспоминания сохраняются только в этом чате. Общие заметки показаны отдельно.</p>' +
+        '<h4 class="sec">Общие предпочтения · для всех чатов</h4>' +
+        (globalPrefs.length
+          ? '<div class="mem-list">' + globalPrefs.map(row).join('') + '</div>'
+          : '<p class="usage-note">Пока нет.</p>') +
+        '<div style="margin:8px 0 16px"><button class="chip-btn" id="mem-add-pref">' +
+        icon('plus') + 'Добавить общее предпочтение</button></div>' +
+        (chatPrefs.length ? '<h4 class="sec">Предпочтения только этого чата</h4><div class="mem-list">' +
+          chatPrefs.map(row).join('') + '</div>' : '') +
+        '<h4 class="sec">Факты этого чата</h4>' +
+        (chatFacts.length ? '<div class="mem-list">' + chatFacts.map(row).join('') + '</div>' :
+          '<p class="usage-note">Пока пусто.</p>') +
+        '<h4 class="sec">Общие факты</h4>' +
+        (globalFacts.length ? '<div class="mem-list">' + globalFacts.map(row).join('') + '</div>' :
+          '<p class="usage-note">Пока пусто.</p>') +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить факт в этот чат</button></div>';
     } else {
       body =
-        (filterChatId ? '<p class="usage-note">Показана память этого чата и вручную сохранённые общие заметки.</p>' : '') +
-        '<h4 class="sec">Предпочтения · уходят в каждый запрос</h4>' +
-        (prefs.length
-          ? '<div class="mem-list">' + prefs.map(row).join('') + '</div>'
+        '<h4 class="sec">Общие предпочтения · для всех чатов</h4>' +
+        (globalPrefs.length
+          ? '<div class="mem-list">' + globalPrefs.map(row).join('') + '</div>'
           : '<p class="usage-note">Пока нет. Например: «отвечай кратко», «всегда с примерами кода».</p>') +
         '<div style="margin:8px 0 16px"><button class="chip-btn" id="mem-add-pref">' +
-        icon('plus') + 'Добавить предпочтение</button></div>' +
-        '<h4 class="sec">Факты</h4>' +
-        (facts.length
-          ? '<div class="mem-list">' + facts.map(row).join('') + '</div>'
-          : '<p class="usage-note">Пока пусто.</p>') +
+        icon('plus') + 'Добавить общее предпочтение</button></div>' +
+        '<h4 class="sec">Общие факты</h4>' +
+        (globalFacts.length ? '<div class="mem-list">' + globalFacts.map(row).join('') + '</div>' :
+          '<p class="usage-note">Пока пусто.</p>') +
+        '<h4 class="sec">Воспоминания отдельных чатов</h4>' +
+        (facts.filter(m => m.chat_id).length
+          ? '<div class="mem-list">' + facts.filter(m => m.chat_id).map(row).join('') + '</div>'
+          : '<p class="usage-note">Пока нет.</p>') +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить факт</button>' +
-        (!filterChatId && items.length
+        '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить общий факт</button>' +
+        (items.length
           ? '<button class="chip-btn" id="mem-clear">' + icon('trash') + 'Очистить всё</button>' : '') +
         '</div>';
     }

@@ -1913,6 +1913,7 @@
 
   function toolRunHtml(r, i) {
     const running = !!r.running;
+    const filePlan = r.kind === 'fileplan' || /^План сборки файла/.test(String(r.code || ''));
     const files = (r.files || []).map(f => {
       const url = '/api/files/' + f.file_id + '/download';
       if (f.kind === 'image') {
@@ -1927,7 +1928,11 @@
       '<div class="tool-head">' +
       (running ? thinkAnim() : icon('terminal')) +
       '<span class="tool-title">Шаг ' + (i + 1) + ' — ' +
-      (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
+      (running
+        ? (filePlan ? 'сборка файла…' : 'выполняется…')
+        : filePlan
+          ? (r.ok ? 'файл собран' : 'ошибка сборки файла')
+          : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
       (r.timed_out ? '<em class="warn">таймаут</em>' : '') +
       '<button type="button" class="tool-toggle" data-tool-toggle aria-expanded="false" title="Развернуть вывод">' +
       icon('chevron-down') + '<span data-tool-toggle-label>Развернуть</span></button></div>' +

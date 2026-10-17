@@ -2420,3 +2420,44 @@ body { font-weight: 400; }
   .composer-inner { padding-top: 5px; padding-bottom: 4px; }
   #input { max-height: 116px; }
 }
+
+
+/* ai-ch activity stream: plain monochrome rows, no status card or bordered search bubble. */
+.activity-panel { margin: 7px 0 13px; padding: 0; border: 0; background: transparent; color: var(--fg-muted); }
+.activity-head { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 14px; margin: 0 0 5px; min-width: 0; }
+.activity-time { color: var(--fg-muted); font-size: 13.4px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.activity-controls { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; flex-wrap: wrap; }
+.activity-controls button {
+  display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 6px;
+  padding: 3px 5px; color: var(--fg-soft); background: transparent; font: inherit;
+  font-size: 12.6px; cursor: pointer; white-space: nowrap;
+}
+.activity-controls button:hover { color: var(--fg); background: var(--bg-user); }
+.activity-controls .ic { width: 13px; height: 13px; color: inherit; stroke-width: 1.7; }
+.activity-list { display: flex; flex-direction: column; gap: 1px; }
+.activity-list[hidden] { display: none !important; }
+.activity-row { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 3px 0; color: var(--fg-muted); font-size: 13.8px; line-height: 1.48; }
+.activity-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.activity-icon { display: inline-block; flex: 0 0 17px; width: 17px; height: 17px; color: #77756e; stroke-width: 1.55; fill: none; }
+.activity-bullet { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 17px; width: 17px; color: #929087; font-size: 20px; line-height: 1; }
+.activity-row .think-anim { width: 18px; height: 18px; flex: 0 0 18px; margin-left: 0; }
+.activity-row .think-anim .core { width: 7px; height: 7px; }
+.activity-draft { max-height: 62px; margin-top: 7px; }
+.code-block .code-head .code-acts { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.code-block .code-head button[data-code-toggle] { gap: 5px; white-space: nowrap; }
+.code-block .code-head button[data-code-toggle] .ic { width: 13px; height: 13px; }
+.code-block pre[hidden] { display: none !important; }
+.code-block .code-preview { max-height: none; overflow: hidden; }
+.code-block .code-full { max-height: min(62vh, 780px); overflow: auto; scrollbar-width: thin; scrollbar-color: #aaa89f transparent; }
+.code-block .code-full::-webkit-scrollbar { width: 8px; height: 8px; }
+.code-block .code-full::-webkit-scrollbar-thumb { background: #aaa89f; border: 2px solid var(--bg-code); border-radius: 8px; }
+/* Technical drawings render directly on the chat surface, using their own thin gray strokes. */
+.draw-block { border: 0; border-radius: 0; padding: 0; background: transparent; overflow: visible; }
+.draw-block svg { background: transparent !important; }
+@media (max-width: 620px) {
+  .activity-head { align-items: flex-start; }
+  .activity-controls { margin-left: 0; }
+  .activity-row { font-size: 13.3px; gap: 7px; }
+  .code-block .code-head { align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+  .code-block .code-head .code-acts { gap: 6px; }
+}

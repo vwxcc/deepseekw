@@ -65,17 +65,17 @@ def _fileplan_runner(plan_source: str) -> tuple[str, str]:
     count = len(blocks) if isinstance(blocks, list) else 0
     display = f"План сборки файла · {fmt} · {template} · {title} · блоков: {count}"
     code = (
-        "import base64, json\\n"
-        "from pathlib import Path\\n"
-        "from designs.templates import build_from_plan\\n"
-        f"plan_source = base64.b64decode({encoded!r}).decode('utf-8')\\n"
-        "result = build_from_plan('out', plan_source)\\n"
+        "import base64, json\n"
+        "from pathlib import Path\n"
+        "from designs.templates import build_from_plan\n"
+        f"plan_source = base64.b64decode({encoded!r}).decode('utf-8')\n"
+        "result = build_from_plan('out', plan_source)\n"
         "print(json.dumps({"
         "'ok': True, 'format': result['format'], 'template_id': result['template_id'], "
         "'title': result['title'], 'style': result['style'], "
         "'files': [Path(p).name for p in result.get('files', [])], "
         "'previews': len(result.get('previews', []))"
-        "}, ensure_ascii=False))\\n"
+        "}, ensure_ascii=False))\n"
     )
     return code, display
 
@@ -88,9 +88,9 @@ def _tool_feedback(run: dict) -> str:
         else "Результат выполнения кода:"
     ]
     if run.get("stdout"):
-        parts.append("stdout:\\n" + run["stdout"])
+        parts.append("stdout:\n" + run["stdout"])
     if run.get("stderr"):
-        parts.append("stderr:\\n" + run["stderr"])
+        parts.append("stderr:\n" + run["stderr"])
     if not run.get("stdout") and not run.get("stderr"):
         parts.append("(вывод пустой)")
     if run.get("timed_out"):
@@ -105,7 +105,7 @@ def _tool_feedback(run: dict) -> str:
         else "Операция завершилась ошибкой — проанализируй stderr и исправь план или код."
     )
     parts.append("Если задача решена, дай финальный ответ пользователю без служебного блока.")
-    return "\\n".join(parts)
+    return "\n".join(parts)
 
 
 @dataclass@dataclass

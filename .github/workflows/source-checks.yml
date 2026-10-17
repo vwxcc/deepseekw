@@ -140,7 +140,7 @@ jobs:
               "function sourceImportNames()",
               "const nativeLoadFailed",
               "sys.stdlib_module_names",
-              "requestedImports.includes(\"docx\")",
+              "requestedImports.includes",
               "For other third-party imports, make a best-effort PyPI attempt.",
               "deviceSpeechState.priming = false",
               "device-code-file-preview",

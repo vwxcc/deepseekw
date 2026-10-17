@@ -125,7 +125,8 @@ jobs:
               raise SystemExit("Post-answer suggestion generation must stay disabled")
           if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:
               raise SystemExit("Missing authenticated audio endpoints")
-          if 'search_declined = bool(re.fullmatch(r"NONE", text, flags=re.IGNORECASE))' not in router:
+          search_context = Path("app/services/search_context.py").read_text(encoding="utf-8")
+          if 're.fullmatch(r"NONE", text, flags=re.IGNORECASE)' not in search_context:
               raise SystemExit("Explicit NONE must prevent unnecessary web search")
           memory_scope = Path("app/services/memory_scope.py").read_text(encoding="utf-8")
           if 'Memory.chat_id == chat_id' not in memory_scope or 'from ..services.memory_scope import _memory_block' not in messages:

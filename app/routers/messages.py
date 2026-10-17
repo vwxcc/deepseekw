@@ -63,7 +63,10 @@ from ..services.audio_state import (
     AudioGenerationInProgress,
     active_audio_generation,
     begin_audio_generation,
+    claim_shared_audio_generation,
     finish_audio_generation,
+    finish_shared_audio_generation,
+    shared_active_audio_generation,
 )
 from ..services.sandbox import list_project_files
 from ..services.tts import (
@@ -887,9 +890,12 @@ async def message_audio_status(
 
     ready = path.is_file()
     generating_message_id = active_audio_generation(user.id)
+    if generating_message_id is None:
+        # Shared lock is the authoritative status across workers/devices.
+        generating_message_id = await shared_active_audio_generation(db, user.id)
 
-    # Fall back to shared DB reservations: these are visible across browser
-    # sessions and across workers sharing the same database.
+    # Keep compatibility with recent quota reservations created before the
+    # shared lock table was introduced.
     if generating_message_id is None:
         recent = await db.execute(
             select(AudioGeneration)
@@ -979,6 +985,19 @@ async def create_message_audio(
             detail = "Уже создаётся другая озвучка. Дождитесь её завершения."
         raise HTTPException(status.HTTP_409_CONFLICT, detail) from exc
 
+    try:
+        await claim_shared_audio_generation(db, user.id, message.id)
+    except AudioGenerationInProgress as exc:
+        finish_audio_generation(user.id, message.id)
+        if exc.message_id == message.id:
+            detail = "Озвучка этого ответа уже создаётся на другом устройстве."
+        else:
+            detail = "Уже создаётся другая озвучка. Дождитесь её завершения."
+        raise HTTPException(status.HTTP_409_CONFLICT, detail) from exc
+    except BaseException:
+        finish_audio_generation(user.id, message.id)
+        raise
+
     reservation = None
 
     async def release_reservation() -> None:
@@ -1031,6 +1050,14 @@ async def create_message_audio(
             "size": path.stat().st_size,
         }
     finally:
-        finish_audio_generation(user.id, message.id)
+        try:
+            await finish_shared_audio_generation(db, user.id, message.id)
+        except Exception:
+            log.exception(
+                "Could not release shared audio-generation lock for message %s",
+                message.id,
+            )
+        finally:
+            finish_audio_generation(user.id, message.id)
 
 

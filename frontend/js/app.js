@@ -204,7 +204,7 @@
           out.push([(cx + rad * Math.cos(ang)).toFixed(2), (cy + rad * Math.sin(ang)).toFixed(2)]);
         }
         push('points', out.map(p => p[0] + ',' + p[1]).join(' '));
-        if (s.fill == null) push('fill', '#f2c14e');
+        if (s.fill == null) push('fill', '#4b4a46');
         common();
         return '<polygon ' + a.join(' ') + '/>';
       }
@@ -3443,7 +3443,7 @@
   // ---------- main page: action tiles ----------
   const ACTION_TILES = [
     {
-      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',
+      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#4b4a46',
       title: 'Сочинение',
       questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
         '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +

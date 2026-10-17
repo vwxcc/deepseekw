@@ -734,24 +734,24 @@ class AIRouter:
         base_steps = plan_steps or (
             settings.code_agent_max_steps if code_mode else settings.agent_max_steps
         )
-        if not agent_on:
+        if not agent_on or code_mode:
+            # A Code Agent user message is one model generation, not an autonomous loop.
             max_steps = 1
-        elif code_mode:
-            # Keep the code-agent workflow to at most three model turns:
-            # implement in one pass, verify/fix in one pass, then finalize.
-            max_steps = min(3, max(1, int(base_steps)))
         else:
             max_steps = max(1, int(base_steps))
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
+        round_limit = 1 if code_mode else 2
 
         tried: set[str] = set()
         last_error = "Генерация не удалась"
         rounds = 0
 
-        while rounds < 2:
+        while rounds < round_limit:
             rounds += 1
             retryable_error = True
-            while len(tried) < len(entries):
+            # Code Agent must not trigger a second generation through provider fallback.
+            entry_attempt_limit = 1 if code_mode else len(entries)
+            while len(tried) < entry_attempt_limit:
                 entry = await self._acquire_primary(job, entries, tried)
                 if entry is None:
                     await self._finish(
@@ -821,6 +821,29 @@ class AIRouter:
                     if extract_run_blocks(answer):
                         answer = strip_run_blocks(answer)
                     answer = strip_sandbox_paths(answer)
+                    if not answer.strip() and code_mode and all_runs:
+                        # A one-pass agent may return only a run block. Report the
+                        # real result without requesting an extra model-generated summary.
+                        summaries: list[str] = []
+                        for run in all_runs:
+                            success = bool(run.get("ok")) and not bool(run.get("timed_out"))
+                            summaries.append(
+                                "Код выполнен успешно." if success else "При выполнении кода произошла ошибка."
+                            )
+                            stdout = str(run.get("stdout") or "").strip()
+                            stderr = str(run.get("stderr") or "").strip()
+                            if stdout:
+                                summaries.append("Вывод:\n" + stdout[:4000])
+                            if stderr:
+                                summaries.append("Ошибка:\n" + stderr[:4000])
+                            files = [
+                                str(file.get("name") or "").strip()
+                                for file in (run.get("files") or [])
+                                if isinstance(file, dict) and str(file.get("name") or "").strip()
+                            ]
+                            if files:
+                                summaries.append("Созданные файлы: " + ", ".join(files[:30]))
+                        answer = "\n\n".join(summaries).strip()
                     if not answer.strip():
                         raise ProviderError("Пустой ответ модели")
 
@@ -915,7 +938,7 @@ class AIRouter:
                     await pool.release(entry)
 
             # The same primary model failed once; retry it once without switching models.
-            if not retryable_error or rounds >= 2 or job.cancel.is_set():
+            if not retryable_error or rounds >= round_limit or job.cancel.is_set():
                 break
             log.warning("Retrying the primary model once: %s", last_error)
             tried.clear()

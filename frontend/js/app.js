@@ -1001,7 +1001,7 @@
       ? deviceAudioControlHtml(n) : '';
 
     const actionsRow = !isUser && !state.readonly && (meta || audioCtl || deviceAudioCtl)
-      ? '<div class="msg-actions-row">' + meta + audioCtl + deviceAudioCtl + '</div>' : '';
+      ? '<div class="msg-actions-row">' + meta + audioCtl + '</div>' + deviceAudioCtl : '';
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
@@ -1250,7 +1250,8 @@
       shell.classList.remove('open');
       shell.setAttribute('aria-hidden', 'true');
     }
-    // Avoid stale controls on the iOS lock screen after dismissing the player.
+    // Avoid stale controls on the lock screen after dismissing the player.
+    clearMediaSessionActions();
     if (navigator.mediaSession) {
       try {
         navigator.mediaSession.playbackState = 'none';

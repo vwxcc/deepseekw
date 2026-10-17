@@ -520,8 +520,10 @@ def _render_simple_text(outdir: Path, plan: dict[str, Any], fmt: str) -> list[st
 def build_from_plan(outdir: str | Path, plan: Any) -> dict[str, Any]:
     """Validate a model-authored command plan and render the requested files."""
     spec = validate_plan(plan)
-    outdir = Path(outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    # Keep identifiers and the safe filename before dropping private validation fields.
+    template_id = spec["template_id"]
+    filename = spec["filename"]
+    title = spec["title"]
     fmt = spec["format"]
     style = spec["_resolved_style"]
     palette_tuple = spec.get("_palette_tuple")
@@ -529,22 +531,23 @@ def build_from_plan(outdir: str | Path, plan: Any) -> dict[str, Any]:
     if palette_tuple is not None:
         theme.STYLES["_fileplan_custom"] = palette_tuple
 
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
     try:
         palette = theme.palette(style)
         spec["style"] = style
         spec.pop("_resolved_style", None)
         spec.pop("_palette_tuple", None)
-        spec.pop("template_id", None)
-        spec.pop("version", None)
-        spec.pop("filename", None)
         spec.pop("palette", None)
         if fmt in ("svg", "png"):
-            output = outdir / _clean_filename(plan.get("filename"), spec.get("title", "graphic"), fmt)
+            # Keep template_id in the renderer metadata.
+            output = outdir / filename
             primary = _render_svg(output, spec, palette) if fmt == "svg" else _render_png(output, spec, palette)
             files = [primary]
             previews: list[str] = []
         elif fmt in ("csv", "json", "md", "txt"):
-            files = _render_simple_text(outdir, {**spec, "filename": _clean_filename(plan.get("filename"), plan.get("title", "file"), fmt)}, fmt)
+            text_spec = {**spec, "filename": filename}
+            files = _render_simple_text(outdir, text_spec, fmt)
             previews = []
         else:
             result = docgen.build(outdir, spec)
@@ -555,16 +558,19 @@ def build_from_plan(outdir: str | Path, plan: Any) -> dict[str, Any]:
                 "xlsx": "workbook.xlsx", "pdf": "document.pdf",
             }[fmt]
             primary_file = outdir / expected_name
-            if primary_file.is_file():
-                target = outdir / _clean_filename(plan.get("filename"), plan.get("title", "file"), fmt)
-                if target != primary_file:
-                    primary_file.replace(target)
-                files = [str(target) if Path(name) == primary_file else name for name in files]
+            if not primary_file.is_file():
+                raise RuntimeError(f"Сборщик не создал ожидаемый файл {expected_name}.")
+            target = outdir / filename
+            if target != primary_file:
+                primary_file.replace(target)
+            files = [str(target) if Path(name) == primary_file else name for name in files]
+        if not files or any(not Path(path).is_file() for path in files):
+            raise RuntimeError("Сборка завершилась без готового файла.")
         return {
             "ok": True,
             "format": fmt,
-            "template_id": plan.get("template_id") or DEFAULT_TEMPLATE[fmt],
-            "title": str(plan.get("title") or "Новый файл"),
+            "template_id": template_id,
+            "title": title,
             "files": files,
             "previews": previews,
             "style": style,

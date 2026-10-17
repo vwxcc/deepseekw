@@ -2374,3 +2374,60 @@ body { font-weight: 400; }
   .device-code-file-card { width: 100%; }
   .device-code-file-preview { max-width: 100%; max-height: 180px; }
 }
+
+
+/* File-generation UI: neutral beige code surfaces across light and dark system themes. */
+:root { --bg-code: #f2eadb; }
+.md code {
+  background: #efe7d7 !important;
+  color: #332f28 !important;
+  border: 1px solid #e5dac5;
+}
+.code-block .code-head,
+.code-head {
+  background: #e8dfcf !important;
+  color: #514a3e !important;
+  border-bottom: 1px solid #d8ccb7;
+}
+.code-block .code-head button {
+  color: #514a3e !important;
+}
+.code-block .code-head button:hover {
+  color: #1f1e1d !important;
+}
+.code-block pre,
+.code-block pre code,
+.tool-code,
+.pp-logs,
+pre[class*="language-"] {
+  background: #f2eadb !important;
+  color: #302d27 !important;
+  border-color: #e5dac5;
+}
+.readable-text-status-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.readable-text-status-wrap .readable-text-status {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.readable-text-retry {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: #efe7d7;
+  color: #514a3e;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.readable-text-retry:hover {
+  background: #e6dbc7;
+  border-color: #cfc2aa;
+  color: #1f1e1d;
+}

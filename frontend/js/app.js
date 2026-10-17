@@ -502,6 +502,10 @@
     currentChatId: null,
     tree: [],
     choices: {},          // parentKey -> child index
+    chatCreating: false,
+    chatOpenToken: 0,
+    chatListRequestId: 0,
+    chatListVersion: 0,
     files: [],
     pendingAttachments: [],
     streaming: false,
@@ -648,13 +652,40 @@
 
   // ---------- chats ----------
   async function loadChats() {
-    const result = await api.get('/api/chats' + (state.query ? '?q=' + encodeURIComponent(state.query) : ''));
+    const requestId = ++state.chatListRequestId;
+    const versionAtStart = state.chatListVersion;
+    const queryAtStart = state.query;
+    const result = await api.get('/api/chats' + (queryAtStart ? '?q=' + encodeURIComponent(queryAtStart) : ''));
+    // An earlier boot/search response must not overwrite a newer list or chat create/rename/delete.
+    if (requestId !== state.chatListRequestId ||
+        versionAtStart !== state.chatListVersion || queryAtStart !== state.query) return;
     if (!Array.isArray(result)) {
       throw new Error('Сервер вернул некорректный список чатов');
     }
     // Ignore malformed/null rows from stale responses instead of crashing on c.id.
     state.chats = result.filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
     renderChatList();
+  }
+
+  function upsertChat(chat) {
+    if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) return false;
+    state.chats = (Array.isArray(state.chats) ? state.chats : [])
+      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
+    const index = state.chats.findIndex(item => item.id === chat.id);
+    if (index >= 0) state.chats[index] = { ...state.chats[index], ...chat };
+    else state.chats.unshift(chat);
+    state.chatListVersion += 1;
+    return true;
+  }
+
+  function setChatCreationPending(pending) {
+    state.chatCreating = !!pending;
+    ['#new-chat-btn', '#new-code-btn'].forEach(selector => {
+      const button = $(selector);
+      if (!button) return;
+      button.disabled = state.chatCreating;
+      button.setAttribute('aria-busy', String(state.chatCreating));
+    });
   }
 
   function renderChatList() {
@@ -696,19 +727,35 @@
   }
 
   async function newChat(mode) {
-    const chat = await api.post('/api/chats', {
-      title: 'Новый чат',
-      mode: mode || 'chat',
-    });
-    if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
-      throw new Error('Сервер не вернул созданный чат с корректным ID');
+    // A second click during a slow POST must not create another empty chat.
+    if (state.chatCreating) return;
+    setChatCreationPending(true);
+    const selectionToken = state.chatOpenToken;
+    let chat = null;
+    try {
+      chat = await api.post('/api/chats', {
+        title: 'Новый чат',
+        mode: mode || 'chat',
+      });
+      if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
+        throw new Error('Сервер не вернул созданный чат с корректным ID');
+      }
+      upsertChat(chat);
+      // Respect a later user selection made while the create request was in flight.
+      if (selectionToken === state.chatOpenToken) {
+        await openChat(chat.id);
+        const input = $('#input');
+        if (input) input.focus();
+      } else {
+        renderChatList();
+      }
+    } catch (error) {
+      toast(chat ? 'Чат создан, но не удалось открыть его: ' + (error.message || error)
+        : 'Не удалось создать чат: ' + (error.message || error), 'error');
+      if (chat) renderChatList();
+    } finally {
+      setChatCreationPending(false);
     }
-    state.chats = (Array.isArray(state.chats) ? state.chats : [])
-      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
-    state.chats.unshift(chat);
-    renderChatList();
-    await openChat(chat.id);
-    $('#input').focus();
   }
 
   function openRename(id) {
@@ -722,6 +769,7 @@
         const upd = await api.patch('/api/chats/' + id, { title: val });
         const i = state.chats.findIndex(c => c.id === id);
         if (i >= 0) state.chats[i] = upd;
+        state.chatListVersion += 1;
         renderChatList();
         if (state.currentChatId === id) $('#chat-title').textContent = upd.title;
         return true;
@@ -732,6 +780,7 @@
   async function removeChat(id) {
     if (!confirm('Удалить чат вместе со всеми сообщениями?')) return;
     await api.del('/api/chats/' + id);
+    state.chatListVersion += 1;
     state.chats = state.chats.filter(c => c.id !== id);
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
@@ -742,20 +791,24 @@
   }
 
   async function openChat(id) {
+    if (typeof id !== 'string' || !id) return;
+    const requestToken = ++state.chatOpenToken;
     state.currentChatId = id;
     state.choices = {};
+    const loadedTree = await api.get('/api/chats/' + encodeURIComponent(id) + '/messages');
+    // If the user opened another chat while this request was pending, ignore this old response.
+    if (requestToken !== state.chatOpenToken || state.currentChatId !== id) return;
+    state.tree = Array.isArray(loadedTree) ? loadedTree : [];
     const chat = state.chats.find(c => c.id === id);
     $('#chat-title').textContent = chat ? chat.title : 'Чат';
-    const loadedTree = await api.get('/api/chats/' + id + '/messages');
-    state.tree = Array.isArray(loadedTree) ? loadedTree : [];
     renderChatList();
     renderMessages();
-    await loadUsage();
     const meta = state.chats.find(c => c.id === id) || {};
     const isCode = meta.mode === 'code';
     $('#project-btn').classList.toggle('hidden', !isCode);
     if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
     closeMobileSidebar();
+    await loadUsage();
   }
 
   async function renameCurrentChat() {
@@ -2048,7 +2101,11 @@
     const opts = options || {};
     updateShareButtonVisibility();
     const entries = allMessages(state.tree);
-    if (!entries.length) { renderEmptyState(); return; }
+    if (!entries.length) {
+      // Keep the existing empty-state DOM and animation instead of rebuilding it on every no-op render.
+      if (!box.classList.contains('empty') || !box.querySelector('.empty-state')) renderEmptyState();
+      return;
+    }
     box.classList.remove('empty');
     stopRotation();
     box.innerHTML = '<div class="msg-wrap">' +
@@ -2068,8 +2125,37 @@
     }
   }
 
-  function bindMessageEvents() {
-    $$('[data-tool-toggle]').forEach(btn => btn.addEventListener('click', () => {
+  function renderMessageInPlace(messageId, previousMessageId) {
+    const box = $('#messages');
+    const entries = allMessages(state.tree);
+    const entryIndex = entries.findIndex(entry => String(entry.node.id) === String(messageId));
+    const previousId = previousMessageId == null ? String(messageId) : String(previousMessageId);
+    const oldMessage = $$('.msg', box).find(element => element.dataset.mid === previousId);
+    if (entryIndex < 0 || !oldMessage) {
+      renderMessages();
+      return false;
+    }
+
+    const holder = document.createElement('div');
+    holder.innerHTML = msgHtml(entries[entryIndex], entryIndex === entries.length - 1);
+    const nextMessage = holder.firstElementChild;
+    if (!nextMessage) {
+      renderMessages();
+      return false;
+    }
+
+    oldMessage.replaceWith(nextMessage);
+    bindMessageEvents(nextMessage);
+    renderMath(nextMessage);
+    if (String(state.activeAssistantId || '') === String(messageId)) bindStreamRefs();
+    if (state.stickBottom !== false) scrollToBottom();
+    return true;
+  }
+
+
+  function bindMessageEvents(root) {
+    const scope = root || $('#messages');
+    $('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;
@@ -2078,7 +2164,7 @@
       const label = $('[data-tool-toggle-label]', btn);
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
-    $$('.ask-card').forEach(card => {
+    $('.ask-card', scope).forEach(card => {
       const input = $('.ask-input', card);
       const send = () => {
         const value = (input.value || '').trim();
@@ -2096,9 +2182,9 @@
       }
     });
 
-    $$('.mem-line').forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
+    $('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
-    $$('.think-head').forEach(h => h.addEventListener('click', () => {
+    $('.think-head', scope).forEach(h => h.addEventListener('click', () => {
       const box = h.closest('.think-box');
       if (!box) return;
       box.classList.toggle('collapsed');
@@ -2160,17 +2246,17 @@
       });
     }
 
-    $$('[data-copy]').forEach(b => b.addEventListener('click', () => {
+    $('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
     }));
 
-    $$('[data-dl]').forEach(b => b.addEventListener('click', () => {
+    $('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.dl];
       if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
     }));
 
-    $$('[data-dl-table]').forEach(b => b.addEventListener('click', () => {
+    $('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
       const rows = (window.__tableStore || {})[b.dataset.dlTable];
       if (!rows) return;
       openTableMenu(rows);
@@ -2341,25 +2427,24 @@
           if (data && typeof data === 'object' && data.id) {
             state.currentChatId = data.id;
             updateShareButtonVisibility();
-            state.chats = (Array.isArray(state.chats) ? state.chats : [])
-              .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
-            const index = state.chats.findIndex(c => c.id === data.id);
-            if (index >= 0) state.chats[index] = data;
-            else state.chats.unshift(data);
+            upsertChat(data);
             const title = $('#chat-title');
             if (title) title.textContent = data.title || 'Новый чат';
             renderChatList();
           }
         } else if (ev === 'user_message' || ev === 'assistant_message') {
           const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
+          const previousId = tmp && tmp.id;
           let node = null;
+          let replacedOptimistic = false;
           if (tmp) {
-            // swap the optimistic node in place (no flicker, no duplicates)
+            // Replace only the optimistic bubble; keep the rest of the conversation mounted.
             node = findNode(state.tree, tmp.id);
             if (node) {
               const parentId = data.parent_message_id || node.parent_message_id;
               Object.assign(node, data, { children: node.children || [] });
               if (parentId) node.parent_message_id = parentId;
+              replacedOptimistic = true;
             }
           }
           if (!node) node = insertMessage(state.tree, data);
@@ -2371,7 +2456,10 @@
             node.creatingLabel = 'Запрос принят · ожидаю ответ модели…';
             state.activeAssistantId = node.id;
           }
-          renderMessages();
+          if (!replacedOptimistic || !renderMessageInPlace(node.id, previousId)) {
+            // New/previously absent rows need a complete render as a safe fallback.
+            // renderMessageInPlace already performs that fallback when necessary.
+          }
           if (ev === 'assistant_message') bindStreamRefs();
         } else if (ev === 'stage') {
           // search / routing stages: the bubble keeps the creation animation,
@@ -2384,7 +2472,7 @@
               n.creatingLabel = 'Ищу в интернете…';
             }
           }
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'thinking') {
           const n = findNode(state.tree, state.activeAssistantId);
@@ -2412,7 +2500,7 @@
               { code: data.code || '', running: true, ok: true, files: [] },
             ]);
           }
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
           appendLog('▶ запуск кода…');
         } else if (ev === 'tool') {
@@ -2428,7 +2516,7 @@
               })));
             }
           }
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
           if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
           if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
@@ -2440,12 +2528,12 @@
           state.streamBuf = '';
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.draft = '';
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'ask') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.ask = data.question;
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'done') {
           const n = findNode(state.tree, data.message_id) ||
@@ -4467,11 +4555,10 @@
     await loadLimits();
     await loadUsage();
 
-    // Avoid rebuilding the welcome block (and restarting its animation) once
-    // background data has arrived. If a chat was opened meanwhile, render it.
-    if (!welcomeRenderedEarly || state.currentChatId || allMessages(state.tree).length) {
-      renderMessages();
-    }
+    // The welcome screen was already rendered above. Any chat interaction during
+    // the asynchronous boot data loads renders its own current state; rebuilding
+    // it here caused an avoidable second DOM replacement and animation restart.
+    if (!welcomeRenderedEarly) renderMessages();
   }
 
   async function init() {

@@ -1,5 +1,5 @@
 /* ============================================================
-   ChatStudio — Claude-like theme
+   AI-Ch 1.0 — Claude-like theme
    ============================================================ */
 :root {
   --bg: #faf9f5;
@@ -292,16 +292,16 @@ a { color: var(--accent); }
 }
 .msg.assistant .content { word-wrap: break-word; }
 .msg.assistant .content:empty { display: none; }
-/* A quick, soft reveal for a newly completed answer — no artificial typing delay. */
+/* Gently reveal the final answer without shifting layout or blurring text. */
 .msg.assistant .content.answer-arrive {
-  animation: answerReveal .24s cubic-bezier(.2, .75, .25, 1) both;
+  animation: answerReveal .18s ease-out both;
 }
 @keyframes answerReveal {
-  from { opacity: .35; transform: translateY(5px); filter: blur(1px); }
-  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  from { opacity: .84; }
+  to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .msg.assistant .content.answer-arrive { animation-duration: .12s; }
+  .msg.assistant .content.answer-arrive { animation-duration: .1s; }
 }
 
 .msg .meta {
@@ -2467,22 +2467,6 @@ body { font-weight: 400; }
 .composer-inner::after, .composer-inner:focus-within::after { content: none !important; display: none !important; animation: none !important; }
 #input { background: var(--bg); border-radius: 9px; padding-left: 10px; padding-right: 10px; }
 .composer-row #send-btn, .composer-row #stop-btn { position: relative; top: -2px; }
-.fast-response-wrap { width: min(430px, calc(100% - 28px)); margin: 0 auto 8px; display: flex; justify-content: center; }
-.fast-response-wrap[hidden] { display: none !important; }
-.fast-response-btn { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: center; gap: 9px;
-  padding: 6px 14px; border: 1px solid var(--border); border-radius: 12px; color: var(--fg); background: var(--bg);
-  font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; transform: scale(1);
-  transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
-.fast-response-btn:hover { background: var(--bg-user); }
-.fast-response-btn.is-active { transform: scale(1.015); background: var(--bg-user); box-shadow: 0 3px 12px rgba(40,38,32,.09); }
-.fast-response-rocket { display: inline-block; font-size: 17px; line-height: 1; }
-.fast-response-btn.is-active .fast-response-rocket { animation: aichRocketFlight 1.05s ease-in-out infinite; }
-@keyframes aichRocketFlight {
-  0% { transform: translate(-3px,3px) rotate(-10deg); opacity: .75; }
-  50% { transform: translate(8px,-4px) rotate(16deg); opacity: 1; }
-  100% { transform: translate(17px,-10px) rotate(28deg); opacity: .8; }
-}
-@media (prefers-reduced-motion: reduce) { .fast-response-btn,.fast-response-btn.is-active { transition:none; } .fast-response-btn.is-active .fast-response-rocket { animation:none; } }
 .audio-rate-label { display:flex; align-items:center; justify-content:center; gap:10px; margin:13px auto 0; color:var(--fg-muted); font-size:13px; }
 .audio-rate-label select { max-width:100%; padding:6px 9px; border:1px solid var(--border); border-radius:8px; color:var(--fg); background:var(--bg-panel); font:inherit; }
 .ask-card { background:var(--bg); border:1px solid var(--border-soft); border-radius:13px; }
@@ -2509,3 +2493,11 @@ body { font-weight: 400; }
   border:1px solid var(--border); border-radius:9px; background:var(--bg-panel); color:var(--fg); font:inherit; font-weight:700; font-size:12px; text-decoration:none; cursor:pointer; }
 .device-code-error-actions a { background:var(--bg-user); }
 @media (max-width:600px) { .device-code-errors { max-height:36%; padding:8px 10px; } .device-code-file-card a.device-code-file-download { min-height:48px; font-size:14px; } }
+
+
+/* Keep source access temporarily out of the visible message controls without deleting source data. */
+.msg .meta [data-mact="sources"] { display: none !important; }
+
+/* Execution output belongs inside the expandable activity/status panel only. */
+.activity-execution { margin-top: 8px; min-width: 0; }
+.activity-execution .tool-box { margin: 0; width: 100%; }

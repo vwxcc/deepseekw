@@ -422,10 +422,11 @@ class AIRouter:
                 if user is None or user.is_admin:
                     return None
                 limits = await get_limits(db, user.plan or "free")
-                budget = float(limits.get("budget_usd") or 0)
-                if budget <= 0:
+                budget_value = limits.get("budget_usd")
+                if budget_value is None:
                     return None
-                hours = int(limits.get("window_hours") or 5)
+                budget = float(budget_value)
+                hours = max(1, int(limits.get("window_hours") or 5))
                 spent, _ = await window_spend(db, user.id, hours)
         except Exception as e:  # noqa: BLE001
             log.warning("Budget check failed: %s", e)

@@ -319,9 +319,11 @@
         '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
         escapeHtml(code) + '"></iframe></div>'
       : '';
-    const runButton = deviceMode
-      ? '<button data-run-device="' + id + '" title="Запустить в локальной песочнице">' +
-          icon('terminal') + 'На устройстве</button>'
+    const localRunnable = ['html', 'htm', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3']
+      .includes((lang || '').toLowerCase());
+    const runButton = localRunnable
+      ? '<button data-run-device="' + id + '" title="Выполнить этот код в песочнице на устройстве">' +
+          icon('terminal') + 'Выполнить на устройстве</button>'
       : '';
     return '<div class="code-block"><div class="code-head"><span>' +
       escapeHtml(lang || 'code') + '</span><span class="code-acts">' +
@@ -2286,10 +2288,12 @@
 
   function shouldAskExecutionTarget(text) {
     const value = String(text || '');
-    const asksForCodeWork = /run|execute|compile|test|debug|write|create|generate|fix|build|запуст|выполн|исполн|скомпилируй|протестируй|отлад|напиши|создай|сгенерируй|исправь|сделай.{0,18}(?:код|скрипт|программ|страниц)|проверь.{0,20}код/i.test(value);
     const hasFence = value.indexOf(String.fromCharCode(96).repeat(3)) >= 0;
-    const refersToCode = /python|javascript|typescript|html|css|script|код|скрипт|программ|приложени|сайт|страниц|<script|<html/i.test(value);
-    return asksForCodeWork && (hasFence || refersToCode);
+    const refersToCode = /python|javascript|typescript|\bjs\b|html|css|script|код|скрипт|программ|приложени|сайт|страниц|<script|<html|алгоритм/i.test(value);
+    const asksForCodeWork = /run|execute|compile|test|debug|write|create|generate|fix|build|implement|напиш|созда|сгенер|исправ|сделай|разработ|построй|запуст|выполн|исполн|скомпили|протест|отлад|реализ|проверь/i.test(value);
+    // Ask before generating code, including broad requests like "make an HTML game".
+    // A pasted fenced snippet is also a code-execution intent even without an imperative.
+    return (asksForCodeWork && refersToCode) || (hasFence && refersToCode);
   }
 
   function askExecutionTarget() {

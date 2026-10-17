@@ -561,83 +561,18 @@
     { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
   ];
 
-  const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
-    'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
-    'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
-    'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
-    'О чём поговорим?', 'Что разберём?', 'Какая идея?', 'Что придумаем?',
-    'Чем помочь?', 'Что подскажем?', 'Какой план?', 'Что изучим?',
-    'Куда двигаемся?', 'Что создадим?', 'Какую проблему решаем?', 'Что анализируем?',
-    'О чём поразмышляем?', 'Что объяснить?', 'Какой текст разберём?', 'Что написать?',
-    'Какую тему раскроем?', 'Что посчитать?', 'Какой код нужен?', 'Что спроектируем?',
-    'О чём расскажу?', 'Что найдём?', 'Какую задачу решим?', 'Что улучшим?',
-    'С чего начать?', 'Какой вопрос у вас?', 'Что уточнить?', 'Как помочь?',
-    'О чём речь?', 'Что разложим по полочкам?', 'Какую идею обсудим?', 'Что проверим?',
-    'Куда копаем?', 'Что переведём?', 'Какой документ разберём?', 'Что суммируем?',
-    'О чём спросить?', 'Что построим?', 'Какой план составим?', 'Что оптимизируем?',
-    'Какую тему разберём?', 'Что изобретём?', 'О чём подумать?', 'Что настроим?',
-    'Какую статью разберём?', 'Что напишем?', 'О чём мечтаем?', 'Что решаем?',
-    'Какую мысль разовьём?', 'Что подытожим?', 'О чём поговорим сегодня?', 'Что найдём вместе?',
-    'Какая цель?', 'Что нужно объяснить?', 'Какой вопрос на повестке?', 'Что разгадаем?',
-    'О чём поспорим?', 'Что посоветовать?', 'Какую задачу разберём?', 'Что сравним?',
-    'Какой пример нужен?', 'Что расскажем?', 'О чём почитать?', 'Что запланируем?',
-    'Какую идею проверим?', 'Что упростим?', 'О чём подумаем вместе?', 'Что посмотрим?',
-    'Какой вопрос решаем?', 'Что подправим?', 'О чём расскажете?', 'Что придумаем вместе?',
-    'Какую проблему разберём?', 'Что нарисуем?', 'О чём поговорим?', 'Что сделаем?',
-    'Какой текст напишем?', 'Что разберём подробно?', 'О чём подумаем сейчас?', 'Что принесёте?',
+  const GREETINGS = [
+    'Создавайте презентации, документы и визуальные файлы',
   ];
 
   const SUGGESTIONS = [
-    'Помоги с Python — пример кода',
-    'Объясни, что такое API',
-    'Составь план на неделю',
-    'Напиши SQL-запрос с JOIN',
-    'Как работает Docker?',
-    'Переведи текст на английский',
-    'Сократи этот текст',
-    'Сравни React и Vue',
-    'Напиши регулярное выражение',
-    'Объясни async/await простыми словами',
-    'Составь резюме для junior-разработчика',
-    'Как настроить CI/CD?',
-    'Разбери ошибку в коде',
-    'Придумай название для проекта',
-    'Напиши письмо клиенту',
-    'Сделай конспект статьи',
-    'Как ускорить запрос к базе?',
-    'Объясни разницу между TCP и UDP',
-    'Составь бюджет на месяц',
-    'Напиши bash-скрипт для бэкапа',
-    'Что такое векторная база данных?',
-    'Придумай 10 идей для стартапа',
-    'Как работает JWT?',
-    'Оптимизируй этот алгоритм',
-    'Напиши тесты на pytest',
-    'Объясни принципы SOLID',
-    'Как развернуть приложение на сервере?',
-    'Составь чек-лист для релиза',
-    'Придумай вопросы для собеседования',
-    'Как работает HTTPS?',
-    'Напиши Dockerfile для Python',
-    'Разбери JSON на части',
-    'Объясни, что такое REST',
-    'Составь план изучения ML',
-    'Напиши функцию сортировки',
-    'Как чистить данные в pandas?',
-    'Придумай структуру базы данных',
-    'Объясни git rebase',
-    'Как работает Redis?',
-    'Составь договор простыми словами',
-    'Напиши HTML-страницу с формой',
-    'Объясни, что такое WebSocket',
-    'Как защитить API?',
-    'Придумай метрики для продукта',
-    'Напиши текст для лендинга',
-    'Объясни разницу между процессами и потоками',
-    'Как настроить nginx?',
-    'Составь roadmap проекта',
-    'Напиши SQL для отчёта',
-    'Что почитать про архитектуру?',
+    'Создай презентацию PPTX на тему: …',
+    'Подготовь красиво оформленный документ Word DOCX: …',
+    'Собери таблицу Excel с данными и формулами: …',
+    'Создай векторную SVG-инфографику на тему: …',
+    'Создай изображение PNG на тему: …',
+    'Подготовь отчёт PDF по теме: …',
+    'Подготовь ответ к озвучиванию и создай аудио',
   ];
 
 
@@ -1046,7 +981,11 @@
   function readableTextStatusLabel(messageId) {
     const record = state.readableText[messageId];
     if (!record) return 'Проверяю читабельный текст…';
-    if (record.status === 'ready') return 'Текст готов';
+    if (record.status === 'ready') {
+      return record.notice
+        ? 'Текст готов · базовая подготовка (без ИИ)'
+        : 'Текст готов';
+    }
     if (record.status === 'missing') return 'Читабельный текст ещё не создан. Нажмите прослушивание для подготовки.';
     if (record.status === 'failed') {
       const detail = String(record.error || 'ошибка сервиса').trim();
@@ -1059,9 +998,12 @@
     const record = state.readableText[n.id];
     const cls = record && record.status === 'ready' ? ' is-ready' :
       record && record.status === 'failed' ? ' is-error' : '';
+    const retryClass = record && record.status === 'failed' ? 'readable-text-retry' : 'readable-text-retry hidden';
     return '<div class="readable-text-status-wrap" data-readable-status="' + escapeHtml(n.id) + '">' +
       '<span class="readable-text-status' + cls + '" role="status" aria-live="polite">' +
-      escapeHtml(readableTextStatusLabel(n.id)) + '</span></div>';
+      escapeHtml(readableTextStatusLabel(n.id)) + '</span>' +
+      '<button type="button" class="' + retryClass + '" data-mact="retry-readable-text" data-id="' +
+      escapeHtml(n.id) + '">Повторить</button></div>';
   }
 
   function updateReadableTextUi(messageId) {
@@ -1071,9 +1013,12 @@
       const label = $('.readable-text-status', status);
       if (label) {
         label.textContent = readableTextStatusLabel(messageId);
+        label.title = String((record && record.notice) || '');
         label.classList.toggle('is-ready', !!(record && record.status === 'ready'));
         label.classList.toggle('is-error', !!(record && record.status === 'failed'));
       }
+      const retry = $('.readable-text-retry', status);
+      if (retry) retry.classList.toggle('hidden', !(record && record.status === 'failed'));
     }
     updateAudioControl(messageId);
     updateDeviceAudioControl(messageId);
@@ -1974,6 +1919,7 @@
 
   function toolRunHtml(r, i) {
     const running = !!r.running;
+    const filePlan = r.kind === 'fileplan' || /^План сборки файла/.test(String(r.code || ''));
     const files = (r.files || []).map(f => {
       const url = '/api/files/' + f.file_id + '/download';
       if (f.kind === 'image') {
@@ -1988,7 +1934,11 @@
       '<div class="tool-head">' +
       (running ? thinkAnim() : icon('terminal')) +
       '<span class="tool-title">Шаг ' + (i + 1) + ' — ' +
-      (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
+      (running
+        ? (filePlan ? 'сборка файла…' : 'выполняется…')
+        : filePlan
+          ? (r.ok ? 'файл собран' : 'ошибка сборки файла')
+          : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
       (r.timed_out ? '<em class="warn">таймаут</em>' : '') +
       '<button type="button" class="tool-toggle" data-tool-toggle aria-expanded="false" title="Развернуть вывод">' +
       icon('chevron-down') + '<span data-tool-toggle-label>Развернуть</span></button></div>' +
@@ -2033,15 +1983,16 @@
   function renderSuggestionChips() {
     const box = $('#sugg-chips');
     if (!box) return;
-    const total = SUGGESTIONS.length, n = 2;
-    const picks = [];
-    for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
-    state.suggIdx = (state.suggIdx + n) % total;
-    box.innerHTML = picks.map((p, i) =>
-      '<button class="chip-in" style="animation-delay:' + (i * 70) +
-      'ms" data-prompt="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>').join('');
-    $$('button[data-prompt]', box).forEach(b => b.addEventListener('click', () => {
-      $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
+    box.innerHTML = SUGGESTIONS.map((prompt, i) =>
+      '<button class="chip-in" style="animation-delay:' + (i * 45) +
+      'ms" data-prompt="' + escapeHtml(prompt) + '">' + escapeHtml(prompt) + '</button>'
+    ).join('');
+    $$('button[data-prompt]', box).forEach(btn => btn.addEventListener('click', () => {
+      const input = $('#input');
+      if (!input) return;
+      input.value = btn.dataset.prompt;
+      autoGrow();
+      sendCurrent();
     }));
   }
 
@@ -2056,14 +2007,8 @@
   }
 
   function startRotation() {
+    // Keep the file-creation actions stable; generic rotating questions are disabled.
     stopRotation();
-    let tick = 0;
-    state.greetTimer = setInterval(() => {
-      if (!$('#greet-text')) { stopRotation(); return; }
-      tick += 1;
-      if (tick % 2 === 0) rotateGreeting();
-      renderSuggestionChips();
-    }, 11000);
   }
 
   function stopRotation() {
@@ -2166,6 +2111,8 @@
         openAudioPlayer(id, true);
       } else if (act === 'device-audio') {
         if (ensureReadableTextBeforePlayback(id)) startDeviceSpeech(id);
+      } else if (act === 'retry-readable-text') {
+        await generateReadableText(id, true);
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
@@ -2488,12 +2435,12 @@
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
           }
-          renderMessages({ focusMessageId: n ? n.id : null });
-          // Prepare one cached, readable version immediately after the main answer.
-          // Both AI voice and device speech use this exact text; neither blocks chat rendering.
+          // Mark preparation as in-flight before rendering. This prevents the
+          // hydration GET for an older/missing status from racing the create POST.
           if (n && !state.readonly && String(n.content || '').trim()) {
             generateReadableText(n.id, false).catch((err) => console.warn('Readable-text preparation failed:', err));
           }
+          renderMessages({ focusMessageId: n ? n.id : null });
           loadUsage();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id) ||
@@ -4183,63 +4130,60 @@
   // ---------- main page: action tiles ----------
   const ACTION_TILES = [
     {
-      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',
-      title: 'Сочинение',
-      questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
-        '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +
-        '3. Класс, курс или аудитория?\n4. Нужны аргументы из литературы или можно своими словами?\n\n' +
-        'Можно ответить одной строкой — остальное подберу сам.',
+      id: 'essay', label: 'Отчёт PDF', icon: 'i-pencil', color: '#f2c14e',
+      title: 'Отчёт PDF',
+      questions: '**Создание PDF-отчёта.** Опишите тему и назначение отчёта. Я подготовлю структурированный PDF с обложкой, разделами, таблицами и выводами. Для научного отчёта использую шаблон Research, для делового — Editorial или Consulting. Факты и числа из запроса сохраню без изменений.',
     },
     {
-      id: 'doc', label: 'Документ Word', icon: 'i-doc', color: '#2f6fb0',
-      title: 'Документ Word',
-      questions: '**Документ Word.** Чтобы получилось то, что нужно, уточните:\n\n' +
-        '1. Тема и назначение документа?\n2. Какие разделы должны быть?\n' +
-        '3. Примерный объём (страниц)?\n4. Нужен ли титульный лист и оглавление?\n5. Стиль оформления (деловой, научный, отчёт)?\n\n' +
-        'Ответьте одной строкой — оформлю в лучшем виде.',
+      id: 'doc', label: 'Документ DOCX', icon: 'i-doc', color: '#2f6fb0',
+      title: 'Документ DOCX',
+      questions: '**Создание документа Word.** Опишите тему, цель и желаемый объём. Я соберу DOCX по готовому шаблону: обложка при необходимости, заголовки, списки, таблицы, врезки и нумерация страниц. Текст и структура будут оформлены автоматически.',
     },
     {
-      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#55544f',
-      title: 'Презентация',
-      questions: '**Презентация.** Расскажите:\n\n' +
-        '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
-        '3. Сколько слайдов?\n4. Нужны ли графики и цифры?\n5. Стиль: Apple, Fluent, Glass, Neural, Minimal?\n\n' +
-        'Достаточно одной строки.',
+      id: 'slides', label: 'Презентация PPTX', icon: 'i-slides', color: '#55544f',
+      title: 'Презентация PPTX',
+      questions: '**Создание презентации PowerPoint.** Укажите тему, аудиторию и, если важно, количество слайдов. Я выберу шаблон и составлю план каждого слайда: заголовки, тезисы, сравнения, таблицы, метрики, графики и финальные выводы. Код презентации в чат выводить не буду.',
     },
     {
-      id: 'sheet', label: 'Таблица Excel', icon: 'i-sheet', color: '#2f8f6f',
-      title: 'Таблица Excel',
-      questions: '**Таблица Excel.** Уточните:\n\n' +
-        '1. Какие данные и по какой теме?\n2. Какие колонки нужны?\n' +
-        '3. Нужны ли формулы, итоги и графики?\n4. Данные дадите вы или их надо придумать/собрать?\n\n' +
-        'Ответьте одной строкой.',
+      id: 'sheet', label: 'Таблица Excel XLSX', icon: 'i-sheet', color: '#2f8f6f',
+      title: 'Таблица Excel XLSX',
+      questions: '**Создание таблицы Excel.** Опишите, какие данные и для чего нужны. Я подготовлю XLSX с листами, корректными типами данных, форматированными заголовками, шириной столбцов, фильтрами, формулами и диаграммами там, где они нужны.',
     },
     {
-      id: 'code', label: 'Написать код', icon: 'i-terminal', color: '#7c5cbf',
-      title: 'Код',
-      questions: '**Код.** Что нужно написать?\n\n' +
-        '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
-        '3. Нужны ли тесты и комментарии?\n\n' +
-        'Если нужен полноценный проект с файлами — опишите задачу, я напишу код и файлы.',
+      id: 'code', label: 'Файлы проекта', icon: 'i-terminal', color: '#7c5cbf',
+      title: 'Файлы проекта',
+      questions: '**Создание файлов проекта.** Опишите, что должно работать и какие файлы нужны. Я создам структуру проекта, код и необходимые ресурсы, запущу доступные проверки и прикреплю готовые файлы. Для изменения уже существующего проекта укажите текущие файлы или репозиторий.',
     },
     {
-      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#4b4a46',
-      title: 'Схема',
-      questions: '**Схема.** Опишите:\n\n' +
-        '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
-        '2. Какие элементы и связи между ними?\n3. Нужны ли размеры и подписи?\n\n' +
-        'Нарисую в SVG — можно будет скачать.',
+      id: 'draw', label: 'Схема SVG', icon: 'i-sparkle', color: '#4b4a46',
+      title: 'Схема SVG',
+      questions: '**Создание SVG-схемы.** Опишите объекты, связи и подписи. Я подготовлю редактируемую векторную схему, блок-схему или чертёж с единой палитрой, разметкой и читаемыми подписями.',
     },
-    { id: 'image', label: 'Сделать график', icon: 'i-chart', color: '#0e7c9b', title: 'График',
-      questions: '**График.** Какие данные построить? Пришлите числа или опишите, откуда их взять, и укажите тип графика (линия, столбцы, круговая).' },
-    { id: 'research', label: 'Найти в интернете', icon: 'i-globe', color: '#3f7a3f', title: 'Поиск',
-      questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
-    { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#a03f6f', title: 'Объяснение',
-      questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
-    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#4b4a46', title: 'План',
-      questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
-    { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
-      questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
+    {
+      id: 'image', label: 'Инфографика PNG', icon: 'i-chart', color: '#0e7c9b',
+      title: 'Инфографика PNG',
+      questions: '**Создание PNG-инфографики.** Укажите тему, основные тезисы и данные. Я подготовлю изображение в высоком разрешении с оформленными блоками, заголовками и подходящей цветовой палитрой.',
+    },
+    {
+      id: 'research', label: 'Озвучить текст', icon: 'i-globe', color: '#3f7a3f',
+      title: 'Озвучить текст',
+      questions: '**Подготовка текста к озвучиванию.** Вставьте текст или опишите материал, который нужно озвучить. Я подготовлю читабельный вариант для речи; готовый ответ можно озвучить кнопкой аудио под сообщением. Создание аудиофайла зависит от настроек голосового сервиса.',
+    },
+    {
+      id: 'explain', label: 'Текст TXT / Markdown', icon: 'i-file', color: '#a03f6f',
+      title: 'Текстовый файл TXT / Markdown',
+      questions: '**Создание текстового файла.** Опишите содержание и желаемую структуру. Я подготовлю готовый TXT или Markdown-файл с понятными заголовками, списками и таблицами, где это уместно.',
+    },
+    {
+      id: 'plan', label: 'Инструкция DOCX', icon: 'i-file', color: '#4b4a46',
+      title: 'Инструкция DOCX',
+      questions: '**Создание инструкции.** Опишите задачу и для кого предназначена инструкция. Я оформлю DOCX с последовательными шагами, контрольными списками, таблицами и предупреждениями в подходящем шаблоне.',
+    },
+    {
+      id: 'translate', label: 'Данные CSV / JSON', icon: 'i-sheet', color: '#4a5568',
+      title: 'Данные CSV / JSON',
+      questions: '**Создание структурированного файла.** Опишите данные и нужные поля. Я подготовлю CSV или JSON с корректной структурой и кодировкой. Для таблицы с несколькими листами выберите XLSX.',
+    },
   ];
 
   // inline tile icon paths — drawn directly, so they render everywhere
@@ -4349,16 +4293,13 @@
 
   // playful composer placeholders
   const PLACEHOLDERS = [
-    'Жду указаний…', 'Слушаю, мой повелитель…', 'Что изволите?', 'Приказывайте…',
-    'Готов служить…', 'Ваше слово?', 'Я весь внимание…', 'Жду вашу мудрую мысль…',
-    'Повелевайте…', 'Скажите слово — и я начну…', 'Ваш ход, господин…',
-    'Куда направим усилия?', 'Слушаю и повинуюсь…', 'Излагайте, я записываю…',
+    'Опишите файл, который нужно создать…',
   ];
 
   function rollPlaceholder() {
     const el = $('#input');
     if (!el) return;
-    el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+    el.placeholder = PLACEHOLDERS[0];
   }
 
 // ---------- subscription limits window ----------

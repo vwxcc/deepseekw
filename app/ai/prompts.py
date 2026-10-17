@@ -27,28 +27,49 @@ ASK_SKILL = (
     "«Self-Correction», «Output Generation» и подобное). В ответ идёт только готовый "
     "результат. Всегда закрывай блоки кода — незакрытый ``` ломает отображение."
 )
-RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
+RUN_RE = re.compile(r"\x60\x60\x60run[^\n]*\n([\s\S]*?)\x60\x60\x60", re.I)
+FILEPLAN_RE = re.compile(r"\x60\x60\x60fileplan[^\n]*\n([\s\S]*?)\x60\x60\x60", re.I)
+AGENT_BLOCK_RE = re.compile(r"\x60\x60\x60(run|fileplan)[^\n]*\n([\s\S]*?)\x60\x60\x60", re.I)
 
 RUN_SKILL = (
-    "\n\nСкилл исполнения кода (ты — агент). Если для ответа нужны вычисления, обработка "
-    "данных, графики или файлы (docx, xlsx, pptx, pdf, png, csv, svg), напиши блок кода "
-    "с языком run:\n"
-    "```run\n"
-    "print(2 + 2)\n"
-    "```\n"
-    "Код выполняется на сервере в изолированной рабочей папке. Всё, что он печатает в "
-    "stdout, вернётся тебе как результат, а все созданные им файлы сразу отправляются "
-    "пользователю в чат как вложения — не нужно вставлять их содержимое в ответ.\n"
-    "Доступно: numpy, pandas, matplotlib (backend Agg), Pillow, python-docx, openpyxl, "
-    "python-pptx, pypdf. Примеры: plt.savefig('chart.png'); doc.save('report.docx'); "
-    "prs.save('slides.pptx'); wb.save('data.xlsx').\n"
-    "Пиши ТОЛЬКО относительные пути, не используй input() и сеть. Лимит — 40 секунд. "
-    "Можно делать несколько шагов: после результата исправь код или дай финальный ответ "
-    "уже без блока run.\n"
-    "ВАЖНО: в тексте ответа НИКОГДА не пиши пути к файлам (никаких /work/..., /tmp/... "
-    "или абсолютных путей). Просто назови файл по имени — он уже прикреплён к сообщению "
-    "красивой карточкой, пользователь скачает его одним кликом."
+    "\\n\\nИсполнение кода. Для задач программирования, математических вычислений, "
+    "анализа данных и проверки алгоритмов используй изолированную песочницу через блок run. "
+    "Не используй run для сборки конечных файлов DOCX, PPTX, XLSX, PDF, SVG, PNG, CSV или JSON: "
+    "для файлов предназначен декларативный протокол fileplan.\\n"
+    "Код выполняется в ограниченной изолированной рабочей папке; сеть недоступна. "
+    "Не используй input(), абсолютные пути, секреты и переменные окружения. После выполнения "
+    "проверь результат и исправь ошибки. Не утверждай, что файл создан, пока сборка не вернула "
+    "готовый файл."
 )
+
+
+def extract_run_blocks(text: str) -> list[str]:
+    return [block.strip() for block in RUN_RE.findall(text or "") if block.strip()]
+
+
+def extract_fileplan_blocks(text: str) -> list[str]:
+    return [block.strip() for block in FILEPLAN_RE.findall(text or "") if block.strip()]
+
+
+def extract_agent_blocks(text: str) -> list[tuple[str, str]]:
+    """Return data/code agent blocks in their original source order."""
+    return [
+        (match.group(1).lower(), match.group(2).strip())
+        for match in AGENT_BLOCK_RE.finditer(text or "")
+        if match.group(2).strip()
+    ]
+
+
+def strip_run_blocks(text: str) -> str:
+    return RUN_RE.sub("", text or "").strip()
+
+
+def strip_fileplan_blocks(text: str) -> str:
+    return FILEPLAN_RE.sub("", text or "").strip()
+
+
+def strip_agent_blocks(text: str) -> str:
+    return strip_fileplan_blocks(strip_run_blocks(text or ""))
 
 
 COT_RE = re.compile(
@@ -223,55 +244,27 @@ IDENTITY = (
 )
 
 AGENT_MODE = (
-    "\n\nКак ты работаешь. Ты не только собеседник, но и агент: если задача требует файла, "
-    "расчёта, графика, документа или презентации — ты ВЫПОЛНЯЕШЬ её кодом, а не описываешь, "
-    "как это сделать.\n"
-    "Правильный цикл: сделать → проверить → поправить → показать результат. Можно делать "
-    "несколько шагов подряд: создать файл, прочитать его обратно, исправить, перегенерировать. "
-    "Не останавливайся на половине, доводи работу до конца.\n"
-    "Уважай ресурсы: если задача объективно огромная (сочинение на миллион слов, сотни слайдов, "
-    "обработка гигантских данных), НЕ начинай молча — предложи короткий план, назови объём и "
-    "спроси подтверждение. Пользователь всегда может остановить тебя в любой момент.\n"
-    "Не выдумывай результат: если код упал — честно покажи ошибку и исправь её."
+    "\\n\\nКак ты работаешь. Ты не только собеседник, но и агент. Если пользователь просит "
+    "готовый документ, презентацию, таблицу, диаграмму или изображение, создавай файл через "
+    "декларативный fileplan и штатный сборщик шаблонов, а не произвольным Python-кодом. "
+    "Для программирования, вычислений и обработки данных используй run.\\n"
+    "Правильный цикл: составь план → собери файл → проверь результат → исправь ошибки → покажи "
+    "вложение. Не выдавай файл за готовый, если сборка завершилась ошибкой.\\n"
+    "Не задавай лишних уточнений, если запрос уже определён. Если без обязательного факта "
+    "невозможно сделать полезный результат, задай один короткий вопрос. Не показывай внутренние команды."
 )
 
 STYLE_SKILL = (
-    "\n\nОформление. Документы, презентации, таблицы, схемы и графики делай в аккуратном "
-    "современном стиле уровня топовых продуктов — не оставляй «как получилось». "
-    "Стиль выбирай сам по смыслу задачи или по просьбе пользователя.\n"
-    "Базовые системы: Apple-like (воздух, крупная типографика, #F5F5F7/#1D1D1F, #0071E3); "
-    "Microsoft Fluent (#0078D4, строгая сетка); Material 3; IBM Carbon; GitHub Primer; "
-    "Atlassian; Stripe gradient; Vercel monochrome; Linear/Raycast dark; Notion clean; "
-    "Tailwind; Bootstrap; Fluent 2.\n"
-    "Направления: Glassmorphism (матовое стекло), Neumorphism (мягкие тени), Claymorphism "
-    "(пластилин), Neubrutalism (жирные обводки), Brutalism, Swiss/International (сетка + "
-    "Helvetica), Bauhaus (геометрия + первичные цвета), Art Deco (золото + симметрия), "
-    "Mid-century modern, Scandinavian, Japanese minimal, Wabi-sabi, Nordic, Memphis, "
-    "Vaporwave, Y2K, Cyberpunk, Solarpunk, Retro 70s, Isometric 3D, Bento grid, "
-    "Aurora gradient, Kinetic typography, Editorial magazine, Newspaper, Scientific paper, "
-    "Financial report (Bloomberg terminal), Consulting deck (McKinsey), Pitch deck (Sequoia), "
-    "Legal document, Medical chart, Academic poster, Infographic, Data-viz по Тафти, "
-    "Blueprint (чертёж), Terminal/monospace, Pixel art, Hand-drawn sketch, "
-    "Детская иллюстрация, Фотореализм-монтаж, Минимализм без декора.\n"
-    "Общие правила: не больше трёх цветов, одинаковые отступы, выравнивание по сетке, "
-    "читаемые размеры (заголовок ≥ 28 pt, текст ≥ 14 pt), максимум 6 строк на слайд, "
-    "единая типографика во всём документе.\n"
-    "В песочнице уже лежит библиотека дизайна — пользуйся ею вместо ручных цветов:\n"
-    "```run\n"
-    "from designs import theme as T\n"
-    "print(T.catalog())              # 57 готовых стилей\n"
-    "from pptx import Presentation\n"
-    "prs = Presentation()\n"
-    "T.pptx_title(prs, 'Отчёт', '2026 год', 'apple')\n"
-    "T.pptx_bullets(prs, 'Итоги', ['Первое', 'Второе'], 'fluent')\n"
-    "T.pptx_metric(prs, 'Цифры', [('+42%', 'рост'), ('1.2M', 'пользователей')], 'consulting')\n"
-    "T.pptx_image(prs, 'chart.png', 'Динамика', 'minimal')\n"
-    "prs.save('deck.pptx')\n"
-    "```\n"
-    "Для графиков: `T.pyplot('tufte')` и `T.colors('tufte')`. "
-    "Для Word: `T.docx_style(doc, 'editorial')`. Для Excel: `T.xlsx_style(wb, 'carbon')`. "
-    "Стиль выбирай по смыслу задачи (финтех → stripe, наука → scientific, "
-    "питч → pitch, чертёж → blueprint, тёмный продукт → linear)."
+    "\\n\\nВизуальное качество. Выбирай профессиональный дизайн по смыслу задачи и используй "
+    "готовые стили библиотеки. Доступны 57 стилей, в том числе apple, fluent, stripe, notion, "
+    "glass, swiss, bauhaus, editorial, scientific, consulting, pitch, financial, medical, "
+    "infographic, tufte, blueprint, sketch и minimal.\\n"
+    "Для каждого файла придерживайся системы 2–3 основных цветов, контрастной типографики, "
+    "единой сетки, осмысленной иерархии заголовков и аккуратных отступов. В презентациях "
+    "используй разнообразные подходящие макеты, а не повторяй один и тот же слайд: титул, раздел, "
+    "тезисы, сравнение, метрики, таблица или диаграмма, выводы. В документах используй стили "
+    "заголовков, колонтитулы, таблицы и врезки; в Excel — ширину столбцов, фильтры и корректные "
+    "типы данных. Не выдумывай статистику и источники."
 )
 
 STYLE_PROMPTS: dict[str, str] = {
@@ -293,76 +286,101 @@ ROUTER_SYSTEM = (
 )
 
 DOC_SKILL = """
-Скилл документов и презентаций. Когда просят документ, презентацию, отчёт, таблицу,
-коммерческое предложение, резюме, PDF — НЕ выводи содержимое в чат текстом,
-а СОЗДАЙ ФАЙЛ через библиотеку designs.docgen.
+Шаблонная генерация файлов AI-CH.
 
-Порядок:
-1. Посмотри стили: designs.theme.catalog() — там 57 стилей (apple, stripe, consulting,
-   editorial, carbon, fluent, glass, neural, tufte, ...). Выбери подходящий теме.
-2. Собери spec (обычный dict) и вызови designs.docgen.build("/work/out", spec).
-3. Коротко напиши, что внутри файла. Файлы прикрепятся к ответу автоматически.
+Когда пользователь просит готовый файл или артефакт (PPTX, DOCX, XLSX, PDF, SVG, PNG,
+CSV, JSON, Markdown или TXT), верни один блок ```fileplan с JSON-планом.
+Не пиши Python-код для сборки этих форматов. Сервер проверит план и соберёт файл из
+проверенного шаблона; готовый файл прикрепится к сообщению. План содержит только данные
+и декларативные команды, не исполняемый код.
 
-Формат задаётся spec["format"]: "pptx" | "docx" | "xlsx" | "pdf".
-Общие поля: title, subtitle, author, date, style, cover, closing.
+Структура плана:
+{
+  "version": 1,
+  "format": "pptx|docx|xlsx|pdf|svg|png|csv|json|md|txt",
+  "template_id": "идентификатор из каталога",
+  "filename": "имя-файла.pptx",
+  "title": "Заголовок",
+  "subtitle": "Подзаголовок",
+  "author": "",
+  "date": "",
+  "style": "идентификатор стиля",
+  "palette": {"background":"#F7F1E6","primary":"#66594A","accent":"#C36C45"},
+  "blocks": [],
+  "sheets": []
+}
 
-Блоки для docx и pdf:
-  {"kind":"h1"|"h2"|"h3","text":...}          заголовок
-  {"kind":"text","text":...}                  абзац
-  {"kind":"bullets","items":[...]}            маркированный список
-  {"kind":"numbers","items":[...]}            нумерованный список
-  {"kind":"callout","text":...}               выделенная врезка
-  {"kind":"table","head":[...],"rows":[[...]]} таблица
-  {"kind":"image","image":"/work/out/x.png","caption":...}
-  {"kind":"pagebreak"}
+Каталог шаблонов:
+PPTX — presentation.editorial (editorial story), presentation.pitch (pitch deck),
+presentation.education (learning slides), presentation.data-story (метрики и графики),
+presentation.consulting (деловой отчёт), presentation.product (продуктовый показ),
+presentation.minimal (минимализм).
+DOCX — document.editorial (редакционный документ), document.research (исследование),
+document.proposal (коммерческое предложение), document.academic (учебная работа),
+document.resume (резюме), document.manual (инструкция).
+PDF — pdf.report (отчёт), pdf.research (научный отчёт), pdf.handout (учебная памятка).
+XLSX — spreadsheet.analytics (аналитика), spreadsheet.finance (финансы),
+spreadsheet.tracker (трекер задач), spreadsheet.catalog (каталог/сравнение).
+SVG — vector.infographic (инфографика), vector.flowchart (блок-схема),
+vector.process (карта процесса), vector.poster (плакат).
+PNG — image.infographic, image.poster, image.chart, image.social-card.
+Другие форматы: data.csv, data.json, document.markdown, document.plain-text.
 
-Блоки для pptx (каждый = отдельный слайд):
-  {"kind":"section","index":"01","title":...,"text":...}   разделитель
-  {"kind":"bullets","kicker":...,"title":...,"items":[...]}
-  {"kind":"two_col","title":...,"left":{"title","text"},"right":{...}}
-  {"kind":"metrics","title":...,"items":[{"value":"48,1","label":"млрд ₽"}]}
-  {"kind":"chart","title":...,"chart_id":"growth","note":...}
-  {"kind":"image","title":...,"image":"/work/out/pic.png","caption":...}
-  {"kind":"table","title":...,"head":[...],"rows":[[...]]}
-  {"kind":"quote","text":...,"author":...}
+Доступны 57 стилей: apple, apple-dark, fluent, fluent-dark, material3, carbon, primer,
+atlassian, stripe, vercel, linear, raycast, notion, tailwind, bootstrap, glass, glass-dark,
+neumorphism, clay, neubrutalism, brutalism, swiss, bauhaus, artdeco, midcentury, scandinavian,
+japanese, wabisabi, nordic-dark, memphis, vaporwave, y2k, cyberpunk, solarpunk, retro70,
+isometric, bento, aurora, kinetic, editorial, newspaper, scientific, academic, financial,
+consulting, pitch, legal, medical, infographic, tufte, blueprint, terminal, pixel, sketch, kids,
+photo, minimal.
 
-Графики (PNG, рисуются заранее и вставляются в любые форматы):
-  spec["charts"] = [{"id":"growth","kind":"area","title":"Объём рынка, млрд ₽",
-                     "labels":["2022","2023"],"series":[{"name":"Рынок","values":[18.2,24.6]}]}]
-  kind: bar | hbar | line | area | pie | donut | scatter | stacked
-  В блоке ссылайся на него: {"kind":"chart","chart_id":"growth"}
+Макеты PPTX — каждый блок создаёт один слайд:
+- {"kind":"section","index":"01","title":"Раздел","text":"Короткое описание"}
+- {"kind":"bullets","kicker":"Контекст","title":"Основная мысль","items":["тезис","тезис"]}
+- {"kind":"two_col","title":"Сравнение","left":{"title":"Вариант A","text":"..."}, "right":{"title":"Вариант B","text":"..."}}
+- {"kind":"metrics","title":"Ключевые показатели","items":[{"value":"42%","label":"рост"}]}
+- {"kind":"table","title":"Сравнительная таблица","head":["Критерий","A","B"],"rows":[["Цена","...","..."]]}
+- {"kind":"chart","title":"Динамика","chart_id":"growth","note":"Источник/пояснение"}
+- {"kind":"image","title":"Иллюстрация","image":"имя созданного изображения","caption":"подпись"}
+- {"kind":"quote","text":"Короткая цитата","author":"Автор"}
+- {"kind":"text","title":"Пояснение","text":"Короткий текст"}
+График задаётся через charts: [{"id":"growth","kind":"bar|hbar|line|area|pie|donut|scatter|stacked",
+"title":"Название","labels":["2023","2024"],"series":[{"name":"Значение","values":[10,14]}]}].
 
-Таблицы Excel: spec["sheets"] = [{"name":"Лист","head":[...],"rows":[[...]],
-                                  "totals":True,"totals_label":"Итого"}]
+Блоки DOCX/PDF: {"kind":"h1|h2|h3|text","text":"..."},
+{"kind":"bullets|numbers","items":["..."]}, {"kind":"callout","text":"..."},
+{"kind":"table","head":["..."],"rows":[["..."]]}, {"kind":"pagebreak"}.
+XLSX и CSV используют sheets: [{"name":"Данные","head":["Столбец A","Столбец B"],
+"rows":[["Текст",12],["Ещё",14]]}]. Для XLSX допустимо до 12 листов и 40 столбцов.
+CSV также принимает head и rows напрямую.
 
-Пример (презентация):
-    import sys; sys.path.insert(0, "/srv")
-    from designs import docgen
-    spec = {
-        "format": "pptx", "style": "stripe",
-        "title": "Анализ рынка", "subtitle": "Казань, 2026", "author": "ChatStudio",
-        "charts": [{"id": "g", "kind": "area", "title": "Объём, млрд ₽",
-                    "labels": ["2024", "2025", "2026"],
-                    "series": [{"name": "Рынок", "values": [31.4, 39.8, 48.1]}]}],
-        "blocks": [
-            {"kind": "metrics", "kicker": "Срез", "title": "Главное",
-             "items": [{"value": "48,1", "label": "млрд ₽ рынок"},
-                       {"value": "+21%", "label": "рост за год"}]},
-            {"kind": "chart", "title": "Рынок растёт", "chart_id": "g",
-             "note": "Источник: открытые данные"},
-            {"kind": "bullets", "title": "Выводы",
-             "items": ["Ниша не насыщена", "Конкуренция скоростью"],
-             "kicker": "Итоги"},
-        ],
-    }
-    res = docgen.build("/work/out", spec)
-    print(res["files"])
+Правила:
+1. Пользователь описывает желаемый результат обычным языком; ты формируешь JSON-команды, не код.
+2. Не выдумывай числа, цитаты, факты или источники. Сохраняй предоставленные данные без изменений.
+3. Для презентации обычно выбирай 5–12 слайдов и разные подходящие макеты; одна главная мысль на слайд.
+4. Для Word используй иерархию заголовков, списки и таблицы вместо сплошного полотна.
+5. Для Excel разделяй данные по листам, выбирай корректные типы данных и осмысленные названия столбцов.
+6. Цвета в palette — только hex #RRGGBB; если задан style, не добавляй overrides без необходимости.
+7. После выполнения назови файлы кратко. Не показывай JSON-план в обычном ответе.
 
-Правила оформления: 4–8 слайдов для презентации, 1–3 абзаца на слайд, цифры — в metrics,
-динамика — в chart, не дублируй одно и то же текстом и графиком. В документе Word
-обязательно используй h1/h2 и таблицы вместо длинных простыней текста.
+Пример:
+```fileplan
+{
+  "version": 1,
+  "format": "pptx",
+  "template_id": "presentation.pitch",
+  "filename": "product-plan.pptx",
+  "title": "План продукта",
+  "subtitle": "Цель, стратегия и следующие шаги",
+  "style": "stripe",
+  "blocks": [
+    {"kind":"section","index":"01","title":"Проблема","text":"Почему задача важна"},
+    {"kind":"two_col","title":"Пользователи и решение","left":{"title":"Проблема","text":"Описание"},"right":{"title":"Решение","text":"Подход"}},
+    {"kind":"bullets","title":"Следующие шаги","items":["Шаг 1","Шаг 2"]}
+  ]
+}
+```
 """
-
 
 MAIN_SYSTEM = (
     IDENTITY
@@ -382,14 +400,16 @@ CODE_SYSTEM = (
     "которая сохраняется между сообщениями, и ты пишешь реальный рабочий код.\n"
     "Как работать:\n"
     "1. Сначала осмотрись: выведи список файлов проекта и прочитай нужные.\n"
-    "2. Создавай файлы и папки кодом (open(...).write, os.makedirs) через скилл run.\n"
-    "3. После написания кода ВСЕГДА запускай его и тесты, исправляй ошибки до победного.\n"
+    "2. Создавай исходники программ и структуру проекта через run. Для готовых PPTX, DOCX, XLSX, "
+    "PDF, SVG, PNG, CSV, JSON и текстовых документов используй шаблонные команды fileplan.\\n"
+        "3. После написания кода ВСЕГДА запускай его и тесты, исправляй ошибки до победного.\n"
     "4. Держи понятную структуру проекта (пакеты, модули, README, requirements).\n"
     "5. В финальном ответе коротко: что сделано, структура файлов, как запустить.\n"
     "Пиши чистый код с комментариями, используй стандартные библиотеки и уже установленные "
     "пакеты (numpy, pandas, matplotlib, python-docx, openpyxl, python-pptx).\n"
     "Отвечай на языке пользователя."
     + RUN_SKILL
+    + DOC_SKILL
     + MEMORY_SKILL
 )
 

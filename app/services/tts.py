@@ -82,9 +82,16 @@ async def prepare_spoken_text(value: str) -> str:
     api_key = _validated_api_key(settings.tts_preprocess_api_key, "TTS_PREPROCESS_API_KEY")
     model = (settings.tts_preprocess_model or "").strip()
     if not base_url or not model:
+        missing = []
+        if not base_url:
+            missing.append("TTS_PREPROCESS_BASE_URL")
+        if not model:
+            missing.append("TTS_PREPROCESS_MODEL")
         raise TTSNotConfiguredError(
-            "Для понятной озвучки задайте TTS_PREPROCESS_BASE_URL, "
-            "TTS_PREPROCESS_API_KEY и TTS_PREPROCESS_MODEL."
+            "Не настроена отдельная ИИ-модель читабельного текста. "
+            "Укажите в переменных окружения сервиса: "
+            + " и ".join(missing)
+            + ". Если провайдер требует API-ключ, также задайте TTS_PREPROCESS_API_KEY."
         )
     source = str(value or "").strip()
     if not source:

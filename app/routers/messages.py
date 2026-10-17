@@ -74,6 +74,7 @@ from ..services.tts import (
     TTSGenerationError,
     TTSNotConfiguredError,
     audio_file_path,
+    clean_tts_text,
     generate_speech,
     normalized_audio_format,
     prepare_spoken_text,
@@ -902,6 +903,9 @@ _AUDIO_ACTIVITY_STALE_AFTER = timedelta(minutes=10)
 
 
 
+_READABLE_TEXT_STALE_AFTER = timedelta(minutes=12)
+
+
 def _readable_text_payload(record: ReadableTextGeneration | None) -> dict:
     if record is None:
         return {"status": "missing", "text": None, "error": None}
@@ -909,6 +913,7 @@ def _readable_text_payload(record: ReadableTextGeneration | None) -> dict:
         "status": record.status,
         "text": record.text if record.status == "ready" else None,
         "error": record.error if record.status == "failed" else None,
+        "notice": record.error if record.status == "ready" and record.error else None,
     }
 
 
@@ -917,10 +922,27 @@ async def _generate_readable_text_background(
 ) -> None:
     """Prepare one answer in the background and persist it for every device."""
     try:
-        prepared = (await prepare_spoken_text(source)).strip()
-        if not prepared:
-            raise TTSGenerationError("ИИ вернул пустой читабельный текст.")
-        result_status, error = "ready", None
+        preprocessor_configured = bool(
+            (settings.tts_preprocess_base_url or "").strip()
+            and (settings.tts_preprocess_model or "").strip()
+        )
+        if not preprocessor_configured:
+            # Keep device/server playback usable when no separate rewriter has been
+            # configured. This fallback removes Markdown and URLs but deliberately
+            # does not pretend to interpret complex formulas or code.
+            prepared = clean_tts_text(source).strip()
+            if not prepared:
+                raise TTSGenerationError("После очистки не осталось текста для чтения.")
+            result_status = "ready"
+            error = (
+                "Базовая подготовка без отдельной ИИ-модели. "
+                "Сложные формулы и специальные обозначения могут читаться неидеально."
+            )
+        else:
+            prepared = (await prepare_spoken_text(source)).strip()
+            if not prepared:
+                raise TTSGenerationError("ИИ вернул пустой читабельный текст.")
+            result_status, error = "ready", None
     except (TTSNotConfiguredError, TTSGenerationError, ValueError) as exc:
         prepared, result_status, error = None, "failed", str(exc)[:500]
     except Exception:
@@ -943,14 +965,36 @@ async def _generate_readable_text_background(
 
 @router.get("/messages/{message_id}/readable-text")
 async def readable_text_status(
+    background_tasks: BackgroundTasks,
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return only the requesting user's cached readable-text status/result."""
+    """Return cached status and recover a generation abandoned by a worker restart."""
     record = await db.get(ReadableTextGeneration, message.id)
     if record is None or record.user_id != user.id:
         return _readable_text_payload(None)
+
+    now = utcnow()
+    if record.status == "generating":
+        age = now - record.updated_at if record.updated_at else _READABLE_TEXT_STALE_AFTER + timedelta(seconds=1)
+        if age >= _READABLE_TEXT_STALE_AFTER:
+            source = (message.content or "").strip()
+            if source and message.role == Role.assistant and message.status == MessageStatus.completed:
+                record.text = None
+                record.error = None
+                record.created_at = now
+                record.updated_at = now
+                await db.commit()
+                background_tasks.add_task(
+                    _generate_readable_text_background, message.id, user.id, source
+                )
+            else:
+                record.status = "failed"
+                record.text = None
+                record.error = "Исходный ответ уже недоступен для подготовки."
+                record.updated_at = now
+                await db.commit()
     return _readable_text_payload(record)
 
 
@@ -983,8 +1027,8 @@ async def create_message_readable_text(
         return _readable_text_payload(record)
 
     if record is not None and record.status == "generating":
-        age = now - record.updated_at if record.updated_at else timedelta(minutes=11)
-        if age < timedelta(minutes=10):
+        age = now - record.updated_at if record.updated_at else _READABLE_TEXT_STALE_AFTER + timedelta(seconds=1)
+        if age < _READABLE_TEXT_STALE_AFTER:
             return _readable_text_payload(record)
         # Recover a job left unfinished by a worker restart.
         record.text = None

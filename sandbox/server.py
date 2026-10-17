@@ -44,12 +44,13 @@ PROJECT_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 SKIP_DIRS = {"__pycache__", ".cache", ".config", ".local", ".ipython", ".mpl", ".fontconfig"}
 
 PRELUDE = (
-    "import os, sys, json, math, random, datetime, csv, re, io\n"
-    "try:\n"
-    "    import matplotlib\n"
-    "    matplotlib.use('Agg')\n"
-    "except Exception:\n"
-    "    pass\n"
+    "import os, sys, json, math, random, datetime, csv, re, io\\n"
+    "sys.path.insert(0, '/srv')\\n"
+    "try:\\n"
+    "    import matplotlib\\n"
+    "    matplotlib.use('Agg')\\n"
+    "except Exception:\\n"
+    "    pass\\n"
 )
 
 

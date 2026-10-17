@@ -1170,6 +1170,25 @@
     const current = $('#audio-current-time'), total = $('#audio-total-time');
     if (current) current.textContent = formatAudioTime(audio.currentTime || 0);
     if (total) total.textContent = formatAudioTime(audio.duration || 0);
+
+    // Keep iOS/Safari headset controls aware of playback state and position.
+    // Existing previous/next-track handlers below map these keys to ±10 seconds.
+    const session = navigator.mediaSession;
+    if (session) {
+      try {
+        session.playbackState = audio.ended ? 'none' : (audio.paused ? 'paused' : 'playing');
+      } catch (e) { /* media-session playback state is optional */ }
+      const duration = Number(audio.duration);
+      if (typeof session.setPositionState === 'function' && Number.isFinite(duration) && duration > 0) {
+        try {
+          session.setPositionState({
+            duration,
+            playbackRate: Number(audio.playbackRate) || 1,
+            position: Math.max(0, Math.min(duration, Number(audio.currentTime) || 0)),
+          });
+        } catch (e) { /* media-session position is unsupported in some browsers */ }
+      }
+    }
   }
 
   function openAudioPlayer(messageId, autoplay) {
@@ -1205,6 +1224,16 @@
     if (shell) {
       shell.classList.remove('open');
       shell.setAttribute('aria-hidden', 'true');
+    }
+    // Avoid stale controls on the iOS lock screen after dismissing the player.
+    if (navigator.mediaSession) {
+      try {
+        navigator.mediaSession.playbackState = 'none';
+        navigator.mediaSession.metadata = null;
+        if (typeof navigator.mediaSession.setPositionState === 'function') {
+          navigator.mediaSession.setPositionState();
+        }
+      } catch (e) { /* media-session cleanup is optional */ }
     }
     document.body.classList.remove('audio-player-open');
   }

@@ -3001,6 +3001,7 @@
             n.status = 'failed'; n.creating = false; n.error = data.error;
             n.activityFinishedAt = Date.now();
             n.activityElapsedMs = Math.max(0, n.activityFinishedAt - activityStartTime(n));
+            saveActivityItems(n);
             renderActivityPopup(n);
             if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
           }
@@ -3011,6 +3012,7 @@
             n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text;
             n.activityFinishedAt = Date.now();
             n.activityElapsedMs = Math.max(0, n.activityFinishedAt - activityStartTime(n));
+            saveActivityItems(n);
             renderActivityPopup(n);
             if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
           }

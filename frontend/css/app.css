@@ -2262,3 +2262,81 @@ body { font-weight: 400; }
   font-family: var(--font-ui);
   font-weight: 700;
 }
+
+
+/* ---- Device voice and isolated on-device code runner ---- */
+.device-audio-wrap { margin-top: 6px; }
+.device-audio-button {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px;
+  max-width: 100%; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-panel); color: var(--fg); font-size: 13px; line-height: 1.3;
+  transition: background .16s ease, border-color .16s ease;
+}
+.device-audio-button:hover { background: var(--bg-user); border-color: var(--border-soft); }
+.device-audio-button .ic { width: 16px; height: 16px; }
+.device-audio-button small { color: var(--fg-soft); font-size: 10px; }
+.device-audio-sheet { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+.device-speech-status {
+  width: min(100%, 560px); margin: -10px auto 18px; font-size: 13px;
+  color: var(--fg-muted); text-align: center;
+}
+.device-speech-progress { width: min(100%, 560px); margin: 0 auto 18px; }
+.device-speech-progress-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--fg-muted); font-size: 11px; }
+.device-speech-progress-track { width: 100%; height: 5px; overflow: hidden; border-radius: 999px; background: var(--border-soft); }
+.device-speech-progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .18s ease; }
+.device-speech-current-text {
+  width: min(100%, 560px); max-height: 190px; overflow: auto; margin: 0 auto 22px;
+  padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: 12px;
+  background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.65;
+}
+.device-audio-rate-label {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 16px auto 0; color: var(--fg-muted); font-size: 13px;
+}
+.device-audio-rate-label select {
+  padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--fg); background: var(--bg-panel); font: inherit;
+}
+.device-speech-note { max-width: 560px; margin: 12px auto 0; font-size: 11px; line-height: 1.5; text-align: center; }
+
+.device-code-shell {
+  position: fixed; inset: 0; z-index: 10070; display: flex; justify-content: center; align-items: center;
+  padding: 22px; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  visibility: hidden; pointer-events: none; opacity: 0; transition: opacity .2s ease, visibility .2s ease;
+}
+.device-code-shell.open { visibility: visible; pointer-events: auto; opacity: 1; }
+.device-code-scrim { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(22,21,19,.38); }
+.device-code-panel {
+  position: relative; display: flex; flex-direction: column; width: min(100%, 880px); height: min(84vh, 780px);
+  overflow: hidden; border: 1px solid var(--border); border-radius: 17px; background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
+}
+.device-code-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 18px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.device-code-header h2 { margin: 0; font-size: 16px; line-height: 1.35; }
+.device-code-header p { margin: 4px 0 0; color: var(--fg-muted); font-size: 12px; line-height: 1.45; }
+#device-code-frame { display: block; width: 100%; flex: 1 1 auto; min-height: 0; border: 0; background: #fff; }
+.device-code-open { overflow: hidden; }
+
+.execution-target-options { display: grid; gap: 10px; }
+.execution-target-options label {
+  display: flex; align-items: flex-start; gap: 12px; padding: 13px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); cursor: pointer;
+}
+.execution-target-options label:has(input:checked) { border-color: var(--accent); background: var(--bg-user); }
+.execution-target-options input { margin-top: 4px; accent-color: var(--accent); }
+.execution-target-options span { display: grid; gap: 3px; }
+.execution-target-options b { font-size: 14px; font-weight: 650; }
+.execution-target-options small { color: var(--fg-muted); font-size: 12px; line-height: 1.5; }
+
+.code-acts button[data-run-device] { color: var(--fg); background: var(--bg-user); border: 1px solid var(--border); }
+.code-acts button[data-run-device]:hover { background: var(--bg-hover); }
+@media (max-width: 600px) {
+  .device-audio-button { font-size: 12px; padding: 8px 10px; }
+  .device-code-shell { padding: 0; padding-bottom: env(safe-area-inset-bottom, 0px); align-items: flex-end; }
+  .device-code-panel { width: 100%; height: min(92vh, 900px); border-radius: 19px 19px 0 0; }
+  .device-code-header { padding: 13px 14px; }
+  .device-speech-current-text { max-height: 150px; }
+}

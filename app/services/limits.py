@@ -10,7 +10,7 @@ GB = 1024 ** 3
 MB = 1024 ** 2
 
 # key -> value. ``None`` means "unlimited".
-DEFAULTS: dict[str, dict[str, int | None]] = {
+DEFAULTS: dict[str, dict[str, int | float | None]] = {
     "free": {
         "file_size": 25 * MB,
         "user_storage": 512 * MB,
@@ -26,7 +26,6 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "compress_max": 70,
         "compress_per_day": 5,
         "price": 0,
-        "cost_per_1k": 0,
         "budget_usd": 1,
         "window_hours": 5,
     },
@@ -45,7 +44,6 @@ DEFAULTS: dict[str, dict[str, int | None]] = {
         "compress_max": 85,
         "compress_per_day": None,
         "price": 19,
-        "cost_per_1k": 2,
         "budget_usd": 20,
         "window_hours": 5,
     },
@@ -66,23 +64,22 @@ LABELS: dict[str, str] = {
     "compress_max": "Сжатие: максимум %",
     "compress_per_day": "Сжатий в день",
     "price": "Цена тарифа, $/мес",
-    "cost_per_1k": "Цена за 1k токенов (запасная), $",
     "budget_usd": "Бюджет на окно, $",
     "window_hours": "Окно, часов",
 }
 
 BYTE_KEYS = {"file_size", "user_storage"}
-MONEY_KEYS = {"price", "cost_per_1k", "budget_usd"}
+MONEY_KEYS = {"price", "budget_usd"}
 TEXT_KEYS = {"models"}
 
 PLANS = ("free", "pro")
 
 
-def default_limits(plan: str) -> dict[str, int | None]:
+def default_limits(plan: str) -> dict[str, int | float | None]:
     return dict(DEFAULTS.get(plan, DEFAULTS["free"]))
 
 
-async def get_limits(db: AsyncSession, plan: str) -> dict[str, int | None]:
+async def get_limits(db: AsyncSession, plan: str) -> dict[str, int | float | None]:
     """Effective limits: stored overrides merged over the defaults."""
     limits = default_limits(plan)
     rows = (
@@ -126,7 +123,7 @@ async def set_models_for_plan(db: AsyncSession, plan: str, ids: list[str]) -> li
     return await get_models_for_plan(db, plan)
 
 
-async def set_limits(db: AsyncSession, plan: str, values: dict) -> dict[str, int | None]:
+async def set_limits(db: AsyncSession, plan: str, values: dict) -> dict[str, int | float | None]:
     for key, value in values.items():
         if key not in DEFAULTS.get(plan, {}):
             continue
@@ -144,7 +141,7 @@ async def set_limits(db: AsyncSession, plan: str, values: dict) -> dict[str, int
     return await get_limits(db, plan)
 
 
-async def all_limits(db: AsyncSession) -> dict[str, dict[str, int | None]]:
+async def all_limits(db: AsyncSession) -> dict[str, dict[str, int | float | None]]:
     return {plan: await get_limits(db, plan) for plan in PLANS}
 
 

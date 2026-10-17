@@ -176,7 +176,7 @@ def _normalise_palette(value: Any, style: str) -> tuple[str, tuple[str, ...] | N
         raw.get("primary", base["primary"]), raw.get("accent", base["accent"]),
         base["font"], base["mood"] + " · пользовательская палитра",
     )
-    return "_fileplan_custom", palette_tuple
+    return "fileplan-custom", palette_tuple
 
 
 def validate_plan(plan: Any) -> dict[str, Any]:
@@ -584,9 +584,9 @@ def build_from_plan(outdir: str | Path, plan: Any) -> dict[str, Any]:
     fmt = spec["format"]
     style = spec["_resolved_style"]
     palette_tuple = spec.get("_palette_tuple")
-    previous_custom = theme.STYLES.get("_fileplan_custom")
+    previous_custom = theme.STYLES.get("fileplan-custom")
     if palette_tuple is not None:
-        theme.STYLES["_fileplan_custom"] = palette_tuple
+        theme.STYLES["fileplan-custom"] = palette_tuple
 
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -635,6 +635,6 @@ def build_from_plan(outdir: str | Path, plan: Any) -> dict[str, Any]:
     finally:
         if palette_tuple is not None:
             if previous_custom is None:
-                theme.STYLES.pop("_fileplan_custom", None)
+                theme.STYLES.pop("fileplan-custom", None)
             else:
-                theme.STYLES["_fileplan_custom"] = previous_custom
+                theme.STYLES["fileplan-custom"] = previous_custom

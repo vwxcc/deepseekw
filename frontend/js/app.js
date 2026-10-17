@@ -2736,7 +2736,7 @@
         renderActivityPopup(liveNode);
       }
       const elapsedEl = elapsedNode
-        ? $('[data-activity-elapsed]').find(el => String(el.dataset.activityElapsed) === String(elapsedNode.id))
+        ? $$('[data-activity-elapsed]').find(el => String(el.dataset.activityElapsed) === String(elapsedNode.id))
         : null;
       if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
           !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {

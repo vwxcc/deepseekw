@@ -5,9 +5,10 @@ import asyncio
 import json
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
@@ -21,6 +22,7 @@ from ..deps import (
     require_csrf,
 )
 from ..config import settings
+from ..database import SessionLocal
 from ..models import (
     AudioGeneration,
     Attachment,
@@ -29,6 +31,7 @@ from ..models import (
     Memory,
     Message,
     MessageStatus,
+    ReadableTextGeneration,
     ModelSet,
     ModelSetEntry,
     Role,
@@ -73,6 +76,7 @@ from ..services.tts import (
     audio_file_path,
     generate_speech,
     normalized_audio_format,
+    prepare_spoken_text,
 )
 
 log = logging.getLogger("chatstudio.messages")
@@ -896,6 +900,133 @@ async def compress_chat(
 _AUDIO_ACTIVITY_STALE_AFTER = timedelta(minutes=10)
 
 
+
+
+def _readable_text_payload(record: ReadableTextGeneration | None) -> dict:
+    if record is None:
+        return {"status": "missing", "text": None, "error": None}
+    return {
+        "status": record.status,
+        "text": record.text if record.status == "ready" else None,
+        "error": record.error if record.status == "failed" else None,
+    }
+
+
+async def _generate_readable_text_background(
+    message_id: str, user_id: str, source: str
+) -> None:
+    """Prepare one answer in the background and persist it for every device."""
+    try:
+        prepared = (await prepare_spoken_text(source)).strip()
+        if not prepared:
+            raise TTSGenerationError("ИИ вернул пустой читабельный текст.")
+        result_status, error = "ready", None
+    except (TTSNotConfiguredError, TTSGenerationError, ValueError) as exc:
+        prepared, result_status, error = None, "failed", str(exc)[:500]
+    except Exception:
+        log.exception("Unexpected readable-text preprocessing error for message %s", message_id)
+        prepared, result_status, error = None, "failed", "Не удалось создать читабельный текст из-за внутренней ошибки."
+
+    try:
+        async with SessionLocal() as task_db:
+            record = await task_db.get(ReadableTextGeneration, message_id)
+            if record is None or record.user_id != user_id or record.status != "generating":
+                return
+            record.status = result_status
+            record.text = prepared
+            record.error = error
+            record.updated_at = utcnow()
+            await task_db.commit()
+    except Exception:
+        log.exception("Could not save readable text status for message %s", message_id)
+
+
+@router.get("/messages/{message_id}/readable-text")
+async def readable_text_status(
+    message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return only the requesting user's cached readable-text status/result."""
+    record = await db.get(ReadableTextGeneration, message.id)
+    if record is None or record.user_id != user.id:
+        return _readable_text_payload(None)
+    return _readable_text_payload(record)
+
+
+@router.post("/messages/{message_id}/readable-text")
+async def create_message_readable_text(
+    background_tasks: BackgroundTasks,
+    message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Start or reuse the preprocessed text for both server and device playback."""
+    if message.role != Role.assistant or message.status != MessageStatus.completed:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Подготовить текст можно только после готового ответа.")
+    source = (message.content or "").strip()
+    if not source:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "В ответе нет текста для озвучки.")
+
+    result = await db.execute(
+        select(ReadableTextGeneration).where(ReadableTextGeneration.message_id == message.id)
+    )
+    record = result.scalars().first()
+    now = utcnow()
+    start_background = False
+
+    if record is not None and record.user_id != user.id:
+        return _readable_text_payload(None)
+
+    if record is not None and record.status == "ready" and (record.text or "").strip():
+        return _readable_text_payload(record)
+
+    if record is not None and record.status == "generating":
+        age = now - record.updated_at if record.updated_at else timedelta(minutes=11)
+        if age < timedelta(minutes=10):
+            return _readable_text_payload(record)
+        # Recover a job left unfinished by a worker restart.
+        record.text = None
+        record.error = None
+        record.created_at = now
+        record.updated_at = now
+        await db.commit()
+        start_background = True
+    elif record is not None:
+        record.status = "generating"
+        record.text = None
+        record.error = None
+        record.created_at = now
+        record.updated_at = now
+        await db.commit()
+        start_background = True
+    else:
+        record = ReadableTextGeneration(
+            message_id=message.id,
+            user_id=user.id,
+            status="generating",
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(record)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            existing = await db.get(ReadableTextGeneration, message.id)
+            if existing is not None and existing.user_id == user.id:
+                return _readable_text_payload(existing)
+            raise HTTPException(status.HTTP_409_CONFLICT, "Не удалось запустить подготовку текста повторно.")
+        start_background = True
+
+    if start_background:
+        background_tasks.add_task(
+            _generate_readable_text_background, message.id, user.id, source
+        )
+    return _readable_text_payload(record)
+
+
 @router.get("/messages/{message_id}/audio/status")
 async def message_audio_status(
     message: Message = Depends(get_owned_message),
@@ -994,6 +1125,19 @@ async def create_message_audio(
             "size": path.stat().st_size,
         }
 
+    readable = await db.get(ReadableTextGeneration, message.id)
+    if (
+        readable is None
+        or readable.user_id != user.id
+        or readable.status != "ready"
+        or not (readable.text or "").strip()
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Сначала дождитесь создания читабельного текста.",
+        )
+    source = readable.text.strip()
+
     try:
         begin_audio_generation(user.id, message.id)
     except AudioGenerationInProgress as exc:
@@ -1020,7 +1164,7 @@ async def create_message_audio(
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
 
         try:
-            audio_bytes, generated_format = await generate_speech(source)
+            audio_bytes, generated_format = await generate_speech(source, prepared=True)
             if generated_format != fmt:
                 raise HTTPException(
                     status.HTTP_500_INTERNAL_SERVER_ERROR,

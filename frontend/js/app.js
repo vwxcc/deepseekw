@@ -2622,9 +2622,15 @@
           ' за ' + w.hours + ' ч');
       }
       const elapsedNode = state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null;
+      const liveStream = window.__aichActiveStream;
+      const liveNode = liveStream && liveStream.node ? liveStream.node : elapsedNode;
+      if (liveNode && !['completed', 'failed', 'cancelled'].includes(liveNode.status)) {
+        renderActivityPopup(liveNode);
+      }
       const elapsedEl = $('[data-activity-elapsed]');
-      if (!elapsedEl || !elapsedNode) return;
-      elapsedEl.textContent = 'Выполняю запрос · ' + formatActivityDuration(activityElapsed(elapsedNode, true));
+      if (elapsedEl && elapsedNode) {
+        elapsedEl.textContent = 'Выполняю запрос · ' + formatActivityDuration(activityElapsed(elapsedNode, true));
+      }
     }, 1000);
     const controller = new AbortController();
     let watchdog = null;

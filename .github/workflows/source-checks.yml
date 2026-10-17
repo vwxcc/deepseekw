@@ -28,6 +28,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_primary_provider_config.py' -v
       - name: Test permanent provider model errors
         run: python -m unittest discover -s tests -p 'test_provider_model_errors.py' -v
+      - name: Test streaming activity marker parsing
+        run: python -m unittest discover -s tests -p 'test_activity_stream.py' -v
       - name: Test web search parsing and provider fallbacks
         run: python -m unittest discover -s tests -p 'test_websearch.py' -v
       - name: Test TTS text cleanup and API request
@@ -60,9 +62,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=42" not in html:
+          if "/assets/css/app.css?v=43" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=52" not in html:
+          if "/assets/js/app.js?v=53" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -111,6 +113,14 @@ jobs:
               "function startDeviceSpeech(messageId)",
               "function bindDeviceSpeechPlayer()",
               "function openDeviceCodeRunner(item)",
+              "function activityHtml(n, generating)",
+              "function openActivityStream(id)",
+              "function languageLabel(lang)",
+              "data-code-toggle=",
+              "data-activity-full=",
+              "ev === 'ui_status'",
+              "ev === 'ui_action'",
+              "window.__aichActivityWindows",
               "function shouldAskExecutionTarget(text)",
               "execution_target: selectedExecutionTarget",
               'data-run-device="',
@@ -141,6 +151,10 @@ jobs:
               raise SystemExit("Missing per-user audio generation guard")
           if 'data-sugg="' in js:
               raise SystemExit("Post-answer follow-up suggestion buttons must stay removed")
+          activity = Path("app/ai/activity_stream.py").read_text(encoding="utf-8")
+          prompts = Path("app/ai/prompts.py").read_text(encoding="utf-8")
+          if "ActivityMarkupParser" not in activity or "ACTIVITY_STREAM_SKILL" not in prompts:
+              raise SystemExit("Streaming activity markers are not connected to the model prompt")
           if any(token in router for token in ("_run_suggestions", "_parse_suggestions")):
               raise SystemExit("Post-answer suggestion generation must stay disabled")
           if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:

@@ -4477,6 +4477,7 @@
 
 // ---------- subscription limits window ----------
   function limitValueLabel(key, value) {
+    if ((value === null || value === undefined) && key === 'price') return 'не задана';
     if (value === null || value === undefined) return 'без лимита';
     if (key === 'user_storage' || key === 'file_size') return formatSize(value);
     return fmtNum(value);

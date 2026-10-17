@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -56,7 +57,7 @@ from ..services.chats import (
 )
 import logging
 
-from ..services.usage import account, est
+from ..services.usage import account, est, window_spend as usage_window_spend
 from ..services.limits import get_limits
 from ..services.audio_quota import (
     AudioQuotaExceeded,
@@ -292,6 +293,114 @@ async def _memory_block(db: AsyncSession, user_id: str) -> str:
     return out
 
 
+async def _request_context_block(
+    request: Request, db: AsyncSession, user: User, client_context: dict | None = None
+) -> str:
+    """Build a compact, privacy-limited account/device context for the model."""
+    raw = client_context if isinstance(client_context, dict) else {}
+
+    def short_text(key: str, limit: int = 120) -> str | None:
+        value = raw.get(key)
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        return value[:limit] if value else None
+
+    def bounded_int(key: str, minimum: int, maximum: int) -> int | None:
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if not math.isfinite(float(value)) or not float(value).is_integer():
+            return None
+        return max(minimum, min(maximum, int(value)))
+
+    def bounded_float(key: str, minimum: float, maximum: float) -> float | None:
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        number = float(value)
+        if not math.isfinite(number):
+            return None
+        return round(max(minimum, min(maximum, number)), 2)
+
+    limits = await get_limits(db, user.plan or "free")
+    allowed = (
+        "file_size", "user_storage", "files_count", "posts", "code_agents", "agent_steps",
+        "council_members", "chats_count", "audio_generations", "sandbox_seconds",
+        "compress_min", "compress_max", "compress_per_day", "budget_usd", "window_hours",
+    )
+    safe_limits = {key: limits.get(key) for key in allowed if key in limits}
+    hours = max(1, int(limits.get("window_hours") or 5))
+    spent, calls = await usage_window_spend(db, user.id, hours)
+    budget_raw = limits.get("budget_usd")
+    budget = float(budget_raw) if budget_raw is not None else None
+    file_count = await db.scalar(select(func.count()).select_from(File).where(File.user_id == user.id))
+    storage_bytes = await db.scalar(select(func.coalesce(func.sum(File.size), 0)).where(File.user_id == user.id))
+    chat_count = await db.scalar(select(func.count()).select_from(Chat).where(
+        Chat.user_id == user.id, Chat.deleted_at.is_(None)
+    ))
+    message_count = await db.scalar(select(func.count()).select_from(Message).join(
+        Chat, Chat.id == Message.chat_id
+    ).where(Chat.user_id == user.id))
+
+    device: dict[str, object] = {
+        "server_time_utc": utcnow().isoformat(),
+        "server_user_agent": (request.headers.get("user-agent") or "")[:300],
+    }
+    for key, limit in (
+        ("captured_at", 40), ("timezone", 80), ("locale", 35), ("platform", 100),
+        ("color_scheme", 12), ("network_effective_type", 20),
+    ):
+        value = short_text(key, limit)
+        if value is not None:
+            device[key] = value
+    langs = raw.get("languages")
+    if isinstance(langs, list):
+        device["languages"] = [v.strip()[:35] for v in langs if isinstance(v, str) and v.strip()][:5]
+    for key, low, high in (
+        ("screen_width_px", 0, 20000), ("screen_height_px", 0, 20000),
+        ("viewport_width_px", 0, 20000), ("viewport_height_px", 0, 20000),
+        ("color_depth", 0, 128), ("touch_points", 0, 100), ("hardware_concurrency", 1, 512),
+    ):
+        value = bounded_int(key, low, high)
+        if value is not None:
+            device[key] = value
+    for key, low, high in (("pixel_ratio", 0.25, 10), ("device_memory_gb", 0.25, 1024)):
+        value = bounded_float(key, low, high)
+        if value is not None:
+            device[key] = value
+    for key in ("mobile", "online", "network_save_data", "reduced_motion", "standalone"):
+        value = raw.get(key)
+        if isinstance(value, bool):
+            device[key] = value
+
+    payload = {
+        "account": {
+            "display_name": (user.name or "")[:120],
+            "subscription_plan": user.plan or "free",
+            "is_admin": bool(user.is_admin),
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+        },
+        "limits": safe_limits,
+        "current_window": {
+            "hours": hours, "billed_calls": int(calls or 0),
+            "spend_usd": round(float(spent or 0), 6), "budget_usd": budget,
+            "budget_remaining_usd": round(max(0.0, budget - float(spent or 0)), 6) if budget is not None else None,
+        },
+        "usage": {
+            "files": int(file_count or 0), "storage_bytes": int(storage_bytes or 0),
+            "active_chats": int(chat_count or 0), "messages": int(message_count or 0),
+        },
+        "device_and_time": device,
+    }
+    return (
+        "\n\n[КОНТЕКСТ АККАУНТА, ЛИМИТОВ И УСТРОЙСТВА. Используй для адаптации ответа; "
+        "не раскрывай без необходимости. Цены тарифов и ставки за токены не передаются. "
+        "Данные устройства предоставлены браузером и могут быть неполными.]\n"
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
 async def _spawn(
     *,
     request: Request,
@@ -317,6 +426,9 @@ async def _spawn(
         )
     if user_id:
         system_prompt += await _memory_block(db, user_id)
+        context_user = await db.get(User, user_id)
+        if context_user is not None:
+            system_prompt += await _request_context_block(request, db, context_user)
     if execution_target == "device":
         system_prompt += (
             "\n\n[Запуск кода: НА УСТРОЙСТВЕ пользователя. Не выполняй код на сервере "
@@ -450,6 +562,7 @@ async def send_message(
         )
 
     system_prompt += await _memory_block(db, user.id)
+    system_prompt += await _request_context_block(request, db, user, data.client_context)
     if execution_target == "device":
         system_prompt += (
             "\n\n[Запуск кода: НА УСТРОЙСТВЕ пользователя. Не выполняй код на сервере "

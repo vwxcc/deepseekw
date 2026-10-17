@@ -113,6 +113,7 @@ class MessageCreate(BaseModel):
     effort: str | None = None
     style: str = "auto"
     execution_target: str = "site"
+    client_context: dict = Field(default_factory=dict)
 
 
 class RateIn(BaseModel):

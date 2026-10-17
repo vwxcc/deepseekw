@@ -15,9 +15,36 @@ async def bootstrap() -> None:
     async with SessionLocal() as db:
         await _seed_admin(db)
         await _seed_model_sets(db)
+        await _ensure_primary_main_prices(db)
         await _purge_expired_sessions(db)
         await clean_noisy_memories(db)
         await db.commit()
+
+
+async def _ensure_primary_main_prices(db: AsyncSession) -> None:
+    """Fill unset rates on the primary non-router MAIN model only."""
+    sets = await db.execute(
+        select(ModelSet).where(
+            ModelSet.route_type == RouteType.MAIN,
+            ModelSet.is_active.is_(True),
+            ModelSet.is_router.is_(False),
+        ).order_by(ModelSet.name, ModelSet.id)
+    )
+    for model_set in sets.scalars().all():
+        rows = await db.execute(
+            select(ModelSetEntry).where(
+                ModelSetEntry.model_set_id == model_set.id,
+                ModelSetEntry.is_active.is_(True),
+            ).order_by(ModelSetEntry.position, ModelSetEntry.id)
+        )
+        entry = rows.scalars().first()
+        if entry is None:
+            continue
+        if not (entry.price_in or 0):
+            entry.price_in = float(settings.qwen_price_in if settings.qwen_price_in is not None else 1.0)
+        if not (entry.price_out or 0):
+            entry.price_out = float(settings.qwen_price_out if settings.qwen_price_out is not None else 10.0)
+        break
 
 
 async def _purge_expired_sessions(db: AsyncSession) -> None:
@@ -65,6 +92,8 @@ async def _seed_model_sets(db: AsyncSession) -> None:
                     temperature=settings.qwen_temperature,
                     max_tokens=settings.qwen_max_tokens,
                     timeout=settings.request_timeout,
+                    price_in=(float(settings.qwen_price_in) if settings.qwen_price_in is not None else 1.0) if route == RouteType.MAIN else 0.0,
+                    price_out=(float(settings.qwen_price_out) if settings.qwen_price_out is not None else 10.0) if route == RouteType.MAIN else 0.0,
                     is_active=True,
                 )
             )

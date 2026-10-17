@@ -2017,9 +2017,9 @@
         icon('download') + '<span>' + escapeHtml(file.name || 'Созданный файл') + '</span>' +
         '<em>' + formatSize(file.size) + '</em></a>';
     }).join('');
-    const code = items.map(run => String(run.code || '').trim()).filter(Boolean) .join('\n\n# Подготовка результата\n');
-    const stdout = items.map(run => String(run.stdout || '').trim()).filter(Boolean) .join('\n\n');
-    const stderr = items.map(run => String(run.stderr || '').trim()).filter(Boolean) .join('\n\n');
+    const code = items.map(run => String(run.code || '').trim()).filter(Boolean).join('\n\n# Подготовка результата\n');
+    const stdout = items.map(run => String(run.stdout || '').trim()).filter(Boolean).join('\n\n');
+    const stderr = items.map(run => String(run.stderr || '').trim()).filter(Boolean).join('\n\n');
 
     return '<div class="tool-box collapsed' + (failed ? ' err' : '') + '">' +
       '<div class="tool-head">' +
@@ -2143,8 +2143,9 @@
     }
   }
 
-  function renderMessageInPlace(messageId, previousMessageId) {
+  function renderMessageInPlace(messageId, previousMessageId, options) {
     const box = $('#messages');
+    const opts = options || {};
     const entries = allMessages(state.tree);
     const entryIndex = entries.findIndex(entry => String(entry.node.id) === String(messageId));
     const previousId = previousMessageId == null ? String(messageId) : String(previousMessageId);
@@ -2162,11 +2163,20 @@
       return false;
     }
 
+    // This is an in-place update, not a newly arriving message; do not replay
+    // the entrance animation for every intermediate tool/status event.
+    nextMessage.classList.add('no-msg-entrance');
     oldMessage.replaceWith(nextMessage);
     bindMessageEvents(nextMessage);
     renderMath(nextMessage);
     if (String(state.activeAssistantId || '') === String(messageId)) bindStreamRefs();
-    if (state.stickBottom !== false) scrollToBottom();
+    if (opts.focusMessageId) {
+      const content = $('.content.md', nextMessage);
+      if (content) content.classList.add('answer-arrive');
+      requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
+    } else if (state.stickBottom !== false) {
+      scrollToBottom();
+    }
     return true;
   }
 
@@ -2574,23 +2584,35 @@
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
           }
-          renderMessages({ focusMessageId: n ? n.id : null });
-          // Prepare one cached, readable version immediately after the main answer.
-          // Both AI voice and device speech use this exact text; neither blocks chat rendering.
-          if (n && !state.readonly && String(n.content || '').trim()) {
-            generateReadableText(n.id, false).catch((err) => console.warn('Readable-text preparation failed:', err));
+          if (n) {
+            renderMessageInPlace(n.id, null, { focusMessageId: n.id });
+            const entries = allMessages(state.tree);
+            hydrateAudioStatuses(entries);
+            // The readable-text hydrator checks the cache first and starts exactly
+            // one preparation job for the newest completed answer when it is missing.
+            hydrateReadableTextStatuses(entries);
+          } else {
+            renderMessages();
           }
           loadUsage();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id) ||
             findNode(state.tree, state.activeAssistantId);
-          if (n) { n.status = 'failed'; n.creating = false; n.error = data.error; }
-          renderMessages();
+          if (n) {
+            n.status = 'failed'; n.creating = false; n.error = data.error;
+            renderMessageInPlace(n.id);
+          } else {
+            renderMessages();
+          }
         } else if (ev === 'cancelled') {
           const n = findNode(state.tree, data.message_id) ||
             findNode(state.tree, state.activeAssistantId);
-          if (n) { n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text; }
-          renderMessages();
+          if (n) {
+            n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text;
+            renderMessageInPlace(n.id);
+          } else {
+            renderMessages();
+          }
         }
       });
     } catch (err) {

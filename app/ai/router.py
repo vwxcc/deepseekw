@@ -37,6 +37,7 @@ from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, web_search
 from . import model_sets as ms
 from . import prompts
+from .provider_config import apply_primary_provider_overrides
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -267,13 +268,16 @@ class AIRouter:
                     "без Auto Routing и добавьте в него активную модель."
                 )
             e = entries[0]
+            primary_base_url, primary_api_key = apply_primary_provider_overrides(
+                e.base_url, e.api_key
+            )
             configs = [
                 EntryConfig(
                     id=e.id,
                     model_set_id=e.model_set_id,
                     provider=e.provider,
-                    base_url=e.base_url,
-                    api_key=e.api_key,
+                    base_url=primary_base_url,
+                    api_key=primary_api_key,
                     model=e.model,
                     temperature=e.temperature,
                     max_tokens=e.max_tokens,

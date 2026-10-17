@@ -535,5 +535,60 @@ COMPRESS_SYSTEM = (
 )
 
 
+# Skills are loaded only when the current request clearly matches their purpose.
+# This keeps unrelated prompts compact and avoids turning every request into a generic template.
+_SKILL_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("blueprints", (
+        "чертеж", "чертёж", "blueprint", " dxf", ".dxf", ".step", "cad",
+        "инженерн схем", "техническ чертеж", "техническ чертёж", "эскиз детали",
+        "размерный эскиз",
+    )),
+    ("drawing", (
+        "нарисуй", "нарисовать", "рисунок", "иллюстрац", "изобрази", "изобразить",
+        "картинку", "визуализируй", "визуализац", "постер", "обложку", "инфографик",
+        "draw an", "draw a ", "illustration",
+    )),
+    ("essays", (
+        "сочинен", "эссе", "литературн анализ", "аргументированн текст",
+        "essay", "literary analysis",
+    )),
+    ("humanize-text", (
+        "очеловеч", "по-человечески", "естественн текст", "не как ии",
+        "не похож на ии", "убери шаблонност", "убери канцелярит",
+        "сделай текст жив", "перепиши естествен", "сделай более естествен",
+        "humanize", "make this sound natural",
+    )),
+)
+
+
+def skill_context(user_text: str, code_mode: bool = False) -> str:
+    """Return only relevant local SKILL.md files; missing files never break chat."""
+    query = str(user_text or "").strip().casefold()
+    if not query:
+        return ""
+
+    skill_root = Path(__file__).resolve().parent / "skills"
+    selected: list[str] = []
+    for folder, triggers in _SKILL_RULES:
+        if any(trigger in query for trigger in triggers):
+            selected.append(folder)
+        if len(selected) >= 2:
+            break
+
+    blocks: list[str] = []
+    for folder in selected:
+        skill_file = skill_root / folder / "SKILL.md"
+        try:
+            content = skill_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if content:
+            blocks.append(
+                f"\n\n[НАВЫК AI-Ch 1.0: {folder}. Следуй этим инструкциям для текущей задачи.]\n"
+                + content[:7000]
+            )
+    return "".join(blocks)
+
+
 def with_system(messages: list[dict], system: str) -> list[dict]:
     return [{"role": "system", "content": system}, *messages]

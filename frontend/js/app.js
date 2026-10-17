@@ -307,25 +307,31 @@
       '" width="100%" style="max-width:' + w + 'px;background:' + bg + '">' + shapes + '</svg></div>';
   }
 
-  function codeBlockHtml(lang, code) {
+  function codeBlockHtml(lang, code, executionTarget) {
     const id = 'code_' + Math.random().toString(36).slice(2);
     window.__codeStore = window.__codeStore || {};
     window.__codeStore[id] = { lang: lang || '', code: code };
     const isHtml = ['html', 'htm'].indexOf((lang || '').toLowerCase()) >= 0;
-    const preview = isHtml
+    const deviceMode = executionTarget === 'device';
+    const preview = isHtml && deviceMode
       ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
-        '<span>Живое превью</span></div>' +
-        '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
+        '<span>Предпросмотр на устройстве</span></div>' +
+        '<iframe sandbox="allow-scripts" loading="lazy" srcdoc="' +
         escapeHtml(code) + '"></iframe></div>'
+      : '';
+    const runButton = deviceMode
+      ? '<button data-run-device="' + id + '" title="Запустить в локальной песочнице">' +
+          icon('terminal') + 'На устройстве</button>'
       : '';
     return '<div class="code-block"><div class="code-head"><span>' +
       escapeHtml(lang || 'code') + '</span><span class="code-acts">' +
       '<button data-copy="' + id + '">' + icon('copy') + 'Копировать</button>' +
       '<button data-dl="' + id + '" title="Скачать">' + icon('download') + '</button>' +
-      '</span></div>' + preview + '<pre><code>' + escapeHtml(code) + '</code></pre></div>';
+      runButton + '</span></div>' + preview +
+      '<pre><code>' + escapeHtml(code) + '</code></pre></div>';
   }
 
-  function renderMarkdown(src) {
+  function renderMarkdown(src, executionTarget) {
     if (!src) return '';
     const codes = [];
     _mathStore = [];
@@ -361,7 +367,7 @@
       if (cm) {
         flushPara(); closeList(); closeQuote();
         const b = codes[+cm[1]];
-        out.push(b.lang === 'draw' ? drawBlockHtml(b.code) : codeBlockHtml(b.lang, b.code));
+        out.push(b.lang === 'draw' ? drawBlockHtml(b.code) : codeBlockHtml(b.lang, b.code, executionTarget || 'site'));
         continue;
       }
       if (!line.trim()) { flushPara(); closeList(); closeQuote(); continue; }
@@ -923,7 +929,7 @@
         const raw = String(n.content || '');
         const truncated = raw.length > FULL_RENDER_LIMIT && !n.showFull;
         const body = truncated ? raw.slice(0, FULL_RENDER_LIMIT) : raw;
-        inner = '<div class="content md">' + renderMarkdown(body) + '</div>' +
+        inner = '<div class="content md">' + renderMarkdown(body, n.execution_target || 'site') + '</div>' +
           (truncated
             ? '<div class="more-note">Показано ' + FULL_RENDER_LIMIT.toLocaleString('ru-RU') +
               ' из ' + raw.length.toLocaleString('ru-RU') + ' символов — ' +

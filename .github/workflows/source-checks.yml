@@ -116,7 +116,7 @@ jobs:
               "function audioQuotaSnapshot()",
               "function startDeviceSpeech(messageId)",
               "function bindDeviceSpeechPlayer()",
-              "function openDeviceCodeRunner(item)",
+              "function openDeviceCodeRunner(item, messageId)",
               "function activityStartTime(n)",
               "$$('[data-activity-elapsed]').find",
               "function activityHtml(n, generating)",

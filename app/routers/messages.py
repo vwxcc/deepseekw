@@ -285,7 +285,7 @@ async def _memory_block(db: AsyncSession, user_id: str, chat_id: str) -> str:
                 and_(Memory.chat_id.is_(None), Memory.message_id.is_(None)),
             ),
         )
-        .order_by(Memory.created_at.desc())
+        .order_by((Memory.chat_id == chat_id).desc(), Memory.created_at.desc())
         .limit(60)
     )
     rows = [m for m in res.scalars().all() if m.content]
@@ -381,6 +381,10 @@ async def _spawn(
         execution_target=execution_target,
         system_prompt=system_prompt,
         history_messages=history_messages,
+        search_query=_search_context(
+            history_messages,
+            str(history_messages[-1].get("content") or "") if history_messages else "",
+        ),
     )
     await ai_router.enqueue(job)
     return StreamingResponse(

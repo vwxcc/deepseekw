@@ -107,7 +107,7 @@ class FileTemplateTests(unittest.TestCase):
                 "format": "xlsx", "template_id": "spreadsheet.analytics",
                 "title": "Результаты", "filename": "metrics.xlsx",
                 "sheets": [{"name": "Метрики", "head": ["Показатель", "Значение"],
-                            "rows": [["Рост", 42], ["Конверсия", 3.7], ["Выручка", 1200]}],
+                            "rows": [["Рост", 42], ["Конверсия", 3.7], ["Выручка", 1200]]}],
             })
             xlsx_file = Path(next(path for path in xlsx["files"] if path.endswith(".xlsx")))
             self.assertTrue(xlsx_file.is_file())

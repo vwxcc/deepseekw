@@ -8,6 +8,56 @@ MEMORY_RE = re.compile(r"\[\[\s*memory\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 PREF_RE = re.compile(r"\[\[\s*pref\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 ASK_RE = re.compile(r"\[\[\s*ask\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 
+_SKILL_ROOT = Path(__file__).resolve().parent / "skills"
+_SKILL_TRIGGERS: dict[str, tuple[str, ...]] = {
+    "drawing": (
+        "рисуй", "нарисуй", "нарисовать", "рисунок", "иллюстрац", "постер",
+        "визуализируй", "svg-схема", "инфограф", "illustration", "draw ",
+    ),
+    "blueprints": (
+        "чертеж", "чертёж", "blueprint", "технический эскиз", "техническая схема",
+        "размерный эскиз", "виды детали", "dxf", "step-файл", "cad-модель",
+    ),
+    "essays": (
+        "сочинени", "эссе", "литературный анализ", "аргументативное эссе",
+        "егэ сочин", "essay outline", "academic essay",
+    ),
+    "humanize-text": (
+        "очеловеч", "гуманизируй текст", "сделай текст естественнее",
+        "звучит как ии", "похоже на нейросеть", "слишком шаблонный текст",
+        "сделай живее", "humanize", "less robotic", "ai-written",
+    ),
+}
+
+
+def skills_for(user_text: str | None) -> str:
+    """Load only relevant, bundled skill instructions; never execute skill files."""
+    text = str(user_text or "").casefold()
+    if not text:
+        return ""
+    chunks: list[str] = []
+    for name, triggers in _SKILL_TRIGGERS.items():
+        if not any(trigger in text for trigger in triggers):
+            continue
+        skill_path = _SKILL_ROOT / name / "SKILL.md"
+        try:
+            content = skill_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        # Frontmatter is metadata for maintainers; the model receives the body only.
+        content = re.sub(r"\A---\s*\n[\s\S]*?\n---\s*\n", "", content, count=1).strip()
+        if content:
+            chunks.append(f"## Специализированный навык: {name}\n{content}")
+    if not chunks:
+        return ""
+    return (
+        "\n\n[ПОДКЛЮЧЁННЫЕ НАВЫКИ AI-Ch 1.0]\n"
+        "Используй следующие инструкции, потому что они относятся к текущему запросу. "
+        "Соблюдай требования пользователя и не придумывай возможности инструментов.\n\n"
+        + "\n\n".join(chunks)
+    )
+
+
 HTML_SKILL = (
     "\n\nСкилл веб-страниц. Если нужна страница, лендинг, дашборд, форма или интерактивный "
     "виджет — выведи ОДИН блок с языком html: полный самодостаточный документ с инлайн CSS "

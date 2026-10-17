@@ -692,6 +692,10 @@ class AIRouter:
     ) -> tuple[list[dict], list[dict]]:
         """Search, fold the results into the prompt and return (history, sources)."""
         system_prompt = job.system_prompt
+        # Specialized, repository-bundled skill files are loaded only for relevant requests.
+        skill_context = prompts.skills_for(job.user_text)
+        if skill_context:
+            system_prompt = f"{system_prompt}\n\n{skill_context}"
         sources: list[dict] = []
         if job.web_search and job.search_query:
             await job.output.put(("stage", json.dumps({"stage": "search"})))

@@ -561,84 +561,19 @@
     { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
   ];
 
-  const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
-    'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
-    'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
-    'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
-    'О чём поговорим?', 'Что разберём?', 'Какая идея?', 'Что придумаем?',
-    'Чем помочь?', 'Что подскажем?', 'Какой план?', 'Что изучим?',
-    'Куда двигаемся?', 'Что создадим?', 'Какую проблему решаем?', 'Что анализируем?',
-    'О чём поразмышляем?', 'Что объяснить?', 'Какой текст разберём?', 'Что написать?',
-    'Какую тему раскроем?', 'Что посчитать?', 'Какой код нужен?', 'Что спроектируем?',
-    'О чём расскажу?', 'Что найдём?', 'Какую задачу решим?', 'Что улучшим?',
-    'С чего начать?', 'Какой вопрос у вас?', 'Что уточнить?', 'Как помочь?',
-    'О чём речь?', 'Что разложим по полочкам?', 'Какую идею обсудим?', 'Что проверим?',
-    'Куда копаем?', 'Что переведём?', 'Какой документ разберём?', 'Что суммируем?',
-    'О чём спросить?', 'Что построим?', 'Какой план составим?', 'Что оптимизируем?',
-    'Какую тему разберём?', 'Что изобретём?', 'О чём подумать?', 'Что настроим?',
-    'Какую статью разберём?', 'Что напишем?', 'О чём мечтаем?', 'Что решаем?',
-    'Какую мысль разовьём?', 'Что подытожим?', 'О чём поговорим сегодня?', 'Что найдём вместе?',
-    'Какая цель?', 'Что нужно объяснить?', 'Какой вопрос на повестке?', 'Что разгадаем?',
-    'О чём поспорим?', 'Что посоветовать?', 'Какую задачу разберём?', 'Что сравним?',
-    'Какой пример нужен?', 'Что расскажем?', 'О чём почитать?', 'Что запланируем?',
-    'Какую идею проверим?', 'Что упростим?', 'О чём подумаем вместе?', 'Что посмотрим?',
-    'Какой вопрос решаем?', 'Что подправим?', 'О чём расскажете?', 'Что придумаем вместе?',
-    'Какую проблему разберём?', 'Что нарисуем?', 'О чём поговорим?', 'Что сделаем?',
-    'Какой текст напишем?', 'Что разберём подробно?', 'О чём подумаем сейчас?', 'Что принесёте?',
-  ];
+  const GREETINGS = [
+    'Создавайте презентации, документы и визуальные файлы',
+  ];];
 
   const SUGGESTIONS = [
-    'Помоги с Python — пример кода',
-    'Объясни, что такое API',
-    'Составь план на неделю',
-    'Напиши SQL-запрос с JOIN',
-    'Как работает Docker?',
-    'Переведи текст на английский',
-    'Сократи этот текст',
-    'Сравни React и Vue',
-    'Напиши регулярное выражение',
-    'Объясни async/await простыми словами',
-    'Составь резюме для junior-разработчика',
-    'Как настроить CI/CD?',
-    'Разбери ошибку в коде',
-    'Придумай название для проекта',
-    'Напиши письмо клиенту',
-    'Сделай конспект статьи',
-    'Как ускорить запрос к базе?',
-    'Объясни разницу между TCP и UDP',
-    'Составь бюджет на месяц',
-    'Напиши bash-скрипт для бэкапа',
-    'Что такое векторная база данных?',
-    'Придумай 10 идей для стартапа',
-    'Как работает JWT?',
-    'Оптимизируй этот алгоритм',
-    'Напиши тесты на pytest',
-    'Объясни принципы SOLID',
-    'Как развернуть приложение на сервере?',
-    'Составь чек-лист для релиза',
-    'Придумай вопросы для собеседования',
-    'Как работает HTTPS?',
-    'Напиши Dockerfile для Python',
-    'Разбери JSON на части',
-    'Объясни, что такое REST',
-    'Составь план изучения ML',
-    'Напиши функцию сортировки',
-    'Как чистить данные в pandas?',
-    'Придумай структуру базы данных',
-    'Объясни git rebase',
-    'Как работает Redis?',
-    'Составь договор простыми словами',
-    'Напиши HTML-страницу с формой',
-    'Объясни, что такое WebSocket',
-    'Как защитить API?',
-    'Придумай метрики для продукта',
-    'Напиши текст для лендинга',
-    'Объясни разницу между процессами и потоками',
-    'Как настроить nginx?',
-    'Составь roadmap проекта',
-    'Напиши SQL для отчёта',
-    'Что почитать про архитектуру?',
-  ];
+    'Создай презентацию PPTX на тему: …',
+    'Подготовь красиво оформленный документ Word DOCX: …',
+    'Собери таблицу Excel с данными и формулами: …',
+    'Создай векторную SVG-инфографику на тему: …',
+    'Создай изображение PNG на тему: …',
+    'Подготовь отчёт PDF по теме: …',
+    'Подготовь ответ к озвучиванию и создай аудио',
+  ];];
 
 
   // ---------- auth ----------
@@ -1061,7 +996,9 @@
       record && record.status === 'failed' ? ' is-error' : '';
     return '<div class="readable-text-status-wrap" data-readable-status="' + escapeHtml(n.id) + '">' +
       '<span class="readable-text-status' + cls + '" role="status" aria-live="polite">' +
-      escapeHtml(readableTextStatusLabel(n.id)) + '</span></div>';
+      escapeHtml(readableTextStatusLabel(n.id)) + '</span>' +
+      '<button type="button" class="readable-text-retry hidden" data-mact="retry-readable-text" data-id="' +
+      escapeHtml(n.id) + '">Повторить</button></div>';
   }
 
   function updateReadableTextUi(messageId) {
@@ -1074,6 +1011,8 @@
         label.classList.toggle('is-ready', !!(record && record.status === 'ready'));
         label.classList.toggle('is-error', !!(record && record.status === 'failed'));
       }
+      const retry = $('.readable-text-retry', status);
+      if (retry) retry.classList.toggle('hidden', !(record && record.status === 'failed'));
     }
     updateAudioControl(messageId);
     updateDeviceAudioControl(messageId);
@@ -2033,15 +1972,16 @@
   function renderSuggestionChips() {
     const box = $('#sugg-chips');
     if (!box) return;
-    const total = SUGGESTIONS.length, n = 2;
-    const picks = [];
-    for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
-    state.suggIdx = (state.suggIdx + n) % total;
-    box.innerHTML = picks.map((p, i) =>
-      '<button class="chip-in" style="animation-delay:' + (i * 70) +
-      'ms" data-prompt="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>').join('');
-    $$('button[data-prompt]', box).forEach(b => b.addEventListener('click', () => {
-      $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
+    box.innerHTML = SUGGESTIONS.map((prompt, i) =>
+      '<button class="chip-in" style="animation-delay:' + (i * 45) +
+      'ms" data-prompt="' + escapeHtml(prompt) + '">' + escapeHtml(prompt) + '</button>'
+    ).join('');
+    $$('button[data-prompt]', box).forEach(btn => btn.addEventListener('click', () => {
+      const input = $('#input');
+      if (!input) return;
+      input.value = btn.dataset.prompt;
+      autoGrow();
+      sendCurrent();
     }));
   }
 
@@ -2056,14 +1996,8 @@
   }
 
   function startRotation() {
+    // Keep the file-creation actions stable; generic rotating questions are disabled.
     stopRotation();
-    let tick = 0;
-    state.greetTimer = setInterval(() => {
-      if (!$('#greet-text')) { stopRotation(); return; }
-      tick += 1;
-      if (tick % 2 === 0) rotateGreeting();
-      renderSuggestionChips();
-    }, 11000);
   }
 
   function stopRotation() {
@@ -2166,6 +2100,8 @@
         openAudioPlayer(id, true);
       } else if (act === 'device-audio') {
         if (ensureReadableTextBeforePlayback(id)) startDeviceSpeech(id);
+      } else if (act === 'retry-readable-text') {
+        await generateReadableText(id, true);
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
@@ -2488,12 +2424,12 @@
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
           }
-          renderMessages({ focusMessageId: n ? n.id : null });
-          // Prepare one cached, readable version immediately after the main answer.
-          // Both AI voice and device speech use this exact text; neither blocks chat rendering.
+          // Mark preparation as in-flight before rendering. This prevents the
+          // hydration GET for an older/missing status from racing the create POST.
           if (n && !state.readonly && String(n.content || '').trim()) {
             generateReadableText(n.id, false).catch((err) => console.warn('Readable-text preparation failed:', err));
           }
+          renderMessages({ focusMessageId: n ? n.id : null });
           loadUsage();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id) ||
@@ -4349,16 +4285,13 @@
 
   // playful composer placeholders
   const PLACEHOLDERS = [
-    'Жду указаний…', 'Слушаю, мой повелитель…', 'Что изволите?', 'Приказывайте…',
-    'Готов служить…', 'Ваше слово?', 'Я весь внимание…', 'Жду вашу мудрую мысль…',
-    'Повелевайте…', 'Скажите слово — и я начну…', 'Ваш ход, господин…',
-    'Куда направим усилия?', 'Слушаю и повинуюсь…', 'Излагайте, я записываю…',
-  ];
+    'Опишите файл, который нужно создать…',
+  ];];
 
   function rollPlaceholder() {
     const el = $('#input');
     if (!el) return;
-    el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+    el.placeholder = PLACEHOLDERS[0];
   }
 
 // ---------- subscription limits window ----------

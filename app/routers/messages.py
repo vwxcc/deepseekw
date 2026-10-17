@@ -74,6 +74,7 @@ from ..services.tts import (
     TTSGenerationError,
     TTSNotConfiguredError,
     audio_file_path,
+    clean_tts_text,
     generate_speech,
     normalized_audio_format,
     prepare_spoken_text,
@@ -909,6 +910,7 @@ def _readable_text_payload(record: ReadableTextGeneration | None) -> dict:
         "status": record.status,
         "text": record.text if record.status == "ready" else None,
         "error": record.error if record.status == "failed" else None,
+        "notice": record.error if record.status == "ready" and record.error else None,
     }
 
 
@@ -917,10 +919,27 @@ async def _generate_readable_text_background(
 ) -> None:
     """Prepare one answer in the background and persist it for every device."""
     try:
-        prepared = (await prepare_spoken_text(source)).strip()
-        if not prepared:
-            raise TTSGenerationError("ИИ вернул пустой читабельный текст.")
-        result_status, error = "ready", None
+        preprocessor_configured = bool(
+            (settings.tts_preprocess_base_url or "").strip()
+            and (settings.tts_preprocess_model or "").strip()
+        )
+        if not preprocessor_configured:
+            # Keep device/server playback usable when no separate rewriter has been
+            # configured. This fallback removes Markdown and URLs but deliberately
+            # does not pretend to interpret complex formulas or code.
+            prepared = clean_tts_text(source).strip()
+            if not prepared:
+                raise TTSGenerationError("После очистки не осталось текста для чтения.")
+            result_status = "ready"
+            error = (
+                "Базовая подготовка без отдельной ИИ-модели. "
+                "Сложные формулы и специальные обозначения могут читаться неидеально."
+            )
+        else:
+            prepared = (await prepare_spoken_text(source)).strip()
+            if not prepared:
+                raise TTSGenerationError("ИИ вернул пустой читабельный текст.")
+            result_status, error = "ready", None
     except (TTSNotConfiguredError, TTSGenerationError, ValueError) as exc:
         prepared, result_status, error = None, "failed", str(exc)[:500]
     except Exception:

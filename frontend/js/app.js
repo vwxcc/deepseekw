@@ -3274,6 +3274,7 @@
         (f.type === 'select'
           ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
           : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
+            (f.type === 'number' ? ' step="any"' : '') +
             (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
             (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') +
             (f.calc ? ' data-calc="1" inputmode="decimal"' : '') + ' />') +

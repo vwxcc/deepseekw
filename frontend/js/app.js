@@ -833,12 +833,12 @@
     const liveStream = window.__aichActiveStream;
     if (state.streaming && liveStream) {
       state.activeAssistantId = liveStream.chatId === id ? liveStream.assistantId : null;
-      if (liveStream.chatId === id && liveStream.assistantId) bindStreamRefs();
     }
     const chat = state.chats.find(c => c.id === id);
     $('#chat-title').textContent = chat ? chat.title : 'Чат';
     renderChatList();
     renderMessages();
+    if (state.streaming && liveStream && liveStream.chatId === id && liveStream.assistantId) bindStreamRefs();
     const meta = state.chats.find(c => c.id === id) || {};
     const isCode = meta.mode === 'code';
     $('#project-btn').classList.toggle('hidden', !isCode);
@@ -2711,7 +2711,16 @@
             if (liveIds.length > 40) liveIds.slice(0, liveIds.length - 40).forEach(key => delete window.__aichActivityNodes[key]);
           }
           if (replacedOptimistic) {
+            if (previousId && previousId !== node.id && window.__aichActivityWindows &&
+                window.__aichActivityWindows[previousId]) {
+              window.__aichActivityWindows[node.id] = window.__aichActivityWindows[previousId];
+              delete window.__aichActivityWindows[previousId];
+            }
+            if (previousId && previousId !== node.id && window.__aichActivityNodes) {
+              delete window.__aichActivityNodes[previousId];
+            }
             renderMessageInPlace(node.id, previousId);
+            if (window.__aichActivityWindows && window.__aichActivityWindows[node.id]) renderActivityPopup(node);
           } else {
             renderMessages();
           }

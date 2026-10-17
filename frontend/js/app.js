@@ -1301,8 +1301,20 @@
       if (state.readableText[messageId].status === 'generating') startReadableTextStatusPolling();
       return state.readableText[messageId];
     } catch (err) {
-      const latest = await refreshReadableTextStatus(messageId);
-      if (latest && latest.status !== 'missing') return latest;
+      let latest = null;
+      try {
+        // Read server state directly here: refreshReadableTextStatus intentionally
+        // ignores a "missing" response while a local POST is still in flight.
+        latest = await api.get('/api/messages/' + encodeURIComponent(messageId) + '/readable-text');
+      } catch (statusError) {
+        // Preserve the original POST failure below if status lookup also fails.
+      }
+      if (latest && latest.status && latest.status !== 'missing') {
+        state.readableText[messageId] = latest;
+        updateReadableTextUi(messageId);
+        if (latest.status === 'generating') startReadableTextStatusPolling();
+        return latest;
+      }
       state.readableText[messageId] = {
         status: 'failed',
         text: null,

@@ -259,6 +259,11 @@ async def limits_update(
         if key not in allowed_keys:
             continue
         if raw is None or (isinstance(raw, str) and not raw.strip()):
+            if key == "window_hours":
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Длительность окна должна быть не меньше 1 часа",
+                )
             values[key] = None
             continue
         try:

@@ -561,85 +561,38 @@
     { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
   ];
 
-  const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
-    'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
-    'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
-    'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
-    'О чём поговорим?', 'Что разберём?', 'Какая идея?', 'Что придумаем?',
-    'Чем помочь?', 'Что подскажем?', 'Какой план?', 'Что изучим?',
-    'Куда двигаемся?', 'Что создадим?', 'Какую проблему решаем?', 'Что анализируем?',
-    'О чём поразмышляем?', 'Что объяснить?', 'Какой текст разберём?', 'Что написать?',
-    'Какую тему раскроем?', 'Что посчитать?', 'Какой код нужен?', 'Что спроектируем?',
-    'О чём расскажу?', 'Что найдём?', 'Какую задачу решим?', 'Что улучшим?',
-    'С чего начать?', 'Какой вопрос у вас?', 'Что уточнить?', 'Как помочь?',
-    'О чём речь?', 'Что разложим по полочкам?', 'Какую идею обсудим?', 'Что проверим?',
-    'Куда копаем?', 'Что переведём?', 'Какой документ разберём?', 'Что суммируем?',
-    'О чём спросить?', 'Что построим?', 'Какой план составим?', 'Что оптимизируем?',
-    'Какую тему разберём?', 'Что изобретём?', 'О чём подумать?', 'Что настроим?',
-    'Какую статью разберём?', 'Что напишем?', 'О чём мечтаем?', 'Что решаем?',
-    'Какую мысль разовьём?', 'Что подытожим?', 'О чём поговорим сегодня?', 'Что найдём вместе?',
-    'Какая цель?', 'Что нужно объяснить?', 'Какой вопрос на повестке?', 'Что разгадаем?',
-    'О чём поспорим?', 'Что посоветовать?', 'Какую задачу разберём?', 'Что сравним?',
-    'Какой пример нужен?', 'Что расскажем?', 'О чём почитать?', 'Что запланируем?',
-    'Какую идею проверим?', 'Что упростим?', 'О чём подумаем вместе?', 'Что посмотрим?',
-    'Какой вопрос решаем?', 'Что подправим?', 'О чём расскажете?', 'Что придумаем вместе?',
-    'Какую проблему разберём?', 'Что нарисуем?', 'О чём поговорим?', 'Что сделаем?',
-    'Какой текст напишем?', 'Что разберём подробно?', 'О чём подумаем сейчас?', 'Что принесёте?',
+  const GREETINGS = [
+    'Создадим документ?', 'Оформим таблицу?', 'Подготовим презентацию?',
+    'Соберём PDF-файл?', 'Создадим SVG-иллюстрацию?', 'Нарисуем схему в SVG?',
+    'Подготовим отчёт в DOCX?', 'Соберём Excel-файл?', 'Оформим резюме в DOCX?',
+    'Сделаем таблицу с формулами?', 'Создадим диаграмму для документа?',
+    'Сверстаем HTML-файл?', 'Подготовим PNG-инфографику?',
+    'Преобразуем файл в другой формат?', 'Оформим документ по шаблону?',
+    'Создадим PDF с графиками?', 'Соберём комплект файлов?',
+    'Подготовим презентацию с таблицами?', 'Оформим титульную страницу?',
+    'Добавим график в таблицу?'
   ];
 
   const SUGGESTIONS = [
-    'Помоги с Python — пример кода',
-    'Объясни, что такое API',
-    'Составь план на неделю',
-    'Напиши SQL-запрос с JOIN',
-    'Как работает Docker?',
-    'Переведи текст на английский',
-    'Сократи этот текст',
-    'Сравни React и Vue',
-    'Напиши регулярное выражение',
-    'Объясни async/await простыми словами',
-    'Составь резюме для junior-разработчика',
-    'Как настроить CI/CD?',
-    'Разбери ошибку в коде',
-    'Придумай название для проекта',
-    'Напиши письмо клиенту',
-    'Сделай конспект статьи',
-    'Как ускорить запрос к базе?',
-    'Объясни разницу между TCP и UDP',
-    'Составь бюджет на месяц',
-    'Напиши bash-скрипт для бэкапа',
-    'Что такое векторная база данных?',
-    'Придумай 10 идей для стартапа',
-    'Как работает JWT?',
-    'Оптимизируй этот алгоритм',
-    'Напиши тесты на pytest',
-    'Объясни принципы SOLID',
-    'Как развернуть приложение на сервере?',
-    'Составь чек-лист для релиза',
-    'Придумай вопросы для собеседования',
-    'Как работает HTTPS?',
-    'Напиши Dockerfile для Python',
-    'Разбери JSON на части',
-    'Объясни, что такое REST',
-    'Составь план изучения ML',
-    'Напиши функцию сортировки',
-    'Как чистить данные в pandas?',
-    'Придумай структуру базы данных',
-    'Объясни git rebase',
-    'Как работает Redis?',
-    'Составь договор простыми словами',
-    'Напиши HTML-страницу с формой',
-    'Объясни, что такое WebSocket',
-    'Как защитить API?',
-    'Придумай метрики для продукта',
-    'Напиши текст для лендинга',
-    'Объясни разницу между процессами и потоками',
-    'Как настроить nginx?',
-    'Составь roadmap проекта',
-    'Напиши SQL для отчёта',
-    'Что почитать про архитектуру?',
+    'Создай аккуратно оформленный DOCX-отчёт с заголовками и таблицей.',
+    'Сделай Excel-таблицу с формулами, итогами и форматированием.',
+    'Подготовь PPTX-презентацию на 8 слайдов с единым стилем.',
+    'Собери PDF-отчёт с заголовками, таблицами и графиками.',
+    'Создай SVG-блок-схему с подписями и соединительными стрелками.',
+    'Подготовь SVG-иллюстрацию с согласованными цветами и подписями.',
+    'Сверстай самодостаточный HTML-файл с адаптивным дизайном.',
+    'Создай PNG-инфографику на основе этих данных.',
+    'Подготовь CSV-файл с чистыми столбцами и понятными заголовками.',
+    'Преобразуй этот текст в структурированный DOCX-документ.',
+    'Оформи резюме в DOCX с аккуратной типографикой.',
+    'Сделай XLSX-календарь с датами, статусами и фильтрами.',
+    'Создай DOCX-документ с титульной страницей и оглавлением.',
+    'Собери PPTX с титульным слайдом, разделами и итогами.',
+    'Подготовь PDF из приложенного материала, сохранив структуру.',
+    'Создай SVG-график с подписями осей, легендой и сеткой.',
+    'Оформи таблицу данных в XLSX с фильтрами и закреплённой шапкой.',
+    'Собери набор файлов DOCX, XLSX и PDF для одного отчёта.'
   ];
-
 
   // ---------- auth ----------
   function showAuth() {
@@ -897,8 +850,7 @@
   }
 
   function thinkAnim() {
-    return '<span class="think-anim">' + '<span></span>'.repeat(7) +
-      '<i class="core"></i></span>';
+    return '<span class="think-anim" aria-hidden="true"><i class="core"></i></span>';
   }
 
   function genAnim(label) {
@@ -1270,17 +1222,31 @@
       state.readableTextStatusRequested.clear();
       state.readableTextChatId = state.currentChatId;
     }
-    entries.forEach(entry => {
-      const n = entry && entry.node;
-      if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
+
+    const completed = entries
+      .map(entry => entry && entry.node)
+      .filter(n => n && n.role === 'assistant' && n.status === 'completed' && String(n.content || '').trim());
+    const latest = completed.reduce((best, node) => {
+      if (!best) return node;
+      return String(node.created_at || '') >= String(best.created_at || '') ? node : best;
+    }, null);
+    const latestId = latest ? String(latest.id) : null;
+
+    completed.forEach(n => {
       if (state.readableTextStatusRequested.has(n.id)) return;
       state.readableTextStatusRequested.add(n.id);
-      refreshReadableTextStatus(n.id);
+
+      // Keep older answers available on demand; prepare the newest completed answer
+      // immediately so both audio buttons share the same readable text.
+      refreshReadableTextStatus(n.id).then(record => {
+        if (!record || String(n.id) !== latestId || record.status !== 'missing') return;
+        return generateReadableText(n.id, false);
+      }).catch(() => { /* status text below the answer reports the eventual failure */ });
     });
-    const hasPending = entries.some(entry => {
-      const n = entry && entry.node;
-      return n && state.readableText[n.id] && state.readableText[n.id].status === 'generating';
-    });
+
+    const hasPending = completed.some(n =>
+      state.readableText[n.id] && state.readableText[n.id].status === 'generating'
+    );
     if (hasPending) startReadableTextStatusPolling();
   }
 
@@ -1851,8 +1817,8 @@
     const code = String(item.code || '');
     const base64 = btoa(unescape(encodeURIComponent(code)));
     const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#fff}' +
-      'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f5f5f1;border-radius:8px;min-height:28px}' +
+      '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#faf9f5}' +
+      'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f0eee6;border-radius:8px;min-height:28px}' +
       '.note{color:#6f6f67}.demo-board{max-width:680px;margin:18px auto;padding:18px;border:1px solid #e4e2db;border-radius:16px}' +
       '.demo-header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.demo-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#e9e7df;font-weight:800}' +
       '.demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.demo-card{padding:16px;border:1px solid #e5e3dd;border-radius:12px;background:#faf9f6}' +
@@ -3366,8 +3332,9 @@
   }
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
+    $('#new-code-btn')?.addEventListener('click', () => newChat('code'));
     $('#sidebar-limits-btn').addEventListener('click', openLimits);
-    // Код-агент и Консилиум убраны из интерфейса — обработчиков больше нет
+    // Консилиум намеренно не возвращаем: восстановлен только режим Код-агента.
     $('#collapse-btn').addEventListener('click', () => {
       state.sidebarCollapsed = true;
       localStorage.setItem('cs_sidebar', '1');

@@ -1119,7 +1119,7 @@
   }
 
   function attsHtml(atts) {
-    if (!atts || !atts.length) return '';
+    if (!Array.isArray(atts) || !atts.length) return '';
     return '<div class="msg-atts">' + atts.map(a => {
       const url = '/api/files/' + a.file_id + '/download';
       if (a.kind === 'image') {
@@ -3238,8 +3238,13 @@
         restoreUnsentDraft(opts.input, opts.draft || '');
         const unsent = Array.isArray(opts.attachments) ? opts.attachments : [];
         if (unsent.length) {
-          const present = new Set(state.pendingAttachments.map(f => f.id));
-          state.pendingAttachments = unsent.filter(f => !present.has(f.id)).concat(state.pendingAttachments);
+          const currentAttachments = Array.isArray(state.pendingAttachments)
+            ? state.pendingAttachments.filter(f => f && typeof f === 'object' && typeof f.id === 'string' && f.id)
+            : [];
+          const present = new Set(currentAttachments.map(f => f.id));
+          state.pendingAttachments = unsent
+            .filter(f => f && typeof f === 'object' && typeof f.id === 'string' && f.id && !present.has(f.id))
+            .concat(currentAttachments);
           renderAttachments();
         }
       }
@@ -3347,6 +3352,7 @@
 
     // Validate pending attachments before reading IDs; a stale/null item must not abort sending.
     const pending = Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [];
+    state.pendingAttachments = pending;
     const hasInvalidAttachment = pending.some(f =>
       !f || typeof f !== 'object' || typeof f.id !== 'string' || !f.id
     );
@@ -3465,6 +3471,9 @@
 
   function renderAttachments() {
     const box = $('#attach-list');
+    state.pendingAttachments = Array.isArray(state.pendingAttachments)
+      ? state.pendingAttachments.filter(f => f && typeof f === 'object' && typeof f.id === 'string' && f.id)
+      : [];
     box.innerHTML = state.pendingAttachments.map(f =>
       '<span class="attach-chip">' + icon('paperclip') + escapeHtml(f.original_name) +
       '<button data-rm="' + f.id + '" title="Убрать">' + icon('x') + '</button></span>').join('');

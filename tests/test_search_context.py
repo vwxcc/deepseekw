@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.search_context import _search_context
+from app.services.search_context import _plan_search_queries, _search_context
 
 
 class SearchContextTests(unittest.TestCase):
@@ -34,6 +34,26 @@ class SearchContextTests(unittest.TestCase):
 
         self.assertIn("Тема связана с Python", context)
         self.assertNotIn("secret tool output", context)
+
+    def test_explicit_none_prevents_fallback_search(self):
+        self.assertEqual(
+            _plan_search_queries(" NONE\\n", "Последний запрос пользователя: посчитай 2 + 2"),
+            [],
+        )
+
+    def test_fallback_removes_context_labels_and_keeps_subject(self):
+        queries = _plan_search_queries(
+            "",
+            "Последний запрос пользователя: А какие есть альтернативы?\\n"
+            "Пользователь: Pyodide работает в браузере",
+        )
+        self.assertEqual(queries, ["альтернативы pyodide браузере"])
+
+    def test_planner_numbered_lines_are_parsed_as_separate_queries(self):
+        self.assertEqual(
+            _plan_search_queries("1. Pyodide alternatives\\n2. Python in browser", ""),
+            ["Pyodide alternatives", "Python in browser"],
+        )
 
 
 if __name__ == "__main__":

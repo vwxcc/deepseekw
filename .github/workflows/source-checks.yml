@@ -56,7 +56,7 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=39" not in html:
+          if "/assets/css/app.css?v=40" not in html:
               raise SystemExit("Unexpected CSS cache reference")
           if "/assets/js/app.js?v=45" not in html:
               raise SystemExit("Unexpected JS cache reference")

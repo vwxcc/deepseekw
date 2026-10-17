@@ -3330,7 +3330,7 @@
   function shouldAskExecutionTarget(text) {
     const value = String(text || '');
     const hasFence = value.indexOf(String.fromCharCode(96).repeat(3)) >= 0;
-    const refersToCode = /python|javascript|typescript|\bjs\b|html|css|script|код|скрипт|программ|приложени|сайт|страниц|<script|<html|алгоритм/i.test(value);
+    const refersToCode = /python|javascript|typescript|\bjs\b|html|css|script|код|скрипт|программ|приложени|сайт|страниц|алгоритм|файл|документ|презентац|таблиц|xlsx|pptx|docx|pdf|svg|png|график|диаграм|изображени/i.test(value);
     const asksForCodeWork = /run|execute|compile|test|debug|write|create|generate|fix|build|implement|напиш|созда|сгенер|исправ|сделай|разработ|построй|запуст|выполн|исполн|скомпили|протест|отлад|реализ|проверь/i.test(value);
     // Ask before generating code, including broad requests like "make an HTML game".
     // A pasted fenced snippet is also a code-execution intent even without an imperative.

@@ -2515,7 +2515,14 @@
         } else if (ev === 'delta') {
           state.streamBuf += data.text || '';
           const n = findNode(state.tree, state.activeAssistantId);
+          const needsAnswerBody = !!(n && n.creating);
           if (n) { n.draft = state.streamBuf; n.creating = false; state.streamStarted = true; }
+          // The initial "working" bubble has no draft tail. Create that tail exactly
+          // once on the first answer token, then update its text without re-rendering.
+          if (needsAnswerBody) {
+            renderMessageInPlace(state.activeAssistantId);
+            bindStreamRefs();
+          }
           if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
           maybeScroll();
         } else if (ev === 'memory') {

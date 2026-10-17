@@ -903,6 +903,9 @@ _AUDIO_ACTIVITY_STALE_AFTER = timedelta(minutes=10)
 
 
 
+_READABLE_TEXT_STALE_AFTER = timedelta(minutes=12)
+
+
 def _readable_text_payload(record: ReadableTextGeneration | None) -> dict:
     if record is None:
         return {"status": "missing", "text": None, "error": None}
@@ -962,14 +965,36 @@ async def _generate_readable_text_background(
 
 @router.get("/messages/{message_id}/readable-text")
 async def readable_text_status(
+    background_tasks: BackgroundTasks,
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return only the requesting user's cached readable-text status/result."""
+    """Return cached status and recover a generation abandoned by a worker restart."""
     record = await db.get(ReadableTextGeneration, message.id)
     if record is None or record.user_id != user.id:
         return _readable_text_payload(None)
+
+    now = utcnow()
+    if record.status == "generating":
+        age = now - record.updated_at if record.updated_at else _READABLE_TEXT_STALE_AFTER + timedelta(seconds=1)
+        if age >= _READABLE_TEXT_STALE_AFTER:
+            source = (message.content or "").strip()
+            if source and message.role == Role.assistant and message.status == MessageStatus.completed:
+                record.text = None
+                record.error = None
+                record.created_at = now
+                record.updated_at = now
+                await db.commit()
+                background_tasks.add_task(
+                    _generate_readable_text_background, message.id, user.id, source
+                )
+            else:
+                record.status = "failed"
+                record.text = None
+                record.error = "Исходный ответ уже недоступен для подготовки."
+                record.updated_at = now
+                await db.commit()
     return _readable_text_payload(record)
 
 
@@ -1002,8 +1027,8 @@ async def create_message_readable_text(
         return _readable_text_payload(record)
 
     if record is not None and record.status == "generating":
-        age = now - record.updated_at if record.updated_at else timedelta(minutes=11)
-        if age < timedelta(minutes=10):
+        age = now - record.updated_at if record.updated_at else _READABLE_TEXT_STALE_AFTER + timedelta(seconds=1)
+        if age < _READABLE_TEXT_STALE_AFTER:
             return _readable_text_payload(record)
         # Recover a job left unfinished by a worker restart.
         record.text = None

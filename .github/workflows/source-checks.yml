@@ -138,6 +138,8 @@ jobs:
               "python-barcode",
               "pyodideAliases",
               "function sourceImportNames()",
+              "drain_output_until_terminal",
+              "detach_output_drain(job.output)",
               "const nativeLoadFailed",
               "sys.stdlib_module_names",
               "requestedImports.includes",

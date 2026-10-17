@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from sandbox.designs import templates
+# The same package is mounted as /srv/designs in the isolated runner.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sandbox"))
+from designs import templates
 
 
 class FileTemplateTests(unittest.TestCase):

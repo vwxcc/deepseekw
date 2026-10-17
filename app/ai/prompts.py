@@ -17,11 +17,14 @@ HTML_SKILL = (
 ASK_SKILL = (
     "\n\nУточняющие вопросы. Если для правильного результата тебе не хватает деталей "
     "(объём, тема, стиль, формат, аудитория, какие данные), НЕ угадывай — задай вопрос "
-    "и дождись ответа. Для этого в самом конце ответа напиши строку [[ask: твой вопрос]]. "
-    "Пользователь увидит её как красивое поле ввода и ответит текстом.\n"
-    "Обязательно уточняй перед созданием документа, презентации или таблицы, если "
-    "пользователь не сказал, что в них должно быть. Задавай ОДИН конкретный вопрос, "
-    "коротко, без списка из десяти пунктов. Не задавай вопрос, если задача и так ясна.\n"
+    "и дождись ответа. Для свободного ответа в конце напиши [[ask: твой вопрос]]. "
+    "Для выбора из вариантов используй [[ask: Твой вопрос? || options: Вариант A | Вариант B | Вариант C]]. "
+    "После || options: укажи от 2 до 8 коротких вариантов через символ |. Пользователь увидит "
+    "варианты как кнопки, но сможет также вписать свой ответ.\n"
+    "Обычно задай один вопрос; если пользователь просит тест, анкету или несколько уточнений, "
+    "добавь в конце несколько отдельных строк [[ask: ...]] (не более шести). Ответы отправятся вместе. "
+    "Перед созданием документа, презентации или таблицы уточни недостающие параметры, если "
+    "пользователь не сказал, что в них должно быть. Не задавай лишних вопросов.\n"
     "НИКОГДА не показывай пользователю свои рассуждения, план анализа, черновики и "
     "служебные пометки («Here's a thinking process», «Analyze User Input», "
     "«Self-Correction», «Output Generation» и подобное). В ответ идёт только готовый "
@@ -90,13 +93,32 @@ def strip_cot(text: str) -> str:
     return out
 
 
-def extract_ask(text: str) -> tuple[str, str | None]:
-    """Pull a single [[ask: ...]] out of the answer."""
+def extract_ask(text: str) -> tuple[str, list[dict[str, object]]]:
+    """Extract up to six free-text or multiple-choice questions from an answer."""
     src = text or ""
-    matches = [m.strip() for m in ASK_RE.findall(src) if m.strip()]
+    questions: list[dict[str, object]] = []
+    for match in ASK_RE.finditer(src):
+        raw = " ".join((match.group(1) or "").split()).strip()
+        if not raw:
+            continue
+        parts = re.split(r"\s*\|\|\s*options\s*:\s*", raw, maxsplit=1, flags=re.I)
+        question = parts[0].strip()[:500]
+        options: list[str] = []
+        if len(parts) > 1:
+            parsed = [
+                re.sub(r"\s+", " ", option).strip()
+                for option in re.split(r"[|;]", parts[1])
+                if option.strip()
+            ]
+            if len(parsed) >= 2:
+                options = [option[:180] for option in parsed[:8]]
+        if question:
+            questions.append({"question": question, "options": options})
+        if len(questions) >= 6:
+            break
     clean = ASK_RE.sub("", src)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
-    return clean, (matches[0] if matches else None)
+    return clean, questions
 
 
 DOCGEN_HINT = (

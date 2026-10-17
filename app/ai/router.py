@@ -831,7 +831,7 @@ class AIRouter:
                     if not ask and len(answer) <= 500:
                         tail = answer.strip().split("\n")[-1].strip()
                         if tail.endswith("?") and 12 < len(tail) < 260:
-                            ask = tail
+                            ask = [{"question": tail[:500], "options": []}]
                     if memories and job.user_id:
                         async with SessionLocal() as db:
                             for kind, value in memories:
@@ -862,7 +862,7 @@ class AIRouter:
                     )
                     if ask:
                         await job.output.put(
-                            ("ask", json.dumps({"question": ask}, ensure_ascii=False))
+                            ("ask", json.dumps({"questions": ask}, ensure_ascii=False))
                         )
                     if job.first_exchange and code_mode:
                         # The Code Agent already has a 2-3 turn budget. Make a useful

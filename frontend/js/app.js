@@ -1092,6 +1092,7 @@
     const id = escapeHtml(n.id);
     const quota = audioQuotaSnapshot();
     const quotaLabel = quota.label ? '(' + quota.label + ')' : 'создать голосовую версию';
+    const readyLabel = 'Аудио готово' + (quota.label ? ' · ' + quotaLabel : ' · слушать');
     if (state.audioPending[n.id]) {
       return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
         '<button class="speech-action-button answer-audio-generate is-loading" data-mact="audio-pending" data-id="' + id + '" disabled>' +
@@ -1100,7 +1101,7 @@
     if (state.audioReady[n.id]) {
       return '<div class="answer-audio-wrap" data-audio-control="' + id + '">' +
         '<button class="speech-action-button answer-audio-generate is-ready" data-mact="play-audio" data-id="' + id + '" title="Слушать готовую ИИ-озвучку">' +
-        icon('play') + '<span class="speech-button-copy"><b>Озвучка ИИ</b><small>Аудио готово · слушать</small></span></button></div>';
+        icon('play') + '<span class="speech-button-copy"><b>Озвучка ИИ</b><small>' + escapeHtml(readyLabel) + '</small></span></button></div>';
     }
     if (state.audioBusyMessageId) {
       const sameMessage = String(state.audioBusyMessageId) === String(n.id);

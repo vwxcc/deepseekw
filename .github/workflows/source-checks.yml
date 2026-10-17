@@ -58,7 +58,7 @@ jobs:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
           if "/assets/css/app.css?v=42" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=49" not in html:
+          if "/assets/js/app.js?v=50" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -115,6 +115,10 @@ jobs:
               "svgwrite",
               "tabulate",
               "qrcode",
+              "docx2txt",
+              "python-barcode",
+              "pyodideAliases",
+              "deviceSpeechState.priming = false",
               "device-code-file-preview",
           ]
           missing = [token for token in required_js if token not in js]

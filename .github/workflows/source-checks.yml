@@ -117,6 +117,8 @@ jobs:
               "function startDeviceSpeech(messageId)",
               "function bindDeviceSpeechPlayer()",
               "function openDeviceCodeRunner(item)",
+              "function activityStartTime(n)",
+              "$$('[data-activity-elapsed]').find",
               "function activityHtml(n, generating)",
               "function openActivityStream(id)",
               "function languageLabel(lang)",

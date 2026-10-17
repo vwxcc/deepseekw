@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.ai.activity_stream import ActivityMarkupParser
+from app.ai.stream_lifecycle import detach_output_drain, drain_output_until_terminal
 
 
 class ActivityMarkupParserTests(unittest.TestCase):
@@ -60,6 +61,33 @@ class ActivityMarkupParserTests(unittest.TestCase):
             "## Заголовок\n\n```python\nprint(2)\n```",
         )
 
+
+
+    def test_detached_stream_queue_is_drained_until_terminal_event(self) -> None:
+        import asyncio
+
+        async def scenario() -> None:
+            queue = asyncio.Queue()
+            await queue.put(("delta", "partial answer"))
+            await queue.put(("ui_status", "checking"))
+            await queue.put(("done", "complete answer"))
+            await drain_output_until_terminal(queue)
+            self.assertTrue(queue.empty())
+
+        asyncio.run(scenario())
+
+    def test_detached_drain_task_is_retained_and_finishes_on_error(self) -> None:
+        import asyncio
+
+        async def scenario() -> None:
+            queue = asyncio.Queue()
+            task = detach_output_drain(queue)
+            await queue.put(("delta", "text"))
+            await queue.put(("error", "provider failed"))
+            await asyncio.wait_for(task, timeout=1)
+            self.assertTrue(queue.empty())
+
+        asyncio.run(scenario())
 
 if __name__ == "__main__":
     unittest.main()

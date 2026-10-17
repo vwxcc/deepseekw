@@ -598,6 +598,7 @@ async def retry_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
+        execution_target=message.execution_target or "site",
     )
 
 
@@ -621,6 +622,7 @@ async def branch_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
+        execution_target=message.execution_target or "site",
     )
 
 
@@ -647,6 +649,7 @@ async def continue_message(
         parent_message_id=message.id,
         history_messages=history_messages,
         user_id=user.id,
+        execution_target=message.execution_target or "site",
     )
 
 

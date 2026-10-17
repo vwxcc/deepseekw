@@ -3188,7 +3188,7 @@
           if (n && state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(n.id, null, { focusMessageId: n.id });
             if (n.execution_target === 'device' || (n.execution_target === 'both' && !n.deviceRunnerStarted)) {
-              const messageEl = $('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
+              const messageEl = $$('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
               const runButton = messageEl && $('[data-run-device]', messageEl);
               const runnable = runButton && (window.__codeStore || {})[runButton.dataset.runDevice];
               if (runnable) {

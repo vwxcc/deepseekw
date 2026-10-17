@@ -2017,9 +2017,9 @@
         icon('download') + '<span>' + escapeHtml(file.name || 'Созданный файл') + '</span>' +
         '<em>' + formatSize(file.size) + '</em></a>';
     }).join('');
-    const code = items.map(run => String(run.code || '').trim()).filter(Boolean).join('\\n\\n# Подготовка результата\\n');
-    const stdout = items.map(run => String(run.stdout || '').trim()).filter(Boolean).join('\\n\\n');
-    const stderr = items.map(run => String(run.stderr || '').trim()).filter(Boolean).join('\\n\\n');
+    const code = items.map(run => String(run.code || '').trim()).filter(Boolean) .join('\n\n# Подготовка результата\n');
+    const stdout = items.map(run => String(run.stdout || '').trim()).filter(Boolean) .join('\n\n');
+    const stderr = items.map(run => String(run.stderr || '').trim()).filter(Boolean) .join('\n\n');
 
     return '<div class="tool-box collapsed' + (failed ? ' err' : '') + '">' +
       '<div class="tool-head">' +

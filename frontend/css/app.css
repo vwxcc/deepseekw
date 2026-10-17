@@ -2264,6 +2264,11 @@ body { font-weight: 400; }
 }
 
 
+
+.mem-row-copy { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.mem-row-copy > span { min-width: 0; }
+.mem-scope-label { color: var(--fg-soft); font-size: 11px; line-height: 1.35; }
+
 /* ---- Device voice and isolated on-device code runner ---- */
 .device-audio-wrap { margin-top: 6px; }
 .device-audio-button {

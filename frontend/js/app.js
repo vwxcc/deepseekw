@@ -2670,10 +2670,28 @@
     }
   }
 
+  function bindFastResponseButton() {
+    const button = $('#fast-response-btn');
+    if (!button || button.dataset.bound === 'true') return;
+    button.dataset.bound = 'true';
+    button.addEventListener('click', () => {
+      if (!state.streaming) return;
+      button.classList.add('is-active');
+      button.setAttribute('aria-pressed', 'true');
+    });
+  }
+
   function setStreaming(on) {
     state.streaming = on;
     $('#send-btn').classList.toggle('hidden', on);
     $('#stop-btn').classList.toggle('hidden', !on);
+    const fastWrap = $('#fast-response-wrap');
+    if (fastWrap) fastWrap.hidden = !on;
+    const fastButton = $('#fast-response-btn');
+    if (fastButton && !on) {
+      fastButton.classList.remove('is-active');
+      fastButton.setAttribute('aria-pressed', 'false');
+    }
     $('#input').disabled = false;
   }
 
@@ -5046,7 +5064,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner(); bindFastResponseButton();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

@@ -209,6 +209,29 @@ async def _stream_job(
             detach_output_drain(job.output)
 
 
+def _last_user_text(messages: list[dict]) -> str:
+    """Find the most recent actual user request, skipping the synthetic continue prompt."""
+    for item in reversed(messages or []):
+        if not isinstance(item, dict) or item.get("role") != "user":
+            continue
+        content = item.get("content")
+        if isinstance(content, str):
+            value = content.strip()
+        elif isinstance(content, list):
+            value = "\n".join(
+                str(part.get("text") or "").strip()
+                for part in content
+                if isinstance(part, dict) and part.get("type") in {"text", "input_text"}
+                and str(part.get("text") or "").strip()
+            ).strip()
+        else:
+            continue
+        if not value or value.startswith("Продолжи ответ с того места, где остановился."):
+            continue
+        return value[:8000]
+    return ""
+
+
 def _estimate_chars(messages: list[dict]) -> int:
     total = 0
     for m in messages:
@@ -415,6 +438,7 @@ async def _spawn(
     execution_target = execution_target if execution_target in {"site", "device"} else "site"
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
+    system_prompt += prompts.skill_context(_last_user_text(history_messages), code_mode=mode == "code")
     history_messages, trimmed = _trim_history(
         history_messages, settings.model_context_len
     )
@@ -553,6 +577,7 @@ async def send_message(
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
+    system_prompt += prompts.skill_context(content, code_mode=code_mode)
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     if trimmed:
         system_prompt += prompts.CONTEXT_LIMIT_NOTE

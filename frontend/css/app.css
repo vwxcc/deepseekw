@@ -2367,3 +2367,56 @@ body { font-weight: 400; }
 
 /* Do not replay the message entrance animation for an in-place streaming update. */
 .msg.no-msg-entrance { animation: none !important; }
+
+
+/* AI-CH targeted fixes: horizontal, scrollable admin quota panel. */
+.modal.limits-modal {
+  width: min(1120px, 96vw);
+  max-width: min(1120px, 96vw);
+  min-width: 0;
+}
+.modal.limits-modal .modal-body {
+  max-height: min(72dvh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.lim-table-scroll {
+  max-height: min(42dvh, 420px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+}
+.lim-table-scroll .lim-table { min-width: 640px; }
+#lim-users { min-width: 0; }
+#lim-users .lim-user-list {
+  max-height: min(32dvh, 300px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 3px 2px 0;
+}
+.lim-user-row { flex-wrap: wrap; align-items: flex-start; }
+.lim-user-row .link-info { flex: 1 1 280px; }
+.lim-user-row .link-info span { overflow-wrap: anywhere; line-height: 1.5; }
+.lim-user-actions { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lim-user-actions .chip-btn { min-height: 30px; padding: 5px 9px; white-space: nowrap; }
+
+/* The chat surface follows Safari's visible viewport, including its top offset. */
+#main-screen {
+  top: var(--app-offset-top, 0px);
+  bottom: auto;
+  height: var(--app-height, 100dvh);
+}
+
+/* Slightly shorter composer without changing text typography or controls. */
+.composer-inner { padding-top: 7px; padding-bottom: 5px; }
+#input { min-height: 24px; max-height: 160px; padding-top: 2px; padding-bottom: 2px; line-height: 1.42; }
+@media (max-width: 620px) {
+  .modal.limits-modal { width: 96vw; max-width: 96vw; padding: 14px; }
+  .modal.limits-modal .modal-body { max-height: calc(100dvh - 135px); }
+  .lim-table-scroll .lim-table { min-width: 590px; }
+  #lim-users .lim-user-list { max-height: 28dvh; }
+  .composer-inner { padding-top: 5px; padding-bottom: 4px; }
+  #input { max-height: 116px; }
+}

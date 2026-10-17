@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -94,6 +95,11 @@ class Settings(BaseSettings):
     qwen_model_id: str = ""  # optional explicit external model ID; takes priority over QWEN_MODEL
     qwen_temperature: float = 0.2
     qwen_max_tokens: int = 32000
+    # Optional usage prices in USD per 1,000,000 tokens. None preserves the
+    # price saved on the primary MAIN model entry in the database.
+    qwen_price_in: float | None = Field(default=None, ge=0)
+    qwen_price_out: float | None = Field(default=None, ge=0)
+    qwen_price_cache: float | None = Field(default=None, ge=0)
 
     # --- Admin bootstrap (optional) ---
     admin_email: str = ""

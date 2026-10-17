@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_current_user, get_db, require_csrf
-from ..models import AudioGeneration, Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, User, utcnow
+from ..models import AudioGeneration, Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, UsageEvent, User, utcnow
 from ..services.limits import (
     LABELS,
     PLANS,
@@ -64,7 +64,8 @@ async def my_limits(
         .where(Chat.user_id == user.id, Message.role == Role.assistant)
     )
     window_hours = int(limits.get("window_hours") or 5)
-    budget = float(limits.get("budget_usd") or 0)
+    budget_raw = limits.get("budget_usd")
+    budget = float(budget_raw) if budget_raw is not None else None
     window_spend, window_reqs = await _window_spend(
         db, user.id, window_hours, user.plan or "free"
     )
@@ -75,7 +76,10 @@ async def my_limits(
             AudioGeneration.created_at >= audio_cutoff,
         )
     )
-    percent = round(min(100.0, window_spend / budget * 100.0), 1) if budget else 0.0
+    percent = (
+        0.0 if budget is None else
+        (100.0 if budget == 0 else round(min(100.0, window_spend / budget * 100.0), 1))
+    )
     return {
         "compare": await all_limits(db),
         "plan": user.plan or "free",
@@ -137,8 +141,8 @@ async def limits_models(
 async def users_overview(
     admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)
 ) -> list[dict]:
-    """Every user with plan, live usage and money."""
-    spend = (
+    """Users with exact billed cost and current rolling-window spend."""
+    usage = (
         select(
             Chat.user_id.label("uid"),
             func.count(Message.id).label("requests"),
@@ -154,18 +158,25 @@ async def users_overview(
         await db.execute(
             select(
                 User,
-                func.coalesce(spend.c.requests, 0),
-                func.coalesce(spend.c.tin, 0),
-                func.coalesce(spend.c.tout, 0),
-            ).outerjoin(spend, spend.c.uid == User.id).order_by(User.created_at)
+                func.coalesce(usage.c.requests, 0),
+                func.coalesce(usage.c.tin, 0),
+                func.coalesce(usage.c.tout, 0),
+            ).outerjoin(usage, usage.c.uid == User.id).order_by(User.created_at)
         )
     ).all()
 
     out: list[dict] = []
     for user, requests, tin, tout in rows:
         limits = await get_limits(db, user.plan or "free")
-        rate = float(limits.get("cost_per_1k") or 0)
-        tokens = int(tin) + int(tout)
+        window_hours = max(1, int(limits.get("window_hours") or 5))
+        budget_raw = limits.get("budget_usd")
+        budget = float(budget_raw) if budget_raw is not None else None
+        window_spend, window_calls = await usage_window_spend(db, user.id, window_hours)
+        total_cost = await db.scalar(
+            select(func.coalesce(func.sum(UsageEvent.cost_usd), 0)).where(
+                UsageEvent.user_id == user.id
+            )
+        )
         used = await db.scalar(
             select(func.coalesce(func.sum(File.size), 0)).where(File.user_id == user.id)
         )
@@ -181,8 +192,17 @@ async def users_overview(
                 "tokens_in": int(tin or 0),
                 "tokens_out": int(tout or 0),
                 "storage": int(used or 0),
-                "plan_price": int(limits.get("price") or 0),
-                "cost": round(tokens / 1000 * rate, 2),
+                "plan_price": float(limits.get("price") or 0),
+                "cost": round(float(total_cost or 0), 6),
+                "spend_usd": window_spend,
+                "budget_usd": budget,
+                "window_hours": window_hours,
+                "window_requests": window_calls,
+                "window_percent": (
+                    0.0 if budget is None else
+                    (100.0 if budget == 0 else round(min(100.0, window_spend / budget * 100), 1))
+                ),
+                "usage_reset_at": user.usage_reset_at.isoformat() if user.usage_reset_at else None,
             }
         )
     return out
@@ -230,15 +250,52 @@ async def limits_update(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if plan not in PLANS:
-        plan = "free"
-    values: dict[str, int] = {}
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неизвестный тариф")
+    # Preserve decimal dollars; blank inputs clear their stored overrides.
+    float_keys = {"budget_usd", "price"}
+    allowed_keys = set((await get_limits(db, plan)).keys())
+    values: dict[str, int | float | None] = {}
     for key, raw in (data or {}).items():
+        if key not in allowed_keys:
+            continue
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            if key == "window_hours":
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Длительность окна должна быть не меньше 1 часа",
+                )
+            values[key] = None
+            continue
         try:
-            values[key] = int(raw)
-        except (TypeError, ValueError):
+            number = float(raw) if key in float_keys else int(raw)
+            if isinstance(number, float) and (number != number or abs(number) == float("inf")):
+                continue
+            if number < 0 or (key == "window_hours" and number < 1):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"Недопустимое значение лимита: {key}",
+                )
+            values[key] = number
+        except (TypeError, ValueError, OverflowError):
             continue
     updated = await set_limits(db, plan, values)
     return {"plan": plan, "limits": updated}
+
+
+@router.post("/user/{user_id}/reset-window")
+async def reset_user_usage_window(
+    user_id: str,
+    admin: User = Depends(get_current_admin),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Reset this user's quota window without deleting billing history."""
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+    target.usage_reset_at = utcnow()
+    await db.commit()
+    return {"ok": True, "usage_reset_at": target.usage_reset_at.isoformat()}
 
 
 @router.put("/user/{user_id}")

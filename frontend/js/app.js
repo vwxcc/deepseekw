@@ -553,7 +553,7 @@
   };
   const DEVICE_SPEECH_CHUNK_SIZE = 20;
   const deviceCodeFileUrls = [];
-  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const append = value => { out.textContent += String(value) + \"\\n\"; };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message)}, \"*\"); } catch (e) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".xls\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function importUsed(moduleName) {\n    const lines = source.split(/\\r?\\n/);\n    return lines.some(line => {\n      const value = line.trim();\n      if (!value || value.startsWith('#')) return false;\n      const imported = value.match(/^import\\s+(.+?)\\s*(?:#.*)?$/);\n      if (imported) return imported[1].split(',').some(item => item.trim().split(/\\s+as\\s+/)[0].split('.')[0] === moduleName);\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      return !!fromImport && fromImport[1].split('.')[0] === moduleName;\n    });\n  }\n  const externalPackages = {\n    \"docx\":\"python-docx\",\n    \"openpyxl\":\"openpyxl\",\n    \"pypdf\":\"pypdf\",\n    \"pptx\":\"python-pptx\",\n    \"xlsxwriter\":\"XlsxWriter\",\n    \"markdown\":\"Markdown\",\n    \"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\n    \"docxtpl\":\"docxtpl\",\n    \"jinja2\":\"Jinja2\",\n    \"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\n    \"tabulate\":\"tabulate\",\n    \"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\n    \"cssselect2\":\"cssselect2\",\n    \"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\n    \"barcode\":\"python-barcode\",\n    \"python_barcode\":\"python-barcode\",\n    \"toml\":\"toml\"\n  };\n  try {\n    out.textContent = \"Загружаю Python WebAssembly…\";\n    notify(\"Загружаю Python на устройстве…\");\n    const py = await loadPyodide({indexURL:\"https://cdn.jsdelivr.net/pyodide/v0.27.7/full/\"});\n    py.setStdout({batched:append});\n    py.setStderr({batched:value => append(\"STDERR: \" + value)});\n    await py.runPythonAsync(\"import os\\nos.chdir('/home/pyodide')\");\n    const before = JSON.parse(await py.runPythonAsync(snapshotCode));\n    out.textContent = \"Автоматически загружаю библиотеки по import…\";\n    notify(\"Проверяю импорты. Научные, графические и другие пакеты Pyodide загружаются по необходимости.\");\n    try {\n      if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n    } catch (e) {\n      append(\"Предупреждение загрузки встроенных пакетов: \" + String(e && e.message || e));\n      const pyodideAliases = {\n        \"PIL\":\"pillow\", \"cv2\":\"opencv-python\", \"sklearn\":\"scikit-learn\",\n        \"skimage\":\"scikit-image\", \"bs4\":\"beautifulsoup4\", \"yaml\":\"pyyaml\",\n        \"dateutil\":\"python-dateutil\", \"lxml\":\"lxml\", \"numpy\":\"numpy\",\n        \"pandas\":\"pandas\", \"matplotlib\":\"matplotlib\", \"scipy\":\"scipy\",\n        \"sympy\":\"sympy\", \"networkx\":\"networkx\", \"altair\":\"altair\",\n        \"bokeh\":\"bokeh\", \"statsmodels\":\"statsmodels\", \"svgwrite\":\"svgwrite\"\n      };\n      const fallbackPackages = [...new Set(Object.keys(pyodideAliases).filter(importUsed).map(name => pyodideAliases[name]))];\n      for (const packageName of fallbackPackages) {\n        try {\n          notify(\"Дополнительно загружаю встроенный пакет \" + packageName + \"…\");\n          await py.loadPackage(packageName);\n        } catch (packageError) {\n          append(\"⚠ Не удалось загрузить пакет \" + packageName + \": \" + String(packageError && packageError.message || packageError));\n        }\n      }\n    }\n    \n\n    // Preload Pyodide-native dependencies used by common document-generation libraries.\n    // Pure-Python wheels alone are not enough if python-docx/python-pptx need lxml or Pillow.\n    const builtinDependencies = [];\n    if (importUsed(\"docx\") || importUsed(\"pptx\") || importUsed(\"docxtpl\")) builtinDependencies.push(\"lxml\");\n    if (importUsed(\"pptx\") || importUsed(\"qrcode\") || importUsed(\"fpdf\")) builtinDependencies.push(\"pillow\");\n    if (importUsed(\"openpyxl\")) builtinDependencies.push(\"et_xmlfile\");\n    for (const packageName of [...new Set(builtinDependencies)]) {\n      try {\n        notify(\"Подготавливаю зависимость документа \" + packageName + \"…\");\n        await py.loadPackage(packageName);\n      } catch (packageError) {\n        append(\"⚠ Встроенная зависимость \" + packageName + \" недоступна: \" + String(packageError && packageError.message || packageError));\n      }\n    }\n\n    \nconst wanted = Object.keys(externalPackages).filter(importUsed).map(name => externalPackages[name]);\n    if (wanted.length) {\n      try {\n        await py.loadPackage(\"micropip\");\n        const micropip = py.pyimport(\"micropip\");\n        for (const packageName of wanted) {\n          notify(\"Загружаю библиотеку \" + packageName + \"…\");\n          try {\n            await micropip.install(packageName);\n            append(\"✓ Библиотека загружена: \" + packageName);\n          } catch (e) {\n            append(\"⚠ Не удалось установить \" + packageName + \": \" + String(e && e.message || e));\n          }\n        }\n        micropip.destroy();\n      } catch (e) {\n        append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n      }\n    }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Загрузка завершена. Выполняю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n    }\n    let exported = 0;\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const paths = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      }).sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\", csv:\"text/csv\", tsv:\"text/tab-separated-values\", txt:\"text/plain\",\n          json:\"application/json\", jsonl:\"application/jsonl\", html:\"text/html\", htm:\"text/html\",\n          svg:\"image/svg+xml\", png:\"image/png\", jpg:\"image/jpeg\", jpeg:\"image/jpeg\", webp:\"image/webp\",\n          gif:\"image/gif\", zip:\"application/zip\", md:\"text/markdown\", xml:\"application/xml\", rtf:\"application/rtf\",\n          epub:\"application/epub+zip\", tex:\"application/x-tex\", bib:\"text/plain\", ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\", yml:\"text/yaml\", npy:\"application/octet-stream\", npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\", pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size || size > 8 * 1024 * 1024 || totalBytes + size > 12 * 1024 * 1024) {\n          append(\"⚠ Файл пропущен: лимит 8 МБ на файл и 12 МБ суммарно. \" + name);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    if (exported) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки для скачивания появятся над окном кода.\");\n      notify(\"Python завершён. Документов и изображений подготовлено: \" + exported + \".\");\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен. Когда код создаст документ или изображение, здесь появится ссылка для скачивания.\");\n    }\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и дополнительные модули.\";\n    notify(\"Не удалось загрузить Python или библиотеку: \" + String(e && e.message || e));\n  }\n})();";
+  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const append = value => { out.textContent += String(value) + \"\\n\"; };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message)}, \"*\"); } catch (e) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".xls\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\",\".ppt_\",\".doc_\",\".xls_\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function importUsed(moduleName) {\n    const lines = source.split(/\\r?\\n/);\n    return lines.some(line => {\n      const value = line.trim();\n      if (!value || value.startsWith('#')) return false;\n      const imported = value.match(/^import\\s+(.+?)\\s*(?:#.*)?$/);\n      if (imported) return imported[1].split(',').some(item => item.trim().split(/\\s+as\\s+/)[0].split('.')[0] === moduleName);\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      return !!fromImport && fromImport[1].split('.')[0] === moduleName;\n    });\n  }\n  const externalPackages = {\n    \"docx\":\"python-docx\",\n    \"openpyxl\":\"openpyxl\",\n    \"pypdf\":\"pypdf\",\n    \"pptx\":\"python-pptx\",\n    \"xlsxwriter\":\"XlsxWriter\",\n    \"markdown\":\"Markdown\",\n    \"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\n    \"docxtpl\":\"docxtpl\",\n    \"jinja2\":\"Jinja2\",\n    \"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\n    \"tabulate\":\"tabulate\",\n    \"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\n    \"cssselect2\":\"cssselect2\",\n    \"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\n    \"barcode\":\"python-barcode\",\n    \"python_barcode\":\"python-barcode\",\n    \"toml\":\"toml\"\n  };\n  try {\n    out.textContent = \"Загружаю Python WebAssembly…\";\n    notify(\"Загружаю Python на устройстве…\");\n    const py = await loadPyodide({indexURL:\"https://cdn.jsdelivr.net/pyodide/v0.27.7/full/\"});\n    py.setStdout({batched:append});\n    py.setStderr({batched:value => append(\"STDERR: \" + value)});\n    await py.runPythonAsync(\"import os\\nos.chdir('/home/pyodide')\");\n    const before = JSON.parse(await py.runPythonAsync(snapshotCode));\n    out.textContent = \"Автоматически загружаю библиотеки по import…\";\n    notify(\"Проверяю импорты. Научные, графические и другие пакеты Pyodide загружаются по необходимости.\");\n    try {\n      if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n    } catch (e) {\n      append(\"Предупреждение загрузки встроенных пакетов: \" + String(e && e.message || e));\n      const pyodideAliases = {\n        \"PIL\":\"pillow\", \"cv2\":\"opencv-python\", \"sklearn\":\"scikit-learn\",\n        \"skimage\":\"scikit-image\", \"bs4\":\"beautifulsoup4\", \"yaml\":\"pyyaml\",\n        \"dateutil\":\"python-dateutil\", \"lxml\":\"lxml\", \"numpy\":\"numpy\",\n        \"pandas\":\"pandas\", \"matplotlib\":\"matplotlib\", \"scipy\":\"scipy\",\n        \"sympy\":\"sympy\", \"networkx\":\"networkx\", \"altair\":\"altair\",\n        \"bokeh\":\"bokeh\", \"statsmodels\":\"statsmodels\", \"svgwrite\":\"svgwrite\"\n      };\n      const fallbackPackages = [...new Set(Object.keys(pyodideAliases).filter(importUsed).map(name => pyodideAliases[name]))];\n      for (const packageName of fallbackPackages) {\n        try {\n          notify(\"Дополнительно загружаю встроенный пакет \" + packageName + \"…\");\n          await py.loadPackage(packageName);\n        } catch (packageError) {\n          append(\"⚠ Не удалось загрузить пакет \" + packageName + \": \" + String(packageError && packageError.message || packageError));\n        }\n      }\n    }\n    \n\n    // Preload Pyodide-native dependencies used by common document-generation libraries.\n    // Pure-Python wheels alone are not enough if python-docx/python-pptx need lxml or Pillow.\n    const builtinDependencies = [];\n    if (importUsed(\"docx\") || importUsed(\"pptx\") || importUsed(\"docxtpl\")) builtinDependencies.push(\"lxml\");\n    if (importUsed(\"pptx\") || importUsed(\"qrcode\") || importUsed(\"fpdf\")) builtinDependencies.push(\"pillow\");\n    if (importUsed(\"openpyxl\")) builtinDependencies.push(\"et_xmlfile\");\n    for (const packageName of [...new Set(builtinDependencies)]) {\n      try {\n        notify(\"Подготавливаю зависимость документа \" + packageName + \"…\");\n        await py.loadPackage(packageName);\n      } catch (packageError) {\n        append(\"⚠ Встроенная зависимость \" + packageName + \" недоступна: \" + String(packageError && packageError.message || packageError));\n      }\n    }\n\n    \nconst wanted = Object.keys(externalPackages).filter(importUsed).map(name => externalPackages[name]);\n    if (wanted.length) {\n      try {\n        await py.loadPackage(\"micropip\");\n        const micropip = py.pyimport(\"micropip\");\n        for (const packageName of wanted) {\n          notify(\"Загружаю библиотеку \" + packageName + \"…\");\n          try {\n            await micropip.install(packageName);\n            append(\"✓ Библиотека загружена: \" + packageName);\n          } catch (e) {\n            append(\"⚠ Не удалось установить \" + packageName + \": \" + String(e && e.message || e));\n          }\n        }\n        micropip.destroy();\n      } catch (e) {\n        append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n      }\n    }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Загрузка завершена. Выполняю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n    }\n    let exported = 0;\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const paths = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      }).sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\", csv:\"text/csv\", tsv:\"text/tab-separated-values\", txt:\"text/plain\",\n          json:\"application/json\", jsonl:\"application/jsonl\", html:\"text/html\", htm:\"text/html\",\n          svg:\"image/svg+xml\", png:\"image/png\", jpg:\"image/jpeg\", jpeg:\"image/jpeg\", webp:\"image/webp\",\n          gif:\"image/gif\", zip:\"application/zip\", md:\"text/markdown\", xml:\"application/xml\", rtf:\"application/rtf\",\n          epub:\"application/epub+zip\", tex:\"application/x-tex\", bib:\"text/plain\", ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\", yml:\"text/yaml\", npy:\"application/octet-stream\", npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\", pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size || size > 8 * 1024 * 1024 || totalBytes + size > 12 * 1024 * 1024) {\n          append(\"⚠ Файл пропущен: лимит 8 МБ на файл и 12 МБ суммарно. \" + name);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    if (exported) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки для скачивания появятся над окном кода.\");\n      notify(\"Python завершён. Документов и изображений подготовлено: \" + exported + \".\");\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен. Когда код создаст документ или изображение, здесь появится ссылка для скачивания.\");\n    }\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и дополнительные модули.\";\n    notify(\"Не удалось загрузить Python или библиотеку: \" + String(e && e.message || e));\n  }\n})();";
 
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
@@ -578,28 +578,7 @@
     'Добавим график в таблицу?'
   ];
 
-  const SUGGESTIONS = [
-    'Создай аккуратно оформленный DOCX-отчёт с заголовками и таблицей.',
-    'Сделай Excel-таблицу с формулами, итогами и форматированием.',
-    'Подготовь PPTX-презентацию на 8 слайдов с единым стилем.',
-    'Собери PDF-отчёт с заголовками, таблицами и графиками.',
-    'Создай SVG-блок-схему с подписями и соединительными стрелками.',
-    'Подготовь SVG-иллюстрацию с согласованными цветами и подписями.',
-    'Сверстай самодостаточный HTML-файл с адаптивным дизайном.',
-    'Создай PNG-инфографику на основе этих данных.',
-    'Подготовь CSV-файл с чистыми столбцами и понятными заголовками.',
-    'Преобразуй этот текст в структурированный DOCX-документ.',
-    'Оформи резюме в DOCX с аккуратной типографикой.',
-    'Сделай XLSX-календарь с датами, статусами и фильтрами.',
-    'Создай DOCX-документ с титульной страницей и оглавлением.',
-    'Собери PPTX с титульным слайдом, разделами и итогами.',
-    'Подготовь PDF из приложенного материала, сохранив структуру.',
-    'Создай SVG-график с подписями осей, легендой и сеткой.',
-    'Оформи таблицу данных в XLSX с фильтрами и закреплённой шапкой.',
-    'Собери набор файлов DOCX, XLSX и PDF для одного отчёта.'
-  ];
-
-  // ---------- auth ----------
+  // ---------- auth ----------  // ---------- auth ----------
   function showAuth() {
     $('#auth-screen').classList.remove('hidden');
     $('#main-screen').classList.add('hidden');
@@ -1962,7 +1941,14 @@
       try {
         const bytes = new Uint8Array(data.bytes);
         if (!bytes.length || bytes.length > 8 * 1024 * 1024) return;
-        const blob = new Blob([bytes], { type: String(data.mime || 'application/octet-stream') });
+        const normalizedName = String(data.name).replace(/\.(ppt|doc|xls)_$/i, (_, ext) => '.' + ({ ppt: 'pptx', doc: 'docx', xls: 'xlsx' }[ext.toLowerCase()]));
+        const normalizedExt = normalizedName.slice(normalizedName.lastIndexOf('.')).toLowerCase();
+        const officeMime = {
+          '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }[normalizedExt];
+        const blob = new Blob([bytes], { type: officeMime || String(data.mime || 'application/octet-stream') });
         const url = URL.createObjectURL(blob);
         deviceCodeFileUrls.push(url);
         fileBox.hidden = false;
@@ -1970,7 +1956,7 @@
         card.className = 'device-code-file-card';
         const link = document.createElement('a');
         link.href = url;
-        link.download = data.name.replace(/[\\/\\0-\\x1f]/g, '_').slice(0, 180) || 'output.bin';
+        link.download = normalizedName.replace(/[\\/\\0-\\x1f]/g, '_').slice(0, 180) || 'output.bin';
         link.textContent = 'Скачать ' + link.download + ' · ' + formatSize(blob.size);
         card.appendChild(link);
         if (/^image\/(png|jpeg|webp|gif|svg\+xml)$/i.test(blob.type)) {
@@ -2058,29 +2044,9 @@
       '<div class="empty-state">' +
         '<h2 class="greet" id="greet-text">' +
           escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
-        '<div class="tiles" id="tiles"></div>' +
-        '<div class="chips" id="sugg-chips"></div>' +
       '</div>';
-    renderTiles();
-    bindTiles();
-    renderSuggestionChips();
     rollPlaceholder();
     startRotation();
-  }
-
-  function renderSuggestionChips() {
-    const box = $('#sugg-chips');
-    if (!box) return;
-    const total = SUGGESTIONS.length, n = 2;
-    const picks = [];
-    for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
-    state.suggIdx = (state.suggIdx + n) % total;
-    box.innerHTML = picks.map((p, i) =>
-      '<button class="chip-in" style="animation-delay:' + (i * 70) +
-      'ms" data-prompt="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>').join('');
-    $$('button[data-prompt]', box).forEach(b => b.addEventListener('click', () => {
-      $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
-    }));
   }
 
   function rotateGreeting() {
@@ -2100,7 +2066,6 @@
       if (!$('#greet-text')) { stopRotation(); return; }
       tick += 1;
       if (tick % 2 === 0) rotateGreeting();
-      renderSuggestionChips();
     }, 11000);
   }
 
@@ -2404,10 +2369,10 @@
       // the limit bar fills live while the answer is still streaming;
       // the exact dollar amount lands on `done` (server bills per model)
       const w = windowUsage();
-      if (w && w.budget_usd) {
+      if (w && w.budget_usd !== null && w.budget_usd !== undefined) {
         const outTokens = Math.round(((state.streamBuf || '').length) / 3.6);
         const live = Number(w.spend_usd || 0);
-        paintUsage(live / w.budget_usd * 100,
+        paintUsage(w.budget_usd > 0 ? live / w.budget_usd * 100 : 100,
           'Идёт генерация · ' + outTokens.toLocaleString('ru-RU') +
           ' ток. выхода · бюджет $' + live.toFixed(4) + ' из $' + w.budget_usd +
           ' за ' + w.hours + ' ч');
@@ -2918,7 +2883,7 @@
   // percent of the plan's dollar budget spent inside the rolling window
   function windowUsage() {
     const w = (state.limits && state.limits.window) || null;
-    if (!w || !w.budget_usd) return null;
+    if (!w || w.budget_usd === null || w.budget_usd === undefined) return null;
     return w;
   }
 
@@ -2929,7 +2894,6 @@
     const defs = [
       ['files', 'files_count', 'Файлы', 'шт'],
       ['storage', 'user_storage', 'Хранилище', ' Б'],
-      ['requests', 'messages_per_day', 'Запросы в день', 'шт'],
     ];
     const rows = [];
     defs.forEach(d => {
@@ -3307,6 +3271,7 @@
         (f.type === 'select'
           ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
           : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
+            (f.type === 'number' ? ' step="any"' : '') +
             (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
             (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') +
             (f.calc ? ' data-calc="1" inputmode="decimal"' : '') + ' />') +
@@ -4139,7 +4104,7 @@
       return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
         (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
         '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
-        shown + '" placeholder="∞" /></label>';
+        shown + '" step="' + (['budget_usd', 'price'].includes(key) ? 'any' : '1') + '" placeholder="∞" /></label>';
     };
     const modelBoxes = (plan) => {
       const allowed = data.allowed[plan] || [];
@@ -4152,7 +4117,9 @@
     };
     const lf = data.limits.free || {};
     const lp = data.limits.pro || {};
-    const tableKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp)))).filter(key => key !== 'posts');
+    const allKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp)))).filter(key => key !== 'posts');
+    const primaryKeys = ['budget_usd', 'window_hours', 'price'];
+    const tableKeys = primaryKeys.filter(key => allKeys.includes(key)).concat(allKeys.filter(key => !primaryKeys.includes(key)));
     const rowFor = (key) => '<tr><td class="lk">' + escapeHtml(labels[key] || key) +
       (bytes[key] ? ' <em>МБ</em>' : '') + '</td>' +
       '<td>' + field('free', key, lf[key]) + '</td>' +
@@ -4163,14 +4130,15 @@
     openModal({
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
-      body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
-        'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, ' +
-        'код-агенты, шаги агента, консилиум, запуск кода, озвучивание ответов, цена тарифа и цена токенов.</p>' +
-        '<table class="lim-table"><thead><tr><th>Лимит</th>' +
+      body: '<p class="usage-note">Бюджет — суммарная стоимость вызовов ИИ за скользящее окно; длина окна задаётся в часах. ' +
+        'Цены входных, выходных и кэшированных токенов задаются в моделях MAIN или переменными QWEN_PRICE_IN, ' +
+        'QWEN_PRICE_OUT и QWEN_PRICE_CACHE (доллары за 1 млн токенов). Пустой бюджет — без ограничения; ' +
+        'размеры указаны в МБ. Прочие лимиты ограничивают файлы, чаты, код-агенты, консилиум, запуск кода и озвучивание.</p>' +
+        '<div class="lim-table-scroll"><table class="lim-table"><thead><tr><th>Лимит</th>' +
         '<th>Free<button class="reset-plan" data-reset-plan="free">сбросить</button></th>' +
         '<th>Pro<button class="reset-plan" data-reset-plan="pro">сбросить</button></th>' +
         '</tr></thead>' +
-        '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table>' +
+        '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table></div>' +
         '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
@@ -4198,6 +4166,7 @@
         return true;
       },
     });
+    $('.modal', $('#modal-root'))?.classList.add('limits-modal');
     loadLimitUsers();
     $$('[data-reset-plan]', $('#modal-root')).forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Сбросить лимиты тарифа ' + b.dataset.resetPlan.toUpperCase() +
@@ -4217,22 +4186,35 @@
     if (!box) return;
     let rows = [];
     try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
-    box.innerHTML = '<div class="link-list">' + rows.map(u =>
-      '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
-      '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
-      ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
-      ' · файлы: ' + formatSize(u.storage) +
-      ' · тариф $' + u.plan_price + ' · расход $' + u.cost + '</span></div>' +
+    box.innerHTML = '<div class="link-list lim-user-list">' + rows.map(u =>
+      '<div class="link-row lim-user-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
+      '<span>' + escapeHtml(u.email) + ' · ' + (u.plan === 'pro' ? 'Pro' : 'Free') +
+      ' · вход: ' + fmtNum(u.tokens_in) + ' · выход: ' + fmtNum(u.tokens_out) +
+      ' · расход за окно: $' + Number(u.spend_usd || 0).toFixed(4) +
+      (u.budget_usd !== null && u.budget_usd !== undefined ? ' / $' + Number(u.budget_usd).toFixed(2) : ' · без денежного лимита') +
+      ' за ' + Number(u.window_hours || 5) + ' ч · всего $' + Number(u.cost || 0).toFixed(4) +
+      ' · файлы: ' + formatSize(u.storage) + '</span></div>' +
+      '<div class="lim-user-actions">' +
       '<button class="chip-btn" data-uplan="' + u.id + '">' +
-      (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
-      '</div>';
-    $$('[data-uplan]').forEach(b => b.addEventListener('click', async () => {
+      (u.plan === 'pro' ? 'Снять Pro' : 'Выдать Pro') + '</button>' +
+      '<button class="chip-btn" data-ureset="' + u.id + '" title="Обнулить расход в текущем окне">Сбросить расход</button>' +
+      '</div></div>').join('') + '</div>';
+    $$('[data-uplan]', box).forEach(b => b.addEventListener('click', async () => {
       const cur = rows.find(x => x.id === b.dataset.uplan);
       const next = cur && cur.plan === 'pro' ? 'free' : 'pro';
       try {
-        await api.put('/api/limits/user/' + b.dataset.uplan, { plan: next });
-        toast('Тариф изменён: ' + next);
-        loadLimitUsers();
+        await api.put('/api/limits/user/' + encodeURIComponent(b.dataset.uplan), { plan: next });
+        toast(next === 'pro' ? 'Подписка Pro выдана' : 'Подписка Pro снята');
+        await loadLimitUsers();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+    $$('[data-ureset]', box).forEach(b => b.addEventListener('click', async () => {
+      const cur = rows.find(x => x.id === b.dataset.ureset);
+      if (!cur || !confirm('Сбросить потраченный бюджет окна для ' + (cur.email || cur.name) + '? История расходов сохранится.')) return;
+      try {
+        await api.post('/api/limits/user/' + encodeURIComponent(b.dataset.ureset) + '/reset-window', {});
+        toast('Расход в окне сброшен');
+        await loadLimitUsers();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     }));
   }
@@ -4488,22 +4470,14 @@
     // no model button in the composer anymore
   }
 
-  // playful composer placeholders
-  const PLACEHOLDERS = [
-    'Жду указаний…', 'Слушаю, мой повелитель…', 'Что изволите?', 'Приказывайте…',
-    'Готов служить…', 'Ваше слово?', 'Я весь внимание…', 'Жду вашу мудрую мысль…',
-    'Повелевайте…', 'Скажите слово — и я начну…', 'Ваш ход, господин…',
-    'Куда направим усилия?', 'Слушаю и повинуюсь…', 'Излагайте, я записываю…',
-  ];
-
   function rollPlaceholder() {
     const el = $('#input');
-    if (!el) return;
-    el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+    if (el) el.placeholder = 'Введите запрос…';
   }
 
 // ---------- subscription limits window ----------
   function limitValueLabel(key, value) {
+    if ((value === null || value === undefined) && key === 'price') return 'не задана';
     if (value === null || value === undefined) return 'без лимита';
     if (key === 'user_storage' || key === 'file_size') return formatSize(value);
     return fmtNum(value);
@@ -4511,17 +4485,23 @@
 
   function planCompareHtml(lim, compare) {
     const pro = (compare && compare.pro) || {};
-    const order = ['budget_usd', 'window_hours', 'audio_generations', 'file_size', 'user_storage', 'files_count',
-                   'chats_count', 'messages_per_day', 'code_agents',
-                   'agent_steps', 'council_members', 'sandbox_seconds'];
+    const order = ['budget_usd', 'window_hours', 'price', 'audio_generations', 'file_size', 'user_storage', 'files_count',
+                   'chats_count', 'code_agents', 'agent_steps', 'council_members', 'sandbox_seconds'];
     const labels = {
-      budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
+      budget_usd: 'Бюджет на окно, $',
+      window_hours: 'Окно, часов',
+      price: 'Цена тарифа, $/мес',
       audio_generations: 'Голосовых ответов за окно',
-      file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
-      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день',
-      code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
-      council_members: 'Участников консилиума', sandbox_seconds: 'Секунд на код',
+      file_size: 'Размер файла',
+      user_storage: 'Хранилище',
+      files_count: 'Файлов всего',
+      chats_count: 'Чатов всего',
+      code_agents: 'Код-агентов',
+      agent_steps: 'Шагов агента',
+      council_members: 'Участников консилиума',
+      sandbox_seconds: 'Секунд на код',
     };
+
     const rows = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
       const mine = lim[k];
       const theirs = pro[k];
@@ -4556,7 +4536,7 @@
     const proPrice = Number(pro.price || 0);
 
     let money = '';
-    if (w && w.budget_usd) {
+    if (w && w.budget_usd !== null && w.budget_usd !== undefined) {
       const left = Math.max(0, Number(w.budget_usd) - Number(w.spend_usd));
       const pct = Math.min(100, Math.round(w.percent));
       money = '<div class="lim-row ' + (pct >= 80 ? 'warn' : '') + '">' +
@@ -4569,7 +4549,6 @@
     const defs = [
       ['files', 'files_count', 'Файлы'],
       ['storage', 'user_storage', 'Хранилище'],
-      ['requests', 'messages_per_day', 'Сообщений в день'],
     ];
     const rows = defs.map(d => {
       const used = Number(use[d[0]] || 0);
@@ -4605,7 +4584,7 @@
       body:
         '<div class="sub-head">' +
           '<div class="sub-plan">Тариф «' + escapeHtml(String(plan).toUpperCase()) + '»' +
-          '<br><em>' + (w && w.budget_usd
+          '<br><em>' + (w && w.budget_usd !== null && w.budget_usd !== undefined
             ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
             : 'лимит по минутам и файлам') + '</em></div>' +
         '</div>' +
@@ -4660,15 +4639,17 @@
   }
 
   function syncAppViewportHeight() {
-    const h = window.visualViewport && window.visualViewport.height
-      ? window.visualViewport.height
-      : window.innerHeight;
+    const viewport = window.visualViewport;
+    const h = viewport && viewport.height ? viewport.height : window.innerHeight;
+    const top = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
     document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
+    document.documentElement.style.setProperty('--app-offset-top', Math.round(top) + 'px');
   }
   syncAppViewportHeight();
   window.addEventListener('resize', syncAppViewportHeight, { passive: true });
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', syncAppViewportHeight, { passive: true });
+    window.visualViewport.addEventListener('scroll', syncAppViewportHeight, { passive: true });
   }
 
   document.addEventListener('DOMContentLoaded', init);

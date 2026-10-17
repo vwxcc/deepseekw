@@ -303,9 +303,21 @@ class AIRouter:
                     max_tokens=e.max_tokens,
                     timeout=e.timeout,
                     max_parallel=int(getattr(e, "max_parallel", 2) or 2),
-                    price_in=float(getattr(e, "price_in", 0.0) or 0.0),
-                    price_out=float(getattr(e, "price_out", 0.0) or 0.0),
-                    price_cache=float(getattr(e, "price_cache", 0.0) or 0.0),
+                    price_in=float(
+                        settings.qwen_price_in
+                        if settings.qwen_price_in is not None
+                        else (getattr(e, "price_in", 0.0) or 0.0)
+                    ),
+                    price_out=float(
+                        settings.qwen_price_out
+                        if settings.qwen_price_out is not None
+                        else (getattr(e, "price_out", 0.0) or 0.0)
+                    ),
+                    price_cache=float(
+                        settings.qwen_price_cache
+                        if settings.qwen_price_cache is not None
+                        else (getattr(e, "price_cache", 0.0) or 0.0)
+                    ),
                 )
             ]
             return mset.id, mset.name, configs
@@ -410,14 +422,15 @@ class AIRouter:
                 if user is None or user.is_admin:
                     return None
                 limits = await get_limits(db, user.plan or "free")
-                budget = float(limits.get("budget_usd") or 0)
-                if budget <= 0:
+                budget_value = limits.get("budget_usd")
+                if budget_value is None:
                     return None
-                hours = int(limits.get("window_hours") or 5)
+                budget = float(budget_value)
+                hours = max(1, int(limits.get("window_hours") or 5))
                 spent, _ = await window_spend(db, user.id, hours)
         except Exception as e:  # noqa: BLE001
             log.warning("Budget check failed: %s", e)
-            return None
+            return "Не удалось проверить расходный лимит. Повторите запрос позже."
         if spent >= budget:
             return (
                 f"Лимит исчерпан: израсходовано ${spent:.2f} из ${budget:.2f} "
@@ -703,6 +716,17 @@ class AIRouter:
                     usage: dict | None = None
                     all_runs: list[dict] = []
                     for step in range(max_steps):
+                        # Search and earlier agent calls may already have consumed
+                        # the remaining budget, so check before every paid model turn.
+                        blocked = await self._budget_error(job)
+                        if blocked:
+                            if step == 0:
+                                await self._finish(job.message_id, MessageStatus.failed, error=blocked)
+                                await job.output.put(("error", blocked))
+                                return
+                            answer = blocked
+                            usage = None
+                            break
                         got = await self._stream_once(job, entry, messages)
                         if got is None:
                             return
@@ -711,6 +735,10 @@ class AIRouter:
                         if not runs:
                             answer = full if full.strip() else thinking
                             break
+                        # This response is an additional paid agent turn. Bill it
+                        # immediately so the next budget check sees the real spend.
+                        await self._bill(job, entry, usage, f"agent_step_{step + 1}")
+                        usage = None
                         for code in runs:
                             await job.output.put(
                                 ("tool_start", json.dumps({"code": code}, ensure_ascii=False))
@@ -853,6 +881,10 @@ class AIRouter:
             await self._run_title(job)
 
     async def _run_title(self, job: Job) -> None:
+        blocked = await self._budget_error(job)
+        if blocked:
+            log.info("Skipping title generation: %s", blocked)
+            return
         try:
             _, _, entries = await self._resolve_entries(RouteType.TITLE)
         except ProviderError as e:

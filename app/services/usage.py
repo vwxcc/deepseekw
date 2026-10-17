@@ -7,12 +7,12 @@ window, which keeps the number meaningful even if prices are edited later.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Message, ModelSetEntry, Role, UsageEvent, utcnow
+from ..models import Message, ModelSetEntry, Role, UsageEvent, User, utcnow
 
 
 def est(text) -> int:
@@ -151,6 +151,13 @@ async def window_spend(
 ) -> tuple[float, int]:
     """Dollar spend of a user inside a rolling window, plus the number of calls."""
     since = utcnow() - timedelta(hours=max(1, int(hours or 5)))
+    user = await db.get(User, user_id)
+    reset_at = user.usage_reset_at if user is not None else None
+    if reset_at is not None:
+        # SQLite stores timestamps without tzinfo; application timestamps are UTC.
+        if reset_at.tzinfo is not None:
+            reset_at = reset_at.astimezone(timezone.utc).replace(tzinfo=None)
+        since = max(since, reset_at)
     rows = (
         await db.execute(
             select(UsageEvent.cost_usd).where(

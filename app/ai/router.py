@@ -110,6 +110,7 @@ class Job:
     effort: str | None = None
     user_id: str | None = None
     mode: str = "chat"
+    execution_target: str = "site"
     project: str | None = None
     depends_on: list[str] = field(default_factory=list)
     max_steps: int | None = None
@@ -630,7 +631,7 @@ class AIRouter:
             job.message_id, MessageStatus.processing, mset_id, mset_name
         )
 
-        agent_on = bool(settings.agent_enabled)
+        agent_on = bool(settings.agent_enabled) and job.execution_target != "device"
         code_mode = job.mode == "code"
         plan_steps = job.max_steps
         base_steps = plan_steps or (

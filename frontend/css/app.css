@@ -2363,3 +2363,7 @@ body { font-weight: 400; }
   .think-anim .core, .audio-loading-ring { animation: none; }
 }
 
+
+
+/* Do not replay the message entrance animation for an in-place streaming update. */
+.msg.no-msg-entrance { animation: none !important; }

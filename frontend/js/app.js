@@ -1653,7 +1653,7 @@
   }
 
   function bindDeviceCodeRunner() {
-    $('[data-device-code-close]').forEach(button => button.addEventListener('click', closeDeviceCodeRunner));
+    $$('[data-device-code-close]').forEach(button => button.addEventListener('click', closeDeviceCodeRunner));
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && $('#device-code-shell')?.classList.contains('open')) closeDeviceCodeRunner();
     });

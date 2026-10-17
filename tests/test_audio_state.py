@@ -108,7 +108,10 @@ class SharedAudioGenerationLockTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.message_id, first)
 
         await finish_shared_audio_generation(self.db1, self.user.id, first)
+        # The second session may still cache the lock it read before the delete.
+        self.db2.expire_all()
         await claim_shared_audio_generation(self.db2, self.user.id, second)
+        self.db1.expire_all()
         self.assertEqual(
             await shared_active_audio_generation(self.db1, self.user.id), second
         )
@@ -121,6 +124,7 @@ class SharedAudioGenerationLockTests(unittest.IsolatedAsyncioTestCase):
             await shared_active_audio_generation(self.db2, self.user.id), first
         )
         await finish_shared_audio_generation(self.db1, self.user.id, first)
+        self.db2.expire_all()
         self.assertIsNone(
             await shared_active_audio_generation(self.db2, self.user.id)
         )

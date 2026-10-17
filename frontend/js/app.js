@@ -313,10 +313,10 @@
     window.__codeStore[id] = { lang: lang || '', code: code };
     const isHtml = ['html', 'htm'].indexOf((lang || '').toLowerCase()) >= 0;
     const deviceMode = executionTarget === 'device';
-    const preview = isHtml && deviceMode
+    const preview = isHtml
       ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
-        '<span>Предпросмотр на устройстве</span></div>' +
-        '<iframe sandbox="allow-scripts" loading="lazy" srcdoc="' +
+        '<span>' + (deviceMode ? 'Предпросмотр на устройстве' : 'Живое превью') + '</span></div>' +
+        '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
         escapeHtml(code) + '"></iframe></div>'
       : '';
     const runButton = deviceMode
@@ -2286,10 +2286,10 @@
 
   function shouldAskExecutionTarget(text) {
     const value = String(text || '');
-    const asksToRun = /run|execute|compile|test|запуст|выполн|исполн|скомпилируй|протестируй|проверь.{0,20}код/i.test(value);
+    const asksForCodeWork = /run|execute|compile|test|debug|write|create|generate|fix|build|запуст|выполн|исполн|скомпилируй|протестируй|отлад|напиши|создай|сгенерируй|исправь|сделай.{0,18}(?:код|скрипт|программ|страниц)|проверь.{0,20}код/i.test(value);
     const hasFence = value.indexOf(String.fromCharCode(96).repeat(3)) >= 0;
-    const refersToCode = /python|javascript|typescript|html|script|код|скрипт|программ|<script|<html/i.test(value);
-    return asksToRun && (hasFence || refersToCode);
+    const refersToCode = /python|javascript|typescript|html|css|script|код|скрипт|программ|приложени|сайт|страниц|<script|<html/i.test(value);
+    return asksForCodeWork && (hasFence || refersToCode);
   }
 
   function askExecutionTarget() {

@@ -2013,12 +2013,12 @@ body { font-weight: 400; }
 }
 
 
-/* Single aligned action row: copy/save on the left, discreet audio on the right. */
+/* ---- Unified speech actions and readable-text status ---- */
 .msg-actions-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -2027,90 +2027,123 @@ body { font-weight: 400; }
 .msg-actions-row .meta {
   display: flex;
   align-items: center;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
   margin-top: 0;
   gap: 6px;
 }
-.msg-actions-row .answer-audio-wrap {
+.readable-text-status-wrap {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.readable-text-status {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 12.65px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.readable-text-status.is-ready { color: var(--fg-muted); }
+.readable-text-status.is-error { color: var(--danger); }
+.speech-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.speech-actions .answer-audio-wrap,
+.speech-actions .device-audio-wrap {
   display: flex;
-  justify-content: flex-end;
-  flex: 0 0 auto;
-  width: auto;
-  max-width: 100%;
-  margin: 0 0 0 auto;
+  align-items: stretch;
+  justify-content: stretch;
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
   box-sizing: border-box;
 }
-.msg-actions-row .answer-audio-generate {
-  width: min(100%, 225px);
-  min-width: 175px;
-  max-width: 225px;
-  min-height: 38px;
-  padding: 7px 12px;
+.speech-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 46px;
+  box-sizing: border-box;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-panel);
-  color: var(--fg-muted);
-  box-shadow: none;
-  font-size: 13.75px;
-  font-weight: 550;
-}
-.msg-actions-row .answer-audio-generate:hover {
-  background: var(--bg-hover);
   color: var(--fg);
+  box-shadow: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transition: background .16s ease, border-color .16s ease;
+}
+.speech-action-button:hover {
+  background: var(--bg-hover);
   border-color: var(--border);
+  color: var(--fg);
   filter: none;
   transform: none;
   box-shadow: none;
 }
-.msg-actions-row .answer-audio-generate .ic { width: 16px; height: 16px; }
-.msg-actions-row .answer-audio-generate.is-loading {
-  background: var(--bg-panel);
-  border-color: var(--border);
-  color: var(--fg-muted);
-  box-shadow: none;
-}
-.msg-actions-row .answer-audio-preview {
-  width: min(100%, 225px);
-  min-width: 175px;
-  max-width: 225px;
-  min-height: 42px;
-  gap: 9px;
-  padding: 6px 9px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-panel);
-  color: var(--fg-muted);
-  text-align: left;
-  box-shadow: none;
-}
-.msg-actions-row .answer-audio-preview:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-  border-color: var(--border);
+.speech-action-button:disabled {
+  cursor: wait;
+  opacity: .76;
   transform: none;
   box-shadow: none;
 }
-.msg-actions-row .audio-preview-art {
-  width: 34px;
-  height: 28px;
-  flex-basis: 34px;
-  padding: 0 5px;
-  border-radius: 8px;
+.speech-action-button .ic {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
-.msg-actions-row .audio-preview-copy b { font-size: 13px; font-weight: 550; }
-.msg-actions-row .audio-preview-copy small { font-size: 11.5px; }
-.msg-actions-row .audio-preview-play {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+.speech-button-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
+.speech-button-copy b {
+  font-size: 13.2px;
+  line-height: 1.25;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.speech-button-copy small {
+  color: var(--fg-soft);
+  font-size: 11.5px;
+  line-height: 1.25;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.speech-action-button.is-loading {
+  background: var(--bg-panel);
+  color: var(--fg-muted);
+  border-color: var(--border);
+}
+.speech-action-button.is-ready { background: var(--bg-panel); }
+.speech-action-button .audio-loading-ring { flex: 0 0 17px; }
 @media (max-width: 620px) {
-  .msg-actions-row { flex-wrap: wrap; align-items: center; gap: 8px; }
-  .msg-actions-row .meta { flex: 1 1 100%; }
-  .msg-actions-row .answer-audio-wrap { margin-left: auto; }
+  .msg-actions-row { align-items: stretch; gap: 8px; }
+  .msg-actions-row .meta { flex: 0 0 auto; }
+  .speech-actions { grid-template-columns: minmax(0, 1fr); }
+  .speech-actions .answer-audio-wrap,
+  .speech-actions .device-audio-wrap { width: 100%; }
 }
+
 .composer-row {
   width: 100%;
   box-sizing: border-box;

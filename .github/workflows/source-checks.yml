@@ -181,7 +181,7 @@ jobs:
               raise SystemExit("Code Agent prompt must consolidate work into one run block")
           for token in (
               "function upsertChat(chat)", "function renderMessageInPlace",
-              "function setChatCreationPending", "if (needsAnswerBody)",
+              "function setChatCreationPending", "if (needsAnswerBody && state.currentChatId === streamContext.chatId)",
               "requestToken !== state.chatOpenToken",
           ):
               if token not in js:

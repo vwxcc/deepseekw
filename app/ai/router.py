@@ -557,6 +557,7 @@ class AIRouter:
                 "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
                 "мне", "нужно", "хочу", "можно", "есть", "это", "the", "and", "for",
                 "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
+                "последний", "запрос", "пользователя", "ассистент", "контекст", "реплик",
             }
             key = [w for w in words if w not in stop][:6]
             queries = [" ".join(key) if key else (job.search_query or "").strip()]
@@ -586,7 +587,19 @@ class AIRouter:
                     result_terms = set(re.findall(
                         r"[A-Za-zА-Яа-яЁё0-9]{3,}", title_snippet
                     ))
-                    score = len(query_terms & result_terms)
+                    score = sum(
+                        1 for term in query_terms
+                        if any(
+                            term == candidate
+                            or term.startswith(candidate)
+                            or candidate.startswith(term)
+                            or (
+                                min(len(term), len(candidate)) >= 5
+                                and term[:5] == candidate[:5]
+                            )
+                            for candidate in result_terms
+                        )
+                    )
                     previous = ranked.get(url)
                     if previous is None or score > previous[0]:
                         ranked[url] = (score, item)
@@ -595,9 +608,15 @@ class AIRouter:
 
         ordered = sorted(ranked.values(), key=lambda pair: pair[0], reverse=True)
         relevant = [pair for pair in ordered if pair[0] > 0]
-        if relevant and any(
-            re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", q.lower()) for q in queries
-        ):
+        has_query_terms = any(
+            any(
+                word not in stopwords
+                for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", q.lower())
+            )
+            for q in queries
+        )
+        # Never attach unrelated sources merely because every returned result scored zero.
+        if has_query_terms:
             ordered = relevant
         results = [item for _score, item in ordered[:6]]
         log.info("Search queries=%s results=%d relevant=%d", queries, len(results),

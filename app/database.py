@@ -45,6 +45,15 @@ async def init_db() -> None:
                     await conn.exec_driver_sql(
                         f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"
                     )
+        # Backfill chat scope for memories created before this migration.
+        await conn.exec_driver_sql(
+            "UPDATE memories SET chat_id = "
+            "(SELECT messages.chat_id FROM messages WHERE messages.id = memories.message_id) "
+            "WHERE chat_id IS NULL AND message_id IS NOT NULL"
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_memories_chat_id ON memories (chat_id)"
+        )
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_chats_share_token ON chats (share_token)"
         )
@@ -69,9 +78,11 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "rating": "INTEGER DEFAULT 0",
         "sources": "TEXT",
         "tool_runs": "TEXT",
+        "execution_target": "VARCHAR(16) DEFAULT 'site'",
     },
     "memories": {
         "kind": "VARCHAR(16) DEFAULT 'fact'",
+        "chat_id": "VARCHAR(36)",
     },
     "model_sets": {
         "is_router": "BOOLEAN DEFAULT 0",

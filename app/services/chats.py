@@ -55,6 +55,7 @@ def message_out(
         attachments=attachments or [],
         sources=_json_list(m.sources),
         tool_runs=_json_list(m.tool_runs),
+        execution_target=getattr(m, "execution_target", "site") or "site",
     )
 
 

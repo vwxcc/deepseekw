@@ -33,6 +33,7 @@ from ..models import (
 from ..services.files import detect_kind, sha256_bytes
 from ..services.limits import get_limits
 from ..services.sandbox import cleanup, run_python
+from ..services.search_context import _plan_search_queries
 from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, web_search
 from . import model_sets as ms
@@ -110,6 +111,7 @@ class Job:
     effort: str | None = None
     user_id: str | None = None
     mode: str = "chat"
+    execution_target: str = "site"
     project: str | None = None
     depends_on: list[str] = field(default_factory=list)
     max_steps: int | None = None
@@ -520,7 +522,6 @@ class AIRouter:
         self, job: Job, entry: EntryConfig
     ) -> tuple[list[dict], str]:
         """Let the model write the queries, then search with each of them."""
-        queries: list[str] = []
         answer = ""
         try:
             answer = await complete_chat(
@@ -536,43 +537,74 @@ class AIRouter:
                 timeout=min(entry.timeout or 60, 45),
                 disable_thinking=True,
             )
-            text = (answer or "").strip()
-            if text and "NONE" not in text.upper():
-                for line in text.splitlines():
-                    q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
-                    q = q.replace("\u00ab", "").replace("\u00bb", "")
-                    q = q.strip('"').strip("'").strip()
-                    if 2 < len(q) <= 120:
-                        queries.append(q)
+            queries = _plan_search_queries(answer, job.search_query)
         except Exception as e:  # noqa: BLE001 - search must never break a chat
             log.warning("Query generation failed: %s", e)
+            queries = _plan_search_queries("", job.search_query)
 
-        if not queries:
-            words = re.findall(
-                r"[A-Za-zА-Яа-яЁё0-9]{3,}", (job.search_query or "").lower()
-            )
-            stop = {
-                "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
-                "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
-                "мне", "нужно", "хочу", "можно", "есть", "это", "the", "and", "for",
-                "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
-            }
-            key = [w for w in words if w not in stop][:6]
-            queries = [" ".join(key) if key else (job.search_query or "").strip()]
-        queries = [q for q in queries if q][:3]
-
-        results: list[dict] = []
-        seen: set[str] = set()
+        stopwords = {
+            "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
+            "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
+            "мне", "нужно", "хочу", "можно", "есть", "это", "для", "или", "если",
+            "про", "также", "тоже", "very", "with", "from", "that", "this", "what",
+            "when", "where", "about", "into", "your", "have", "will",
+            "последний", "запрос", "пользователя", "ассистент", "контекст", "реплик",
+            "in", "on", "as", "at", "by", "is", "an", "or", "to", "of", "be", "we",
+            "he", "it", "do", "so", "if", "up", "no", "my", "me", "us", "am", "you",
+            "на", "по", "из", "не", "да", "но", "от", "до", "за", "во", "ни", "ли",
+            "же", "бы", "то", "их", "мы", "вы", "он", "она", "его", "ее", "эта",
+        }
+        ranked: dict[str, tuple[int, dict]] = {}
         for q in queries:
+            query_terms = {
+                word for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{2,}", q.lower())
+                if word not in stopwords
+            }
             try:
-                for item in await web_search(q):
+                for item in await web_search(q, limit=4):
                     url = item.get("url") or ""
-                    if url and url not in seen:
-                        seen.add(url)
-                        results.append(item)
+                    if not url:
+                        continue
+                    title_snippet = (
+                        str(item.get("title") or "") + " " + str(item.get("snippet") or "")
+                    ).lower()
+                    result_terms = set(re.findall(
+                        r"[A-Za-zА-Яа-яЁё0-9]{2,}", title_snippet
+                    ))
+                    score = sum(
+                        1 for term in query_terms
+                        if any(
+                            term == candidate
+                            or term.startswith(candidate)
+                            or candidate.startswith(term)
+                            or (
+                                min(len(term), len(candidate)) >= 5
+                                and term[:5] == candidate[:5]
+                            )
+                            for candidate in result_terms
+                        )
+                    )
+                    previous = ranked.get(url)
+                    if previous is None or score > previous[0]:
+                        ranked[url] = (score, item)
             except Exception as e:  # noqa: BLE001
                 log.warning("Search failed for %r: %s", q[:60], e)
-        log.info("Search queries=%s results=%d", queries, len(results))
+
+        ordered = sorted(ranked.values(), key=lambda pair: pair[0], reverse=True)
+        relevant = [pair for pair in ordered if pair[0] > 0]
+        has_query_terms = any(
+            any(
+                word not in stopwords
+                for word in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{2,}", q.lower())
+            )
+            for q in queries
+        )
+        # Never attach unrelated sources merely because every returned result scored zero.
+        if has_query_terms:
+            ordered = relevant
+        results = [item for _score, item in ordered[:6]]
+        log.info("Search queries=%s results=%d relevant=%d", queries, len(results),
+                 sum(1 for score, _item in ordered if score > 0))
 
         # the query-writing call itself is billed too
         if answer:
@@ -630,7 +662,7 @@ class AIRouter:
             job.message_id, MessageStatus.processing, mset_id, mset_name
         )
 
-        agent_on = bool(settings.agent_enabled)
+        agent_on = bool(settings.agent_enabled) and job.execution_target != "device"
         code_mode = job.mode == "code"
         plan_steps = job.max_steps
         base_steps = plan_steps or (
@@ -720,6 +752,7 @@ class AIRouter:
                                         content=value[:2000],
                                         kind=kind,
                                         message_id=job.message_id,
+                                        chat_id=job.chat_id,
                                     )
                                 )
                             await db.commit()
@@ -914,11 +947,13 @@ class AIRouter:
 
 
 SEARCH_QUERIES_SYSTEM = (
-    "Ты составляешь поисковые запросы для интернет-поиска. На входе — сообщение "
-    "пользователя. Верни от 1 до 3 коротких поисковых запросов (2-5 слов каждый), "
-    "по одному на строку, без нумерации, кавычек и пояснений — только то, что реально "
-    "надо найти. Если поиск не нужен (простой вопрос, математика, рассуждение, код) — "
-    "верни ровно одно слово NONE."
+    "Ты составляешь поисковые запросы для интернет-поиска по последнему запросу "
+    "пользователя и, при необходимости, контексту предыдущих реплик. Сначала учитывай "
+    "последний запрос; используй предыдущий контекст только для разрешения местоимений "
+    "и коротких продолжений. Верни от 1 до 3 точных поисковых запросов (2-5 слов каждый), "
+    "по одному на строку, без нумерации, кавычек и пояснений. Не добавляй сайты или темы, "
+    "не связанные с последним запросом. Если интернет-поиск не нужен (простая математика, "
+    "рассуждение, обычный код) — верни ровно одно слово NONE."
 )
 
 

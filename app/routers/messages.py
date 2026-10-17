@@ -44,6 +44,8 @@ from ..schemas import (
     RateIn,
     UsageOut,
 )
+from ..services.memory_scope import _memory_block
+from ..services.search_context import _search_context
 from ..services.chats import (
     ancestor_chain,
     build_message_tree,
@@ -252,31 +254,6 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
     return settings.model_context_len
 
 
-async def _memory_block(db: AsyncSession, user_id: str) -> str:
-    """Facts + preferences. Preferences are sent with EVERY request on purpose."""
-    res = await db.execute(
-        select(Memory)
-        .where(Memory.user_id == user_id)
-        .order_by(Memory.created_at.desc())
-        .limit(60)
-    )
-    rows = [m for m in res.scalars().all() if m.content]
-    facts = [m.content for m in rows if (m.kind or "fact") == "fact"]
-    prefs = [m.content for m in rows if (m.kind or "fact") == "preference"]
-    out = ""
-    if facts:
-        out += (
-            "\n\n[Что ты помнишь о пользователе]\n"
-            + "\n".join("- " + x for x in reversed(facts))
-        )
-    if prefs:
-        out += (
-            "\n\n[ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ — соблюдай их ВСЕГДА, в каждом ответе]\n"
-            + "\n".join("- " + x for x in reversed(prefs))
-        )
-    return out
-
-
 async def _spawn(
     *,
     request: Request,
@@ -286,7 +263,9 @@ async def _spawn(
     history_messages: list[dict],
     user_id: str | None = None,
     effort: str | None = None,
+    execution_target: str = "site",
 ) -> StreamingResponse:
+    execution_target = execution_target if execution_target in {"site", "device"} else "site"
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
     history_messages, trimmed = _trim_history(
@@ -299,7 +278,14 @@ async def _spawn(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
     if user_id:
-        system_prompt += await _memory_block(db, user_id)
+        system_prompt += await _memory_block(db, user_id, chat.id)
+
+    if execution_target == "device":
+        system_prompt += (
+            "\n\n[Запуск кода: НА УСТРОЙСТВЕ пользователя. Не выполняй код на сервере "
+            "и не используй серверные блоки запуска. Если нужен код, верни его в обычном "
+            "блоке кода, чтобы пользователь мог запустить его локально.]"
+        )
 
     assistant = Message(
         chat_id=chat.id,
@@ -308,6 +294,7 @@ async def _spawn(
         content="",
         parent_message_id=parent_message_id,
         status=MessageStatus.queued,
+        execution_target=execution_target,
     )
     db.add(assistant)
     chat.updated_at = utcnow()
@@ -323,8 +310,13 @@ async def _spawn(
         user_id=user_id,
         mode=mode,
         project=chat.id if mode == "code" else None,
+        execution_target=execution_target,
         system_prompt=system_prompt,
         history_messages=history_messages,
+        search_query=_search_context(
+            history_messages,
+            str(history_messages[-1].get("content") or "") if history_messages else "",
+        ),
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -358,6 +350,9 @@ async def send_message(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
+    execution_target = (data.execution_target or "site").strip().lower()
+    if execution_target not in {"site", "device"}:
+        execution_target = "site"
 
     parent_id = data.parent_message_id
     if parent_id is not None:
@@ -421,7 +416,7 @@ async def send_message(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
 
-    system_prompt += await _memory_block(db, user.id)
+    system_prompt += await _memory_block(db, user.id, chat.id)
 
     # The answer must start immediately: web search runs inside the worker, which
     # is also where the query-writing call is billed.
@@ -430,6 +425,13 @@ async def send_message(
     )
     first_exchange = total == 1  # the user message was just inserted
 
+    if execution_target == "device":
+        system_prompt += (
+            "\n\n[Запуск кода: НА УСТРОЙСТВЕ пользователя. Не выполняй код на сервере "
+            "и не используй серверные блоки запуска. Если нужен код, верни его в обычном "
+            "блоке кода, чтобы пользователь мог запустить его локально.]"
+        )
+
     assistant = Message(
         chat_id=chat.id,
         user_id=None,
@@ -437,6 +439,7 @@ async def send_message(
         content="",
         parent_message_id=user_msg.id,
         status=MessageStatus.queued,
+        execution_target=execution_target,
     )
     db.add(assistant)
     chat.updated_at = utcnow()
@@ -453,10 +456,11 @@ async def send_message(
         user_id=user.id,
         mode=chat.mode or "chat",
         project=chat.id if code_mode else None,
+        execution_target=execution_target,
         user_text=content,
         system_prompt=system_prompt,
         history_messages=history_messages,
-        search_query=content,
+        search_query=_search_context(history_messages, content),
         web_search=bool(data.web_search),
         first_exchange=first_exchange,
         max_steps=int((await get_limits(db, user.plan or "free")).get("agent_steps") or 0)
@@ -536,6 +540,7 @@ async def retry_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
+        execution_target=message.execution_target or "site",
     )
 
 
@@ -559,6 +564,7 @@ async def branch_message(
         parent_message_id=parent_id,
         history_messages=history_messages,
         user_id=user.id,
+        execution_target=message.execution_target or "site",
     )
 
 
@@ -585,6 +591,7 @@ async def continue_message(
         parent_message_id=message.id,
         history_messages=history_messages,
         user_id=user.id,
+        execution_target=message.execution_target or "site",
     )
 
 

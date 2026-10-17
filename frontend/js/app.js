@@ -3187,12 +3187,16 @@
           }
           if (n && state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(n.id, null, { focusMessageId: n.id });
-            if (n.execution_target === 'device') {
+            if (n.execution_target === 'device' || (n.execution_target === 'both' && !n.deviceRunnerStarted)) {
               const messageEl = $('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
               const runButton = messageEl && $('[data-run-device]', messageEl);
               const runnable = runButton && (window.__codeStore || {})[runButton.dataset.runDevice];
-              if (runnable) openDeviceCodeRunner(runnable);
-              else toast('Ответ получен, но в нём нет поддерживаемого блока кода для запуска на устройстве.', 'error');
+              if (runnable) {
+                n.deviceRunnerStarted = true;
+                openDeviceCodeRunner(runnable, n.id);
+              } else if (n.execution_target === 'device') {
+                toast('Ответ получен, но в нём нет поддерживаемого блока кода для запуска на устройстве.', 'error');
+              }
             }
             const entries = allMessages(state.tree);
             hydrateAudioStatuses(entries);

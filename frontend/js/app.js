@@ -1217,6 +1217,7 @@
   function openAudioPlayer(messageId, autoplay) {
     const n = findNode(state.tree, messageId);
     if (!n || !state.audioReady[messageId]) return;
+    if (deviceSpeechState.active) closeDeviceSpeechPlayer();
     const shell = $('#audio-player-shell'), audio = $('#audio-player-source');
     if (!shell || !audio) return;
     state.audioMessageId = messageId;
@@ -1230,6 +1231,7 @@
         });
       } catch (e) { /* media metadata is optional */ }
     }
+    installFileAudioMediaSessionHandlers();
     audio.pause();
     audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
     audio.load();
@@ -1573,14 +1575,7 @@
       if (btn.dataset.audioAction === 'back') seekAudio(-10);
       else if (btn.dataset.audioAction === 'forward') seekAudio(10);
     }));
-    // Headset/media-key previous and next track buttons act as ±10 second seek.
-    if (navigator.mediaSession && typeof navigator.mediaSession.setActionHandler === 'function') {
-      [['previoustrack', () => seekAudio(-10)], ['nexttrack', () => seekAudio(10)],
-       ['seekbackward', () => seekAudio(-10)], ['seekforward', () => seekAudio(10)]]
-        .forEach(([action, handler]) => {
-          try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) { /* unsupported media action */ }
-        });
-    }
+    installFileAudioMediaSessionHandlers();
     $('#audio-progress')?.addEventListener('input', ev => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         audio.currentTime = (Number(ev.target.value) / 1000) * audio.duration;
@@ -4159,7 +4154,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

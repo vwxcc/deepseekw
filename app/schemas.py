@@ -100,6 +100,7 @@ class MessageOut(ORMModel):
     sources: list[dict] = Field(default_factory=list)
     tool_runs: list[dict] = Field(default_factory=list)
     memories: list[str] = Field(default_factory=list)
+    execution_target: str = "site"
     children: list["MessageOut"] = Field(default_factory=list)
 
 
@@ -111,6 +112,7 @@ class MessageCreate(BaseModel):
     web_search: bool = True
     effort: str | None = None
     style: str = "auto"
+    execution_target: str = "site"
 
 
 class RateIn(BaseModel):

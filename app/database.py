@@ -69,6 +69,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "rating": "INTEGER DEFAULT 0",
         "sources": "TEXT",
         "tool_runs": "TEXT",
+        "execution_target": "VARCHAR(16) DEFAULT 'site'",
     },
     "memories": {
         "kind": "VARCHAR(16) DEFAULT 'fact'",

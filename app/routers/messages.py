@@ -202,8 +202,11 @@ async def _stream_job(
                 break
     finally:
         if not finished:
-            # client went away: stop wasting model time
-            job.cancel.set()
+            # Disconnecting or switching away from this browser view must not cancel
+            # the durable main generation. The worker continues, persists the final
+            # assistant message, and explicit POST /messages/{id}/stop remains the
+            # only user-facing cancellation path.
+            pass
 
 
 def _estimate_chars(messages: list[dict]) -> int:

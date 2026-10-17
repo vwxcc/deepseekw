@@ -56,11 +56,21 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=39" not in html:
+          if "/assets/css/app.css?v=40" not in html:
               raise SystemExit("Unexpected CSS cache reference")
           if "/assets/js/app.js?v=45" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
+
+          css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+          if not re.search(r"\\.msg \\.meta button\\s*\\{[^}]*background:\\s*var\\(--bg\\)", css, re.S):
+              raise SystemExit("Message action buttons must match the page background")
+          if ".msg .meta button { background: var(--bg); color: var(--fg-muted); }" not in css:
+              raise SystemExit("Dark theme action buttons must match the dark page background")
+          if not re.search(r"\\.src-row\\s*\\{[^}]*background:\\s*var\\(--bg\\)", css, re.S):
+              raise SystemExit("Source cards must match the page background")
+          if "stroke='%23b8862f'" in css:
+              raise SystemExit("Orange dropdown-arrow accent should stay neutral gray")
 
           js = Path("frontend/js/app.js").read_text(encoding="utf-8")
           # A single-element $() selector may return null; only $() is iterable.

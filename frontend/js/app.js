@@ -534,6 +534,12 @@
     sidebarCollapsed: localStorage.getItem('cs_sidebar') === '1',
   };
 
+  const deviceSpeechState = {
+    messageId: null, text: '', words: [], chunks: [], index: 0,
+    token: 0, utterance: null, active: false, playing: false, rate: 1,
+  };
+  const DEVICE_SPEECH_CHUNK_SIZE = 20;
+
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
   const EFFORT_LABELS = ['Low', 'Medium', 'High', 'Extra', 'Max'];
 
@@ -1253,6 +1259,296 @@
       } catch (e) { /* media-session cleanup is optional */ }
     }
     document.body.classList.remove('audio-player-open');
+  }
+
+  function readableSpeechText(source) {
+    let text = String(source || '');
+    text = text.replace(/\`\`\`[\\s\\S]*?\`\`\`/g, ' (блок кода пропущен) ');
+    text = text.replace(/\`([^\`]+)\`/g, '$1');
+    text = text.replace(/\\[([^\\]]+)\\]\\((?:https?:[^)]+)\\)/g, '$1');
+    text = text.replace(/https?:\\/\\/[^\\s)]+/g, ' (ссылка) ');
+    text = text.replace(/<[^>]*>/g, ' ');
+    text = text.replace(/^\\s{0,3}#{1,6}\\s*/gm, '');
+    text = text.replace(/^\\s*>\\s?/gm, '');
+    text = text.replace(/^\\s*[-*+]\\s+/gm, '');
+    text = text.replace(/\\*\\*(.*?)\\*\\*/g, '$1').replace(/__(.*?)__/g, '$1');
+    text = text.replace(/\\*(.*?)\\*/g, '$1').replace(/_(.*?)_/g, '$1');
+    text = text.replace(/^\\s*\\|?[- :|]{3,}\\|?\\s*$/gm, '');
+    text = text.replace(/[|*_~#]/g, ' ');
+    text = text.replace(/[ \\t]+/g, ' ').replace(/\\n{2,}/g, '. ');
+    text = text.replace(/\\n/g, ' ').replace(/\\s+([,.!?;:])/g, '$1');
+    return text.replace(/\\s{2,}/g, ' ').trim();
+  }
+
+  function updateDeviceSpeechControls() {
+    const total = deviceSpeechState.words.length;
+    const start = deviceSpeechState.index * DEVICE_SPEECH_CHUNK_SIZE;
+    const end = Math.min(total, start + DEVICE_SPEECH_CHUNK_SIZE);
+    const current = $('#device-audio-current-text');
+    if (current) current.textContent = deviceSpeechState.chunks[deviceSpeechState.index] || '';
+    const wordPosition = $('#device-audio-word-position');
+    if (wordPosition) wordPosition.textContent = total ? 'Слова ' + (start + 1) + '–' + end + ' из ' + total : 'Слова 0–0 из 0';
+    const chunkPosition = $('#device-audio-chunk-position');
+    if (chunkPosition) chunkPosition.textContent = 'Фрагмент ' + (deviceSpeechState.chunks.length ? deviceSpeechState.index + 1 : 0) + '/' + deviceSpeechState.chunks.length;
+    const fill = $('#device-audio-progress-fill');
+    if (fill) fill.style.width = (total ? Math.round((end / total) * 100) : 0) + '%';
+    const button = $('#device-audio-play-toggle');
+    if (button) {
+      button.innerHTML = icon(deviceSpeechState.playing ? 'pause' : 'play');
+      button.title = deviceSpeechState.playing ? 'Пауза' : 'Продолжить';
+      button.setAttribute('aria-label', button.title);
+    }
+    if (navigator.mediaSession) {
+      try {
+        navigator.mediaSession.playbackState = deviceSpeechState.playing ? 'playing' : 'paused';
+        if (typeof navigator.mediaSession.setPositionState === 'function' && deviceSpeechState.chunks.length) {
+          navigator.mediaSession.setPositionState({
+            duration: deviceSpeechState.chunks.length,
+            position: Math.min(deviceSpeechState.index, deviceSpeechState.chunks.length),
+            playbackRate: deviceSpeechState.rate,
+          });
+        }
+      } catch (e) { /* optional in Safari and some Android browsers */ }
+    }
+  }
+
+  function installFileAudioMediaSessionHandlers() {
+    const audio = $('#audio-player-source');
+    if (!audio || !navigator.mediaSession || typeof navigator.mediaSession.setActionHandler !== 'function') return;
+    const seek = (offset) => {
+      const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      audio.currentTime = Math.max(0, Math.min(duration, (Number(audio.currentTime) || 0) + offset));
+      updateAudioPlayerControls();
+    };
+    const handlers = {
+      play: () => audio.play().catch(() => {}),
+      pause: () => audio.pause(),
+      previoustrack: () => seek(-10),
+      nexttrack: () => seek(10),
+      seekbackward: () => seek(-10),
+      seekforward: () => seek(10),
+      seekto: (details) => {
+        if (details && Number.isFinite(Number(details.seekTime)) && Number.isFinite(audio.duration)) {
+          audio.currentTime = Math.max(0, Math.min(audio.duration, Number(details.seekTime)));
+          updateAudioPlayerControls();
+        }
+      },
+    };
+    Object.keys(handlers).forEach(action => {
+      try { navigator.mediaSession.setActionHandler(action, handlers[action]); } catch (e) { /* action unavailable */ }
+    });
+  }
+
+  function clearMediaSessionActions() {
+    if (!navigator.mediaSession || typeof navigator.mediaSession.setActionHandler !== 'function') return;
+    ['play', 'pause', 'previoustrack', 'nexttrack', 'seekbackward', 'seekforward', 'seekto'].forEach(action => {
+      try { navigator.mediaSession.setActionHandler(action, null); } catch (e) { /* action unavailable */ }
+    });
+  }
+
+  function installDeviceSpeechMediaSessionHandlers() {
+    if (!navigator.mediaSession || typeof navigator.mediaSession.setActionHandler !== 'function') return;
+    const handlers = {
+      play: () => resumeDeviceSpeech(),
+      pause: () => pauseDeviceSpeech(),
+      previoustrack: () => moveDeviceSpeech(-1),
+      nexttrack: () => moveDeviceSpeech(1),
+      seekbackward: () => moveDeviceSpeech(-1),
+      seekforward: () => moveDeviceSpeech(1),
+      seekto: (details) => {
+        if (details && Number.isFinite(Number(details.seekTime))) {
+          moveDeviceSpeech(Math.round(Number(details.seekTime)) - deviceSpeechState.index);
+        }
+      },
+    };
+    Object.keys(handlers).forEach(action => {
+      try { navigator.mediaSession.setActionHandler(action, handlers[action]); } catch (e) { /* action unavailable */ }
+    });
+  }
+
+  function speakDeviceChunk(index) {
+    const synth = window.speechSynthesis;
+    if (!synth || !deviceSpeechState.active || !deviceSpeechState.chunks.length) return;
+    if (index < 0 || index >= deviceSpeechState.chunks.length) {
+      deviceSpeechState.playing = false;
+      const status = $('#device-audio-status');
+      if (status) status.textContent = 'Озвучивание завершено.';
+      updateDeviceSpeechControls();
+      return;
+    }
+    deviceSpeechState.index = index;
+    const token = ++deviceSpeechState.token;
+    try { synth.cancel(); } catch (e) { /* speech engine may be unavailable */ }
+    const utterance = new SpeechSynthesisUtterance(deviceSpeechState.chunks[index]);
+    utterance.lang = 'ru-RU';
+    utterance.rate = deviceSpeechState.rate;
+    deviceSpeechState.utterance = utterance;
+    deviceSpeechState.playing = true;
+    const status = $('#device-audio-status');
+    if (status) status.textContent = 'Читает системный голос телефона…';
+    utterance.onstart = () => {
+      if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.playing = true;
+      updateDeviceSpeechControls();
+    };
+    utterance.onpause = () => {
+      if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.playing = false;
+      updateDeviceSpeechControls();
+    };
+    utterance.onresume = () => {
+      if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.playing = true;
+      updateDeviceSpeechControls();
+    };
+    utterance.onend = () => {
+      if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      if (deviceSpeechState.playing && deviceSpeechState.index + 1 < deviceSpeechState.chunks.length) {
+        speakDeviceChunk(deviceSpeechState.index + 1);
+      } else if (deviceSpeechState.index + 1 >= deviceSpeechState.chunks.length) {
+        deviceSpeechState.playing = false;
+        if (status) status.textContent = 'Озвучивание завершено.';
+        updateDeviceSpeechControls();
+      }
+    };
+    utterance.onerror = (event) => {
+      if (token !== deviceSpeechState.token || !deviceSpeechState.active || (event && event.error === 'canceled')) return;
+      deviceSpeechState.playing = false;
+      if (status) status.textContent = 'Системный голос не смог прочитать этот фрагмент. Попробуйте ещё раз.';
+      updateDeviceSpeechControls();
+    };
+    updateDeviceSpeechControls();
+    try { synth.speak(utterance); } catch (e) {
+      deviceSpeechState.playing = false;
+      if (status) status.textContent = 'Не удалось запустить системную озвучку.';
+      updateDeviceSpeechControls();
+    }
+  }
+
+  function moveDeviceSpeech(offset) {
+    if (!deviceSpeechState.active || !deviceSpeechState.chunks.length) return;
+    const next = deviceSpeechState.index + offset;
+    if (next < 0) {
+      deviceSpeechState.index = 0;
+      if ($('#device-audio-status')) $('#device-audio-status').textContent = 'Это начало текста.';
+      updateDeviceSpeechControls();
+      return;
+    }
+    if (next >= deviceSpeechState.chunks.length) {
+      deviceSpeechState.playing = false;
+      if ($('#device-audio-status')) $('#device-audio-status').textContent = 'Достигнут конец текста.';
+      try { window.speechSynthesis.cancel(); } catch (e) { /* no-op */ }
+      updateDeviceSpeechControls();
+      return;
+    }
+    speakDeviceChunk(next);
+  }
+
+  function pauseDeviceSpeech() {
+    if (!deviceSpeechState.active) return;
+    try { window.speechSynthesis.pause(); } catch (e) { /* speech API varies by browser */ }
+    deviceSpeechState.playing = false;
+    if ($('#device-audio-status')) $('#device-audio-status').textContent = 'Пауза.';
+    updateDeviceSpeechControls();
+  }
+
+  function resumeDeviceSpeech() {
+    if (!deviceSpeechState.active) return;
+    const synth = window.speechSynthesis;
+    if (synth && synth.paused) {
+      try { synth.resume(); deviceSpeechState.playing = true; } catch (e) { /* continue below */ }
+      updateDeviceSpeechControls();
+      return;
+    }
+    if (synth && synth.speaking && deviceSpeechState.utterance) {
+      deviceSpeechState.playing = true;
+      updateDeviceSpeechControls();
+      return;
+    }
+    speakDeviceChunk(deviceSpeechState.index);
+  }
+
+  function closeDeviceSpeechPlayer() {
+    deviceSpeechState.active = false;
+    deviceSpeechState.playing = false;
+    deviceSpeechState.token += 1;
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* no-op */ }
+    const shell = $('#device-audio-player-shell');
+    if (shell) {
+      shell.classList.remove('open');
+      shell.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('audio-player-open');
+    if ($('#audio-player-shell') && $('#audio-player-shell').classList.contains('open')) {
+      installFileAudioMediaSessionHandlers();
+    } else {
+      clearMediaSessionActions();
+      if (navigator.mediaSession) {
+        try { navigator.mediaSession.playbackState = 'none'; navigator.mediaSession.metadata = null; } catch (e) { /* no-op */ }
+      }
+    }
+  }
+
+  function startDeviceSpeech(messageId) {
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') {
+      toast('Системная озвучка недоступна в этом браузере. Используйте генерацию аудио.', 'error');
+      return;
+    }
+    const node = findNode(state.tree, messageId);
+    if (!node || !String(node.content || '').trim()) return;
+    if ($('#audio-player-shell') && $('#audio-player-shell').classList.contains('open')) closeAudioPlayer();
+    if (deviceSpeechState.active) closeDeviceSpeechPlayer();
+    const text = readableSpeechText(node.content);
+    const words = text.match(/\\S+/g) || [];
+    if (!words.length) {
+      toast('В этом ответе нет текста для озвучивания.', 'error');
+      return;
+    }
+    deviceSpeechState.messageId = messageId;
+    deviceSpeechState.text = text;
+    deviceSpeechState.words = words;
+    deviceSpeechState.chunks = [];
+    for (let i = 0; i < words.length; i += DEVICE_SPEECH_CHUNK_SIZE) {
+      deviceSpeechState.chunks.push(words.slice(i, i + DEVICE_SPEECH_CHUNK_SIZE).join(' '));
+    }
+    deviceSpeechState.index = 0;
+    deviceSpeechState.rate = Number($('#device-audio-rate') && $('#device-audio-rate').value) || 1;
+    deviceSpeechState.active = true;
+    deviceSpeechState.playing = false;
+    const chat = state.chats.find(c => c.id === state.currentChatId);
+    const shell = $('#device-audio-player-shell');
+    if (!shell) return;
+    const title = $('#device-audio-title');
+    if (title) title.textContent = (chat && chat.title ? chat.title : 'Ответ') + ' · системная озвучка';
+    shell.classList.add('open');
+    shell.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('audio-player-open');
+    if (navigator.mediaSession && typeof window.MediaMetadata === 'function') {
+      try { navigator.mediaSession.metadata = new window.MediaMetadata({title: title ? title.textContent : 'Системная озвучка', artist: 'ai-ch', album: 'Воспроизведение устройством'}); } catch (e) { /* optional */ }
+    }
+    installDeviceSpeechMediaSessionHandlers();
+    const status = $('#device-audio-status');
+    if (status) status.textContent = 'Подготавливаю системный голос…';
+    speakDeviceChunk(0);
+    requestAnimationFrame(() => $('#device-audio-close-btn')?.focus());
+  }
+
+  function bindDeviceSpeechPlayer() {
+    $('[data-device-audio-close]').forEach(btn => btn.addEventListener('click', closeDeviceSpeechPlayer));
+    $('#device-audio-play-toggle')?.addEventListener('click', () => {
+      if (deviceSpeechState.playing) pauseDeviceSpeech();
+      else resumeDeviceSpeech();
+    });
+    $('[data-device-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+      moveDeviceSpeech(btn.dataset.deviceAudioAction === 'back' ? -1 : 1);
+    }));
+    $('#device-audio-rate')?.addEventListener('change', (event) => {
+      deviceSpeechState.rate = Number(event.target.value) || 1;
+      if (deviceSpeechState.active && deviceSpeechState.playing) speakDeviceChunk(deviceSpeechState.index);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && $('#device-audio-player-shell')?.classList.contains('open')) closeDeviceSpeechPlayer();
+    });
   }
 
   function bindAudioPlayer() {

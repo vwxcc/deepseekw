@@ -301,36 +301,88 @@
     let spec;
     try { spec = JSON.parse(code); } catch (e) { return codeBlockHtml('draw', code); }
     const w = spec.width || 420, h = spec.height || 300;
-    const bg = spec.background || 'transparent';
-    const shapes = (spec.shapes || []).map(shapeSvg).join('');
+    const bg = spec.background == null ? 'transparent' : spec.background;
+    const shapes = (spec.shapes || []).map(shape => {
+      const item = Object.assign({}, shape || {});
+      if (item.stroke == null) item.stroke = '#77756e';
+      if (item.width == null) item.width = 1.5;
+      if (item.type === 'text') {
+        if (item.fill == null) item.fill = '#66645d';
+      } else if (item.fill == null) {
+        item.fill = 'none';
+      }
+      return shapeSvg(item);
+    }).join('');
     return '<div class="draw-block"><svg viewBox="0 0 ' + w + ' ' + h +
       '" width="100%" style="max-width:' + w + 'px;background:' + bg + '">' + shapes + '</svg></div>';
+  }
+
+  function languageLabel(lang) {
+    const key = String(lang || '').trim().toLowerCase().split(/\s+/)[0].replace(/^language-/, '');
+    const labels = {
+      py:'Python', python:'Python', python3:'Python', py3:'Python', pyi:'Python',
+      js:'JavaScript', javascript:'JavaScript', mjs:'JavaScript', cjs:'JavaScript',
+      ts:'TypeScript', typescript:'TypeScript', tsx:'TypeScript JSX', jsx:'JavaScript JSX',
+      html:'HTML', htm:'HTML', xhtml:'XHTML', css:'CSS', scss:'SCSS', sass:'Sass', less:'Less',
+      sh:'Shell', bash:'Bash', shell:'Shell', zsh:'Zsh', fish:'Fish', powershell:'PowerShell', ps1:'PowerShell',
+      bat:'Windows Batch', batch:'Windows Batch', cmd:'Windows CMD',
+      json:'JSON', jsonc:'JSONC', json5:'JSON5', yaml:'YAML', yml:'YAML', toml:'TOML', xml:'XML',
+      sql:'SQL', mysql:'MySQL SQL', postgresql:'PostgreSQL SQL', postgres:'PostgreSQL SQL', sqlite:'SQLite SQL',
+      java:'Java', kt:'Kotlin', kotlin:'Kotlin', scala:'Scala', groovy:'Groovy',
+      c:'C', h:'C Header', cpp:'C++', cxx:'C++', cc:'C++', hpp:'C++ Header',
+      cs:'C#', csharp:'C#', go:'Go', golang:'Go', rs:'Rust', rust:'Rust',
+      rb:'Ruby', ruby:'Ruby', php:'PHP', swift:'Swift', dart:'Dart', r:'R', julia:'Julia', jl:'Julia',
+      lua:'Lua', pl:'Perl', perl:'Perl', ex:'Elixir', exs:'Elixir', elixir:'Elixir', erl:'Erlang',
+      hs:'Haskell', haskell:'Haskell', ml:'OCaml', clj:'Clojure',
+      dockerfile:'Dockerfile', docker:'Dockerfile', makefile:'Makefile', make:'Makefile',
+      diff:'Diff', patch:'Patch', regex:'RegEx', md:'Markdown', markdown:'Markdown',
+      tex:'LaTeX', latex:'LaTeX', bib:'BibTeX', graphql:'GraphQL', gql:'GraphQL',
+      prisma:'Prisma', vue:'Vue', svelte:'Svelte', astro:'Astro', ipynb:'Jupyter Notebook',
+      ini:'INI', conf:'Конфигурация', nginx:'Nginx', terraform:'Terraform', tf:'Terraform',
+      proto:'Protocol Buffers', protobuf:'Protocol Buffers', solidity:'Solidity', sol:'Solidity',
+      verilog:'Verilog', vhdl:'VHDL', wasm:'WebAssembly', asm:'Assembly',
+      draw:'Чертёж / схема', run:'Python · запуск в песочнице', text:'Обычный текст', plaintext:'Обычный текст'
+    };
+    return labels[key] || (key ? key.toUpperCase() : 'Код без указания языка');
   }
 
   function codeBlockHtml(lang, code) {
     const id = 'code_' + Math.random().toString(36).slice(2);
     window.__codeStore = window.__codeStore || {};
     window.__codeStore[id] = { lang: lang || '', code: code };
-    const isHtml = ['html', 'htm'].indexOf((lang || '').toLowerCase()) >= 0;
+    const key = String(lang || '').trim().toLowerCase().split(/\s+/)[0];
+    const isHtml = ['html', 'htm'].indexOf(key) >= 0;
     const preview = isHtml
       ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
-        '<span>' + 'Живое превью' + '</span></div>' +
+        '<span>Живое превью</span></div>' +
         '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
         escapeHtml(code) + '"></iframe></div>'
       : '';
-    const runnableLanguage = (lang || '').trim().toLowerCase().split(/\s+/)[0];
-    const localRunnable = ['html', 'htm', 'svg', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3']
+    const runnableLanguage = key;
+    const localRunnable = ['html', 'htm', 'svg', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3', 'py3']
       .includes(runnableLanguage);
     const runButton = localRunnable
       ? '<button data-run-device="' + id + '" title="Выполнить этот код в песочнице на устройстве">' +
           icon('terminal') + 'Выполнить на устройстве</button>'
       : '';
-    return '<div class="code-block"><div class="code-head"><span>' +
-      escapeHtml(lang || 'code') + '</span><span class="code-acts">' +
+    const lines = String(code).split('\n');
+    const collapsed = lines.length > 5;
+    const previewCode = lines.slice(0, 5).join('\n') + (collapsed ? '\n…' : '');
+    const toggleButton = collapsed
+      ? '<button data-code-toggle="' + id + '" aria-expanded="false" title="Развернуть код">' +
+        icon('chevron-down') + '<span>Развернуть</span></button>'
+      : '';
+    return '<div class="code-block' + (collapsed ? ' is-collapsed' : '') + '"><div class="code-head"><span>' +
+      escapeHtml(languageLabel(lang)) + '</span><span class="code-acts">' +
+      toggleButton +
       '<button data-copy="' + id + '">' + icon('copy') + 'Копировать</button>' +
       '<button data-dl="' + id + '" title="Скачать">' + icon('download') + '</button>' +
       runButton + '</span></div>' + preview +
-      '<pre><code>' + escapeHtml(code) + '</code></pre></div>';
+      (collapsed
+        ? '<pre class="code-preview"><code>' + escapeHtml(previewCode) + '</code></pre>' +
+          '<pre class="code-full" hidden><code>' + escapeHtml(code) + '</code></pre>'
+        : '<pre class="code-full"><code>' + escapeHtml(code) + '</code></pre>') +
+      '</div>';
   }
 
   function renderMarkdown(src) {
@@ -778,10 +830,15 @@
     // If the user opened another chat while this request was pending, ignore this old response.
     if (requestToken !== state.chatOpenToken || state.currentChatId !== id) return;
     state.tree = Array.isArray(loadedTree) ? loadedTree : [];
+    const liveStream = window.__aichActiveStream;
+    if (state.streaming && liveStream) {
+      state.activeAssistantId = liveStream.chatId === id ? liveStream.assistantId : null;
+    }
     const chat = state.chats.find(c => c.id === id);
     $('#chat-title').textContent = chat ? chat.title : 'Чат';
     renderChatList();
     renderMessages();
+    if (state.streaming && liveStream && liveStream.chatId === id && liveStream.assistantId) bindStreamRefs();
     const meta = state.chats.find(c => c.id === id) || {};
     const isCode = meta.mode === 'code';
     $('#project-btn').classList.toggle('hidden', !isCode);
@@ -893,6 +950,170 @@
       '</span>';
   }
 
+
+  // Public activity stream: brief status summaries only, never provider private reasoning.
+  const ACTIVITY_ICON_NAMES = new Set([
+    'book','book-open','bookmark','file-text','file-search','file-code','presentation','code',
+    'calculator','ruler','pencil-ruler','layers','database','list-checks','compass','lightbulb',
+    'check-circle','chart-line','pie-chart','image','palette','map','calendar','clock','shield-check',
+    'package','network','microscope','flask','graduation-cap','target','workflow','upload','wrench',
+    'scan','table','type','eye','puzzle','notebook','arrow-right','search-code','list-todo','pen-tool',
+    'brain','sparkle','globe','terminal','folder','link','file','chart','sheet','slides','search',
+    'check','refresh','lock','user','settings'
+  ]);
+
+  function activityStorageKey(id) { return 'aich:activities:' + String(id || ''); }
+
+  function activityItems(n) {
+    if (!n) return [];
+    if (!Array.isArray(n.activities)) {
+      n.activities = [];
+      try {
+        const saved = JSON.parse(localStorage.getItem(activityStorageKey(n.id)) || '[]');
+        if (Array.isArray(saved)) {
+          n.activities = saved.filter(item => item && ['status', 'action'].includes(item.kind) &&
+            typeof item.text === 'string').slice(-60);
+        }
+        const savedStarted = localStorage.getItem(activityStorageKey(n.id) + ':started');
+        const savedElapsed = localStorage.getItem(activityStorageKey(n.id) + ':elapsed');
+        const started = savedStarted === null ? NaN : Number(savedStarted);
+        const elapsed = savedElapsed === null ? NaN : Number(savedElapsed);
+        if (Number.isFinite(started) && started > 0) n.activityStartedAt = started;
+        if (Number.isFinite(elapsed) && elapsed >= 0) n.activityElapsedMs = elapsed;
+      } catch (e) { /* unavailable storage must not interrupt chat rendering */ }
+    }
+    return n.activities;
+  }
+
+  function saveActivityItems(n) {
+    if (!n || !n.id) return;
+    try {
+      localStorage.setItem(activityStorageKey(n.id), JSON.stringify(activityItems(n).slice(-60)));
+      if (Number.isFinite(Number(n.activityStartedAt)) && Number(n.activityStartedAt) > 0) localStorage.setItem(activityStorageKey(n.id) + ':started', String(n.activityStartedAt));
+      if (n.activityElapsedMs !== undefined && Number.isFinite(Number(n.activityElapsedMs))) localStorage.setItem(activityStorageKey(n.id) + ':elapsed', String(n.activityElapsedMs));
+    } catch (e) { /* storage quota/private mode: the current chat still works */ }
+  }
+
+  function appendActivity(n, item) {
+    if (!n || !item || !['status', 'action'].includes(item.kind)) return;
+    const text = String(item.text || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    if (!text) return;
+    const activities = activityItems(n);
+    const iconName = item.kind === 'action' && ACTIVITY_ICON_NAMES.has(String(item.icon || ''))
+      ? String(item.icon) : 'sparkle';
+    const next = { kind: item.kind, text: text, icon: iconName, at: Date.now() };
+    const last = activities[activities.length - 1];
+    if (last && last.kind === next.kind && last.text === next.text && last.icon === next.icon) return;
+    activities.push(next);
+    if (activities.length > 60) activities.splice(0, activities.length - 60);
+    saveActivityItems(n);
+    renderActivityPopup(n);
+  }
+
+  function formatActivityDuration(ms) {
+    const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    if (total < 60) return total + ' сек.';
+    const minutes = Math.floor(total / 60), seconds = total % 60;
+    return minutes + ' мин' + (seconds ? ' ' + seconds + ' сек.' : '');
+  }
+
+  function activityElapsed(n, generating) {
+    const started = Number(n && n.activityStartedAt) || state.genStart || Date.now();
+    if (generating) return Math.max(0, Date.now() - started);
+    if (Number.isFinite(Number(n && n.activityElapsedMs))) return Math.max(0, Number(n.activityElapsedMs));
+    const ended = Number(n && n.activityFinishedAt);
+    return Math.max(0, (ended || Date.now()) - started);
+  }
+
+  function activityHtml(n, generating) {
+    const items = activityItems(n);
+    if (!generating && !items.length && !n.activityElapsedMs) return '';
+    const duration = formatActivityDuration(activityElapsed(n, generating));
+    const rows = items.map((item, index) => {
+      const last = generating && index === items.length - 1;
+      const symbol = item.kind === 'action'
+        ? icon(ACTIVITY_ICON_NAMES.has(item.icon) ? item.icon : 'sparkle', 'activity-icon')
+        : '<span class="activity-bullet" aria-hidden="true">·</span>';
+      return '<div class="activity-row' + (last ? ' active' : '') + '">' + symbol +
+        '<span class="activity-text">' + escapeHtml(item.text) + '</span>' +
+        (last ? thinkAnim() : '') + '</div>';
+    }).join('');
+    const placeholder = generating && !items.length
+      ? '<div class="activity-row active"><span class="activity-bullet" aria-hidden="true">·</span>' +
+        '<span class="activity-text">Получаю ответ модели…</span>' + thinkAnim() + '</div>' : '';
+    const expanded = !!n.showActivities;
+    return '<section class="activity-panel" data-activity-panel="' + escapeHtml(n.id) + '">' +
+      '<div class="activity-head"><span class="activity-time" data-activity-elapsed="' + escapeHtml(n.id) + '">' +
+      (generating ? 'Выполняю запрос · ' + duration : 'Думал ' + duration) + '</span>' +
+      '<span class="activity-controls">' +
+      '<button type="button" data-activity-full="' + escapeHtml(n.id) + '" title="Открыть отдельное окно полного потока">' +
+      icon('expand') + 'Полный поток</button>' +
+      (!generating && items.length ? '<button type="button" data-activity-toggle="' + escapeHtml(n.id) +
+        '" aria-expanded="' + String(expanded) + '">' + icon(expanded ? 'chevron-up' : 'chevron-down') +
+        (expanded ? 'Скрыть статусы' : 'Показать статусы (' + items.length + ')') + '</button>' : '') +
+      '</span></div>' +
+      '<div class="activity-list"' + (!generating && !expanded ? ' hidden' : '') + '>' + (rows || placeholder) + '</div>' +
+      (generating ? '<div class="think-tail answer activity-draft">' + escapeHtml(tailText(n.draft || '', 260)) + '</div>' : '') +
+      '</section>';
+  }
+
+  function renderActivityPopup(n) {
+    if (!n || !n.id || !window.__aichActivityWindows) return;
+    const popup = window.__aichActivityWindows[n.id];
+    if (!popup || popup.closed) {
+      try { delete window.__aichActivityWindows[n.id]; } catch (e) {}
+      return;
+    }
+    try {
+      const log = popup.document.getElementById('activity-log');
+      const answer = popup.document.getElementById('stream-answer');
+      const scroller = popup.document.getElementById('stream-scroll');
+      const stateLabel = popup.document.getElementById('stream-state');
+      if (!log || !answer) return;
+      const wasNearBottom = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90;
+      log.textContent = activityItems(n).map((item, index) =>
+        (index + 1) + '. ' + (item.kind === 'action' ? '[' + (item.icon || 'sparkle') + '] ' : '') + item.text
+      ).join('\n') || 'Ожидаю первые статусы…';
+      answer.textContent = String(n.publicStream || n.content || n.draft || '');
+      if (stateLabel) stateLabel.textContent = n.status === 'completed'
+        ? 'Завершено · ' + formatActivityDuration(activityElapsed(n, false))
+        : (n.status === 'failed' ? 'Ошибка генерации' : (n.status === 'cancelled' ? 'Остановлено' : 'Генерация продолжается'));
+      if (scroller && wasNearBottom) scroller.scrollTop = scroller.scrollHeight;
+    } catch (e) { /* a popup may close while a stream event is arriving */ }
+  }
+
+  function openActivityStream(id) {
+    const live = window.__aichActivityNodes && window.__aichActivityNodes[id];
+    const n = (live && live.publicStream) ? live :
+      (findNode(state.tree, id) || (state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null) || live);
+    if (!n) { toast('Поток появится, когда сообщение будет принято сервером.', 'error'); return; }
+    const safeWindowName = 'aich-stream-' + String(n.id).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+    const popup = window.open('', safeWindowName, 'popup=yes,width=820,height=760,resizable=yes,scrollbars=yes');
+    if (!popup) { toast('Браузер заблокировал отдельное окно. Разрешите всплывающие окна для ai-ch.', 'error'); return; }
+    window.__aichActivityWindows = window.__aichActivityWindows || Object.create(null);
+    window.__aichActivityWindows[n.id] = popup;
+    popup.document.open();
+    popup.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Полный поток · ai-ch</title><style>' +
+      ':root{color-scheme:light dark;--bg:#faf9f5;--fg:#34332f;--muted:#77756e;--line:#e5e2d9}' +
+      '@media(prefers-color-scheme:dark){:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
+      '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif}' +
+      'header{position:sticky;top:0;background:var(--bg);padding:18px 22px 12px;border-bottom:1px solid var(--line)}' +
+      'h1{font-size:18px;font-weight:600;margin:0 0 3px}p{margin:0;color:var(--muted);font-size:12px}' +
+      '#stream-scroll{height:calc(100vh - 82px);overflow:auto;padding:18px 22px 30px;scrollbar-width:thin;scrollbar-color:#a8a69d transparent}' +
+      '#stream-scroll::-webkit-scrollbar{width:8px}#stream-scroll::-webkit-scrollbar-thumb{background:#aaa89f;border-radius:8px;border:2px solid var(--bg)}' +
+      'h2{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 10px}#activity-log{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 26px;padding:0;font:inherit}' +
+      '#stream-answer{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0}' +
+      '.hint{margin-bottom:20px;color:var(--muted);font-size:12px}.empty{color:var(--muted)}' +
+      '</style></head><body><header><h1>Полный поток генерации</h1><p id="stream-state">Подключено</p></header>' +
+      '<main id="stream-scroll"><div class="hint">Публичные статусы действий и поток текста ответа. Скрытые внутренние рассуждения модели здесь не раскрываются.</div>' +
+      '<h2>Действия и статусы</h2><pre id="activity-log" class="empty">Ожидаю первые статусы…</pre>' +
+      '<h2>Поток текста модели</h2><pre id="stream-answer"></pre></main></body></html>');
+    popup.document.close();
+    try { popup.focus(); } catch (e) {}
+    renderActivityPopup(n);
+  }
+
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
@@ -910,32 +1131,21 @@
       const hasThink = !!(n.thinking && String(n.thinking).trim());
       const draft = n.draft || '';
 
-      if (generating && n.creating) {
-        // first message of a brand-new chat: show the creation animation right away
-        inner = genAnim(n.creatingLabel || 'Создаю чат…');
-      } else if (generating) {
-        // while generating we only show a few live lines (thinking + answer draft)
-        inner = '<div class="think-box">' +
-          '<div class="think-head">' + thinkAnim() +
-            '<span class="label">' + (hasThink ? 'Размышления' : 'Думает…') + '</span>' +
-            '<em class="gen-status" data-gen="1"></em>' +
-          '</div>' +
-          '<div class="think-tail">' + escapeHtml(tailText(n.thinking, 260)) + '</div>' +
-          '<div class="think-tail answer">' + escapeHtml(tailText(n.draft, 900)) + '</div>' +
-          '</div>';
+      if (generating) {
+        inner = activityHtml(n, true);
       } else if (failed) {
-        // a failed request is just shown as an error message, nothing more
-        inner = '<div class="content md" style="color:var(--danger)">Ошибка: ' +
+        inner = activityHtml(n, false) +
+          '<div class="content md" style="color:var(--danger)">Ошибка: ' +
           escapeHtml(n.error || 'запрос не прошёл') + '</div>';
       } else {
         const raw = String(n.content || '');
         const truncated = raw.length > FULL_RENDER_LIMIT && !n.showFull;
         const body = truncated ? raw.slice(0, FULL_RENDER_LIMIT) : raw;
-        inner = '<div class="content md">' + renderMarkdown(body) + '</div>' +
+        inner = activityHtml(n, false) + '<div class="content md">' + renderMarkdown(body) + '</div>' +
           (truncated
             ? '<div class="more-note">Показано ' + FULL_RENDER_LIMIT.toLocaleString('ru-RU') +
               ' из ' + raw.length.toLocaleString('ru-RU') + ' символов — ' +
-              'чтобы не подвешивать браузер. <button data-mact="expand" data-id="' + n.id +
+              'чтобы не подвешивать браузер. <button data-mact="expand" data-id="' + escapeHtml(n.id) +
               '">Показать полностью</button></div>'
             : '');
       }
@@ -2239,6 +2449,32 @@
       });
     }
 
+    $$('[data-activity-full]', scope).forEach(button => button.addEventListener('click', () => {
+      openActivityStream(button.dataset.activityFull);
+    }));
+    $$('[data-activity-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+      const n = findNode(state.tree, button.dataset.activityToggle);
+      if (!n) return;
+      n.showActivities = !n.showActivities;
+      renderMessageInPlace(n.id);
+    }));
+
+    $$('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+      const block = button.closest('.code-block');
+      if (!block) return;
+      const preview = $('.code-preview', block);
+      const full = $('.code-full', block);
+      if (!preview || !full) return;
+      const expanded = full.hidden;
+      preview.hidden = expanded;
+      full.hidden = !expanded;
+      block.classList.toggle('is-expanded', expanded);
+      button.setAttribute('aria-expanded', String(expanded));
+      button.title = expanded ? 'Свернуть код' : 'Развернуть код';
+      button.innerHTML = icon(expanded ? 'chevron-up' : 'chevron-down') +
+        '<span>' + (expanded ? 'Свернуть' : 'Развернуть') + '</span>';
+    }));
+
     $$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
@@ -2360,6 +2596,14 @@
     if (!opts || !opts.optimistic) {
       state.activeAssistantId = null;
     }
+    const streamContext = {
+      startChatId: state.currentChatId,
+      chatId: state.currentChatId,
+      startChatOpenToken: state.chatOpenToken,
+      assistantId: null,
+      node: null,
+    };
+    window.__aichActiveStream = streamContext;
     state.streamEl = null; state.thinkBody = null; state.draftTail = null;
     state.streamBuf = ''; state.streamStarted = false;
     state.genStart = Date.now();
@@ -2377,13 +2621,16 @@
           ' ток. выхода · бюджет $' + live.toFixed(4) + ' из $' + w.budget_usd +
           ' за ' + w.hours + ' ч');
       }
-      const el = $('[data-gen]');
-      const secs = Math.round((Date.now() - (state.genStart || Date.now())) / 1000);
-      const idle = Math.round((Date.now() - (state.lastEvent || Date.now())) / 1000);
-      if (!el) return;
-      el.textContent = state.streamBuf.length.toLocaleString('ru-RU') + ' симв. · ' + secs + ' с' +
-        (idle > 45 ? ' · модель долго думает…' : '');
-      el.classList.toggle('warn', idle > 45);
+      const elapsedNode = state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null;
+      const liveStream = window.__aichActiveStream;
+      const liveNode = liveStream && liveStream.node ? liveStream.node : elapsedNode;
+      if (liveNode && !['completed', 'failed', 'cancelled'].includes(liveNode.status)) {
+        renderActivityPopup(liveNode);
+      }
+      const elapsedEl = $('[data-activity-elapsed]');
+      if (elapsedEl && elapsedNode) {
+        elapsedEl.textContent = 'Выполняю запрос · ' + formatActivityDuration(activityElapsed(elapsedNode, true));
+      }
     }, 1000);
     const controller = new AbortController();
     let watchdog = null;
@@ -2418,16 +2665,33 @@
         if (ev === 'chat_created') {
           // The combined endpoint tells the UI which chat now owns this stream.
           if (data && typeof data === 'object' && data.id) {
-            state.currentChatId = data.id;
-            updateShareButtonVisibility();
+            streamContext.chatId = data.id;
+            const ownsOpenView = state.chatOpenToken === streamContext.startChatOpenToken &&
+              (state.currentChatId === streamContext.startChatId ||
+                (!streamContext.startChatId && !state.currentChatId));
             upsertChat(data);
-            const title = $('#chat-title');
-            if (title) title.textContent = data.title || 'Новый чат';
             renderChatList();
+            if (ownsOpenView) {
+              state.currentChatId = data.id;
+              updateShareButtonVisibility();
+              const title = $('#chat-title');
+              if (title) title.textContent = data.title || 'Новый чат';
+            }
           }
         } else if (ev === 'user_message' || ev === 'assistant_message') {
           const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
           const previousId = tmp && tmp.id;
+          if (ev === 'assistant_message') streamContext.assistantId = data && data.id ? data.id : null;
+          if (state.currentChatId !== streamContext.chatId) {
+            if (ev === 'assistant_message') {
+              streamContext.node = Object.assign({}, data, { children: [], activities: [] });
+              streamContext.node.creating = true;
+              streamContext.node.activityStartedAt = state.genStart || Date.now();
+              window.__aichActivityNodes = window.__aichActivityNodes || Object.create(null);
+              window.__aichActivityNodes[streamContext.node.id] = streamContext.node;
+            }
+            return;
+          }
           let node = null;
           let replacedOptimistic = false;
           if (tmp) {
@@ -2442,71 +2706,110 @@
           }
           if (!node) node = insertMessage(state.tree, data);
           if (ev === 'assistant_message') {
-            // Chat creation and request acceptance are finished at this point.
-            // Do not leave the optimistic bubble saying "Создаю чат…" while
-            // the model is thinking or waiting in a queue.
+            streamContext.assistantId = node.id;
+            streamContext.node = node;
             node.creating = true;
-            node.creatingLabel = 'Запрос принят · ожидаю ответ модели…';
+            node.activityStartedAt = Number(node.activityStartedAt) || state.genStart || Date.now();
             state.activeAssistantId = node.id;
+            window.__aichActivityNodes = window.__aichActivityNodes || Object.create(null);
+            window.__aichActivityNodes[node.id] = node;
+            const liveIds = Object.keys(window.__aichActivityNodes);
+            if (liveIds.length > 40) liveIds.slice(0, liveIds.length - 40).forEach(key => delete window.__aichActivityNodes[key]);
           }
           if (replacedOptimistic) {
+            if (previousId && previousId !== node.id && window.__aichActivityWindows &&
+                window.__aichActivityWindows[previousId]) {
+              window.__aichActivityWindows[node.id] = window.__aichActivityWindows[previousId];
+              delete window.__aichActivityWindows[previousId];
+            }
+            if (previousId && previousId !== node.id && window.__aichActivityNodes) {
+              delete window.__aichActivityNodes[previousId];
+            }
             renderMessageInPlace(node.id, previousId);
+            if (window.__aichActivityWindows && window.__aichActivityWindows[node.id]) renderActivityPopup(node);
           } else {
             renderMessages();
           }
           if (ev === 'assistant_message') bindStreamRefs();
         } else if (ev === 'stage') {
-          // search / routing stages: the bubble keeps the creation animation,
-          // the label tells what is happening right now
-          const n = findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.stage = data.stage || '';
-            if (data.stage === 'search') {
-              n.creating = true;
-              n.creatingLabel = 'Ищу в интернете…';
+            if (data.stage === 'search') appendActivity(n, { kind: 'status', text: 'Ищу в интернете' });
+            else if (data.stage === 'routing') appendActivity(n, { kind: 'status', text: 'Подбираю способ решения' });
+            else if (data.stage) appendActivity(n, { kind: 'status', text: 'Подготавливаю ответ' });
+            renderActivityPopup(n);
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(streamContext.assistantId);
+              bindStreamRefs();
             }
           }
-          renderMessageInPlace(state.activeAssistantId);
-          bindStreamRefs();
-        } else if (ev === 'thinking') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.thinking = (n.thinking || '') + (data.text || '');
-          if (state.thinkBody) {
-            state.thinkBody.textContent = tailText(n ? n.thinking : '', 260);
-            const head = state.thinkBody.parentElement;
-            const lbl = head ? head.querySelector('.label') : null;
-            if (lbl) lbl.textContent = 'Размышления';
+        } else if (ev === 'ui_status') {
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
+          if (n) {
+            appendActivity(n, { kind: 'status', text: data.text || '' });
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(streamContext.assistantId);
+              bindStreamRefs();
+            }
           }
+        } else if (ev === 'ui_action') {
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
+          if (n) {
+            appendActivity(n, { kind: 'action', icon: data.icon, text: data.text });
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(streamContext.assistantId);
+              bindStreamRefs();
+            }
+          }
+        } else if (ev === 'thinking') {
+          // Provider-private reasoning is deliberately not rendered or copied into the UI.
         } else if (ev === 'delta') {
-          state.streamBuf += data.text || '';
-          const n = findNode(state.tree, state.activeAssistantId);
+          const deltaText = data.text || '';
+          state.streamBuf += deltaText;
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           const needsAnswerBody = !!(n && n.creating);
-          if (n) { n.draft = state.streamBuf; n.creating = false; state.streamStarted = true; }
-          // The initial "working" bubble has no draft tail. Create that tail exactly
-          // once on the first answer token, then update its text without re-rendering.
-          if (needsAnswerBody) {
-            renderMessageInPlace(state.activeAssistantId);
+          if (n) {
+            n.draft = state.streamBuf;
+            n.publicStream = String(n.publicStream || '') + deltaText;
+            n.creating = false;
+            state.streamStarted = true;
+            renderActivityPopup(n);
+          }
+          if (needsAnswerBody && state.currentChatId === streamContext.chatId) {
+            renderMessageInPlace(streamContext.assistantId);
             bindStreamRefs();
           }
-          if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
+          if (state.currentChatId === streamContext.chatId && state.draftTail) {
+            state.draftTail.textContent = tailText(state.streamBuf, 260);
+          }
           maybeScroll();
         } else if (ev === 'memory') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.memories = (n.memories || []).concat(data.items || []);
           loadMemory();
         } else if (ev === 'tool_start') {
-          const n = findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.tool_runs = (n.tool_runs || []).concat([
               { code: data.code || '', running: true, ok: true, files: [] },
             ]);
+            appendActivity(n, { kind: 'status', text: 'Запускаю код в изолированной песочнице' });
           }
-          renderMessageInPlace(state.activeAssistantId);
-          bindStreamRefs();
+          if (state.currentChatId === streamContext.chatId) {
+            renderMessageInPlace(streamContext.assistantId);
+            bindStreamRefs();
+          }
           if (isCurrentCodeAgent()) setProjectStatus('Готовлю файлы проекта…');
           else appendLog('▶ Подготавливаю результат…');
         } else if (ev === 'tool') {
-          const n = findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             const runs = n.tool_runs || [];
             const idx = runs.findIndex(r => r.running);
@@ -2516,10 +2819,16 @@
               n.attachments = (n.attachments || []).concat(data.files.map(f => ({
                 id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
               })));
+              appendActivity(n, { kind: 'status', text: 'Файлы созданы · проверяю результат' });
+            } else {
+              appendActivity(n, { kind: 'status', text: data.ok && !data.timed_out
+                ? 'Результат выполнения готов · завершаю проверку' : 'Проверяю ошибку выполнения' });
             }
           }
-          renderMessageInPlace(state.activeAssistantId);
-          bindStreamRefs();
+          if (state.currentChatId === streamContext.chatId) {
+            renderMessageInPlace(streamContext.assistantId);
+            bindStreamRefs();
+          }
           if (isCurrentCodeAgent()) {
             if (!data.ok || data.timed_out) {
               setProjectStatus('Проверяю результат и исправляю обнаруженную проблему…');
@@ -2549,41 +2858,43 @@
           renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'done') {
-          const n = findNode(state.tree, data.message_id) ||
-            findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.status = 'completed';
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
+            n.activityFinishedAt = Date.now();
+            n.activityElapsedMs = Math.max(0, n.activityFinishedAt - (Number(n.activityStartedAt) || state.genStart || n.activityFinishedAt));
+            saveActivityItems(n);
+            renderActivityPopup(n);
           }
-          if (n) {
+          if (n && state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(n.id, null, { focusMessageId: n.id });
             const entries = allMessages(state.tree);
             hydrateAudioStatuses(entries);
-            // The readable-text hydrator checks the cache first and starts exactly
-            // one preparation job for the newest completed answer when it is missing.
             hydrateReadableTextStatuses(entries);
-          } else {
-            renderMessages();
           }
           loadUsage();
         } else if (ev === 'error') {
-          const n = findNode(state.tree, data.message_id) ||
-            findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.status = 'failed'; n.creating = false; n.error = data.error;
-            renderMessageInPlace(n.id);
-          } else {
-            renderMessages();
+            n.activityFinishedAt = Date.now();
+            n.activityElapsedMs = activityElapsed(n, false);
+            renderActivityPopup(n);
+            if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
           }
         } else if (ev === 'cancelled') {
-          const n = findNode(state.tree, data.message_id) ||
-            findNode(state.tree, state.activeAssistantId);
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text;
-            renderMessageInPlace(n.id);
-          } else {
-            renderMessages();
+            n.activityFinishedAt = Date.now();
+            n.activityElapsedMs = activityElapsed(n, false);
+            renderActivityPopup(n);
+            if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
           }
         }
       });
@@ -2624,6 +2935,7 @@
       state.tmpUser = null; state.tmpAssistant = null;
     } finally {
       if (watchdog) clearTimeout(watchdog);
+      if (window.__aichActiveStream === streamContext) window.__aichActiveStream = null;
       setStreaming(false);
       // Limits and sidebar refresh happen in the background and cannot hold the
       // send controls hostage if a secondary endpoint is slow.
@@ -2632,14 +2944,22 @@
       state.streamEl = null;
       loadChats().catch((e) => console.warn('Chat list refresh failed:', e));
       // refresh title (generated in background)
-      if (state.currentChatId) {
+      if (streamContext.chatId) {
+        const completedChatId = streamContext.chatId;
+        const selectedToken = state.chatOpenToken;
+        api.get('/api/chats/' + encodeURIComponent(completedChatId) + '/messages').then((loadedTree) => {
+          if (state.currentChatId === completedChatId && state.chatOpenToken === selectedToken) {
+            state.tree = Array.isArray(loadedTree) ? loadedTree : [];
+            renderMessages();
+          }
+        }).catch((e) => console.warn('Completed stream refresh failed:', e));
         setTimeout(async () => {
           try {
-            const chat = await api.get('/api/chats/' + state.currentChatId);
+            const chat = await api.get('/api/chats/' + encodeURIComponent(completedChatId));
             const i = state.chats.findIndex(c => c.id === chat.id);
             if (i >= 0 && state.chats[i].title !== chat.title) {
               state.chats[i] = chat; renderChatList();
-              $('#chat-title').textContent = chat.title;
+              if (state.currentChatId === completedChatId) $('#chat-title').textContent = chat.title;
             }
           } catch (e) { /* noop */ }
         }, 2500);

@@ -191,11 +191,11 @@ def _clean_title(text: str) -> str:
 
 def _local_code_chat_title(user_text: str | None) -> str:
     """Build a useful project title without an extra model request."""
-    text = re.sub(r"\\s+", " ", (user_text or "").strip())
+    text = re.sub(r"\s+", " ", (user_text or "").strip())
     if not text:
         return "Код-проект"
     # Prefer the first sentence, but never scan or copy an unbounded prompt.
-    text = re.split(r"(?<=[.!?])\\s+", text[:500], maxsplit=1)[0].strip()
+    text = re.split(r"(?<=[.!?])\s+", text[:500], maxsplit=1)[0].strip()
     if len(text) > 48:
         shortened = text[:45].rsplit(" ", 1)[0].rstrip(" ,;:-")
         text = (shortened or text[:45]) + "…"

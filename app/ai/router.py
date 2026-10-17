@@ -37,6 +37,7 @@ from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, web_search
 from . import model_sets as ms
 from . import prompts
+from .provider_config import apply_primary_provider_overrides
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -45,7 +46,12 @@ from .prompts import (
     strip_run_blocks,
     strip_sandbox_paths,
 )
-from .providers import ProviderError, complete_chat, stream_chat
+from .providers import (
+    ProviderError,
+    complete_chat,
+    is_model_unavailable_error,
+    stream_chat,
+)
 
 log = logging.getLogger("chatstudio.ai")
 
@@ -188,6 +194,19 @@ def _clean_title(text: str) -> str:
     return t[:120]
 
 
+def _local_code_chat_title(user_text: str | None) -> str:
+    """Build a useful project title without an extra model request."""
+    text = re.sub(r"\s+", " ", (user_text or "").strip())
+    if not text:
+        return "Код-проект"
+    # Prefer the first sentence, but never scan or copy an unbounded prompt.
+    text = re.split(r"(?<=[.!?])\s+", text[:500], maxsplit=1)[0].strip()
+    if len(text) > 48:
+        shortened = text[:45].rsplit(" ", 1)[0].rstrip(" ,;:-")
+        text = (shortened or text[:45]) + "…"
+    return _clean_title(text) or "Код-проект"
+
+
 class AIRouter:
     def __init__(self, concurrency: int) -> None:
         self.concurrency = max(1, concurrency)
@@ -267,14 +286,19 @@ class AIRouter:
                     "без Auto Routing и добавьте в него активную модель."
                 )
             e = entries[0]
+            primary_provider, primary_base_url, primary_api_key, primary_model = (
+                apply_primary_provider_overrides(
+                    e.provider, e.base_url, e.api_key, e.model
+                )
+            )
             configs = [
                 EntryConfig(
                     id=e.id,
                     model_set_id=e.model_set_id,
-                    provider=e.provider,
-                    base_url=e.base_url,
-                    api_key=e.api_key,
-                    model=e.model,
+                    provider=primary_provider,
+                    base_url=primary_base_url,
+                    api_key=primary_api_key,
+                    model=primary_model,
                     temperature=e.temperature,
                     max_tokens=e.max_tokens,
                     timeout=e.timeout,
@@ -518,35 +542,40 @@ class AIRouter:
     # --- web search (runs inside the worker, never blocks the UI) ----------
 
     async def _smart_search(
-        self, job: Job, entry: EntryConfig
+        self,
+        job: Job,
+        entry: EntryConfig,
+        *,
+        use_model_queries: bool = True,
     ) -> tuple[list[dict], str]:
-        """Let the model write the queries, then search with each of them."""
+        """Search using model-written queries, or a cheap local query when requested."""
         queries: list[str] = []
         answer = ""
-        try:
-            answer = await complete_chat(
-                messages=[
-                    {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
-                    {"role": "user", "content": (job.search_query or "")[:1500]},
-                ],
-                base_url=entry.base_url,
-                api_key=entry.api_key,
-                model=entry.model,
-                temperature=0.0,
-                max_tokens=120,
-                timeout=min(entry.timeout or 60, 45),
-                disable_thinking=True,
-            )
-            text = (answer or "").strip()
-            if text and "NONE" not in text.upper():
-                for line in text.splitlines():
-                    q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
-                    q = q.replace("\u00ab", "").replace("\u00bb", "")
-                    q = q.strip('"').strip("'").strip()
-                    if 2 < len(q) <= 120:
-                        queries.append(q)
-        except Exception as e:  # noqa: BLE001 - search must never break a chat
-            log.warning("Query generation failed: %s", e)
+        if use_model_queries:
+            try:
+                answer = await complete_chat(
+                    messages=[
+                        {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
+                        {"role": "user", "content": (job.search_query or "")[:1500]},
+                    ],
+                    base_url=entry.base_url,
+                    api_key=entry.api_key,
+                    model=entry.model,
+                    temperature=0.0,
+                    max_tokens=120,
+                    timeout=min(entry.timeout or 60, 45),
+                    disable_thinking=True,
+                )
+                text = (answer or "").strip()
+                if text and "NONE" not in text.upper():
+                    for line in text.splitlines():
+                        q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
+                        q = q.replace("\u00ab", "").replace("\u00bb", "")
+                        q = q.strip('"').strip("'").strip()
+                        if 2 < len(q) <= 120:
+                            queries.append(q)
+            except Exception as e:  # noqa: BLE001 - search must never break a chat
+                log.warning("Query generation failed: %s", e)
 
         if not queries:
             words = re.findall(
@@ -602,7 +631,11 @@ class AIRouter:
         sources: list[dict] = []
         if job.web_search and job.search_query:
             await job.output.put(("stage", json.dumps({"stage": "search"})))
-            sources, _ = await self._smart_search(job, entry)
+            # The Code Agent uses a locally extracted query so search does not
+            # consume an extra model turn from its 2-3 request budget.
+            sources, _ = await self._smart_search(
+                job, entry, use_model_queries=job.mode != "code"
+            )
             ctx = format_context(sources)
             if ctx:
                 system_prompt = f"{system_prompt}\n\n{ctx}"
@@ -637,7 +670,14 @@ class AIRouter:
         base_steps = plan_steps or (
             settings.code_agent_max_steps if code_mode else settings.agent_max_steps
         )
-        max_steps = max(1, base_steps) if agent_on else 1
+        if not agent_on:
+            max_steps = 1
+        elif code_mode:
+            # Keep the code-agent workflow to at most three model turns:
+            # implement in one pass, verify/fix in one pass, then finalize.
+            max_steps = min(3, max(1, int(base_steps)))
+        else:
+            max_steps = max(1, int(base_steps))
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
 
         tried: set[str] = set()
@@ -646,6 +686,7 @@ class AIRouter:
 
         while rounds < 2:
             rounds += 1
+            retryable_error = True
             while len(tried) < len(entries):
                 entry = await self._acquire_primary(job, entries, tried)
                 if entry is None:
@@ -744,9 +785,21 @@ class AIRouter:
                         await job.output.put(
                             ("ask", json.dumps({"question": ask}, ensure_ascii=False))
                         )
+                    if job.first_exchange and code_mode:
+                        # The Code Agent already has a 2-3 turn budget. Make a useful
+                        # title locally so title generation does not add a fourth model call.
+                        try:
+                            async with SessionLocal() as db:
+                                chat = await db.get(Chat, job.chat_id)
+                                if chat is not None and (chat.title or "") in ("", "Новый чат"):
+                                    chat.title = _local_code_chat_title(job.user_text)
+                                    await db.commit()
+                        except Exception as title_error:
+                            log.warning("Local Code Agent title update failed: %s", title_error)
                     await job.output.put(("done", answer))
-                    # Only the first exchange needs a title-generation job.
-                    if job.first_exchange:
+                    # Normal chats keep model-generated titles. The Code Agent uses
+                    # a deterministic local title to avoid an extra provider request.
+                    if job.first_exchange and not code_mode:
                         await self.enqueue(
                             Job(
                                 kind="followup",
@@ -772,6 +825,7 @@ class AIRouter:
                     return
                 except ProviderError as e:
                     last_error = str(e)
+                    retryable_error = not is_model_unavailable_error(e)
                     tried.add(entry.id)
                     log.warning("Model %s failed: %s", entry.label, e)
                 except Exception as e:
@@ -782,7 +836,7 @@ class AIRouter:
                     await pool.release(entry)
 
             # The same primary model failed once; retry it once without switching models.
-            if rounds >= 2 or job.cancel.is_set():
+            if not retryable_error or rounds >= 2 or job.cancel.is_set():
                 break
             log.warning("Retrying the primary model once: %s", last_error)
             tried.clear()

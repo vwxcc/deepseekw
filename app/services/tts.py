@@ -78,14 +78,31 @@ def _validated_api_key(value: str, setting_name: str) -> str:
 
 async def prepare_spoken_text(value: str) -> str:
     """Use one explicitly configured OpenAI-compatible model to verbalize notation."""
-    base_url = (settings.tts_preprocess_base_url or "").strip().rstrip("/")
-    api_key = _validated_api_key(settings.tts_preprocess_api_key, "TTS_PREPROCESS_API_KEY")
-    model = (settings.tts_preprocess_model or "").strip()
-    if not base_url or not model:
-        raise TTSNotConfiguredError(
-            "Для понятной озвучки задайте TTS_PREPROCESS_BASE_URL, "
-            "TTS_PREPROCESS_API_KEY и TTS_PREPROCESS_MODEL."
-        )
+    dedicated_preprocessor = any((
+        str(settings.tts_preprocess_base_url or "").strip(),
+        str(settings.tts_preprocess_api_key or "").strip(),
+        str(settings.tts_preprocess_model or "").strip(),
+    ))
+    if dedicated_preprocessor:
+        base_url = (settings.tts_preprocess_base_url or "").strip().rstrip("/")
+        api_key = _validated_api_key(settings.tts_preprocess_api_key, "TTS_PREPROCESS_API_KEY")
+        model = (settings.tts_preprocess_model or "").strip()
+        if not base_url or not model:
+            raise TTSNotConfiguredError(
+                "Для отдельного ИИ-подготовщика задайте TTS_PREPROCESS_BASE_URL "
+                "и TTS_PREPROCESS_MODEL (а при необходимости — TTS_PREPROCESS_API_KEY)."
+            )
+    else:
+        # Reuse the configured main Qwen-compatible API when no dedicated
+        # speech-preprocessing model has been configured.
+        base_url = (settings.qwen_base_url or "").strip().rstrip("/")
+        api_key = _validated_api_key(settings.qwen_api_key, "QWEN_API_KEY")
+        model = (settings.qwen_model or "").strip()
+        if not base_url or not model:
+            raise TTSNotConfiguredError(
+                "Для подготовки читабельного текста настройте TTS_PREPROCESS_* "
+                "или основной QWEN_BASE_URL, QWEN_API_KEY и QWEN_MODEL."
+            )
     source = str(value or "").strip()
     if not source:
         raise ValueError("В ответе нет текста для озвучки.")

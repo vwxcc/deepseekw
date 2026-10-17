@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     sandbox_concurrency: int = 2
     sandbox_queue_limit: int = 12
     # code-agent mode: persistent project per chat, more steps
-    code_agent_max_steps: int = 10
+    code_agent_max_steps: int = 3
     code_agent_timeout: int = 60
 
     # --- Text-to-speech (OpenAI-compatible /audio/speech endpoint) ---
@@ -86,10 +86,12 @@ class Settings(BaseSettings):
     # how many characters of an extracted document are sent to the model
     max_attachment_chars: int = 40000
 
-    # --- Default model set seed (Qwen) ---
+    # --- Primary MAIN model provider overrides / initial seed ---
+    qwen_provider: str = "openai"
     qwen_api_key: str = ""
     qwen_base_url: str = "https://llm.stage.satel.org/v1"
-    qwen_model: str = "qwen36-35b"
+    qwen_model: str = "qwen36-35b"  # backwards-compatible initial seed / override
+    qwen_model_id: str = ""  # optional explicit external model ID; takes priority over QWEN_MODEL
     qwen_temperature: float = 0.2
     qwen_max_tokens: int = 32000
 

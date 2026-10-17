@@ -318,8 +318,9 @@
         '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
         escapeHtml(code) + '"></iframe></div>'
       : '';
+    const runnableLanguage = (lang || '').trim().toLowerCase().split(/\s+/)[0];
     const localRunnable = ['html', 'htm', 'svg', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3']
-      .includes((lang || '').toLowerCase());
+      .includes(runnableLanguage);
     const runButton = localRunnable
       ? '<button data-run-device="' + id + '" title="Выполнить этот код в песочнице на устройстве">' +
           icon('terminal') + 'Выполнить на устройстве</button>'
@@ -501,6 +502,10 @@
     currentChatId: null,
     tree: [],
     choices: {},          // parentKey -> child index
+    chatCreating: false,
+    chatOpenToken: 0,
+    chatListRequestId: 0,
+    chatListVersion: 0,
     files: [],
     pendingAttachments: [],
     streaming: false,
@@ -548,7 +553,7 @@
   };
   const DEVICE_SPEECH_CHUNK_SIZE = 20;
   const deviceCodeFileUrls = [];
-  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const append = value => { out.textContent += String(value) + \"\\n\"; };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message)}, \"*\"); } catch (e) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".xls\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function importUsed(moduleName) {\n    const lines = source.split(/\\r?\\n/);\n    return lines.some(line => {\n      const value = line.trim();\n      if (!value || value.startsWith('#')) return false;\n      const imported = value.match(/^import\\s+(.+?)\\s*(?:#.*)?$/);\n      if (imported) return imported[1].split(',').some(item => item.trim().split(/\\s+as\\s+/)[0].split('.')[0] === moduleName);\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      return !!fromImport && fromImport[1].split('.')[0] === moduleName;\n    });\n  }\n  const externalPackages = {\n    \"docx\":\"python-docx\",\n    \"openpyxl\":\"openpyxl\",\n    \"pypdf\":\"pypdf\",\n    \"pptx\":\"python-pptx\",\n    \"xlsxwriter\":\"XlsxWriter\",\n    \"markdown\":\"Markdown\",\n    \"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\n    \"docxtpl\":\"docxtpl\",\n    \"jinja2\":\"Jinja2\",\n    \"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\n    \"tabulate\":\"tabulate\",\n    \"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\n    \"cssselect2\":\"cssselect2\",\n    \"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\n    \"barcode\":\"python-barcode\",\n    \"python_barcode\":\"python-barcode\",\n    \"toml\":\"toml\"\n  };\n  try {\n    out.textContent = \"Загружаю Python WebAssembly…\";\n    notify(\"Загружаю Python на устройстве…\");\n    const py = await loadPyodide({indexURL:\"https://cdn.jsdelivr.net/pyodide/v0.27.7/full/\"});\n    py.setStdout({batched:append});\n    py.setStderr({batched:value => append(\"STDERR: \" + value)});\n    await py.runPythonAsync(\"import os\\nos.chdir('/home/pyodide')\");\n    const before = JSON.parse(await py.runPythonAsync(snapshotCode));\n    out.textContent = \"Автоматически загружаю библиотеки по import…\";\n    notify(\"Проверяю импорты. Научные, графические и другие пакеты Pyodide загружаются по необходимости.\");\n    try {\n      if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n    } catch (e) {\n      append(\"Предупреждение загрузки встроенных пакетов: \" + String(e && e.message || e));\n      const pyodideAliases = {\n        \"PIL\":\"Pillow\", \"cv2\":\"opencv-python\", \"sklearn\":\"scikit-learn\",\n        \"skimage\":\"scikit-image\", \"bs4\":\"beautifulsoup4\", \"yaml\":\"pyyaml\",\n        \"dateutil\":\"python-dateutil\", \"lxml\":\"lxml\", \"numpy\":\"numpy\",\n        \"pandas\":\"pandas\", \"matplotlib\":\"matplotlib\", \"scipy\":\"scipy\",\n        \"sympy\":\"sympy\", \"networkx\":\"networkx\", \"altair\":\"altair\",\n        \"bokeh\":\"bokeh\", \"statsmodels\":\"statsmodels\", \"svgwrite\":\"svgwrite\"\n      };\n      const fallbackPackages = [...new Set(Object.keys(pyodideAliases).filter(importUsed).map(name => pyodideAliases[name]))];\n      for (const packageName of fallbackPackages) {\n        try {\n          notify(\"Дополнительно загружаю встроенный пакет \" + packageName + \"…\");\n          await py.loadPackage(packageName);\n        } catch (packageError) {\n          append(\"⚠ Не удалось загрузить пакет \" + packageName + \": \" + String(packageError && packageError.message || packageError));\n        }\n      }\n    }\n    const wanted = Object.keys(externalPackages).filter(importUsed).map(name => externalPackages[name]);\n    if (wanted.length) {\n      try {\n        await py.loadPackage(\"micropip\");\n        const micropip = py.pyimport(\"micropip\");\n        for (const packageName of wanted) {\n          notify(\"Загружаю библиотеку \" + packageName + \"…\");\n          try {\n            await micropip.install(packageName);\n            append(\"✓ Библиотека загружена: \" + packageName);\n          } catch (e) {\n            append(\"⚠ Не удалось установить \" + packageName + \": \" + String(e && e.message || e));\n          }\n        }\n        micropip.destroy();\n      } catch (e) {\n        append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n      }\n    }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Загрузка завершена. Выполняю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n    }\n    let exported = 0;\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const paths = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      }).sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\", csv:\"text/csv\", tsv:\"text/tab-separated-values\", txt:\"text/plain\",\n          json:\"application/json\", jsonl:\"application/jsonl\", html:\"text/html\", htm:\"text/html\",\n          svg:\"image/svg+xml\", png:\"image/png\", jpg:\"image/jpeg\", jpeg:\"image/jpeg\", webp:\"image/webp\",\n          gif:\"image/gif\", zip:\"application/zip\", md:\"text/markdown\", xml:\"application/xml\", rtf:\"application/rtf\",\n          epub:\"application/epub+zip\", tex:\"application/x-tex\", bib:\"text/plain\", ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\", yml:\"text/yaml\", npy:\"application/octet-stream\", npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\", pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size || size > 8 * 1024 * 1024 || totalBytes + size > 12 * 1024 * 1024) {\n          append(\"⚠ Файл пропущен: лимит 8 МБ на файл и 12 МБ суммарно. \" + name);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    if (exported) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки для скачивания появятся над окном кода.\");\n      notify(\"Python завершён. Документов и изображений подготовлено: \" + exported + \".\");\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен. Когда код создаст документ или изображение, здесь появится ссылка для скачивания.\");\n    }\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и дополнительные модули.\";\n    notify(\"Не удалось загрузить Python или библиотеку: \" + String(e && e.message || e));\n  }\n})();";
+  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const append = value => { out.textContent += String(value) + \"\\n\"; };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message)}, \"*\"); } catch (e) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".xls\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function importUsed(moduleName) {\n    const lines = source.split(/\\r?\\n/);\n    return lines.some(line => {\n      const value = line.trim();\n      if (!value || value.startsWith('#')) return false;\n      const imported = value.match(/^import\\s+(.+?)\\s*(?:#.*)?$/);\n      if (imported) return imported[1].split(',').some(item => item.trim().split(/\\s+as\\s+/)[0].split('.')[0] === moduleName);\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      return !!fromImport && fromImport[1].split('.')[0] === moduleName;\n    });\n  }\n  const externalPackages = {\n    \"docx\":\"python-docx\",\n    \"openpyxl\":\"openpyxl\",\n    \"pypdf\":\"pypdf\",\n    \"pptx\":\"python-pptx\",\n    \"xlsxwriter\":\"XlsxWriter\",\n    \"markdown\":\"Markdown\",\n    \"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\n    \"docxtpl\":\"docxtpl\",\n    \"jinja2\":\"Jinja2\",\n    \"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\n    \"tabulate\":\"tabulate\",\n    \"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\n    \"cssselect2\":\"cssselect2\",\n    \"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\n    \"barcode\":\"python-barcode\",\n    \"python_barcode\":\"python-barcode\",\n    \"toml\":\"toml\"\n  };\n  try {\n    out.textContent = \"Загружаю Python WebAssembly…\";\n    notify(\"Загружаю Python на устройстве…\");\n    const py = await loadPyodide({indexURL:\"https://cdn.jsdelivr.net/pyodide/v0.27.7/full/\"});\n    py.setStdout({batched:append});\n    py.setStderr({batched:value => append(\"STDERR: \" + value)});\n    await py.runPythonAsync(\"import os\\nos.chdir('/home/pyodide')\");\n    const before = JSON.parse(await py.runPythonAsync(snapshotCode));\n    out.textContent = \"Автоматически загружаю библиотеки по import…\";\n    notify(\"Проверяю импорты. Научные, графические и другие пакеты Pyodide загружаются по необходимости.\");\n    try {\n      if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n    } catch (e) {\n      append(\"Предупреждение загрузки встроенных пакетов: \" + String(e && e.message || e));\n      const pyodideAliases = {\n        \"PIL\":\"pillow\", \"cv2\":\"opencv-python\", \"sklearn\":\"scikit-learn\",\n        \"skimage\":\"scikit-image\", \"bs4\":\"beautifulsoup4\", \"yaml\":\"pyyaml\",\n        \"dateutil\":\"python-dateutil\", \"lxml\":\"lxml\", \"numpy\":\"numpy\",\n        \"pandas\":\"pandas\", \"matplotlib\":\"matplotlib\", \"scipy\":\"scipy\",\n        \"sympy\":\"sympy\", \"networkx\":\"networkx\", \"altair\":\"altair\",\n        \"bokeh\":\"bokeh\", \"statsmodels\":\"statsmodels\", \"svgwrite\":\"svgwrite\"\n      };\n      const fallbackPackages = [...new Set(Object.keys(pyodideAliases).filter(importUsed).map(name => pyodideAliases[name]))];\n      for (const packageName of fallbackPackages) {\n        try {\n          notify(\"Дополнительно загружаю встроенный пакет \" + packageName + \"…\");\n          await py.loadPackage(packageName);\n        } catch (packageError) {\n          append(\"⚠ Не удалось загрузить пакет \" + packageName + \": \" + String(packageError && packageError.message || packageError));\n        }\n      }\n    }\n    \n\n    // Preload Pyodide-native dependencies used by common document-generation libraries.\n    // Pure-Python wheels alone are not enough if python-docx/python-pptx need lxml or Pillow.\n    const builtinDependencies = [];\n    if (importUsed(\"docx\") || importUsed(\"pptx\") || importUsed(\"docxtpl\")) builtinDependencies.push(\"lxml\");\n    if (importUsed(\"pptx\") || importUsed(\"qrcode\") || importUsed(\"fpdf\")) builtinDependencies.push(\"pillow\");\n    if (importUsed(\"openpyxl\")) builtinDependencies.push(\"et_xmlfile\");\n    for (const packageName of [...new Set(builtinDependencies)]) {\n      try {\n        notify(\"Подготавливаю зависимость документа \" + packageName + \"…\");\n        await py.loadPackage(packageName);\n      } catch (packageError) {\n        append(\"⚠ Встроенная зависимость \" + packageName + \" недоступна: \" + String(packageError && packageError.message || packageError));\n      }\n    }\n\n    \nconst wanted = Object.keys(externalPackages).filter(importUsed).map(name => externalPackages[name]);\n    if (wanted.length) {\n      try {\n        await py.loadPackage(\"micropip\");\n        const micropip = py.pyimport(\"micropip\");\n        for (const packageName of wanted) {\n          notify(\"Загружаю библиотеку \" + packageName + \"…\");\n          try {\n            await micropip.install(packageName);\n            append(\"✓ Библиотека загружена: \" + packageName);\n          } catch (e) {\n            append(\"⚠ Не удалось установить \" + packageName + \": \" + String(e && e.message || e));\n          }\n        }\n        micropip.destroy();\n      } catch (e) {\n        append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n      }\n    }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Загрузка завершена. Выполняю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n    }\n    let exported = 0;\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const paths = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      }).sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\", csv:\"text/csv\", tsv:\"text/tab-separated-values\", txt:\"text/plain\",\n          json:\"application/json\", jsonl:\"application/jsonl\", html:\"text/html\", htm:\"text/html\",\n          svg:\"image/svg+xml\", png:\"image/png\", jpg:\"image/jpeg\", jpeg:\"image/jpeg\", webp:\"image/webp\",\n          gif:\"image/gif\", zip:\"application/zip\", md:\"text/markdown\", xml:\"application/xml\", rtf:\"application/rtf\",\n          epub:\"application/epub+zip\", tex:\"application/x-tex\", bib:\"text/plain\", ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\", yml:\"text/yaml\", npy:\"application/octet-stream\", npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\", pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size || size > 8 * 1024 * 1024 || totalBytes + size > 12 * 1024 * 1024) {\n          append(\"⚠ Файл пропущен: лимит 8 МБ на файл и 12 МБ суммарно. \" + name);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    if (exported) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки для скачивания появятся над окном кода.\");\n      notify(\"Python завершён. Документов и изображений подготовлено: \" + exported + \".\");\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен. Когда код создаст документ или изображение, здесь появится ссылка для скачивания.\");\n    }\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и дополнительные модули.\";\n    notify(\"Не удалось загрузить Python или библиотеку: \" + String(e && e.message || e));\n  }\n})();";
 
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
@@ -561,85 +566,38 @@
     { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
   ];
 
-  const GREETINGS = [    'Чем помочь сегодня?', 'О чём подумаем?', 'С чего начнём?', 'Что обсудим?',
-    'Какой вопрос разберём?', 'Чем займёмся?', 'Что будем делать?', 'Какая задача?',
-    'Что нужно сделать?', 'Чем могу помочь?', 'Что вас интересует?', 'Расскажите, что нужно',
-    'Задайте вопрос', 'Что хотите узнать?', 'Над чем работаем?', 'Что исследуем?',
-    'О чём поговорим?', 'Что разберём?', 'Какая идея?', 'Что придумаем?',
-    'Чем помочь?', 'Что подскажем?', 'Какой план?', 'Что изучим?',
-    'Куда двигаемся?', 'Что создадим?', 'Какую проблему решаем?', 'Что анализируем?',
-    'О чём поразмышляем?', 'Что объяснить?', 'Какой текст разберём?', 'Что написать?',
-    'Какую тему раскроем?', 'Что посчитать?', 'Какой код нужен?', 'Что спроектируем?',
-    'О чём расскажу?', 'Что найдём?', 'Какую задачу решим?', 'Что улучшим?',
-    'С чего начать?', 'Какой вопрос у вас?', 'Что уточнить?', 'Как помочь?',
-    'О чём речь?', 'Что разложим по полочкам?', 'Какую идею обсудим?', 'Что проверим?',
-    'Куда копаем?', 'Что переведём?', 'Какой документ разберём?', 'Что суммируем?',
-    'О чём спросить?', 'Что построим?', 'Какой план составим?', 'Что оптимизируем?',
-    'Какую тему разберём?', 'Что изобретём?', 'О чём подумать?', 'Что настроим?',
-    'Какую статью разберём?', 'Что напишем?', 'О чём мечтаем?', 'Что решаем?',
-    'Какую мысль разовьём?', 'Что подытожим?', 'О чём поговорим сегодня?', 'Что найдём вместе?',
-    'Какая цель?', 'Что нужно объяснить?', 'Какой вопрос на повестке?', 'Что разгадаем?',
-    'О чём поспорим?', 'Что посоветовать?', 'Какую задачу разберём?', 'Что сравним?',
-    'Какой пример нужен?', 'Что расскажем?', 'О чём почитать?', 'Что запланируем?',
-    'Какую идею проверим?', 'Что упростим?', 'О чём подумаем вместе?', 'Что посмотрим?',
-    'Какой вопрос решаем?', 'Что подправим?', 'О чём расскажете?', 'Что придумаем вместе?',
-    'Какую проблему разберём?', 'Что нарисуем?', 'О чём поговорим?', 'Что сделаем?',
-    'Какой текст напишем?', 'Что разберём подробно?', 'О чём подумаем сейчас?', 'Что принесёте?',
+  const GREETINGS = [
+    'Создадим документ?', 'Оформим таблицу?', 'Подготовим презентацию?',
+    'Соберём PDF-файл?', 'Создадим SVG-иллюстрацию?', 'Нарисуем схему в SVG?',
+    'Подготовим отчёт в DOCX?', 'Соберём Excel-файл?', 'Оформим резюме в DOCX?',
+    'Сделаем таблицу с формулами?', 'Создадим диаграмму для документа?',
+    'Сверстаем HTML-файл?', 'Подготовим PNG-инфографику?',
+    'Преобразуем файл в другой формат?', 'Оформим документ по шаблону?',
+    'Создадим PDF с графиками?', 'Соберём комплект файлов?',
+    'Подготовим презентацию с таблицами?', 'Оформим титульную страницу?',
+    'Добавим график в таблицу?'
   ];
 
   const SUGGESTIONS = [
-    'Помоги с Python — пример кода',
-    'Объясни, что такое API',
-    'Составь план на неделю',
-    'Напиши SQL-запрос с JOIN',
-    'Как работает Docker?',
-    'Переведи текст на английский',
-    'Сократи этот текст',
-    'Сравни React и Vue',
-    'Напиши регулярное выражение',
-    'Объясни async/await простыми словами',
-    'Составь резюме для junior-разработчика',
-    'Как настроить CI/CD?',
-    'Разбери ошибку в коде',
-    'Придумай название для проекта',
-    'Напиши письмо клиенту',
-    'Сделай конспект статьи',
-    'Как ускорить запрос к базе?',
-    'Объясни разницу между TCP и UDP',
-    'Составь бюджет на месяц',
-    'Напиши bash-скрипт для бэкапа',
-    'Что такое векторная база данных?',
-    'Придумай 10 идей для стартапа',
-    'Как работает JWT?',
-    'Оптимизируй этот алгоритм',
-    'Напиши тесты на pytest',
-    'Объясни принципы SOLID',
-    'Как развернуть приложение на сервере?',
-    'Составь чек-лист для релиза',
-    'Придумай вопросы для собеседования',
-    'Как работает HTTPS?',
-    'Напиши Dockerfile для Python',
-    'Разбери JSON на части',
-    'Объясни, что такое REST',
-    'Составь план изучения ML',
-    'Напиши функцию сортировки',
-    'Как чистить данные в pandas?',
-    'Придумай структуру базы данных',
-    'Объясни git rebase',
-    'Как работает Redis?',
-    'Составь договор простыми словами',
-    'Напиши HTML-страницу с формой',
-    'Объясни, что такое WebSocket',
-    'Как защитить API?',
-    'Придумай метрики для продукта',
-    'Напиши текст для лендинга',
-    'Объясни разницу между процессами и потоками',
-    'Как настроить nginx?',
-    'Составь roadmap проекта',
-    'Напиши SQL для отчёта',
-    'Что почитать про архитектуру?',
+    'Создай аккуратно оформленный DOCX-отчёт с заголовками и таблицей.',
+    'Сделай Excel-таблицу с формулами, итогами и форматированием.',
+    'Подготовь PPTX-презентацию на 8 слайдов с единым стилем.',
+    'Собери PDF-отчёт с заголовками, таблицами и графиками.',
+    'Создай SVG-блок-схему с подписями и соединительными стрелками.',
+    'Подготовь SVG-иллюстрацию с согласованными цветами и подписями.',
+    'Сверстай самодостаточный HTML-файл с адаптивным дизайном.',
+    'Создай PNG-инфографику на основе этих данных.',
+    'Подготовь CSV-файл с чистыми столбцами и понятными заголовками.',
+    'Преобразуй этот текст в структурированный DOCX-документ.',
+    'Оформи резюме в DOCX с аккуратной типографикой.',
+    'Сделай XLSX-календарь с датами, статусами и фильтрами.',
+    'Создай DOCX-документ с титульной страницей и оглавлением.',
+    'Собери PPTX с титульным слайдом, разделами и итогами.',
+    'Подготовь PDF из приложенного материала, сохранив структуру.',
+    'Создай SVG-график с подписями осей, легендой и сеткой.',
+    'Оформи таблицу данных в XLSX с фильтрами и закреплённой шапкой.',
+    'Собери набор файлов DOCX, XLSX и PDF для одного отчёта.'
   ];
-
 
   // ---------- auth ----------
   function showAuth() {
@@ -694,13 +652,40 @@
 
   // ---------- chats ----------
   async function loadChats() {
-    const result = await api.get('/api/chats' + (state.query ? '?q=' + encodeURIComponent(state.query) : ''));
+    const requestId = ++state.chatListRequestId;
+    const versionAtStart = state.chatListVersion;
+    const queryAtStart = state.query;
+    const result = await api.get('/api/chats' + (queryAtStart ? '?q=' + encodeURIComponent(queryAtStart) : ''));
+    // An earlier boot/search response must not overwrite a newer list or chat create/rename/delete.
+    if (requestId !== state.chatListRequestId ||
+        versionAtStart !== state.chatListVersion || queryAtStart !== state.query) return;
     if (!Array.isArray(result)) {
       throw new Error('Сервер вернул некорректный список чатов');
     }
     // Ignore malformed/null rows from stale responses instead of crashing on c.id.
     state.chats = result.filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
     renderChatList();
+  }
+
+  function upsertChat(chat) {
+    if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) return false;
+    state.chats = (Array.isArray(state.chats) ? state.chats : [])
+      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
+    const index = state.chats.findIndex(item => item.id === chat.id);
+    if (index >= 0) state.chats[index] = { ...state.chats[index], ...chat };
+    else state.chats.unshift(chat);
+    state.chatListVersion += 1;
+    return true;
+  }
+
+  function setChatCreationPending(pending) {
+    state.chatCreating = !!pending;
+    ['#new-chat-btn', '#new-code-btn'].forEach(selector => {
+      const button = $(selector);
+      if (!button) return;
+      button.disabled = state.chatCreating;
+      button.setAttribute('aria-busy', String(state.chatCreating));
+    });
   }
 
   function renderChatList() {
@@ -742,19 +727,35 @@
   }
 
   async function newChat(mode) {
-    const chat = await api.post('/api/chats', {
-      title: 'Новый чат',
-      mode: mode || 'chat',
-    });
-    if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
-      throw new Error('Сервер не вернул созданный чат с корректным ID');
+    // A second click during a slow POST must not create another empty chat.
+    if (state.chatCreating) return;
+    setChatCreationPending(true);
+    const selectionToken = state.chatOpenToken;
+    let chat = null;
+    try {
+      chat = await api.post('/api/chats', {
+        title: 'Новый чат',
+        mode: mode || 'chat',
+      });
+      if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
+        throw new Error('Сервер не вернул созданный чат с корректным ID');
+      }
+      upsertChat(chat);
+      // Respect a later user selection made while the create request was in flight.
+      if (selectionToken === state.chatOpenToken) {
+        await openChat(chat.id);
+        const input = $('#input');
+        if (input) input.focus();
+      } else {
+        renderChatList();
+      }
+    } catch (error) {
+      toast(chat ? 'Чат создан, но не удалось открыть его: ' + (error.message || error)
+        : 'Не удалось создать чат: ' + (error.message || error), 'error');
+      if (chat) renderChatList();
+    } finally {
+      setChatCreationPending(false);
     }
-    state.chats = (Array.isArray(state.chats) ? state.chats : [])
-      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
-    state.chats.unshift(chat);
-    renderChatList();
-    await openChat(chat.id);
-    $('#input').focus();
   }
 
   function openRename(id) {
@@ -768,6 +769,7 @@
         const upd = await api.patch('/api/chats/' + id, { title: val });
         const i = state.chats.findIndex(c => c.id === id);
         if (i >= 0) state.chats[i] = upd;
+        state.chatListVersion += 1;
         renderChatList();
         if (state.currentChatId === id) $('#chat-title').textContent = upd.title;
         return true;
@@ -778,6 +780,7 @@
   async function removeChat(id) {
     if (!confirm('Удалить чат вместе со всеми сообщениями?')) return;
     await api.del('/api/chats/' + id);
+    state.chatListVersion += 1;
     state.chats = state.chats.filter(c => c.id !== id);
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
@@ -788,20 +791,24 @@
   }
 
   async function openChat(id) {
+    if (typeof id !== 'string' || !id) return;
+    const requestToken = ++state.chatOpenToken;
     state.currentChatId = id;
     state.choices = {};
+    const loadedTree = await api.get('/api/chats/' + encodeURIComponent(id) + '/messages');
+    // If the user opened another chat while this request was pending, ignore this old response.
+    if (requestToken !== state.chatOpenToken || state.currentChatId !== id) return;
+    state.tree = Array.isArray(loadedTree) ? loadedTree : [];
     const chat = state.chats.find(c => c.id === id);
     $('#chat-title').textContent = chat ? chat.title : 'Чат';
-    const loadedTree = await api.get('/api/chats/' + id + '/messages');
-    state.tree = Array.isArray(loadedTree) ? loadedTree : [];
     renderChatList();
     renderMessages();
-    await loadUsage();
     const meta = state.chats.find(c => c.id === id) || {};
     const isCode = meta.mode === 'code';
     $('#project-btn').classList.toggle('hidden', !isCode);
     if (isCode) { toggleProjectPanel(true); } else { toggleProjectPanel(false); }
     closeMobileSidebar();
+    await loadUsage();
   }
 
   async function renameCurrentChat() {
@@ -897,8 +904,7 @@
   }
 
   function thinkAnim() {
-    return '<span class="think-anim">' + '<span></span>'.repeat(7) +
-      '<i class="core"></i></span>';
+    return '<span class="think-anim" aria-hidden="true"><i class="core"></i></span>';
   }
 
   function genAnim(label) {
@@ -991,7 +997,7 @@
 
     let tools = '';
     if (!isUser && n.tool_runs && n.tool_runs.length) {
-      tools = n.tool_runs.map((r, i) => toolRunHtml(r, i)).join('');
+      tools = toolRunsHtml(n.tool_runs);
     }
 
     let askCard = '';
@@ -1127,7 +1133,7 @@
   }
 
   function updateDeviceAudioControl(messageId) {
-    const wrapper = $('[data-device-audio-control]').find(el => el.dataset.deviceAudioControl === String(messageId));
+    const wrapper = $$('[data-device-audio-control]').find(el => el.dataset.deviceAudioControl === String(messageId));
     const entry = findNode(state.tree, messageId);
     if (wrapper && entry) wrapper.outerHTML = deviceAudioControlHtml(entry);
   }
@@ -1270,17 +1276,31 @@
       state.readableTextStatusRequested.clear();
       state.readableTextChatId = state.currentChatId;
     }
-    entries.forEach(entry => {
-      const n = entry && entry.node;
-      if (!n || n.role !== 'assistant' || n.status !== 'completed' || !String(n.content || '').trim()) return;
+
+    const completed = entries
+      .map(entry => entry && entry.node)
+      .filter(n => n && n.role === 'assistant' && n.status === 'completed' && String(n.content || '').trim());
+    const latest = completed.reduce((best, node) => {
+      if (!best) return node;
+      return String(node.created_at || '') >= String(best.created_at || '') ? node : best;
+    }, null);
+    const latestId = latest ? String(latest.id) : null;
+
+    completed.forEach(n => {
       if (state.readableTextStatusRequested.has(n.id)) return;
       state.readableTextStatusRequested.add(n.id);
-      refreshReadableTextStatus(n.id);
+
+      // Keep older answers available on demand; prepare the newest completed answer
+      // immediately so both audio buttons share the same readable text.
+      refreshReadableTextStatus(n.id).then(record => {
+        if (!record || String(n.id) !== latestId || record.status !== 'missing') return;
+        return generateReadableText(n.id, false);
+      }).catch(() => { /* status text below the answer reports the eventual failure */ });
     });
-    const hasPending = entries.some(entry => {
-      const n = entry && entry.node;
-      return n && state.readableText[n.id] && state.readableText[n.id].status === 'generating';
-    });
+
+    const hasPending = completed.some(n =>
+      state.readableText[n.id] && state.readableText[n.id].status === 'generating'
+    );
     if (hasPending) startReadableTextStatusPolling();
   }
 
@@ -1851,8 +1871,8 @@
     const code = String(item.code || '');
     const base64 = btoa(unescape(encodeURIComponent(code)));
     const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#fff}' +
-      'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f5f5f1;border-radius:8px;min-height:28px}' +
+      '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#faf9f5}' +
+      'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f0eee6;border-radius:8px;min-height:28px}' +
       '.note{color:#6f6f67}.demo-board{max-width:680px;margin:18px auto;padding:18px;border:1px solid #e4e2db;border-radius:16px}' +
       '.demo-header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.demo-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#e9e7df;font-weight:800}' +
       '.demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.demo-card{padding:16px;border:1px solid #e5e3dd;border-radius:12px;background:#faf9f6}' +
@@ -1972,30 +1992,48 @@
     });
   }
 
-  function toolRunHtml(r, i) {
-    const running = !!r.running;
-    const files = (r.files || []).map(f => {
-      const url = '/api/files/' + f.file_id + '/download';
-      if (f.kind === 'image') {
+  function toolRunsHtml(runs) {
+    const items = Array.isArray(runs) ? runs.filter(r => r && typeof r === 'object') : [];
+    if (!items.length) return '';
+
+    // Present internal executions as one result panel. Do not expose an operation count.
+    const running = items.some(r => r.running);
+    const last = items[items.length - 1];
+    const failed = !running && (last.ok === false || !!last.timed_out);
+    const timedOut = !running && !!last.timed_out;
+    const uniqueFiles = new Map();
+    items.forEach(run => (Array.isArray(run.files) ? run.files : []).forEach(file => {
+      if (!file || typeof file !== 'object' || !file.file_id) return;
+      const key = String(file.file_id);
+      if (!uniqueFiles.has(key)) uniqueFiles.set(key, file);
+    }));
+    const files = [...uniqueFiles.values()].map(file => {
+      const url = '/api/files/' + encodeURIComponent(String(file.file_id)) + '/download';
+      if (file.kind === 'image') {
         return '<a class="tool-file img" href="' + url + '" target="_blank" rel="noopener">' +
-          '<img src="' + url + '?inline=1" alt="' + escapeHtml(f.name) + '" loading="lazy" /></a>';
+          '<img src="' + url + '?inline=1" alt="' + escapeHtml(file.name || 'Изображение') + '" loading="lazy" /></a>';
       }
       return '<a class="tool-file" href="' + url + '" target="_blank" rel="noopener">' +
-        icon('download') + '<span>' + escapeHtml(f.name) + '</span>' +
-        '<em>' + formatSize(f.size) + '</em></a>';
+        icon('download') + '<span>' + escapeHtml(file.name || 'Созданный файл') + '</span>' +
+        '<em>' + formatSize(file.size) + '</em></a>';
     }).join('');
-    return '<div class="tool-box collapsed' + (r.ok ? '' : ' err') + '">' +
+    const code = items.map(run => String(run.code || '').trim()).filter(Boolean).join('\n\n# Подготовка результата\n');
+    const stdout = items.map(run => String(run.stdout || '').trim()).filter(Boolean).join('\n\n');
+    const stderr = items.map(run => String(run.stderr || '').trim()).filter(Boolean).join('\n\n');
+
+    return '<div class="tool-box collapsed' + (failed ? ' err' : '') + '">' +
       '<div class="tool-head">' +
       (running ? thinkAnim() : icon('terminal')) +
-      '<span class="tool-title">Шаг ' + (i + 1) + ' — ' +
-      (running ? 'выполняется…' : ('код выполнен' + (r.ok ? '' : ' с ошибкой'))) + '</span>' +
-      (r.timed_out ? '<em class="warn">таймаут</em>' : '') +
-      '<button type="button" class="tool-toggle" data-tool-toggle aria-expanded="false" title="Развернуть вывод">' +
-      icon('chevron-down') + '<span data-tool-toggle-label>Развернуть</span></button></div>' +
+      '<span class="tool-title">' +
+      (running ? 'Подготавливаю результат…' : (failed ? 'Проверка результата требует внимания' : 'Результат подготовлен')) +
+      '</span>' +
+      (timedOut ? '<em class="warn">таймаут</em>' : '') +
+      '<button type="button" class="tool-toggle" data-tool-toggle aria-expanded="false" title="Показать подробности">' +
+      icon('chevron-down') + '<span data-tool-toggle-label>Подробности</span></button></div>' +
       '<div class="tool-content">' +
-      '<pre class="tool-code">' + escapeHtml(r.code || '') + '</pre>' +
-      (r.stdout ? '<pre class="tool-out">' + escapeHtml(r.stdout) + '</pre>' : '') +
-      (r.stderr ? '<pre class="tool-err">' + escapeHtml(r.stderr) + '</pre>' : '') +
+      (code ? '<pre class="tool-code">' + escapeHtml(code) + '</pre>' : '') +
+      (stdout ? '<pre class="tool-out">' + escapeHtml(stdout) + '</pre>' : '') +
+      (stderr ? '<pre class="tool-err">' + escapeHtml(stderr) + '</pre>' : '') +
       (files ? '<div class="tool-files">' + files + '</div>' : '') +
       '</div></div>';
   }
@@ -2081,7 +2119,11 @@
     const opts = options || {};
     updateShareButtonVisibility();
     const entries = allMessages(state.tree);
-    if (!entries.length) { renderEmptyState(); return; }
+    if (!entries.length) {
+      // Keep the existing empty-state DOM and animation instead of rebuilding it on every no-op render.
+      if (!box.classList.contains('empty') || !box.querySelector('.empty-state')) renderEmptyState();
+      return;
+    }
     box.classList.remove('empty');
     stopRotation();
     box.innerHTML = '<div class="msg-wrap">' +
@@ -2092,7 +2134,7 @@
     hydrateReadableTextStatuses(entries);
 
     if (opts.focusMessageId) {
-      const target = $('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
+      const target = $$('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
       const content = target ? $('.content.md', target) : null;
       if (content) content.classList.add('answer-arrive');
       requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
@@ -2101,8 +2143,47 @@
     }
   }
 
-  function bindMessageEvents() {
-    $$('[data-tool-toggle]').forEach(btn => btn.addEventListener('click', () => {
+  function renderMessageInPlace(messageId, previousMessageId, options) {
+    const box = $('#messages');
+    const opts = options || {};
+    const entries = allMessages(state.tree);
+    const entryIndex = entries.findIndex(entry => String(entry.node.id) === String(messageId));
+    const previousId = previousMessageId == null ? String(messageId) : String(previousMessageId);
+    const oldMessage = $$('.msg', box).find(element => element.dataset.mid === previousId);
+    if (entryIndex < 0 || !oldMessage) {
+      renderMessages();
+      return false;
+    }
+
+    const holder = document.createElement('div');
+    holder.innerHTML = msgHtml(entries[entryIndex], entryIndex === entries.length - 1);
+    const nextMessage = holder.firstElementChild;
+    if (!nextMessage) {
+      renderMessages();
+      return false;
+    }
+
+    // This is an in-place update, not a newly arriving message; do not replay
+    // the entrance animation for every intermediate tool/status event.
+    nextMessage.classList.add('no-msg-entrance');
+    oldMessage.replaceWith(nextMessage);
+    bindMessageEvents(nextMessage);
+    renderMath(nextMessage);
+    if (String(state.activeAssistantId || '') === String(messageId)) bindStreamRefs();
+    if (opts.focusMessageId) {
+      const content = $('.content.md', nextMessage);
+      if (content) content.classList.add('answer-arrive');
+      requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
+    } else if (state.stickBottom !== false) {
+      scrollToBottom();
+    }
+    return true;
+  }
+
+
+  function bindMessageEvents(root) {
+    const scope = root || $('#messages');
+    $$('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;
@@ -2111,7 +2192,7 @@
       const label = $('[data-tool-toggle-label]', btn);
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
-    $$('.ask-card').forEach(card => {
+    $$('.ask-card', scope).forEach(card => {
       const input = $('.ask-input', card);
       const send = () => {
         const value = (input.value || '').trim();
@@ -2129,9 +2210,9 @@
       }
     });
 
-    $$('.mem-line').forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
+    $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
-    $$('.think-head').forEach(h => h.addEventListener('click', () => {
+    $$('.think-head', scope).forEach(h => h.addEventListener('click', () => {
       const box = h.closest('.think-box');
       if (!box) return;
       box.classList.toggle('collapsed');
@@ -2193,17 +2274,17 @@
       });
     }
 
-    $$('[data-copy]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
     }));
 
-    $$('[data-dl]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.dl];
       if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
     }));
 
-    $$('[data-dl-table]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
       const rows = (window.__tableStore || {})[b.dataset.dlTable];
       if (!rows) return;
       openTableMenu(rows);
@@ -2220,7 +2301,7 @@
   function scrollToMessageStart(messageId) {
     const box = $('#messages');
     if (!box || messageId == null) return;
-    const target = $('.msg', box).find(el => el.dataset.mid === String(messageId));
+    const target = $$('.msg', box).find(el => el.dataset.mid === String(messageId));
     if (!target) return;
     const boxTop = box.getBoundingClientRect().top;
     const targetTop = target.getBoundingClientRect().top;
@@ -2374,25 +2455,24 @@
           if (data && typeof data === 'object' && data.id) {
             state.currentChatId = data.id;
             updateShareButtonVisibility();
-            state.chats = (Array.isArray(state.chats) ? state.chats : [])
-              .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
-            const index = state.chats.findIndex(c => c.id === data.id);
-            if (index >= 0) state.chats[index] = data;
-            else state.chats.unshift(data);
+            upsertChat(data);
             const title = $('#chat-title');
             if (title) title.textContent = data.title || 'Новый чат';
             renderChatList();
           }
         } else if (ev === 'user_message' || ev === 'assistant_message') {
           const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
+          const previousId = tmp && tmp.id;
           let node = null;
+          let replacedOptimistic = false;
           if (tmp) {
-            // swap the optimistic node in place (no flicker, no duplicates)
+            // Replace only the optimistic bubble; keep the rest of the conversation mounted.
             node = findNode(state.tree, tmp.id);
             if (node) {
               const parentId = data.parent_message_id || node.parent_message_id;
               Object.assign(node, data, { children: node.children || [] });
               if (parentId) node.parent_message_id = parentId;
+              replacedOptimistic = true;
             }
           }
           if (!node) node = insertMessage(state.tree, data);
@@ -2404,7 +2484,11 @@
             node.creatingLabel = 'Запрос принят · ожидаю ответ модели…';
             state.activeAssistantId = node.id;
           }
-          renderMessages();
+          if (replacedOptimistic) {
+            renderMessageInPlace(node.id, previousId);
+          } else {
+            renderMessages();
+          }
           if (ev === 'assistant_message') bindStreamRefs();
         } else if (ev === 'stage') {
           // search / routing stages: the bubble keeps the creation animation,
@@ -2417,7 +2501,7 @@
               n.creatingLabel = 'Ищу в интернете…';
             }
           }
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'thinking') {
           const n = findNode(state.tree, state.activeAssistantId);
@@ -2431,7 +2515,14 @@
         } else if (ev === 'delta') {
           state.streamBuf += data.text || '';
           const n = findNode(state.tree, state.activeAssistantId);
+          const needsAnswerBody = !!(n && n.creating);
           if (n) { n.draft = state.streamBuf; n.creating = false; state.streamStarted = true; }
+          // The initial "working" bubble has no draft tail. Create that tail exactly
+          // once on the first answer token, then update its text without re-rendering.
+          if (needsAnswerBody) {
+            renderMessageInPlace(state.activeAssistantId);
+            bindStreamRefs();
+          }
           if (state.draftTail) state.draftTail.textContent = tailText(state.streamBuf, 260);
           maybeScroll();
         } else if (ev === 'memory') {
@@ -2445,9 +2536,10 @@
               { code: data.code || '', running: true, ok: true, files: [] },
             ]);
           }
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
-          appendLog('▶ запуск кода…');
+          if (isCurrentCodeAgent()) setProjectStatus('Готовлю файлы проекта…');
+          else appendLog('▶ Подготавливаю результат…');
         } else if (ev === 'tool') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) {
@@ -2461,24 +2553,35 @@
               })));
             }
           }
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
-          if (data.stdout) appendLog('▸ ' + String(data.stdout).trim().slice(0, 4000));
-          if (data.stderr) appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
-          if (data.files && data.files.length) {
-            appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
+          if (isCurrentCodeAgent()) {
+            if (!data.ok || data.timed_out) {
+              setProjectStatus('Проверяю результат и исправляю обнаруженную проблему…');
+            } else if (data.files && data.files.length) {
+              setProjectStatus('Файлы проекта подготовлены; завершаю проверку…');
+            } else {
+              setProjectStatus('Проверяю и оформляю результат…');
+            }
+          } else {
+            if (data.stderr && (!data.ok || data.timed_out)) {
+              appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
+            }
+            if (data.files && data.files.length) {
+              appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
+            }
           }
           loadProject(false);
         } else if (ev === 'step') {
           state.streamBuf = '';
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.draft = '';
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'ask') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.ask = data.question;
-          renderMessages();
+          renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'done') {
           const n = findNode(state.tree, data.message_id) ||
@@ -2488,23 +2591,35 @@
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
           }
-          renderMessages({ focusMessageId: n ? n.id : null });
-          // Prepare one cached, readable version immediately after the main answer.
-          // Both AI voice and device speech use this exact text; neither blocks chat rendering.
-          if (n && !state.readonly && String(n.content || '').trim()) {
-            generateReadableText(n.id, false).catch((err) => console.warn('Readable-text preparation failed:', err));
+          if (n) {
+            renderMessageInPlace(n.id, null, { focusMessageId: n.id });
+            const entries = allMessages(state.tree);
+            hydrateAudioStatuses(entries);
+            // The readable-text hydrator checks the cache first and starts exactly
+            // one preparation job for the newest completed answer when it is missing.
+            hydrateReadableTextStatuses(entries);
+          } else {
+            renderMessages();
           }
           loadUsage();
         } else if (ev === 'error') {
           const n = findNode(state.tree, data.message_id) ||
             findNode(state.tree, state.activeAssistantId);
-          if (n) { n.status = 'failed'; n.creating = false; n.error = data.error; }
-          renderMessages();
+          if (n) {
+            n.status = 'failed'; n.creating = false; n.error = data.error;
+            renderMessageInPlace(n.id);
+          } else {
+            renderMessages();
+          }
         } else if (ev === 'cancelled') {
           const n = findNode(state.tree, data.message_id) ||
             findNode(state.tree, state.activeAssistantId);
-          if (n) { n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text; }
-          renderMessages();
+          if (n) {
+            n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text;
+            renderMessageInPlace(n.id);
+          } else {
+            renderMessages();
+          }
         }
       });
     } catch (err) {
@@ -3366,8 +3481,9 @@
   }
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
+    $('#new-code-btn')?.addEventListener('click', () => newChat('code'));
     $('#sidebar-limits-btn').addEventListener('click', openLimits);
-    // Код-агент и Консилиум убраны из интерфейса — обработчиков больше нет
+    // Консилиум намеренно не возвращаем: восстановлен только режим Код-агента.
     $('#collapse-btn').addEventListener('click', () => {
       state.sidebarCollapsed = true;
       localStorage.setItem('cs_sidebar', '1');
@@ -3941,6 +4057,16 @@
     } catch (e) { /* noop */ }
   }
 
+  function isCurrentCodeAgent() {
+    const chat = state.chats.find(item => item && item.id === state.currentChatId);
+    return !!chat && chat.mode === 'code';
+  }
+
+  function setProjectStatus(text) {
+    const box = $('#pp-logs');
+    if (box) box.textContent = String(text || '');
+  }
+
   function appendLog(text) {
     const box = $('#pp-logs');
     if (!box || !text) return;
@@ -4306,23 +4432,38 @@
   }
 
   async function useTile(t) {
-    let chat;
+    if (state.chatCreating) return;
+    setChatCreationPending(true);
+    const selectionToken = state.chatOpenToken;
+    let chat = null;
     try {
       chat = await api.post('/api/chats', { title: t.title || t.label });
-    } catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    state.chats.unshift(chat);
-    renderChatList();
-    await openChat(chat.id);
-    if (t.questions) {
-      try {
-        await api.post('/api/chats/' + chat.id + '/seed', { text: t.questions });
-        state.tree = await api.get('/api/chats/' + chat.id + '/messages');
-        renderMessages();
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-      toast('Ответьте на вопросы — и я приступлю');
-      $('#input').focus();
-    } else {
-      $('#input').focus();
+      if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
+        throw new Error('Сервер не вернул созданный чат с корректным ID');
+      }
+      upsertChat(chat);
+      if (selectionToken === state.chatOpenToken) {
+        await openChat(chat.id);
+      } else {
+        renderChatList();
+      }
+
+      if (t.questions) {
+        await api.post('/api/chats/' + encodeURIComponent(chat.id) + '/seed', { text: t.questions });
+        const loadedTree = await api.get('/api/chats/' + encodeURIComponent(chat.id) + '/messages');
+        // A late seed response must not replace a different chat selected in the meantime.
+        if (state.currentChatId === chat.id) {
+          state.tree = Array.isArray(loadedTree) ? loadedTree : [];
+          renderMessages();
+          toast('Ответьте на вопросы — и я приступлю');
+        }
+      }
+      if (state.currentChatId === chat.id) $('#input').focus();
+    } catch (e) {
+      toast('Ошибка: ' + (e.message || e), 'error');
+      if (chat) renderChatList();
+    } finally {
+      setChatCreationPending(false);
     }
   }
 
@@ -4499,11 +4640,10 @@
     await loadLimits();
     await loadUsage();
 
-    // Avoid rebuilding the welcome block (and restarting its animation) once
-    // background data has arrived. If a chat was opened meanwhile, render it.
-    if (!welcomeRenderedEarly || state.currentChatId || allMessages(state.tree).length) {
-      renderMessages();
-    }
+    // The welcome screen was already rendered above. Any chat interaction during
+    // the asynchronous boot data loads renders its own current state; rebuilding
+    // it here caused an avoidable second DOM replacement and animation restart.
+    if (!welcomeRenderedEarly) renderMessages();
   }
 
   async function init() {

@@ -16,6 +16,41 @@ class ProviderError(Exception):
     pass
 
 
+def is_model_unavailable_error(error: object) -> bool:
+    """Return True for provider errors that cannot be fixed by retrying the same model."""
+    text = str(error).casefold()
+    return "model_not_found" in text or (
+        "no available channel" in text and "model" in text
+    )
+
+
+def _format_http_error(status_code: int, body: str, model: str) -> str:
+    """Explain a missing provider model/channel without hiding the upstream request ID."""
+    if not is_model_unavailable_error(body):
+        return f"HTTP {status_code}: {body[:400]}"
+
+    message = body[:400]
+    try:
+        payload = json.loads(body)
+        details = payload.get("error") or {}
+        if isinstance(details, dict):
+            message = str(details.get("message") or message).strip()
+    except (TypeError, ValueError):
+        pass
+
+    model_id = (model or "").strip()
+    model_label = f" «{model_id}»" if model_id else ""
+    return (
+        f"HTTP {status_code}: провайдер не нашёл доступный канал для модели{model_label} "
+        f"(model_not_found). Ответ провайдера: {message[:300]}. "
+        "Проверьте в Render → ai-ch → Environment, что QWEN_MODEL_ID точно совпадает "
+        "с внешним ID модели у выбранного API-шлюза, а QWEN_BASE_URL и QWEN_API_KEY "
+        "относятся к этому же провайдеру. На стороне провайдера также должен быть "
+        "активный канал/доступ к модели в группе default. Изменение URL или ключа "
+        "само по себе не создаёт канал для модели."
+    )
+
+
 def _endpoint(base_url: str) -> str:
     base = (base_url or "").strip().rstrip("/")
     if not base:
@@ -82,7 +117,9 @@ async def _stream_once(
         ) as resp:
             if resp.status_code >= 400:
                 body = (await resp.aread()).decode(errors="replace")
-                raise ProviderError(f"HTTP {resp.status_code}: {body[:400]}")
+                raise ProviderError(
+                    _format_http_error(resp.status_code, body, str(payload.get("model") or ""))
+                )
             async for line in resp.aiter_lines():
                 if not line or not line.startswith("data:"):
                     continue
@@ -162,7 +199,9 @@ async def complete_chat(
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=pl, headers=_headers(api_key))
             if resp.status_code >= 400:
-                raise ProviderError(f"HTTP {resp.status_code}: {resp.text[:400]}")
+                raise ProviderError(
+                    _format_http_error(resp.status_code, resp.text, str(pl.get("model") or ""))
+                )
             data = resp.json()
             choices = data.get("choices") or []
             if not choices:

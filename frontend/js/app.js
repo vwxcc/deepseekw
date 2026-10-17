@@ -318,7 +318,7 @@
         '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
         escapeHtml(code) + '"></iframe></div>'
       : '';
-    const localRunnable = ['html', 'htm', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3']
+    const localRunnable = ['html', 'htm', 'svg', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3']
       .includes((lang || '').toLowerCase());
     const runButton = localRunnable
       ? '<button data-run-device="' + id + '" title="Выполнить этот код в песочнице на устройстве">' +
@@ -537,9 +537,12 @@
 
   const deviceSpeechState = {
     messageId: null, text: '', words: [], chunks: [], index: 0,
-    token: 0, utterance: null, active: false, playing: false, rate: 1,
+    token: 0, utterance: null, active: false, playing: false, pending: false,
+    priming: false, watchdog: null, rate: 1,
   };
   const DEVICE_SPEECH_CHUNK_SIZE = 20;
+  const deviceCodeFileUrls = [];
+  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const append = value => { out.textContent += String(value) + \"\\n\"; };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message)}, \"*\"); } catch (e) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".xls\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function importUsed(moduleName) {\n    const lines = source.split(/\\r?\\n/);\n    return lines.some(line => {\n      const value = line.trim();\n      if (!value || value.startsWith('#')) return false;\n      const imported = value.match(/^import\\s+(.+?)\\s*(?:#.*)?$/);\n      if (imported) return imported[1].split(',').some(item => item.trim().split(/\\s+as\\s+/)[0].split('.')[0] === moduleName);\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      return !!fromImport && fromImport[1].split('.')[0] === moduleName;\n    });\n  }\n  const externalPackages = {\n    \"docx\":\"python-docx\",\n    \"openpyxl\":\"openpyxl\",\n    \"pypdf\":\"pypdf\",\n    \"pptx\":\"python-pptx\",\n    \"xlsxwriter\":\"XlsxWriter\",\n    \"markdown\":\"Markdown\",\n    \"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\n    \"docxtpl\":\"docxtpl\",\n    \"jinja2\":\"Jinja2\",\n    \"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\n    \"tabulate\":\"tabulate\",\n    \"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\n    \"cssselect2\":\"cssselect2\",\n    \"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\n    \"python_barcode\":\"python-barcode\",\n    \"toml\":\"toml\"\n  };\n  try {\n    out.textContent = \"Загружаю Python WebAssembly…\";\n    notify(\"Загружаю Python на устройстве…\");\n    const py = await loadPyodide({indexURL:\"https://cdn.jsdelivr.net/pyodide/v0.27.7/full/\"});\n    py.setStdout({batched:append});\n    py.setStderr({batched:value => append(\"STDERR: \" + value)});\n    await py.runPythonAsync(\"import os\\nos.chdir('/home/pyodide')\");\n    const before = JSON.parse(await py.runPythonAsync(snapshotCode));\n    out.textContent = \"Автоматически загружаю библиотеки по import…\";\n    notify(\"Проверяю импорты. Научные, графические и другие пакеты Pyodide загружаются по необходимости.\");\n    try {\n      if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n    } catch (e) {\n      append(\"Предупреждение загрузки встроенных пакетов: \" + String(e && e.message || e));\n      const pyodideAliases = {\n        \"PIL\":\"Pillow\", \"cv2\":\"opencv-python\", \"sklearn\":\"scikit-learn\",\n        \"skimage\":\"scikit-image\", \"bs4\":\"beautifulsoup4\", \"yaml\":\"pyyaml\",\n        \"dateutil\":\"python-dateutil\", \"lxml\":\"lxml\", \"numpy\":\"numpy\",\n        \"pandas\":\"pandas\", \"matplotlib\":\"matplotlib\", \"scipy\":\"scipy\",\n        \"sympy\":\"sympy\", \"networkx\":\"networkx\", \"altair\":\"altair\",\n        \"bokeh\":\"bokeh\", \"statsmodels\":\"statsmodels\", \"svgwrite\":\"svgwrite\"\n      };\n      const fallbackPackages = [...new Set(Object.keys(pyodideAliases).filter(importUsed).map(name => pyodideAliases[name]))];\n      for (const packageName of fallbackPackages) {\n        try {\n          notify(\"Дополнительно загружаю встроенный пакет \" + packageName + \"…\");\n          await py.loadPackage(packageName);\n        } catch (packageError) {\n          append(\"⚠ Не удалось загрузить пакет \" + packageName + \": \" + String(packageError && packageError.message || packageError));\n        }\n      }\n    }\n    const wanted = Object.keys(externalPackages).filter(importUsed).map(name => externalPackages[name]);\n    if (wanted.length) {\n      try {\n        await py.loadPackage(\"micropip\");\n        const micropip = py.pyimport(\"micropip\");\n        for (const packageName of wanted) {\n          notify(\"Загружаю библиотеку \" + packageName + \"…\");\n          try {\n            await micropip.install(packageName);\n            append(\"✓ Библиотека загружена: \" + packageName);\n          } catch (e) {\n            append(\"⚠ Не удалось установить \" + packageName + \": \" + String(e && e.message || e));\n          }\n        }\n        micropip.destroy();\n      } catch (e) {\n        append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n      }\n    }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Загрузка завершена. Выполняю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n    }\n    let exported = 0;\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const paths = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      }).sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\", csv:\"text/csv\", tsv:\"text/tab-separated-values\", txt:\"text/plain\",\n          json:\"application/json\", jsonl:\"application/jsonl\", html:\"text/html\", htm:\"text/html\",\n          svg:\"image/svg+xml\", png:\"image/png\", jpg:\"image/jpeg\", jpeg:\"image/jpeg\", webp:\"image/webp\",\n          gif:\"image/gif\", zip:\"application/zip\", md:\"text/markdown\", xml:\"application/xml\", rtf:\"application/rtf\",\n          epub:\"application/epub+zip\", tex:\"application/x-tex\", bib:\"text/plain\", ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\", yml:\"text/yaml\", npy:\"application/octet-stream\", npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\", pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size || size > 8 * 1024 * 1024 || totalBytes + size > 12 * 1024 * 1024) {\n          append(\"⚠ Файл пропущен: лимит 8 МБ на файл и 12 МБ суммарно. \" + name);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    if (exported) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки для скачивания появятся над окном кода.\");\n      notify(\"Python завершён. Документов и изображений подготовлено: \" + exported + \".\");\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен. Когда код создаст документ или изображение, здесь появится ссылка для скачивания.\");\n    }\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и дополнительные модули.\";\n    notify(\"Не удалось загрузить Python или библиотеку: \" + String(e && e.message || e));\n  }\n})();";
 
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
@@ -1281,8 +1284,10 @@
     const button = $('#device-audio-play-toggle');
     if (button) {
       button.innerHTML = icon(deviceSpeechState.playing ? 'pause' : 'play');
-      button.title = deviceSpeechState.playing ? 'Пауза' : 'Продолжить';
+      button.title = deviceSpeechState.playing ? 'Пауза' :
+        (deviceSpeechState.pending ? 'Запускаю озвучку…' : 'Воспроизвести / повторить запуск');
       button.setAttribute('aria-label', button.title);
+      button.disabled = !deviceSpeechState.active;
     }
     if (navigator.mediaSession) {
       try {
@@ -1352,11 +1357,12 @@
     });
   }
 
-  function speakDeviceChunk(index) {
+  function speakDeviceChunk(index, fromUserGesture) {
     const synth = window.speechSynthesis;
     if (!synth || !deviceSpeechState.active || !deviceSpeechState.chunks.length) return;
     if (index < 0 || index >= deviceSpeechState.chunks.length) {
       deviceSpeechState.playing = false;
+      deviceSpeechState.pending = false;
       const status = $('#device-audio-status');
       if (status) status.textContent = 'Озвучивание завершено.';
       updateDeviceSpeechControls();
@@ -1364,49 +1370,85 @@
     }
     deviceSpeechState.index = index;
     const token = ++deviceSpeechState.token;
-    try { synth.cancel(); } catch (e) { /* speech engine may be unavailable */ }
+    if (deviceSpeechState.watchdog) clearTimeout(deviceSpeechState.watchdog);
+    deviceSpeechState.watchdog = null;
+    if (synth.speaking || synth.pending || synth.paused) {
+      try { synth.cancel(); } catch (e) { /* speech engine may be unavailable */ }
+    }
     const utterance = new window.SpeechSynthesisUtterance(deviceSpeechState.chunks[index]);
     utterance.lang = 'ru-RU';
     utterance.rate = deviceSpeechState.rate;
+    utterance.volume = 1;
+    const voices = typeof synth.getVoices === 'function' ? synth.getVoices() : [];
+    const russianVoice = voices.find(v => /^ru([-_]|$)/i.test(v.lang || '') && v.localService) ||
+      voices.find(v => /^ru([-_]|$)/i.test(v.lang || ''));
+    if (russianVoice) utterance.voice = russianVoice;
     deviceSpeechState.utterance = utterance;
-    deviceSpeechState.playing = true;
+    deviceSpeechState.playing = false;
+    deviceSpeechState.pending = true;
     const status = $('#device-audio-status');
-    if (status) status.textContent = 'Читает системный голос телефона…';
+    if (status) status.textContent = 'Запускаю системный голос…';
     utterance.onstart = () => {
       if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.pending = false;
       deviceSpeechState.playing = true;
+      if (status) status.textContent = russianVoice
+        ? 'Читает системный русский голос телефона…'
+        : 'Читает голос системы телефона…';
+      if (deviceSpeechState.watchdog) clearTimeout(deviceSpeechState.watchdog);
+      deviceSpeechState.watchdog = null;
       updateDeviceSpeechControls();
     };
     utterance.onpause = () => {
       if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.pending = false;
       deviceSpeechState.playing = false;
       updateDeviceSpeechControls();
     };
     utterance.onresume = () => {
       if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.pending = false;
       deviceSpeechState.playing = true;
       updateDeviceSpeechControls();
     };
     utterance.onend = () => {
       if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.pending = false;
       if (deviceSpeechState.playing && deviceSpeechState.index + 1 < deviceSpeechState.chunks.length) {
-        speakDeviceChunk(deviceSpeechState.index + 1);
+        speakDeviceChunk(deviceSpeechState.index + 1, false);
       } else if (deviceSpeechState.index + 1 >= deviceSpeechState.chunks.length) {
         deviceSpeechState.playing = false;
         if (status) status.textContent = 'Озвучивание завершено.';
         updateDeviceSpeechControls();
-      }
+      } else updateDeviceSpeechControls();
     };
-    utterance.onerror = (event) => {
-      if (token !== deviceSpeechState.token || !deviceSpeechState.active || (event && event.error === 'canceled')) return;
+    utterance.onerror = event => {
+      if (token !== deviceSpeechState.token || !deviceSpeechState.active) return;
+      deviceSpeechState.pending = false;
       deviceSpeechState.playing = false;
-      if (status) status.textContent = 'Системный голос не смог прочитать этот фрагмент. Попробуйте ещё раз.';
+      if (status) status.textContent = event && event.error === 'not-allowed'
+        ? 'Safari заблокировал звук. Нажмите центральную ▶, чтобы запустить его касанием.'
+        : 'Системный голос не запустился. Нажмите ▶ ещё раз или проверьте голос и громкость iPhone.';
+      if (deviceSpeechState.watchdog) clearTimeout(deviceSpeechState.watchdog);
+      deviceSpeechState.watchdog = null;
       updateDeviceSpeechControls();
     };
-    updateDeviceSpeechControls();
-    try { synth.speak(utterance); } catch (e) {
+    try {
+      synth.speak(utterance);
+      updateDeviceSpeechControls();
+      deviceSpeechState.watchdog = setTimeout(() => {
+        if (token !== deviceSpeechState.token || !deviceSpeechState.active ||
+            !deviceSpeechState.pending || deviceSpeechState.playing) return;
+        deviceSpeechState.pending = false;
+        deviceSpeechState.playing = false;
+        if (status) status.textContent =
+          'Safari не начал озвучивание. Нажмите центральную ▶ ещё раз; проверьте громкость iPhone и голос «Русский» в настройках озвучивания.';
+        updateDeviceSpeechControls();
+      }, 2200);
+    } catch (e) {
+      deviceSpeechState.pending = false;
       deviceSpeechState.playing = false;
-      if (status) status.textContent = 'Не удалось запустить системную озвучку.';
+      if (status) status.textContent = 'Не удалось запустить системный голос: ' + String(e && e.message || e);
       updateDeviceSpeechControls();
     }
   }
@@ -1440,6 +1482,15 @@
   function resumeDeviceSpeech() {
     if (!deviceSpeechState.active) return;
     const synth = window.speechSynthesis;
+    if (deviceSpeechState.pending || (!deviceSpeechState.playing && synth && !synth.paused)) {
+      if (deviceSpeechState.watchdog) clearTimeout(deviceSpeechState.watchdog);
+      deviceSpeechState.watchdog = null;
+      deviceSpeechState.pending = false;
+      deviceSpeechState.priming = false;
+      try { if (synth && (synth.speaking || synth.pending || synth.paused)) synth.cancel(); } catch (e) { /* no-op */ }
+      speakDeviceChunk(deviceSpeechState.index, true);
+      return;
+    }
     if (synth && synth.paused) {
       try { synth.resume(); deviceSpeechState.playing = true; } catch (e) { /* continue below */ }
       updateDeviceSpeechControls();
@@ -1450,13 +1501,17 @@
       updateDeviceSpeechControls();
       return;
     }
-    speakDeviceChunk(deviceSpeechState.index);
+    speakDeviceChunk(deviceSpeechState.index, true);
   }
 
   function closeDeviceSpeechPlayer() {
     deviceSpeechState.active = false;
     deviceSpeechState.playing = false;
+    deviceSpeechState.pending = false;
+    deviceSpeechState.priming = false;
     deviceSpeechState.token += 1;
+    if (deviceSpeechState.watchdog) clearTimeout(deviceSpeechState.watchdog);
+    deviceSpeechState.watchdog = null;
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* no-op */ }
     const shell = $('#device-audio-player-shell');
     if (shell) {
@@ -1500,6 +1555,8 @@
     deviceSpeechState.rate = Number($('#device-audio-rate') && $('#device-audio-rate').value) || 1;
     deviceSpeechState.active = true;
     deviceSpeechState.playing = false;
+    deviceSpeechState.pending = false;
+    deviceSpeechState.priming = false;
     const chat = state.chats.find(c => c.id === state.currentChatId);
     const shell = $('#device-audio-player-shell');
     if (!shell) return;
@@ -1513,8 +1570,10 @@
     }
     installDeviceSpeechMediaSessionHandlers();
     const status = $('#device-audio-status');
-    if (status) status.textContent = 'Подготавливаю системный голос…';
-    speakDeviceChunk(0);
+    if (status) status.textContent = 'Запускаю системный голос…';
+    // Call speak directly from the user's tap; speakDeviceChunk only clears a stale queue if needed.
+    deviceSpeechState.priming = false;
+    speakDeviceChunk(0, true);
     requestAnimationFrame(() => $('#device-audio-close-btn')?.focus());
   }
 
@@ -1574,49 +1633,69 @@
     const shell = $('#device-code-shell');
     const frame = $('#device-code-frame');
     const status = $('#device-code-status');
+    const fileBox = $('#device-code-files');
     if (!shell || !frame || !item) return;
+
+    deviceCodeFileUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* no-op */ } });
+    deviceCodeFileUrls.length = 0;
+    if (fileBox) fileBox.replaceChildren();
+
     const lang = String(item.lang || '').trim().toLowerCase();
     const code = String(item.code || '');
-    const encode = (value) => btoa(unescape(encodeURIComponent(String(value || ''))));
-    const base64 = encode(code);
-    const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>' +
-      'body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#fff}pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f5f5f1;border-radius:8px;min-height:28px}.note{color:#6f6f67}</style></head><body>';
+    const base64 = btoa(unescape(encodeURIComponent(code)));
+    const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#fff}' +
+      'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f5f5f1;border-radius:8px;min-height:28px}' +
+      '.note{color:#6f6f67}.demo-board{max-width:680px;margin:18px auto;padding:18px;border:1px solid #e4e2db;border-radius:16px}' +
+      '.demo-header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.demo-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#e9e7df;font-weight:800}' +
+      '.demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.demo-card{padding:16px;border:1px solid #e5e3dd;border-radius:12px;background:#faf9f6}' +
+      '.demo-button{border:0;border-radius:10px;padding:10px 15px;background:#34332e;color:#fff;font:inherit}' +
+      '.demo-pill{display:inline-block;border:1px solid #dedbd2;border-radius:999px;padding:4px 9px;font-size:12px}' +
+      '</style></head><body>';
     const output = '<pre id="output" aria-live="polite">Запуск…</pre>';
     let doc = '';
     let message = '';
+
     if (['html', 'htm'].includes(lang)) {
       doc = code;
-      message = 'HTML выполняется в iframe с ограничениями браузерной песочницы.';
+      message = 'HTML/CSS/JavaScript отображаются в изолированной песочнице на этом устройстве.';
+    } else if (lang === 'svg') {
+      doc = pageStart + '<p class="note">SVG · локальный предпросмотр</p><main class="demo-board">' + code + '</main></body></html>';
+      message = 'SVG открыт в изолированном предпросмотре.';
     } else if (['js', 'javascript', 'mjs'].includes(lang)) {
-      doc = pageStart + '<p class="note">JavaScript · локальная песочница</p>' + output +
-        '<script>(function(){const out=document.getElementById("output");const write=(v)=>{out.textContent+=String(v)+"\\n"};' +
-        'const source=decodeURIComponent(escape(atob("' + base64 + '")));' +
-        'const safeConsole={log:(...a)=>write(a.join(" ")),info:(...a)=>write(a.join(" ")),warn:(...a)=>write("WARN: "+a.join(" ")),error:(...a)=>write("ERROR: "+a.join(" "))};' +
-        'out.textContent="";try{new Function("console","write",source)(safeConsole,write);}catch(e){write(e&&e.stack?e.stack:String(e));}' +
-        '})();<\/script></body></html>';
-      message = 'JavaScript выполняется локально в изолированном iframe; вывод появится ниже.';
+      const jsScript =
+        '(function(){const out=document.getElementById("output");const write=v=>{out.textContent+=String(v)+"\\n";};' +
+        'const source=new TextDecoder().decode(Uint8Array.from(atob("' + base64 + '"),c=>c.charCodeAt(0)));' +
+        'const safeConsole={log:(...a)=>write(a.map(v=>typeof v==="object"?JSON.stringify(v):String(v)).join(" ")),info:(...a)=>write(a.map(String).join(" ")),warn:(...a)=>write("WARN: "+a.map(String).join(" ")),error:(...a)=>write("ERROR: "+a.map(String).join(" "))};' +
+        'console.log=safeConsole.log;console.info=safeConsole.info;console.warn=safeConsole.warn;console.error=safeConsole.error;out.textContent="";' +
+        'try{const result=(new Function("console","write","return (async function(){\\n"+source+"\\n}).call(window);"))(safeConsole,write);' +
+        'Promise.resolve(result).then(()=>write("Код завершён.")).catch(e=>write(e&&e.stack?e.stack:String(e)));' +
+        '}catch(e){write(e&&e.stack?e.stack:String(e));}})();';
+      doc = pageStart + '<p class="note">JavaScript · локальная песочница с DOM внутри iframe</p>' +
+        '<main id="app" class="demo-board"><div class="demo-header"><span class="demo-logo">JS</span><div><b>Предпросмотр</b><div class="note">Код может менять документ</div></div></div>' +
+        '<div class="demo-grid"><article class="demo-card"><span class="demo-pill">Новая функция</span><h3>Карточка</h3><p>Демо-контент для стилизации DOM.</p><button class="demo-button">Основное действие</button></article></div></main>' +
+        output + '<script>' + jsScript + '</script></body></html>';
+      message = 'JavaScript выполняется локально; доступны DOM, CSS, canvas и асинхронный код.';
     } else if (lang === 'css') {
-      doc = pageStart + '<p class="note">CSS · демо-элемент</p><div class="device-demo">Демо-элемент для проверки стилей</div>' +
+      doc = pageStart + '<p class="note">CSS · демонстрационный макет</p><main class="demo-board">' +
+        '<header class="demo-header"><span class="demo-logo">Aa</span><div><b>Заголовок интерфейса</b><div class="note">Подзаголовок и описание</div></div></header>' +
+        '<div class="demo-grid"><article class="demo-card"><span class="demo-pill">Новая функция</span><h3>Карточка</h3><p>Проверьте типографику, цвета, отступы, рамки и тени.</p><button class="demo-button">Основное действие</button></article>' +
+        '<article class="demo-card"><h3>Данные</h3><p>Значение <strong>128,4</strong></p><div class="demo-pill">Готово</div></article></div></main>' +
         '<script>(function(){const s=decodeURIComponent(escape(atob("' + base64 + '")));const st=document.createElement("style");st.textContent=s;document.head.appendChild(st);})();<\/script></body></html>';
-      message = 'CSS применён к демонстрационному элементу внутри локального iframe.';
+      message = 'CSS применяется к демонстрационному интерфейсу. Для полноценного дизайна запускайте HTML/CSS вместе.';
     } else if (['py', 'python', 'python3'].includes(lang)) {
-      doc = pageStart + '<p class="note">Python WebAssembly · первый запуск скачивает среду Pyodide.</p>' + output +
-        '<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"><\/script>' +
-        '<script>(async function(){const out=document.getElementById("output");const write=(v)=>{out.textContent+=String(v)+"\\n"};' +
-        'const source=decodeURIComponent(escape(atob("' + base64 + '")));out.textContent="Загружаю Python runtime…";' +
-        'try{const py=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.27.7/full/"});' +
-        'py.setStdout({batched:(v)=>write(v)});py.setStderr({batched:(v)=>write("ERROR: "+v)});out.textContent="";' +
-        'try{await py.runPythonAsync(source);}catch(e){write(e&&e.message?e.message:String(e));}' +
-        'if(!out.textContent.trim())out.textContent="Код завершён без вывода.";' +
-        '}catch(e){out.textContent="Не удалось загрузить Python. Для запуска нужен интернет и поддержка WebAssembly. "+String(e);}})();' +
-        '<\/script></body></html>';
-      message = 'Загружаю Python в браузере. При первом запуске потребуется интернет для загрузки Pyodide.';
+      const pyScript = DEVICE_PYTHON_RUNNER_TEMPLATE.replace('__BASE64__', base64);
+      doc = pageStart + '<p class="note">Python WebAssembly · модули загружаются по import; файлы документов и изображения можно скачать ниже.</p>' +
+        output + '<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"><\/script>' +
+        '<script>' + pyScript + '<\/script></body></html>';
+      message = 'Python готовится. Runtime и подходящие модули загружаются на устройство по import; первый запуск требует интернет.';
     } else {
-      toast('Локальная песочница пока поддерживает HTML, CSS, JavaScript и Python. Для остальных языков используйте песочницу на сайте.', 'error');
+      toast('Песочница на устройстве поддерживает HTML, CSS, SVG, JavaScript и Python. Для остальных языков используйте песочницу на сайте.', 'error');
       return;
     }
 
     if (status) status.textContent = message;
+    if (fileBox) fileBox.hidden = true;
     shell.classList.add('open');
     shell.setAttribute('aria-hidden', 'false');
     document.body.classList.add('device-code-open');
@@ -1627,16 +1706,60 @@
   function closeDeviceCodeRunner() {
     const shell = $('#device-code-shell');
     const frame = $('#device-code-frame');
+    const fileBox = $('#device-code-files');
     if (shell) {
       shell.classList.remove('open');
       shell.setAttribute('aria-hidden', 'true');
     }
     if (frame) frame.srcdoc = '';
+    if (fileBox) { fileBox.replaceChildren(); fileBox.hidden = true; }
+    deviceCodeFileUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* no-op */ } });
+    deviceCodeFileUrls.length = 0;
     document.body.classList.remove('device-code-open');
   }
 
   function bindDeviceCodeRunner() {
     $$('[data-device-code-close]').forEach(button => button.addEventListener('click', closeDeviceCodeRunner));
+    window.addEventListener('message', event => {
+      const frame = $('#device-code-frame');
+      if (!frame || event.source !== frame.contentWindow || !event.data || typeof event.data !== 'object') return;
+      const data = event.data;
+      const status = $('#device-code-status');
+      if (data.type === 'device-code-status') {
+        if (status && typeof data.message === 'string') status.textContent = data.message.slice(0, 500);
+        return;
+      }
+      if (data.type !== 'device-code-file' || typeof data.name !== 'string' || !data.bytes) return;
+      const fileBox = $('#device-code-files');
+      if (!fileBox) return;
+      try {
+        const bytes = new Uint8Array(data.bytes);
+        if (!bytes.length || bytes.length > 8 * 1024 * 1024) return;
+        const blob = new Blob([bytes], { type: String(data.mime || 'application/octet-stream') });
+        const url = URL.createObjectURL(blob);
+        deviceCodeFileUrls.push(url);
+        fileBox.hidden = false;
+        const card = document.createElement('div');
+        card.className = 'device-code-file-card';
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = data.name.replace(/[\\/\\0-\\x1f]/g, '_').slice(0, 180) || 'output.bin';
+        link.textContent = 'Скачать ' + link.download + ' · ' + formatSize(blob.size);
+        card.appendChild(link);
+        if (/^image\/(png|jpeg|webp|gif|svg\+xml)$/i.test(blob.type)) {
+          const preview = document.createElement('img');
+          preview.className = 'device-code-file-preview';
+          preview.src = url;
+          preview.alt = link.download;
+          preview.loading = 'lazy';
+          card.appendChild(preview);
+        }
+        fileBox.appendChild(card);
+        if (status) status.textContent = 'Файл готов: ' + link.download + '. Нажмите ссылку для скачивания.';
+      } catch (e) {
+        if (status) status.textContent = 'Не удалось подготовить файл для скачивания: ' + String(e && e.message || e);
+      }
+    });
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && $('#device-code-shell')?.classList.contains('open')) closeDeviceCodeRunner();
     });

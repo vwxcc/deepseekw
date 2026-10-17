@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ChatStudio</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=41" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=42" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -269,6 +269,7 @@
         <div><h2 id="device-code-title">Песочница на устройстве</h2><p id="device-code-status" aria-live="polite">Код выполняется в изолированном iframe.</p></div>
         <button class="icon-btn" type="button" data-device-code-close title="Закрыть" aria-label="Закрыть песочницу"><svg class="ic"><use href="#i-x"/></svg></button>
       </header>
+      <div id="device-code-files" class="device-code-files" aria-live="polite" hidden></div>
       <iframe id="device-code-frame" title="Локальная кодовая песочница" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
     </section>
   </div>
@@ -279,6 +280,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=47"></script>
+  <script src="/assets/js/app.js?v=50"></script>
 </body>
 </html>

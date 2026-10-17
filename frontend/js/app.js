@@ -1263,35 +1263,35 @@
 
   function readableSpeechText(source) {
     let text = String(source || '');
-    text = text.replace(/\`\`\`[\\s\\S]*?\`\`\`/g, ' (блок кода пропущен) ');
-    text = text.replace(/\`([^\`]+)\`/g, '$1');
-    text = text.replace(/\\[([^\\]]+)\\]\\((?:https?:[^)]+)\\)/g, '$1');
-    text = text.replace(/https?:\\/\\/[^\\s)]+/g, ' (ссылка) ');
+    text = text.replace(/\x60{3}[\s\S]*?\x60{3}/g, ' (блок кода пропущен) ');
+    text = text.replace(/\x60([^\x60]+)\x60/g, '$1');
+    text = text.replace(/\[([^\]]+)\]\((?:https?:[^)]+)\)/g, '$1');
+    text = text.replace(/https?:\/\/[^\s)]+/g, ' (ссылка) ');
     text = text.replace(/<[^>]*>/g, ' ');
-    text = text.replace(/^\\s{0,3}#{1,6}\\s*/gm, '');
-    text = text.replace(/^\\s*>\\s?/gm, '');
-    text = text.replace(/^\\s*[-*+]\\s+/gm, '');
-    text = text.replace(/\\*\\*(.*?)\\*\\*/g, '$1').replace(/__(.*?)__/g, '$1');
-    text = text.replace(/\\*(.*?)\\*/g, '$1').replace(/_(.*?)_/g, '$1');
-    text = text.replace(/^\\s*\\|?[- :|]{3,}\\|?\\s*$/gm, '');
+    text = text.replace(/^\s{0,3}#{1,6}\s*/gm, '');
+    text = text.replace(/^\s*>\s?/gm, '');
+    text = text.replace(/^\s*[-*+]\s+/gm, '');
+    text = text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');
+    text = text.replace(/\*(.*?)\*/g, '$1').replace(/_(.*?)_/g, '$1');
+    text = text.replace(/^\s*\|?[- :|]{3,}\|?\s*$/gm, '');
     text = text.replace(/[|*_~#]/g, ' ');
-    text = text.replace(/[ \\t]+/g, ' ').replace(/\\n{2,}/g, '. ');
-    text = text.replace(/\\n/g, ' ').replace(/\\s+([,.!?;:])/g, '$1');
-    return text.replace(/\\s{2,}/g, ' ').trim();
+    text = text.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '. ');
+    text = text.replace(/\n/g, ' ').replace(/\s+([,.!?;:])/g, '$1');
+    return text.replace(/\s{2,}/g, ' ').trim();
   }
 
   function updateDeviceSpeechControls() {
     const total = deviceSpeechState.words.length;
-    const start = deviceSpeechState.index * DEVICE_SPEECH_CHUNK_SIZE;
-    const end = Math.min(total, start + DEVICE_SPEECH_CHUNK_SIZE);
+    const startWord = deviceSpeechState.index * DEVICE_SPEECH_CHUNK_SIZE;
+    const endWord = Math.min(total, startWord + DEVICE_SPEECH_CHUNK_SIZE);
     const current = $('#device-audio-current-text');
     if (current) current.textContent = deviceSpeechState.chunks[deviceSpeechState.index] || '';
     const wordPosition = $('#device-audio-word-position');
-    if (wordPosition) wordPosition.textContent = total ? 'Слова ' + (start + 1) + '–' + end + ' из ' + total : 'Слова 0–0 из 0';
+    if (wordPosition) wordPosition.textContent = total ? 'Слова ' + (startWord + 1) + '–' + endWord + ' из ' + total : 'Слова 0–0 из 0';
     const chunkPosition = $('#device-audio-chunk-position');
     if (chunkPosition) chunkPosition.textContent = 'Фрагмент ' + (deviceSpeechState.chunks.length ? deviceSpeechState.index + 1 : 0) + '/' + deviceSpeechState.chunks.length;
     const fill = $('#device-audio-progress-fill');
-    if (fill) fill.style.width = (total ? Math.round((end / total) * 100) : 0) + '%';
+    if (fill) fill.style.width = (total ? Math.round((endWord / total) * 100) : 0) + '%';
     const button = $('#device-audio-play-toggle');
     if (button) {
       button.innerHTML = icon(deviceSpeechState.playing ? 'pause' : 'play');
@@ -1379,7 +1379,7 @@
     deviceSpeechState.index = index;
     const token = ++deviceSpeechState.token;
     try { synth.cancel(); } catch (e) { /* speech engine may be unavailable */ }
-    const utterance = new SpeechSynthesisUtterance(deviceSpeechState.chunks[index]);
+    const utterance = new window.SpeechSynthesisUtterance(deviceSpeechState.chunks[index]);
     utterance.lang = 'ru-RU';
     utterance.rate = deviceSpeechState.rate;
     deviceSpeechState.utterance = utterance;
@@ -1429,7 +1429,6 @@
     if (!deviceSpeechState.active || !deviceSpeechState.chunks.length) return;
     const next = deviceSpeechState.index + offset;
     if (next < 0) {
-      deviceSpeechState.index = 0;
       if ($('#device-audio-status')) $('#device-audio-status').textContent = 'Это начало текста.';
       updateDeviceSpeechControls();
       return;
@@ -1499,7 +1498,7 @@
     if ($('#audio-player-shell') && $('#audio-player-shell').classList.contains('open')) closeAudioPlayer();
     if (deviceSpeechState.active) closeDeviceSpeechPlayer();
     const text = readableSpeechText(node.content);
-    const words = text.match(/\\S+/g) || [];
+    const words = text.match(/\S+/g) || [];
     if (!words.length) {
       toast('В этом ответе нет текста для озвучивания.', 'error');
       return;
@@ -1534,12 +1533,12 @@
   }
 
   function bindDeviceSpeechPlayer() {
-    $('[data-device-audio-close]').forEach(btn => btn.addEventListener('click', closeDeviceSpeechPlayer));
+    $$('[data-device-audio-close]').forEach(btn => btn.addEventListener('click', closeDeviceSpeechPlayer));
     $('#device-audio-play-toggle')?.addEventListener('click', () => {
       if (deviceSpeechState.playing) pauseDeviceSpeech();
       else resumeDeviceSpeech();
     });
-    $('[data-device-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-device-audio-action]').forEach(btn => btn.addEventListener('click', () => {
       moveDeviceSpeech(btn.dataset.deviceAudioAction === 'back' ? -1 : 1);
     }));
     $('#device-audio-rate')?.addEventListener('change', (event) => {

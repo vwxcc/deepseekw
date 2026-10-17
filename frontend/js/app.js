@@ -1133,7 +1133,7 @@
   }
 
   function updateDeviceAudioControl(messageId) {
-    const wrapper = $('[data-device-audio-control]').find(el => el.dataset.deviceAudioControl === String(messageId));
+    const wrapper = $$('[data-device-audio-control]').find(el => el.dataset.deviceAudioControl === String(messageId));
     const entry = findNode(state.tree, messageId);
     if (wrapper && entry) wrapper.outerHTML = deviceAudioControlHtml(entry);
   }
@@ -2134,7 +2134,7 @@
     hydrateReadableTextStatuses(entries);
 
     if (opts.focusMessageId) {
-      const target = $('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
+      const target = $$('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
       const content = target ? $('.content.md', target) : null;
       if (content) content.classList.add('answer-arrive');
       requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
@@ -2301,7 +2301,7 @@
   function scrollToMessageStart(messageId) {
     const box = $('#messages');
     if (!box || messageId == null) return;
-    const target = $('.msg', box).find(el => el.dataset.mid === String(messageId));
+    const target = $$('.msg', box).find(el => el.dataset.mid === String(messageId));
     if (!target) return;
     const boxTop = box.getBoundingClientRect().top;
     const targetTop = target.getBoundingClientRect().top;

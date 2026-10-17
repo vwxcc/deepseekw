@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database import Base
 from app.models import Chat, Memory, User
-from app.routers.messages import _memory_block
+from app.services.memory_scope import _memory_block
 
 
 class ChatScopedMemoryTests(unittest.IsolatedAsyncioTestCase):

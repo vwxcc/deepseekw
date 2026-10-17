@@ -159,6 +159,8 @@ jobs:
               raise SystemExit("Agent execution output must be consolidated without visible step numbering")
           if "max_steps = min(3, max(1, int(base_steps)))" not in router:
               raise SystemExit("Code Agent model turns must be capped at three")
+          if "job.first_exchange and code_mode" not in router or "_local_code_chat_title(job.user_text)" not in router:
+              raise SystemExit("Code Agent title must not require an extra model request")
           if "одним блоком run" not in Path("app/ai/prompts.py").read_text(encoding="utf-8"):
               raise SystemExit("Code Agent prompt must consolidate work into one run block")
           for token in (

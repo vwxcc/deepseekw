@@ -3542,8 +3542,15 @@
     const chatFacts = filterChatId ? facts.filter(m => m.chat_id === filterChatId) : facts;
     const globalPrefs = prefs.filter(m => !m.chat_id && !m.message_id);
     const chatPrefs = filterChatId ? prefs.filter(m => m.chat_id === filterChatId) : [];
-    const row = (m) => '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
-      '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>';
+    const row = (m) => {
+      const chat = m.chat_id ? state.chats.find(c => c.id === m.chat_id) : null;
+      const scope = m.chat_id
+        ? '<small class="mem-scope-label">Чат: ' + escapeHtml(chat ? chat.title : m.chat_id.slice(0, 8)) + '</small>'
+        : '';
+      return '<div class="mem-row"><div class="mem-row-copy"><span>' + escapeHtml(m.content) +
+        '</span>' + scope + '</div><button data-del-mem="' + m.id +
+        '" title="Удалить из памяти">' + icon('trash') + '</button></div>';
+    };
 
     let body;
     if (filterMessageId) {

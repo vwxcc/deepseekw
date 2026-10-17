@@ -52,10 +52,6 @@ class AudioGenerationStateTests(unittest.TestCase):
         self.assertIsNone(active_audio_generation("audio-state-user"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 
 class SharedAudioGenerationLockTests(unittest.IsolatedAsyncioTestCase):
     """The shared lock must remain authoritative across sessions/workers."""
@@ -144,6 +140,11 @@ class SharedAudioGenerationLockTests(unittest.IsolatedAsyncioTestCase):
             await shared_active_audio_generation(self.db2, self.user.id)
         )
         await claim_shared_audio_generation(self.db2, self.user.id, second)
+        self.db1.expire_all()
         self.assertEqual(
             await shared_active_audio_generation(self.db1, self.user.id), second
         )
+
+
+if __name__ == "__main__":
+    unittest.main()

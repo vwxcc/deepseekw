@@ -44,9 +44,11 @@ class ActivityMarkupParser:
 
     @staticmethod
     def _possible_prefix_suffix(value: str) -> int:
-        max_len = min(len(value), len(_PREFIX) - 1)
+        # Keep a partial STATUS/ACTION opener when the model splits it after the word.
+        openers = ("[[AICH_STATUS:", "[[AICH_ACTION:")
+        max_len = min(len(value), max(map(len, openers)) - 1)
         for size in range(max_len, 0, -1):
-            if _PREFIX.startswith(value[-size:]):
+            if any(opener.startswith(value[-size:]) for opener in openers):
                 return size
         return 0
 

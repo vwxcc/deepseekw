@@ -60,7 +60,7 @@ jobs:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
           if "/assets/css/app.css?v=43" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=53" not in html:
+          if "/assets/js/app.js?v=54" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 

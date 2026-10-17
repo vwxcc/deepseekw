@@ -1941,6 +1941,7 @@
       try {
         const bytes = new Uint8Array(data.bytes);
         if (!bytes.length || bytes.length > 8 * 1024 * 1024) return;
+        const normalizedName = String(data.name).replace(/\.(ppt|doc|xls)_$/i, (_, ext) => '.' + ({ ppt: 'pptx', doc: 'docx', xls: 'xlsx' }[ext.toLowerCase()]));
         const normalizedExt = normalizedName.slice(normalizedName.lastIndexOf('.')).toLowerCase();
         const officeMime = {
           '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -1955,7 +1956,6 @@
         card.className = 'device-code-file-card';
         const link = document.createElement('a');
         link.href = url;
-        const normalizedName = String(data.name).replace(/\.(ppt|doc|xls)_$/i, (_, ext) => '.' + ({ ppt: 'pptx', doc: 'docx', xls: 'xlsx' }[ext.toLowerCase()]));
         link.download = normalizedName.replace(/[\\/\\0-\\x1f]/g, '_').slice(0, 180) || 'output.bin';
         link.textContent = 'Скачать ' + link.download + ' · ' + formatSize(blob.size);
         card.appendChild(link);
@@ -2044,10 +2044,7 @@
       '<div class="empty-state">' +
         '<h2 class="greet" id="greet-text">' +
           escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
-        '<div class="tiles" id="tiles"></div>' +
       '</div>';
-    renderTiles();
-    bindTiles();
     rollPlaceholder();
     startRotation();
   }

@@ -71,6 +71,44 @@ class FileTemplateTests(unittest.TestCase):
                 self.assertEqual(image.format, "PNG")
                 self.assertGreaterEqual(image.width, 900)
 
+    def test_builds_pdf_and_simple_file_formats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = templates.build_from_plan(tmp, {
+                "format": "pdf", "template_id": "pdf.report",
+                "title": "Краткий отчёт", "filename": "report.pdf",
+                "blocks": [
+                    {"kind": "h1", "text": "Результаты"},
+                    {"kind": "text", "text": "Документ должен содержать понятный текст."},
+                    {"kind": "table", "title": "Показатели",
+                     "head": ["Показатель", "Значение"],
+                     "rows": [["Рост", "42%"], ["Конверсия", "3,7%"]]},
+                ],
+            })
+            pdf_path = Path(next(path for path in pdf["files"] if path.endswith(".pdf")))
+            self.assertTrue(pdf_path.is_file())
+            from pypdf import PdfReader
+            self.assertGreaterEqual(len(PdfReader(str(pdf_path)).pages), 3)
+
+            csv_out = templates.build_from_plan(tmp, {
+                "format": "csv", "template_id": "data.csv",
+                "title": "Результаты", "filename": "results.csv",
+                "head": ["Показатель", "Значение"],
+                "rows": [["Рост", 42], ["Конверсия", 3.7]],
+            })
+            csv_path = Path(csv_out["files"][0])
+            self.assertIn("Показатель,Значение", csv_path.read_text(encoding="utf-8-sig"))
+            self.assertIn("Конверсия,3.7", csv_path.read_text(encoding="utf-8-sig"))
+
+            md_out = templates.build_from_plan(tmp, {
+                "format": "md", "template_id": "document.markdown",
+                "title": "Инструкция", "filename": "guide.md",
+                "blocks": [{"kind": "h1", "text": "Шаги"},
+                           {"kind": "bullets", "items": ["Первый", "Второй"]}],
+            })
+            md_text = Path(md_out["files"][0]).read_text(encoding="utf-8")
+            self.assertIn("# Шаги", md_text)
+            self.assertIn("- Первый", md_text)
+
     def test_builds_office_files_from_template_blocks(self):
         with tempfile.TemporaryDirectory() as tmp:
             pptx = templates.build_from_plan(tmp, {

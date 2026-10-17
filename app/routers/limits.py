@@ -64,7 +64,8 @@ async def my_limits(
         .where(Chat.user_id == user.id, Message.role == Role.assistant)
     )
     window_hours = int(limits.get("window_hours") or 5)
-    budget = float(limits.get("budget_usd") or 0)
+    budget_raw = limits.get("budget_usd")
+    budget = float(budget_raw) if budget_raw is not None else None
     window_spend, window_reqs = await _window_spend(
         db, user.id, window_hours, user.plan or "free"
     )
@@ -75,7 +76,10 @@ async def my_limits(
             AudioGeneration.created_at >= audio_cutoff,
         )
     )
-    percent = round(min(100.0, window_spend / budget * 100.0), 1) if budget else 0.0
+    percent = (
+        0.0 if budget is None else
+        (100.0 if budget == 0 else round(min(100.0, window_spend / budget * 100.0), 1))
+    )
     return {
         "compare": await all_limits(db),
         "plan": user.plan or "free",
@@ -165,7 +169,8 @@ async def users_overview(
     for user, requests, tin, tout in rows:
         limits = await get_limits(db, user.plan or "free")
         window_hours = max(1, int(limits.get("window_hours") or 5))
-        budget = float(limits.get("budget_usd") or 0)
+        budget_raw = limits.get("budget_usd")
+        budget = float(budget_raw) if budget_raw is not None else None
         window_spend, window_calls = await usage_window_spend(db, user.id, window_hours)
         total_cost = await db.scalar(
             select(func.coalesce(func.sum(UsageEvent.cost_usd), 0)).where(
@@ -193,7 +198,10 @@ async def users_overview(
                 "budget_usd": budget,
                 "window_hours": window_hours,
                 "window_requests": window_calls,
-                "window_percent": round(min(100.0, window_spend / budget * 100), 1) if budget else 0.0,
+                "window_percent": (
+                    0.0 if budget is None else
+                    (100.0 if budget == 0 else round(min(100.0, window_spend / budget * 100), 1))
+                ),
                 "usage_reset_at": user.usage_reset_at.isoformat() if user.usage_reset_at else None,
             }
         )
@@ -257,6 +265,11 @@ async def limits_update(
             number = float(raw) if key in float_keys else int(raw)
             if isinstance(number, float) and (number != number or abs(number) == float("inf")):
                 continue
+            if number < 0 or (key == "window_hours" and number < 1):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"Недопустимое значение лимита: {key}",
+                )
             values[key] = number
         except (TypeError, ValueError, OverflowError):
             continue

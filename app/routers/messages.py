@@ -124,6 +124,18 @@ async def _stream_job(
 
             if kind == "delta":
                 yield _sse("delta", {"text": payload})
+            elif kind == "ui_status":
+                yield _sse("ui_status", {"text": str(payload or "")})
+            elif kind == "ui_action":
+                try:
+                    action = json.loads(payload)
+                except Exception:
+                    action = None
+                if isinstance(action, dict) and action.get("text"):
+                    yield _sse("ui_action", {
+                        "icon": str(action.get("icon") or "sparkle"),
+                        "text": str(action["text"]),
+                    })
             elif kind == "thinking":
                 yield _sse("thinking", {"text": payload})
             elif kind == "memory":

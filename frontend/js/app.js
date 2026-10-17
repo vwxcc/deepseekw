@@ -959,6 +959,10 @@
           n.activities = saved.filter(item => item && ['status', 'action'].includes(item.kind) &&
             typeof item.text === 'string').slice(-60);
         }
+        const started = Number(localStorage.getItem(activityStorageKey(n.id) + ':started'));
+        const elapsed = Number(localStorage.getItem(activityStorageKey(n.id) + ':elapsed'));
+        if (Number.isFinite(started) && started > 0) n.activityStartedAt = started;
+        if (Number.isFinite(elapsed) && elapsed >= 0) n.activityElapsedMs = elapsed;
       } catch (e) { /* unavailable storage must not interrupt chat rendering */ }
     }
     return n.activities;
@@ -966,13 +970,16 @@
 
   function saveActivityItems(n) {
     if (!n || !n.id) return;
-    try { localStorage.setItem(activityStorageKey(n.id), JSON.stringify(activityItems(n).slice(-60))); }
-    catch (e) { /* storage quota/private mode: the current chat still works */ }
+    try {
+      localStorage.setItem(activityStorageKey(n.id), JSON.stringify(activityItems(n).slice(-60)));
+      if (Number.isFinite(Number(n.activityStartedAt)) && Number(n.activityStartedAt) > 0) localStorage.setItem(activityStorageKey(n.id) + ':started', String(n.activityStartedAt));
+      if (n.activityElapsedMs !== undefined && Number.isFinite(Number(n.activityElapsedMs))) localStorage.setItem(activityStorageKey(n.id) + ':elapsed', String(n.activityElapsedMs));
+    } catch (e) { /* storage quota/private mode: the current chat still works */ }
   }
 
   function appendActivity(n, item) {
     if (!n || !item || !['status', 'action'].includes(item.kind)) return;
-    const text = String(item.text || '').replace(/\\s+/g, ' ').trim().slice(0, 240);
+    const text = String(item.text || '').replace(/\s+/g, ' ').trim().slice(0, 240);
     if (!text) return;
     const activities = activityItems(n);
     const iconName = item.kind === 'action' && ACTIVITY_ICON_NAMES.has(String(item.icon || ''))
@@ -1019,7 +1026,7 @@
         '<span class="activity-text">Получаю ответ модели…</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
     return '<section class="activity-panel" data-activity-panel="' + escapeHtml(n.id) + '">' +
-      '<div class="activity-head"><span class="activity-time">' +
+      '<div class="activity-head"><span class="activity-time" data-activity-elapsed="' + escapeHtml(n.id) + '">' +
       (generating ? 'Выполняю запрос · ' + duration : 'Думал ' + duration) + '</span>' +
       '<span class="activity-controls">' +
       '<button type="button" data-activity-full="' + escapeHtml(n.id) + '" title="Открыть отдельное окно полного потока">' +
@@ -1049,7 +1056,7 @@
       const wasNearBottom = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90;
       log.textContent = activityItems(n).map((item, index) =>
         (index + 1) + '. ' + (item.kind === 'action' ? '[' + (item.icon || 'sparkle') + '] ' : '') + item.text
-      ).join('\\n') || 'Ожидаю первые статусы…';
+      ).join('\n') || 'Ожидаю первые статусы…';
       answer.textContent = String(n.publicStream || n.content || n.draft || '');
       if (stateLabel) stateLabel.textContent = n.status === 'completed'
         ? 'Завершено · ' + formatActivityDuration(activityElapsed(n, false))
@@ -1059,7 +1066,9 @@
   }
 
   function openActivityStream(id) {
-    const n = findNode(state.tree, id) || (state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null);
+    const live = window.__aichActivityNodes && window.__aichActivityNodes[id];
+    const n = (live && live.publicStream) ? live :
+      (findNode(state.tree, id) || (state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null) || live);
     if (!n) { toast('Поток появится, когда сообщение будет принято сервером.', 'error'); return; }
     const safeWindowName = 'aich-stream-' + String(n.id).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
     const popup = window.open('', safeWindowName, 'popup=yes,width=820,height=760,resizable=yes,scrollbars=yes');
@@ -2594,13 +2603,10 @@
           ' ток. выхода · бюджет $' + live.toFixed(4) + ' из $' + w.budget_usd +
           ' за ' + w.hours + ' ч');
       }
-      const el = $('[data-gen]');
-      const secs = Math.round((Date.now() - (state.genStart || Date.now())) / 1000);
-      const idle = Math.round((Date.now() - (state.lastEvent || Date.now())) / 1000);
-      if (!el) return;
-      el.textContent = state.streamBuf.length.toLocaleString('ru-RU') + ' симв. · ' + secs + ' с' +
-        (idle > 45 ? ' · модель долго думает…' : '');
-      el.classList.toggle('warn', idle > 45);
+      const elapsedNode = state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null;
+      const elapsedEl = $('[data-activity-elapsed]');
+      if (!elapsedEl || !elapsedNode) return;
+      elapsedEl.textContent = 'Выполняю запрос · ' + formatActivityDuration(activityElapsed(elapsedNode, true));
     }, 1000);
     const controller = new AbortController();
     let watchdog = null;
@@ -2653,7 +2659,13 @@
           const previousId = tmp && tmp.id;
           if (ev === 'assistant_message') streamContext.assistantId = data && data.id ? data.id : null;
           if (state.currentChatId !== streamContext.chatId) {
-            if (ev === 'assistant_message') streamContext.node = streamContext.node || null;
+            if (ev === 'assistant_message') {
+              streamContext.node = Object.assign({}, data, { children: [], activities: [] });
+              streamContext.node.creating = true;
+              streamContext.node.activityStartedAt = state.genStart || Date.now();
+              window.__aichActivityNodes = window.__aichActivityNodes || Object.create(null);
+              window.__aichActivityNodes[streamContext.node.id] = streamContext.node;
+            }
             return;
           }
           let node = null;
@@ -2675,6 +2687,10 @@
             node.creating = true;
             node.activityStartedAt = Number(node.activityStartedAt) || state.genStart || Date.now();
             state.activeAssistantId = node.id;
+            window.__aichActivityNodes = window.__aichActivityNodes || Object.create(null);
+            window.__aichActivityNodes[node.id] = node;
+            const liveIds = Object.keys(window.__aichActivityNodes);
+            if (liveIds.length > 40) liveIds.slice(0, liveIds.length - 40).forEach(key => delete window.__aichActivityNodes[key]);
           }
           if (replacedOptimistic) {
             renderMessageInPlace(node.id, previousId);
@@ -2805,7 +2821,8 @@
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
             n.activityFinishedAt = Date.now();
-            n.activityElapsedMs = activityElapsed(n, false);
+            n.activityElapsedMs = Math.max(0, n.activityFinishedAt - (Number(n.activityStartedAt) || state.genStart || n.activityFinishedAt));
+            saveActivityItems(n);
             renderActivityPopup(n);
           }
           if (n && state.currentChatId === streamContext.chatId) {

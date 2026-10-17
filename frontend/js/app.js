@@ -2037,7 +2037,7 @@
     audio.addEventListener('ended', updateAudioPlayerControls);
     const rateSelect = $('#audio-player-rate');
     if (rateSelect) rateSelect.addEventListener('change', () => { audio.playbackRate = Number(rateSelect.value) || 1; });
-    $('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
+    $$('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
     $('#audio-play-toggle')?.addEventListener('click', () => {
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();
@@ -2426,7 +2426,7 @@
       const label = $('[data-tool-toggle-label]', btn);
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
-    $('.ask-card', scope).forEach(card => {
+    $$( '.ask-card', scope).forEach(card => {
       const questions = $('.ask-question', card);
       const send = () => {
         const answers = questions.map(question => {
@@ -2438,20 +2438,20 @@
         $('#input').value = answers.map(answer => answer.question + ': ' + answer.value).join('\n');
         autoGrow(); sendCurrent();
       };
-      $('.ask-option', card).forEach(option => option.addEventListener('click', () => {
+      $$( '.ask-option', card).forEach(option => option.addEventListener('click', () => {
         const question = option.closest('.ask-question');
         if (!question) return;
-        $('.ask-option', question).forEach(other => {
+        $$( '.ask-option', question).forEach(other => {
           const selected = other === option; other.classList.toggle('is-selected', selected); other.setAttribute('aria-pressed', String(selected));
         });
         const input = $('.ask-input', question);
         if (input) { input.value = option.dataset.askOption || ''; input.focus(); }
       }));
-      $('.ask-input', card).forEach(input => {
+      $$( '.ask-input', card).forEach(input => {
         input.addEventListener('input', () => {
           if (!input.value.trim()) return;
           const question = input.closest('.ask-question');
-          if (question) $('.ask-option', question).forEach(option => { option.classList.remove('is-selected'); option.setAttribute('aria-pressed', 'false'); });
+          if (question) $$( '.ask-option', question).forEach(option => { option.classList.remove('is-selected'); option.setAttribute('aria-pressed', 'false'); });
         });
         input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } });
       });

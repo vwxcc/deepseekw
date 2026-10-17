@@ -578,28 +578,7 @@
     'Добавим график в таблицу?'
   ];
 
-  const SUGGESTIONS = [
-    'Создай аккуратно оформленный DOCX-отчёт с заголовками и таблицей.',
-    'Сделай Excel-таблицу с формулами, итогами и форматированием.',
-    'Подготовь PPTX-презентацию на 8 слайдов с единым стилем.',
-    'Собери PDF-отчёт с заголовками, таблицами и графиками.',
-    'Создай SVG-блок-схему с подписями и соединительными стрелками.',
-    'Подготовь SVG-иллюстрацию с согласованными цветами и подписями.',
-    'Сверстай самодостаточный HTML-файл с адаптивным дизайном.',
-    'Создай PNG-инфографику на основе этих данных.',
-    'Подготовь CSV-файл с чистыми столбцами и понятными заголовками.',
-    'Преобразуй этот текст в структурированный DOCX-документ.',
-    'Оформи резюме в DOCX с аккуратной типографикой.',
-    'Сделай XLSX-календарь с датами, статусами и фильтрами.',
-    'Создай DOCX-документ с титульной страницей и оглавлением.',
-    'Собери PPTX с титульным слайдом, разделами и итогами.',
-    'Подготовь PDF из приложенного материала, сохранив структуру.',
-    'Создай SVG-график с подписями осей, легендой и сеткой.',
-    'Оформи таблицу данных в XLSX с фильтрами и закреплённой шапкой.',
-    'Собери набор файлов DOCX, XLSX и PDF для одного отчёта.'
-  ];
-
-  // ---------- auth ----------
+  // ---------- auth ----------  // ---------- auth ----------
   function showAuth() {
     $('#auth-screen').classList.remove('hidden');
     $('#main-screen').classList.add('hidden');
@@ -2059,28 +2038,11 @@
         '<h2 class="greet" id="greet-text">' +
           escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
         '<div class="tiles" id="tiles"></div>' +
-        '<div class="chips" id="sugg-chips"></div>' +
       '</div>';
     renderTiles();
     bindTiles();
-    renderSuggestionChips();
     rollPlaceholder();
     startRotation();
-  }
-
-  function renderSuggestionChips() {
-    const box = $('#sugg-chips');
-    if (!box) return;
-    const total = SUGGESTIONS.length, n = 2;
-    const picks = [];
-    for (let i = 0; i < n; i++) picks.push(SUGGESTIONS[(state.suggIdx + i) % total]);
-    state.suggIdx = (state.suggIdx + n) % total;
-    box.innerHTML = picks.map((p, i) =>
-      '<button class="chip-in" style="animation-delay:' + (i * 70) +
-      'ms" data-prompt="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>').join('');
-    $$('button[data-prompt]', box).forEach(b => b.addEventListener('click', () => {
-      $('#input').value = b.dataset.prompt; autoGrow(); sendCurrent();
-    }));
   }
 
   function rotateGreeting() {
@@ -2100,7 +2062,6 @@
       if (!$('#greet-text')) { stopRotation(); return; }
       tick += 1;
       if (tick % 2 === 0) rotateGreeting();
-      renderSuggestionChips();
     }, 11000);
   }
 
@@ -2929,7 +2890,6 @@
     const defs = [
       ['files', 'files_count', 'Файлы', 'шт'],
       ['storage', 'user_storage', 'Хранилище', ' Б'],
-      ['requests', 'messages_per_day', 'Запросы в день', 'шт'],
     ];
     const rows = [];
     defs.forEach(d => {
@@ -4139,7 +4099,7 @@
       return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
         (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
         '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
-        shown + '" placeholder="∞" /></label>';
+        shown + '" step="' + (['budget_usd', 'cost_per_1k', 'price'].includes(key) ? 'any' : '1') + '" placeholder="∞" /></label>';
     };
     const modelBoxes = (plan) => {
       const allowed = data.allowed[plan] || [];
@@ -4152,7 +4112,9 @@
     };
     const lf = data.limits.free || {};
     const lp = data.limits.pro || {};
-    const tableKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp)))).filter(key => key !== 'posts');
+    const allKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp)))).filter(key => key !== 'posts');
+    const primaryKeys = ['budget_usd', 'window_hours', 'cost_per_1k', 'price'];
+    const tableKeys = primaryKeys.filter(key => allKeys.includes(key)).concat(allKeys.filter(key => !primaryKeys.includes(key)));
     const rowFor = (key) => '<tr><td class="lk">' + escapeHtml(labels[key] || key) +
       (bytes[key] ? ' <em>МБ</em>' : '') + '</td>' +
       '<td>' + field('free', key, lf[key]) + '</td>' +
@@ -4166,11 +4128,11 @@
       body: '<p class="usage-note">Пустое поле — без ограничения. Размеры в мегабайтах, ' +
         'деньги в долларах ($). Настройка действует для всех действий: файлы, чаты, ' +
         'код-агенты, шаги агента, консилиум, запуск кода, озвучивание ответов, цена тарифа и цена токенов.</p>' +
-        '<table class="lim-table"><thead><tr><th>Лимит</th>' +
+        '<div class="lim-table-scroll"><table class="lim-table"><thead><tr><th>Лимит</th>' +
         '<th>Free<button class="reset-plan" data-reset-plan="free">сбросить</button></th>' +
         '<th>Pro<button class="reset-plan" data-reset-plan="pro">сбросить</button></th>' +
         '</tr></thead>' +
-        '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table>' +
+        '<tbody>' + tableKeys.map(rowFor).join('') + '</tbody></table></div>' +
         '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
@@ -4198,6 +4160,7 @@
         return true;
       },
     });
+    $('.modal', $('#modal-root'))?.classList.add('limits-modal');
     loadLimitUsers();
     $$('[data-reset-plan]', $('#modal-root')).forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Сбросить лимиты тарифа ' + b.dataset.resetPlan.toUpperCase() +
@@ -4217,22 +4180,34 @@
     if (!box) return;
     let rows = [];
     try { rows = await api.get('/api/limits/users'); } catch (e) { rows = []; }
-    box.innerHTML = '<div class="link-list">' + rows.map(u =>
-      '<div class="link-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
-      '<span>' + escapeHtml(u.email) + ' · запросов: ' + u.requests +
-      ' · токенов: ' + fmtNum(u.tokens_in + u.tokens_out) +
-      ' · файлы: ' + formatSize(u.storage) +
-      ' · тариф $' + u.plan_price + ' · расход $' + u.cost + '</span></div>' +
+    box.innerHTML = '<div class="link-list lim-user-list">' + rows.map(u =>
+      '<div class="link-row lim-user-row"><div class="link-info"><b>' + escapeHtml(u.name || u.email) + '</b>' +
+      '<span>' + escapeHtml(u.email) + ' · ' + (u.plan === 'pro' ? 'Pro' : 'Free') +
+      ' · вход: ' + fmtNum(u.tokens_in) + ' · выход: ' + fmtNum(u.tokens_out) +
+      ' · расход за окно: $' + Number(u.spend_usd || 0).toFixed(4) + ' / $' + Number(u.budget_usd || 0).toFixed(2) +
+      ' за ' + Number(u.window_hours || 5) + ' ч · всего $' + Number(u.cost || 0).toFixed(4) +
+      ' · файлы: ' + formatSize(u.storage) + '</span></div>' +
+      '<div class="lim-user-actions">' +
       '<button class="chip-btn" data-uplan="' + u.id + '">' +
-      (u.plan === 'pro' ? '→ Free' : '→ Pro') + '</button></div>').join('') +
-      '</div>';
-    $$('[data-uplan]').forEach(b => b.addEventListener('click', async () => {
+      (u.plan === 'pro' ? 'Снять Pro' : 'Выдать Pro') + '</button>' +
+      '<button class="chip-btn" data-ureset="' + u.id + '" title="Обнулить расход в текущем окне">Сбросить расход</button>' +
+      '</div></div>').join('') + '</div>';
+    $$('[data-uplan]', box).forEach(b => b.addEventListener('click', async () => {
       const cur = rows.find(x => x.id === b.dataset.uplan);
       const next = cur && cur.plan === 'pro' ? 'free' : 'pro';
       try {
-        await api.put('/api/limits/user/' + b.dataset.uplan, { plan: next });
-        toast('Тариф изменён: ' + next);
-        loadLimitUsers();
+        await api.put('/api/limits/user/' + encodeURIComponent(b.dataset.uplan), { plan: next });
+        toast(next === 'pro' ? 'Подписка Pro выдана' : 'Подписка Pro снята');
+        await loadLimitUsers();
+      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    }));
+    $$('[data-ureset]', box).forEach(b => b.addEventListener('click', async () => {
+      const cur = rows.find(x => x.id === b.dataset.ureset);
+      if (!cur || !confirm('Сбросить потраченный бюджет окна для ' + (cur.email || cur.name) + '? История расходов сохранится.')) return;
+      try {
+        await api.post('/api/limits/user/' + encodeURIComponent(b.dataset.ureset) + '/reset-window', {});
+        toast('Расход в окне сброшен');
+        await loadLimitUsers();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     }));
   }
@@ -4488,18 +4463,9 @@
     // no model button in the composer anymore
   }
 
-  // playful composer placeholders
-  const PLACEHOLDERS = [
-    'Жду указаний…', 'Слушаю, мой повелитель…', 'Что изволите?', 'Приказывайте…',
-    'Готов служить…', 'Ваше слово?', 'Я весь внимание…', 'Жду вашу мудрую мысль…',
-    'Повелевайте…', 'Скажите слово — и я начну…', 'Ваш ход, господин…',
-    'Куда направим усилия?', 'Слушаю и повинуюсь…', 'Излагайте, я записываю…',
-  ];
-
   function rollPlaceholder() {
     const el = $('#input');
-    if (!el) return;
-    el.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+    if (el) el.placeholder = 'Введите запрос…';
   }
 
 // ---------- subscription limits window ----------
@@ -4511,17 +4477,24 @@
 
   function planCompareHtml(lim, compare) {
     const pro = (compare && compare.pro) || {};
-    const order = ['budget_usd', 'window_hours', 'audio_generations', 'file_size', 'user_storage', 'files_count',
-                   'chats_count', 'messages_per_day', 'code_agents',
-                   'agent_steps', 'council_members', 'sandbox_seconds'];
+    const order = ['budget_usd', 'window_hours', 'cost_per_1k', 'price', 'audio_generations', 'file_size', 'user_storage', 'files_count',
+                   'chats_count', 'code_agents', 'agent_steps', 'council_members', 'sandbox_seconds'];
     const labels = {
-      budget_usd: 'Бюджет на окно, $', window_hours: 'Окно, часов',
+      budget_usd: 'Бюджет на окно, $',
+      window_hours: 'Окно, часов',
+      cost_per_1k: 'Цена за 1k токенов, $',
+      price: 'Цена тарифа, $/мес',
       audio_generations: 'Голосовых ответов за окно',
-      file_size: 'Размер файла', user_storage: 'Хранилище', files_count: 'Файлов всего',
-      chats_count: 'Чатов всего', messages_per_day: 'Сообщений в день',
-      code_agents: 'Код-агентов', agent_steps: 'Шагов агента',
-      council_members: 'Участников консилиума', sandbox_seconds: 'Секунд на код',
+      file_size: 'Размер файла',
+      user_storage: 'Хранилище',
+      files_count: 'Файлов всего',
+      chats_count: 'Чатов всего',
+      code_agents: 'Код-агентов',
+      agent_steps: 'Шагов агента',
+      council_members: 'Участников консилиума',
+      sandbox_seconds: 'Секунд на код',
     };
+
     const rows = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
       const mine = lim[k];
       const theirs = pro[k];
@@ -4569,7 +4542,6 @@
     const defs = [
       ['files', 'files_count', 'Файлы'],
       ['storage', 'user_storage', 'Хранилище'],
-      ['requests', 'messages_per_day', 'Сообщений в день'],
     ];
     const rows = defs.map(d => {
       const used = Number(use[d[0]] || 0);
@@ -4660,15 +4632,17 @@
   }
 
   function syncAppViewportHeight() {
-    const h = window.visualViewport && window.visualViewport.height
-      ? window.visualViewport.height
-      : window.innerHeight;
+    const viewport = window.visualViewport;
+    const h = viewport && viewport.height ? viewport.height : window.innerHeight;
+    const top = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
     document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
+    document.documentElement.style.setProperty('--app-offset-top', Math.round(top) + 'px');
   }
   syncAppViewportHeight();
   window.addEventListener('resize', syncAppViewportHeight, { passive: true });
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', syncAppViewportHeight, { passive: true });
+    window.visualViewport.addEventListener('scroll', syncAppViewportHeight, { passive: true });
   }
 
   document.addEventListener('DOMContentLoaded', init);

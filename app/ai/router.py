@@ -303,9 +303,21 @@ class AIRouter:
                     max_tokens=e.max_tokens,
                     timeout=e.timeout,
                     max_parallel=int(getattr(e, "max_parallel", 2) or 2),
-                    price_in=float(getattr(e, "price_in", 0.0) or 0.0),
-                    price_out=float(getattr(e, "price_out", 0.0) or 0.0),
-                    price_cache=float(getattr(e, "price_cache", 0.0) or 0.0),
+                    price_in=float(
+                        settings.qwen_price_in
+                        if settings.qwen_price_in is not None
+                        else (getattr(e, "price_in", 0.0) or 0.0)
+                    ),
+                    price_out=float(
+                        settings.qwen_price_out
+                        if settings.qwen_price_out is not None
+                        else (getattr(e, "price_out", 0.0) or 0.0)
+                    ),
+                    price_cache=float(
+                        settings.qwen_price_cache
+                        if settings.qwen_price_cache is not None
+                        else (getattr(e, "price_cache", 0.0) or 0.0)
+                    ),
                 )
             ]
             return mset.id, mset.name, configs

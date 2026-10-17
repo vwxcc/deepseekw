@@ -408,6 +408,7 @@ CODE_SYSTEM = (
     "пакеты (numpy, pandas, matplotlib, python-docx, openpyxl, python-pptx).\n"
     "Отвечай на языке пользователя."
     + RUN_SKILL
+    + DOC_SKILL
     + MEMORY_SKILL
 )
 

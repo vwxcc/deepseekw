@@ -1,6 +1,6 @@
 import unittest
 
-from app.routers.messages import _search_context
+from app.services.search_context import _search_context
 
 
 class SearchContextTests(unittest.TestCase):

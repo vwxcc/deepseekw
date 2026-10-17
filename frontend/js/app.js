@@ -1941,7 +1941,13 @@
       try {
         const bytes = new Uint8Array(data.bytes);
         if (!bytes.length || bytes.length > 8 * 1024 * 1024) return;
-        const blob = new Blob([bytes], { type: String(data.mime || 'application/octet-stream') });
+        const normalizedExt = normalizedName.slice(normalizedName.lastIndexOf('.')).toLowerCase();
+        const officeMime = {
+          '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }[normalizedExt];
+        const blob = new Blob([bytes], { type: officeMime || String(data.mime || 'application/octet-stream') });
         const url = URL.createObjectURL(blob);
         deviceCodeFileUrls.push(url);
         fileBox.hidden = false;

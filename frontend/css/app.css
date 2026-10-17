@@ -2540,3 +2540,21 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   .aich-ui-callout { gap:10px; padding:13px; }
   .aich-ui-action { gap:9px; padding:10px; }
 }
+
+
+/* Generated artifacts shown directly with the answer (server or device). */
+.aich-message-files { margin:14px 0 12px; }
+.aich-message-files-title { margin:0 0 8px; color:var(--fg-muted); font-size:12px; font-weight:700; }
+.aich-message-files-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:9px; }
+.aich-output-file { display:flex; align-items:center; gap:11px; min-width:0; padding:10px 12px; color:var(--fg);
+  border:1px solid var(--border-soft); border-radius:12px; background:var(--bg-panel); text-decoration:none; }
+.aich-output-file:hover { border-color:var(--border); background:var(--bg-user); }
+.aich-output-file-icon { width:38px; height:42px; flex:0 0 auto; display:grid; place-items:center; border:1px solid var(--border-soft); border-radius:8px; background:var(--bg); }
+.aich-output-file-icon .ic { width:21px; height:21px; }
+.aich-output-file-preview { width:58px; height:48px; flex:0 0 auto; object-fit:cover; border-radius:7px; background:var(--bg-user); }
+.aich-output-file-copy { display:grid; gap:3px; min-width:0; flex:1; }
+.aich-output-file-copy strong { font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+.aich-output-file-copy small { color:var(--fg-muted); font-size:11px; }
+.aich-output-file-download { flex:0 0 auto; color:var(--fg-muted); }
+.aich-output-file-download .ic { width:17px; height:17px; }
+@media (max-width:520px) { .aich-message-files-grid { grid-template-columns:minmax(0,1fr); } }

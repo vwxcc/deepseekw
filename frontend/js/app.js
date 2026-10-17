@@ -2106,8 +2106,8 @@
         'const safeConsole={log:(...a)=>write(a.map(v=>typeof v==="object"?JSON.stringify(v):String(v)).join(" ")),info:(...a)=>write(a.map(String).join(" ")),warn:(...a)=>write("WARN: "+a.map(String).join(" ")),error:(...a)=>write("ERROR: "+a.map(String).join(" "))};' +
         'console.log=safeConsole.log;console.info=safeConsole.info;console.warn=safeConsole.warn;console.error=safeConsole.error;out.textContent="";' +
         'try{const result=(new Function("console","write","return (async function(){\\n"+source+"\\n}).call(window);"))(safeConsole,write);' +
-        'Promise.resolve(result).then(()=>write("Код завершён.")).catch(e=>write(e&&e.stack?e.stack:String(e)));' +
-        '}catch(e){write(e&&e.stack?e.stack:String(e));}})();';
+        'Promise.resolve(result).then(()=>{write("Код завершён.");try{parent.postMessage({type:"device-code-status",message:"JavaScript выполнен. Результат готов."},"*")}catch(_){}}).catch(e=>{write(e&&e.stack?e.stack:String(e));try{parent.postMessage({type:"device-code-error",message:String(e&&(e.stack||e.message)||e)},"*")}catch(_){}});' +
+        '}catch(e){write(e&&e.stack?e.stack:String(e));try{parent.postMessage({type:"device-code-error",message:String(e&&(e.stack||e.message)||e)},"*")}catch(_){};}})();';
       doc = pageStart + '<p class="note">JavaScript · локальная песочница с DOM внутри iframe</p>' +
         '<main id="app" class="demo-board"><div class="demo-header"><span class="demo-logo">JS</span><div><b>Предпросмотр</b><div class="note">Код может менять документ</div></div></div>' +
         '<div class="demo-grid"><article class="demo-card"><span class="demo-pill">Новая функция</span><h3>Карточка</h3><p>Демо-контент для стилизации DOM.</p><button class="demo-button">Основное действие</button></article></div></main>' +

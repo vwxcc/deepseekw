@@ -23,7 +23,7 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall -q app sandbox tests
       - name: Install lightweight search-test dependencies
-        run: python -m pip install httpx==0.28.1 pydantic-settings==2.7.1 python-dotenv==1.0.1 sqlalchemy==2.0.36 aiosqlite==0.20.0 python-docx==1.1.2 openpyxl==3.1.5 python-pptx==1.0.2 Pillow==11.0.0
+        run: python -m pip install httpx==0.28.1 pydantic-settings==2.7.1 python-dotenv==1.0.1 sqlalchemy==2.0.36 aiosqlite==0.20.0 python-docx==1.1.2 openpyxl==3.1.5 python-pptx==1.0.2 Pillow==11.0.0 matplotlib==3.9.4 pypdf==5.1.0
       - name: Test web search parsing and provider fallbacks
         run: python -m unittest discover -s tests -p 'test_websearch.py' -v
       - name: Test TTS text cleanup and API request

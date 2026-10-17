@@ -1,4 +1,4 @@
-/* ChatStudio — SPA (vanilla JS) */
+/* AI-Ch 1.0 — SPA (vanilla JS) */
 (() => {
   'use strict';
 
@@ -817,7 +817,7 @@
     state.chats = state.chats.filter(c => c.id !== id);
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
-      $('#chat-title').textContent = 'ChatStudio';
+      $('#chat-title').textContent = 'AI-Ch 1.0';
       renderMessages();
     }
     renderChatList();
@@ -1019,17 +1019,33 @@
     return minutes + ' мин' + (seconds ? ' ' + seconds + ' сек.' : '');
   }
 
+  function activityStartTime(n) {
+    const started = Number(n && n.activityStartedAt);
+    if (Number.isFinite(started) && started > 0) return started;
+    const created = Date.parse(n && n.created_at || '');
+    return Number.isFinite(created) && created > 0 ? created : Date.now();
+  }
+
   function activityElapsed(n, generating) {
-    const started = Number(n && n.activityStartedAt) || state.genStart || Date.now();
+    const started = activityStartTime(n);
     if (generating) return Math.max(0, Date.now() - started);
-    if (Number.isFinite(Number(n && n.activityElapsedMs))) return Math.max(0, Number(n.activityElapsedMs));
+    const elapsed = n && n.activityElapsedMs;
+    if (elapsed !== undefined && elapsed !== null && Number.isFinite(Number(elapsed)) && Number(elapsed) >= 0) {
+      return Number(elapsed);
+    }
     const ended = Number(n && n.activityFinishedAt);
-    return Math.max(0, (ended || Date.now()) - started);
+    return Number.isFinite(ended) && ended > 0 ? Math.max(0, ended - started) : 0;
   }
 
   function activityHtml(n, generating) {
     const items = activityItems(n);
-    if (!generating && !items.length && !n.activityElapsedMs) return '';
+    const runs = Array.isArray(n && n.tool_runs) ? n.tool_runs : [];
+    const hasTiming = !!(n && (
+      (n.activityElapsedMs !== undefined && n.activityElapsedMs !== null) ||
+      (Number.isFinite(Number(n.activityStartedAt)) && Number(n.activityStartedAt) > 0)
+    ));
+    if (!generating && !items.length && !hasTiming && !runs.length) return '';
+
     const duration = formatActivityDuration(activityElapsed(n, generating));
     const rows = items.map((item, index) => {
       const last = generating && index === items.length - 1;
@@ -1044,17 +1060,21 @@
       ? '<div class="activity-row active"><span class="activity-bullet" aria-hidden="true">·</span>' +
         '<span class="activity-text">Получаю ответ модели…</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
-    return '<section class="activity-panel" data-activity-panel="' + escapeHtml(n.id) + '">' +
+    const execution = expanded && runs.length
+      ? '<div class="activity-execution">' + toolRunsHtml(runs) + '</div>' : '';
+    const toggleLabel = expanded ? 'Скрыть статусы' :
+      (items.length ? 'Показать статусы (' + items.length + ')' : 'Показать статусы');
+    return '<section class="activity-panel' + (expanded ? ' is-expanded' : '') + '" data-activity-panel="' + escapeHtml(n.id) + '">' +
       '<div class="activity-head"><span class="activity-time" data-activity-elapsed="' + escapeHtml(n.id) + '">' +
       (generating ? 'Выполняю запрос · ' + duration : 'Думал ' + duration) + '</span>' +
       '<span class="activity-controls">' +
-      '<button type="button" data-activity-full="' + escapeHtml(n.id) + '" title="Открыть отдельное окно полного потока">' +
-      icon('expand') + 'Полный поток</button>' +
-      (!generating && items.length ? '<button type="button" data-activity-toggle="' + escapeHtml(n.id) +
+      (expanded ? '<button type="button" data-activity-full="' + escapeHtml(n.id) + '" title="Открыть отдельное окно полного потока">' +
+        icon('expand') + 'Полный поток</button>' : '') +
+      '<button type="button" data-activity-toggle="' + escapeHtml(n.id) +
         '" aria-expanded="' + String(expanded) + '">' + icon(expanded ? 'chevron-up' : 'chevron-down') +
-        (expanded ? 'Скрыть статусы' : 'Показать статусы (' + items.length + ')') + '</button>' : '') +
+        toggleLabel + '</button>' +
       '</span></div>' +
-      '<div class="activity-list"' + (!generating && !expanded ? ' hidden' : '') + '>' + (rows || placeholder) + '</div>' +
+      '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + (rows || placeholder) + execution + '</div>' +
       (generating ? '<div class="think-tail answer activity-draft">' + escapeHtml(tailText(n.draft || '', 260)) + '</div>' : '') +
       '</section>';
   }
@@ -1096,7 +1116,7 @@
     window.__aichActivityWindows[n.id] = popup;
     popup.document.open();
     popup.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>Полный поток · ai-ch</title><style>' +
+      '<title>Полный поток · AI-Ch 1.0</title><style>' +
       ':root{color-scheme:light dark;--bg:#faf9f5;--fg:#34332f;--muted:#77756e;--line:#e5e2d9}' +
       '@media(prefers-color-scheme:dark){:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
       '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif}' +
@@ -1186,11 +1206,6 @@
         '<span>Запомнил: ' + escapeHtml(n.memories.join('; ').slice(0, 140)) + '</span></div>';
     }
 
-    let tools = '';
-    if (!isUser && n.tool_runs && n.tool_runs.length) {
-      tools = toolRunsHtml(n.tool_runs);
-    }
-
     let askCard = '';
     if (!isUser && n.ask) {
       const askItems = (Array.isArray(n.ask) ? n.ask : [{ question: String(n.ask), options: [] }])
@@ -1227,8 +1242,8 @@
           : '') + '</div>' : '';
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
-      '<div class="role">' + (isUser ? 'Вы' : 'ChatStudio') + '</div>' +
-      tools + inner + askCard + actionsRow + memLine + '</div>';
+      '<div class="role">' + (isUser ? 'Вы' : 'AI-Ch 1.0') + '</div>' +
+      inner + askCard + actionsRow + memLine + '</div>';
   }
 
   function audioQuotaSnapshot() {
@@ -2507,7 +2522,7 @@
         if (n) {
           const el = $('.msg[data-mid="' + id + '"] .content');
           openSaveMenu({
-            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'ChatStudio',
+            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'AI-Ch 1.0',
             text: n.content || '',
             html: el ? el.innerHTML : '',
           });
@@ -2673,7 +2688,10 @@
     const fastWrap = $('#fast-response-wrap');
     if (fastWrap) fastWrap.hidden = !on;
     const fastButton = $('#fast-response-btn');
-    if (fastButton && !on) { fastButton.classList.remove('is-active'); fastButton.setAttribute('aria-pressed', 'false'); }
+    if (fastButton && !on) {
+      fastButton.classList.remove('is-active');
+      fastButton.setAttribute('aria-pressed', 'false');
+    }
     $('#input').disabled = false;
   }
 
@@ -2695,7 +2713,8 @@
     window.__aichActiveStream = streamContext;
     state.streamEl = null; state.thinkBody = null; state.draftTail = null;
     state.streamBuf = ''; state.streamStarted = false;
-    state.genStart = Date.now();
+    streamContext.startedAt = Date.now();
+    state.genStart = streamContext.startedAt;
     state.lastEvent = Date.now();
     if (state.genTimer) clearInterval(state.genTimer);
     state.genTimer = setInterval(() => {
@@ -2716,8 +2735,11 @@
       if (liveNode && !['completed', 'failed', 'cancelled'].includes(liveNode.status)) {
         renderActivityPopup(liveNode);
       }
-      const elapsedEl = $('[data-activity-elapsed]');
-      if (elapsedEl && elapsedNode) {
+      const elapsedEl = elapsedNode
+        ? $$('[data-activity-elapsed]').find(el => String(el.dataset.activityElapsed) === String(elapsedNode.id))
+        : null;
+      if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
+          !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {
         elapsedEl.textContent = 'Выполняю запрос · ' + formatActivityDuration(activityElapsed(elapsedNode, true));
       }
     }, 1000);
@@ -2798,7 +2820,7 @@
             streamContext.assistantId = node.id;
             streamContext.node = node;
             node.creating = true;
-            node.activityStartedAt = Number(node.activityStartedAt) || state.genStart || Date.now();
+            node.activityStartedAt = Number(node.activityStartedAt) || streamContext.startedAt || Date.now();
             state.activeAssistantId = node.id;
             window.__aichActivityNodes = window.__aichActivityNodes || Object.create(null);
             window.__aichActivityNodes[node.id] = node;
@@ -2954,7 +2976,7 @@
             n.content = data.text || state.streamBuf;
             n.draft = ''; n.creating = false;
             n.activityFinishedAt = Date.now();
-            n.activityElapsedMs = Math.max(0, n.activityFinishedAt - (Number(n.activityStartedAt) || state.genStart || n.activityFinishedAt));
+            n.activityElapsedMs = Math.max(0, n.activityFinishedAt - activityStartTime(n));
             saveActivityItems(n);
             renderActivityPopup(n);
           }
@@ -2978,7 +3000,8 @@
           if (n) {
             n.status = 'failed'; n.creating = false; n.error = data.error;
             n.activityFinishedAt = Date.now();
-            n.activityElapsedMs = activityElapsed(n, false);
+            n.activityElapsedMs = Math.max(0, n.activityFinishedAt - activityStartTime(n));
+            saveActivityItems(n);
             renderActivityPopup(n);
             if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
           }
@@ -2988,7 +3011,8 @@
           if (n) {
             n.status = 'cancelled'; n.creating = false; if (data.text) n.content = data.text;
             n.activityFinishedAt = Date.now();
-            n.activityElapsedMs = activityElapsed(n, false);
+            n.activityElapsedMs = Math.max(0, n.activityFinishedAt - activityStartTime(n));
+            saveActivityItems(n);
             renderActivityPopup(n);
             if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
           }
@@ -4253,7 +4277,7 @@
         if (f === 'txt') downloadBlob(base + '.txt', new Blob([text], { type: 'text/plain;charset=utf-8' }));
         else if (f === 'md') downloadBlob(base + '.md', new Blob([text], { type: 'text/markdown;charset=utf-8' }));
         else if (f === 'docx') downloadBlob(base + '.docx', textToDocx(text));
-        else if (f === 'pdf') printPdf(p.title || 'ChatStudio', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
+        else if (f === 'pdf') printPdf(p.title || 'AI-Ch 1.0', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
         else if (f === 'svg' && p.svg) downloadBlob(base + '.svg', new Blob([p.svg], { type: 'image/svg+xml' }));
         $('#modal-root').innerHTML = '';
         toast('Файл сохранён');
@@ -4695,7 +4719,7 @@
           const res = await api.post('/api/github/chats/' + state.currentChatId + '/git', {
             action: act,
             repo: ($('#gh-repo') || {}).value ? $('#gh-repo').value.trim() : '',
-            message: 'Update from ChatStudio',
+            message: 'Update from AI-Ch 1.0',
           });
           log((res.log || '') + (res.ok ? '\n✓ готово' : '\n✗ ошибка'));
           loadProject(false);

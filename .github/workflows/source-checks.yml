@@ -32,6 +32,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_activity_stream.py' -v
       - name: Test AI follow-up questions and options
         run: python -m unittest discover -s tests -p 'test_ask_options.py' -v
+      - name: Test bundled AI-Ch skills
+        run: python -m unittest discover -s tests -p 'test_skills.py' -v
       - name: Test web search parsing and provider fallbacks
         run: python -m unittest discover -s tests -p 'test_websearch.py' -v
       - name: Test TTS text cleanup and API request
@@ -64,9 +66,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=43" not in html:
+          if "/assets/css/app.css?v=44" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=54" not in html:
+          if "/assets/js/app.js?v=55" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -115,6 +117,8 @@ jobs:
               "function startDeviceSpeech(messageId)",
               "function bindDeviceSpeechPlayer()",
               "function openDeviceCodeRunner(item)",
+              "function activityStartTime(n)",
+              "$$('[data-activity-elapsed]').find",
               "function activityHtml(n, generating)",
               "function openActivityStream(id)",
               "function languageLabel(lang)",
@@ -175,20 +179,25 @@ jobs:
               raise SystemExit("AI audio must reuse the cached readable text")
           print("Audio player hooks and message copy actions are present; follow-up suggestions are disabled.")
 
-          if "max_steps = min(3, max(1, int(base_steps)))" not in router:
-              raise SystemExit("Code Agent model turns must be capped at three")
+          if ("max_steps = 1" not in router
+              or "round_limit = 1 if code_mode else 2" not in router
+              or "entry_attempt_limit = 1 if code_mode else len(entries)" not in router):
+              raise SystemExit("Code Agent must make only one model generation per user message")
           if "QWEN_MODEL_ID" not in Path("app/ai/provider_config.py").read_text(encoding="utf-8"):
               raise SystemExit("Explicit primary model ID override is missing")
           if 'qwen_model_id: str = ""' not in Path("app/config.py").read_text(encoding="utf-8"):
               raise SystemExit("Missing QWEN_MODEL_ID setting")
-          if "toolRunsHtml(n.tool_runs)" not in js or "Шаг ' + (i + 1)" in js:
-              raise SystemExit("Agent execution output must be consolidated without visible step numbering")
+          if ("toolRunsHtml(runs)" not in js
+              or "activity-execution" not in js
+              or "Шаг ' + (i + 1)" in js):
+              raise SystemExit("Execution output must stay inside the expandable status panel without visible step numbering")
           if "job.first_exchange and code_mode" not in router or "_local_code_chat_title(job.user_text)" not in router:
               raise SystemExit("Code Agent title must not require an extra model request")
           if 'use_model_queries=job.mode != "code"' not in router:
               raise SystemExit("Code Agent web search must not consume a separate query-planning model turn")
-          if "одним блоком run" not in Path("app/ai/prompts.py").read_text(encoding="utf-8"):
-              raise SystemExit("Code Agent prompt must consolidate work into one run block")
+          if ("одним блоком run" not in Path("app/ai/prompts.py").read_text(encoding="utf-8")
+              or "ровно одна генерация модели" not in Path("app/ai/prompts.py").read_text(encoding="utf-8")):
+              raise SystemExit("Code Agent prompt must consolidate code work into one model generation")
           for token in (
               "function upsertChat(chat)", "function renderMessageInPlace",
               "function setChatCreationPending", "if (needsAnswerBody && state.currentChatId === streamContext.chatId)",

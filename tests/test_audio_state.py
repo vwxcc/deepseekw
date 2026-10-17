@@ -71,7 +71,8 @@ class SharedAudioGenerationLockTests(unittest.IsolatedAsyncioTestCase):
         )
         self.db1.add(self.user)
         await self.db1.flush()
-        chat = Chat(user_id=self.user.id, title="Audio lock test")
+        self.user_id = self.user.id
+        chat = Chat(user_id=self.user_id, title="Audio lock test")
         self.db1.add(chat)
         await self.db1.flush()
         self.message_ids = []
@@ -94,42 +95,42 @@ class SharedAudioGenerationLockTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lock_is_visible_and_rejects_second_session(self):
         first, second = self.message_ids
-        await claim_shared_audio_generation(self.db1, self.user.id, first)
+        await claim_shared_audio_generation(self.db1, self.user_id, first)
 
         self.assertEqual(
-            await shared_active_audio_generation(self.db2, self.user.id), first
+            await shared_active_audio_generation(self.db2, self.user_id), first
         )
         with self.assertRaises(AudioGenerationInProgress) as raised:
-            await claim_shared_audio_generation(self.db2, self.user.id, second)
+            await claim_shared_audio_generation(self.db2, self.user_id, second)
         self.assertEqual(raised.exception.message_id, first)
 
-        await finish_shared_audio_generation(self.db1, self.user.id, first)
+        await finish_shared_audio_generation(self.db1, self.user_id, first)
         # The second session may still cache the lock it read before the delete.
         self.db2.expire_all()
-        await claim_shared_audio_generation(self.db2, self.user.id, second)
+        await claim_shared_audio_generation(self.db2, self.user_id, second)
         self.db1.expire_all()
         self.assertEqual(
-            await shared_active_audio_generation(self.db1, self.user.id), second
+            await shared_active_audio_generation(self.db1, self.user_id), second
         )
 
     async def test_release_only_removes_the_matching_generation(self):
         first, second = self.message_ids
-        await claim_shared_audio_generation(self.db1, self.user.id, first)
-        await finish_shared_audio_generation(self.db2, self.user.id, second)
+        await claim_shared_audio_generation(self.db1, self.user_id, first)
+        await finish_shared_audio_generation(self.db2, self.user_id, second)
         self.assertEqual(
-            await shared_active_audio_generation(self.db2, self.user.id), first
+            await shared_active_audio_generation(self.db2, self.user_id), first
         )
-        await finish_shared_audio_generation(self.db1, self.user.id, first)
+        await finish_shared_audio_generation(self.db1, self.user_id, first)
         self.db2.expire_all()
         self.assertIsNone(
-            await shared_active_audio_generation(self.db2, self.user.id)
+            await shared_active_audio_generation(self.db2, self.user_id)
         )
 
     async def test_expired_lock_is_cleaned_and_does_not_block_new_generation(self):
         first, second = self.message_ids
         self.db1.add(
             AudioGenerationLock(
-                user_id=self.user.id,
+                user_id=self.user_id,
                 message_id=first,
                 created_at=utcnow() - timedelta(minutes=31),
             )
@@ -137,12 +138,12 @@ class SharedAudioGenerationLockTests(unittest.IsolatedAsyncioTestCase):
         await self.db1.commit()
 
         self.assertIsNone(
-            await shared_active_audio_generation(self.db2, self.user.id)
+            await shared_active_audio_generation(self.db2, self.user_id)
         )
-        await claim_shared_audio_generation(self.db2, self.user.id, second)
+        await claim_shared_audio_generation(self.db2, self.user_id, second)
         self.db1.expire_all()
         self.assertEqual(
-            await shared_active_audio_generation(self.db1, self.user.id), second
+            await shared_active_audio_generation(self.db1, self.user_id), second
         )
 
 

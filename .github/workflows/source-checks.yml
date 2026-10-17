@@ -23,11 +23,13 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall -q app sandbox tests
       - name: Install lightweight search-test dependencies
-        run: python -m pip install httpx==0.28.1 pydantic-settings==2.7.1 python-dotenv==1.0.1 sqlalchemy==2.0.36 aiosqlite==0.20.0
+        run: python -m pip install httpx==0.28.1 pydantic-settings==2.7.1 python-dotenv==1.0.1 sqlalchemy==2.0.36 aiosqlite==0.20.0 python-docx==1.1.2 openpyxl==3.1.5 python-pptx==1.0.2 Pillow==11.0.0
       - name: Test web search parsing and provider fallbacks
         run: python -m unittest discover -s tests -p 'test_websearch.py' -v
       - name: Test TTS text cleanup and API request
         run: python -m unittest discover -s tests -p 'test_tts.py' -v
+      - name: Test template-first file generation
+        run: python -m unittest discover -s tests -p 'test_file_templates.py' -v
       - name: Test rolling audio generation quota
         run: python -m unittest discover -s tests -p 'test_audio_quota.py' -v
       - name: Test parallel audio generation guard
@@ -56,9 +58,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=42" not in html:
+          if "/assets/css/app.css?v=43" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=52" not in html:
+          if "/assets/js/app.js?v=53" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -87,6 +89,8 @@ jobs:
               raise SystemExit("Single-element selector used with forEach:\n" + "\n".join(bad_for_each))
           router = Path("app/ai/router.py").read_text(encoding="utf-8")
           messages = Path("app/routers/messages.py").read_text(encoding="utf-8")
+          prompts = Path("app/ai/prompts.py").read_text(encoding="utf-8")
+          template_builder = Path("sandbox/designs/templates.py").read_text(encoding="utf-8")
           required_js = [
               "$$('[data-audio-control]').find",
               "$$('[data-audio-close]')",
@@ -101,6 +105,9 @@ jobs:
               "typeof node.id === 'string' && node.id",
               "function generateReadableText(messageId, force)",
               "function hydrateReadableTextStatuses(entries)",
+              "retry-readable-text",
+              "Создавайте презентации, документы и визуальные файлы",
+              "Создай презентацию PPTX на тему:",
               "function audioQuotaSnapshot()",
               "function startDeviceSpeech(messageId)",
               "function bindDeviceSpeechPlayer()",
@@ -137,6 +144,12 @@ jobs:
               raise SystemExit("Post-answer follow-up suggestion buttons must stay removed")
           if any(token in router for token in ("_run_suggestions", "_parse_suggestions")):
               raise SystemExit("Post-answer suggestion generation must stay disabled")
+          if "FILEPLAN_RE = re.compile" not in prompts or "extract_agent_blocks" not in router:
+              raise SystemExit("Missing declarative file-plan protocol in the AI router")
+          if "def build_from_plan" not in template_builder or "def validate_plan" not in template_builder:
+              raise SystemExit("Missing validated template-first file builder")
+          if "--bg-code: #f2eadb" not in css or "background: #f2eadb !important" not in css:
+              raise SystemExit("Code and command cards must use beige surfaces")
           if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:
               raise SystemExit("Missing authenticated audio endpoints")
           if 'async def create_message_readable_text' not in messages or 'async def readable_text_status' not in messages:

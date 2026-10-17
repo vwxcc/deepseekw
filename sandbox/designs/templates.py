@@ -226,8 +226,32 @@ def validate_plan(plan: Any) -> dict[str, Any]:
     for i, block in enumerate(clean["blocks"]):
         if len(str(block.get("text") or "")) > 12000:
             raise ValueError(f"Текст блока {i + 1} слишком длинный.")
-        if "items" in block and isinstance(block["items"], list) and len(block["items"]) > 30:
-            raise ValueError(f"В блоке {i + 1} слишком много элементов.")
+        if "items" in block:
+            if not isinstance(block["items"], list):
+                raise ValueError(f"В блоке {i + 1} items должен быть списком.")
+            if len(block["items"]) > 30:
+                raise ValueError(f"В блоке {i + 1} слишком много элементов.")
+            if any(len(str(item)) > 3000 for item in block["items"]):
+                raise ValueError(f"В блоке {i + 1} есть слишком длинный элемент.")
+        if block["kind"] == "table":
+            head, rows = block.get("head") or [], block.get("rows") or []
+            if not isinstance(head, list) or not isinstance(rows, list):
+                raise ValueError(f"Таблица в блоке {i + 1}: head и rows должны быть списками.")
+            if len(head) > 40 or any(not isinstance(row, (list, tuple)) or len(row) > 40 for row in rows):
+                raise ValueError(f"Таблица в блоке {i + 1}: максимум 40 столбцов.")
+            if len(rows) > 1500:
+                raise ValueError(f"Таблица в блоке {i + 1}: максимум 1500 строк.")
+        if block["kind"] == "metrics":
+            items = block.get("items") or []
+            if not isinstance(items, list) or len(items) > 4:
+                raise ValueError(f"Блок метрик {i + 1}: поддерживается до 4 карточек.")
+            if any(not isinstance(item, dict) for item in items):
+                raise ValueError(f"Блок метрик {i + 1}: каждый показатель должен быть объектом.")
+        if block["kind"] == "two_col":
+            if not all(isinstance(block.get(side), dict) for side in ("left", "right")):
+                raise ValueError(f"Слайд-сравнение {i + 1} должен содержать left и right.")
+            if any(len(str((block.get(side) or {}).get("text") or "")) > 4500 for side in ("left", "right")):
+                raise ValueError(f"Текст сравнения в блоке {i + 1} слишком длинный.")
 
     if fmt == "pptx":
         supported = {"section", "bullets", "two_col", "metrics", "chart", "image", "table", "quote", "text"}
@@ -238,9 +262,25 @@ def validate_plan(plan: Any) -> dict[str, Any]:
         supported = {"h1", "h2", "h3", "text", "bullets", "numbers", "callout", "table", "image", "pagebreak"}
         for i, block in enumerate(clean["blocks"]):
             if block["kind"] not in supported:
-                # A slide-style command is safely converted to a regular section in reports.
-                if block["kind"] in {"section", "quote", "two_col", "metrics"}:
-                    block["kind"] = "h2" if block["kind"] in {"section", "metrics"} else "text"
+                # Slide-style commands become explicit and readable Word/PDF structures.
+                if block["kind"] == "section":
+                    block["text"] = str(block.get("text") or block.get("title") or "Раздел")
+                    block["kind"] = "h2"
+                elif block["kind"] == "quote":
+                    block["text"] = str(block.get("text") or "")
+                    block["kind"] = "callout"
+                elif block["kind"] == "metrics":
+                    values = block.get("items") or []
+                    block["head"] = ["Показатель", "Значение"]
+                    block["rows"] = [[str(item.get("label") or ""), str(item.get("value") or "")]
+                                     for item in values if isinstance(item, dict)]
+                    block["kind"] = "table"
+                elif block["kind"] == "two_col":
+                    left, right = block.get("left") or {}, block.get("right") or {}
+                    block["head"] = [str(left.get("title") or "Колонка 1"),
+                                     str(right.get("title") or "Колонка 2")]
+                    block["rows"] = [[str(left.get("text") or ""), str(right.get("text") or "")]]
+                    block["kind"] = "table"
                 else:
                     raise ValueError(f"Блок документа {i + 1}: неподдерживаемый тип {block['kind']}.")
     elif fmt == "xlsx":

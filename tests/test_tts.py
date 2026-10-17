@@ -8,7 +8,8 @@ from app.services.tts import (
     clean_tts_text,
     generate_speech,
     normalized_audio_format,
-    _provider_error_detail,
+    _provider_error_detail,,
+    prepare_spoken_text
 )
 
 
@@ -82,6 +83,20 @@ class TextToSpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("private", str(path))
         self.assertNotIn("message", path.name)
         self.assertEqual(len(path.stem), 40)
+
+    async def test_readable_text_requires_an_explicit_preprocessor_model(self):
+        FakeClient.requests = []
+        with (
+            patch.object(settings, "tts_preprocess_base_url", ""),
+            patch.object(settings, "tts_preprocess_api_key", ""),
+            patch.object(settings, "tts_preprocess_model", ""),
+            patch("app.services.tts.httpx.AsyncClient", FakeClient),
+        ):
+            with self.assertRaises(TTSNotConfiguredError) as raised:
+                await prepare_spoken_text("Ответ для проверки.")
+        self.assertIn("TTS_PREPROCESS_BASE_URL", str(raised.exception))
+        self.assertIn("TTS_PREPROCESS_MODEL", str(raised.exception))
+        self.assertEqual(FakeClient.requests, [])
 
     async def test_missing_base_url_is_reported_before_network_request(self):
         with patch.object(settings, "tts_base_url", ""):

@@ -58,7 +58,7 @@ jobs:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
           if "/assets/css/app.css?v=42" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=51" not in html:
+          if "/assets/js/app.js?v=52" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -99,6 +99,9 @@ jobs:
               "if (!Array.isArray(nodes) || id == null) return null;",
               "const rawIndex = selected[parentKey];",
               "typeof node.id === 'string' && node.id",
+              "function generateReadableText(messageId, force)",
+              "function hydrateReadableTextStatuses(entries)",
+              "function audioQuotaSnapshot()",
               "function startDeviceSpeech(messageId)",
               "function bindDeviceSpeechPlayer()",
               "function openDeviceCodeRunner(item)",
@@ -136,5 +139,9 @@ jobs:
               raise SystemExit("Post-answer suggestion generation must stay disabled")
           if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:
               raise SystemExit("Missing authenticated audio endpoints")
+          if 'async def create_message_readable_text' not in messages or 'async def readable_text_status' not in messages:
+              raise SystemExit("Missing authenticated readable-text endpoints")
+          if 'generate_speech(source, prepared=True)' not in messages or 'async def prepare_spoken_text' not in Path("app/services/tts.py").read_text(encoding="utf-8"):
+              raise SystemExit("AI audio must reuse the cached readable text")
           print("Audio player hooks and message copy actions are present; follow-up suggestions are disabled.")
           PY

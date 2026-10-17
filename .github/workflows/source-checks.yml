@@ -73,6 +73,8 @@ jobs:
               raise SystemExit("Message action buttons must match the page background")
           if ".msg .meta button { background: var(--bg); }" not in css:
               raise SystemExit("Dark theme action buttons must match the dark page background")
+          if ".msg.no-msg-entrance { animation: none !important; }" not in css:
+              raise SystemExit("In-place message updates must not replay the entrance animation")
           if not css_rule_contains(".src-row {", "background: var(--bg);"):
               raise SystemExit("Source cards must match the page background")
           if "stroke='%23b8862f'" in css:
@@ -83,7 +85,7 @@ jobs:
           bad_for_each = [
               f"{line_no}: {line.strip()}"
               for line_no, line in enumerate(js.splitlines(), 1)
-              if re.search(r"(?<!\$)\$\([^)]*\)\s*\.forEach\s*\(", line)
+              if re.search(r"(?<!\$)\$\([^)]*\)\s*\.(?:forEach|find|map|filter|some|reduce)\s*\(", line)
           ]
           if bad_for_each:
               raise SystemExit("Single-element selector used with forEach:\n" + "\n".join(bad_for_each))

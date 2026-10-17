@@ -4106,7 +4106,7 @@
       return '<label class="lim-field"><span>' + escapeHtml(labels[key] || key) +
         (isBytes ? ' <em>МБ</em>' : '') + '</span>' +
         '<input type="number" data-plan="' + plan + '" data-key="' + key + '" value="' +
-        shown + '" step="' + (['budget_usd', 'cost_per_1k', 'price'].includes(key) ? 'any' : '1') + '" placeholder="∞" /></label>';
+        shown + '" step="' + (['budget_usd', 'price'].includes(key) ? 'any' : '1') + '" placeholder="∞" /></label>';
     };
     const modelBoxes = (plan) => {
       const allowed = data.allowed[plan] || [];
@@ -4120,7 +4120,7 @@
     const lf = data.limits.free || {};
     const lp = data.limits.pro || {};
     const allKeys = Array.from(new Set(Object.keys(lf).concat(Object.keys(lp)))).filter(key => key !== 'posts');
-    const primaryKeys = ['budget_usd', 'window_hours', 'cost_per_1k', 'price'];
+    const primaryKeys = ['budget_usd', 'window_hours', 'price'];
     const tableKeys = primaryKeys.filter(key => allKeys.includes(key)).concat(allKeys.filter(key => !primaryKeys.includes(key)));
     const rowFor = (key) => '<tr><td class="lk">' + escapeHtml(labels[key] || key) +
       (bytes[key] ? ' <em>МБ</em>' : '') + '</td>' +
@@ -4484,12 +4484,11 @@
 
   function planCompareHtml(lim, compare) {
     const pro = (compare && compare.pro) || {};
-    const order = ['budget_usd', 'window_hours', 'cost_per_1k', 'price', 'audio_generations', 'file_size', 'user_storage', 'files_count',
+    const order = ['budget_usd', 'window_hours', 'price', 'audio_generations', 'file_size', 'user_storage', 'files_count',
                    'chats_count', 'code_agents', 'agent_steps', 'council_members', 'sandbox_seconds'];
     const labels = {
       budget_usd: 'Бюджет на окно, $',
       window_hours: 'Окно, часов',
-      cost_per_1k: 'Цена за 1k токенов, $',
       price: 'Цена тарифа, $/мес',
       audio_generations: 'Голосовых ответов за окно',
       file_size: 'Размер файла',

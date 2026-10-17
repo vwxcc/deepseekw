@@ -2079,6 +2079,7 @@
     const lang = String(item.lang || '').trim().toLowerCase();
     const code = String(item.code || '');
     const base64 = btoa(unescape(encodeURIComponent(code)));
+    const runnerHook = "<script>(function(){function send(message){try{parent.postMessage({type:\"device-code-error\",message:String(message).slice(0,50000)},\"*\")}catch(_){}}window.addEventListener(\"error\",function(e){send((e.message||\"JavaScript error\")+(e.filename?\" (\"+e.filename+\":\"+e.lineno+\")\":\"\"))});window.addEventListener(\"unhandledrejection\",function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||\"Unhandled promise rejection\")});})();</script>";
     const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#faf9f5}' +
       'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f0eee6;border-radius:8px;min-height:28px}' +
@@ -2087,7 +2088,7 @@
       '.demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.demo-card{padding:16px;border:1px solid #e5e3dd;border-radius:12px;background:#faf9f6}' +
       '.demo-button{border:0;border-radius:10px;padding:10px 15px;background:#34332e;color:#fff;font:inherit}' +
       '.demo-pill{display:inline-block;border:1px solid #dedbd2;border-radius:999px;padding:4px 9px;font-size:12px}' +
-      '</style>' + '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>' + '</head><body>';
+      '</style>' + runnerHook + '</head><body>';
     const output = '<pre id="output" aria-live="polite">Запуск…</pre>';
     let doc = '';
     let message = '';
@@ -2131,9 +2132,9 @@
     }
 
     if (['html', 'htm'].includes(lang)) {
-      if (/<head[^>]*>/i.test(doc)) doc = doc.replace(/<head[^>]*>/i, head => head + '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>');
-      else if (/<body[^>]*>/i.test(doc)) doc = doc.replace(/<body[^>]*>/i, body => body + '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>');
-      else doc += '<script>(function(){function send(message){try{parent.postMessage({type:'device-code-error',message:String(message).slice(0,50000)},'*')}catch(_){}}window.addEventListener('error',function(e){send((e.message||'JavaScript error')+(e.filename?' ('+e.filename+':'+e.lineno+')':''))});window.addEventListener('unhandledrejection',function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||'Unhandled promise rejection')});})();</script>';
+      if (/<head[^>]*>/i.test(doc)) doc = doc.replace(/<head[^>]*>/i, head => head + runnerHook);
+      else if (/<body[^>]*>/i.test(doc)) doc = doc.replace(/<body[^>]*>/i, body => body + runnerHook);
+      else doc += runnerHook;
     }
     if (status) status.textContent = message;
     if (fileBox) fileBox.hidden = true;

@@ -91,5 +91,6 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "avatar": "INTEGER DEFAULT 0",
         "github_user": "VARCHAR(120)",
         "github_token": "VARCHAR(255)",
+        "usage_reset_at": "DATETIME",
     },
 }

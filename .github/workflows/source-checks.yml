@@ -146,4 +146,14 @@ jobs:
           if 'generate_speech(source, prepared=True)' not in messages or 'async def prepare_spoken_text' not in Path("app/services/tts.py").read_text(encoding="utf-8"):
               raise SystemExit("AI audio must reuse the cached readable text")
           print("Audio player hooks and message copy actions are present; follow-up suggestions are disabled.")
+
+          if "max_steps = min(3, max(1, int(base_steps)))" not in router:
+              raise SystemExit("Code Agent must stay within the three-turn maximum")
+          if "QWEN_MODEL_ID" not in Path("app/ai/provider_config.py").read_text(encoding="utf-8"):
+              raise SystemExit("Explicit primary model ID override is missing")
+          if "toolRunsHtml(n.tool_runs)" not in js or "Шаг ' + (i + 1)" in js:
+              raise SystemExit("Agent execution output must be consolidated without visible step numbering")
+          for token in ("function upsertChat(chat)", "function renderMessageInPlace", "function setChatCreationPending"):
+              if token not in js:
+                  raise SystemExit("Missing anti-flicker/chat-creation guard: " + token)
           PY

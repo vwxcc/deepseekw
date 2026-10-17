@@ -2464,6 +2464,23 @@ body { font-weight: 400; }
 
 
 /* ai-ch careful interaction polish. */
+.fast-response-wrap { width: min(430px, calc(100% - 28px)); margin: 0 auto 8px; display: flex; justify-content: center; }
+.fast-response-wrap[hidden] { display: none !important; }
+.fast-response-btn { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 6px 14px; border: 1px solid var(--border); border-radius: 12px; color: var(--fg); background: var(--bg);
+  font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; transform: scale(1);
+  transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+.fast-response-btn:hover { background: var(--bg-user); }
+.fast-response-btn.is-active { transform: scale(1.015); background: var(--bg-user); box-shadow: 0 3px 12px rgba(40,38,32,.09); }
+.fast-response-rocket { display: inline-block; font-size: 17px; line-height: 1; }
+.fast-response-btn.is-active .fast-response-rocket { animation: aichRocketFlight 1.05s ease-in-out infinite; }
+@keyframes aichRocketFlight {
+  0% { transform: translate(-3px,3px) rotate(-10deg); opacity: .75; }
+  50% { transform: translate(8px,-4px) rotate(16deg); opacity: 1; }
+  100% { transform: translate(17px,-10px) rotate(28deg); opacity: .8; }
+}
+@media (prefers-reduced-motion: reduce) { .fast-response-btn,.fast-response-btn.is-active { transition:none; } .fast-response-btn.is-active .fast-response-rocket { animation:none; } }
+
 .composer-inner::after, .composer-inner:focus-within::after { content: none !important; display: none !important; animation: none !important; }
 #input { background: var(--bg); border-radius: 9px; padding-left: 10px; padding-right: 10px; }
 .composer-row #send-btn, .composer-row #stop-btn { position: relative; top: -2px; }

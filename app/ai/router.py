@@ -583,7 +583,10 @@ class AIRouter:
                     title_snippet = (
                         str(item.get("title") or "") + " " + str(item.get("snippet") or "")
                     ).lower()
-                    score = sum(1 for word in query_terms if word in title_snippet)
+                    result_terms = set(re.findall(
+                        r"[A-Za-zА-Яа-яЁё0-9]{3,}", title_snippet
+                    ))
+                    score = len(query_terms & result_terms)
                     previous = ranked.get(url)
                     if previous is None or score > previous[0]:
                         ranked[url] = (score, item)
@@ -592,7 +595,9 @@ class AIRouter:
 
         ordered = sorted(ranked.values(), key=lambda pair: pair[0], reverse=True)
         relevant = [pair for pair in ordered if pair[0] > 0]
-        if len(relevant) >= 2:
+        if relevant and any(
+            re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", q.lower()) for q in queries
+        ):
             ordered = relevant
         results = [item for _score, item in ordered[:6]]
         log.info("Search queries=%s results=%d relevant=%d", queries, len(results),

@@ -571,6 +571,7 @@ class AIRouter:
             "мне", "нужно", "хочу", "можно", "есть", "это", "для", "или", "если",
             "про", "также", "тоже", "very", "with", "from", "that", "this", "what",
             "when", "where", "about", "into", "your", "have", "will",
+            "последний", "запрос", "пользователя", "ассистент", "контекст", "реплик",
         }
         ranked: dict[str, tuple[int, dict]] = {}
         for q in queries:

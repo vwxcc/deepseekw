@@ -2403,7 +2403,11 @@ body { font-weight: 400; }
 .lim-user-actions .chip-btn { min-height: 30px; padding: 5px 9px; white-space: nowrap; }
 
 /* The chat surface follows Safari's visible viewport, including its top offset. */
-#main-screen { top: var(--app-offset-top, 0px); bottom: auto; }
+#main-screen {
+  top: var(--app-offset-top, 0px);
+  bottom: auto;
+  height: var(--app-height, 100dvh);
+}
 
 /* Slightly shorter composer without changing text typography or controls. */
 .composer-inner { padding-top: 7px; padding-bottom: 5px; }

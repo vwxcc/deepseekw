@@ -24,6 +24,10 @@ jobs:
         run: python -m compileall -q app sandbox tests
       - name: Install lightweight search-test dependencies
         run: python -m pip install httpx==0.28.1 pydantic-settings==2.7.1 python-dotenv==1.0.1 sqlalchemy==2.0.36 aiosqlite==0.20.0
+      - name: Test chat-aware search context
+        run: python -m unittest discover -s tests -p 'test_search_context.py' -v
+      - name: Test chat-scoped memory isolation
+        run: python -m unittest discover -s tests -p 'test_memory_scope.py' -v
       - name: Test web search parsing and provider fallbacks
         run: python -m unittest discover -s tests -p 'test_websearch.py' -v
       - name: Test TTS text cleanup and API request
@@ -56,9 +60,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=40" not in html:
+          if "/assets/css/app.css?v=41" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=45" not in html:
+          if "/assets/js/app.js?v=46" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -99,6 +103,12 @@ jobs:
               "if (!Array.isArray(nodes) || id == null) return null;",
               "const rawIndex = selected[parentKey];",
               "typeof node.id === 'string' && node.id",
+              "function startDeviceSpeech(messageId)",
+              "function bindDeviceSpeechPlayer()",
+              "function openDeviceCodeRunner(item)",
+              "function shouldAskExecutionTarget(text)",
+              "execution_target: selectedExecutionTarget",
+              'data-run-device="',
           ]
           missing = [token for token in required_js if token not in js]
           if missing:
@@ -115,5 +125,10 @@ jobs:
               raise SystemExit("Post-answer suggestion generation must stay disabled")
           if 'async def create_message_audio' not in messages or 'async def get_message_audio' not in messages:
               raise SystemExit("Missing authenticated audio endpoints")
-          print("Audio player hooks and message copy actions are present; follow-up suggestions are disabled.")
+          if 'search_declined = bool(re.fullmatch(r"NONE", text, flags=re.IGNORECASE))' not in router:
+              raise SystemExit("Explicit NONE must prevent unnecessary web search")
+          memory_scope = Path("app/services/memory_scope.py").read_text(encoding="utf-8")
+          if 'Memory.chat_id == chat_id' not in memory_scope or 'from ..services.memory_scope import _memory_block' not in messages:
+              raise SystemExit("Memory injection must remain chat-scoped")
+          print("Audio/player hooks, device runner, search relevance and chat memory are present; follow-up suggestions are disabled.")
           PY

@@ -86,7 +86,8 @@ class Settings(BaseSettings):
     # how many characters of an extracted document are sent to the model
     max_attachment_chars: int = 40000
 
-    # --- Default model set seed (Qwen) ---
+    # --- Primary MAIN model provider overrides / initial seed ---
+    qwen_provider: str = "openai"
     qwen_api_key: str = ""
     qwen_base_url: str = "https://llm.stage.satel.org/v1"
     qwen_model: str = "qwen36-35b"

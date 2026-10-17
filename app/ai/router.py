@@ -35,7 +35,7 @@ from ..services.files import detect_kind, sha256_bytes
 from ..services.limits import get_limits
 from ..services.sandbox import cleanup, run_python
 from ..services.usage import account, est, record, window_spend
-from ..services.websearch import format_context, web_search
+from ..services.websearch import format_context, image_search, web_search
 from . import model_sets as ms
 from . import prompts
 from .provider_config import apply_primary_provider_overrides
@@ -612,9 +612,11 @@ class AIRouter:
         *,
         use_model_queries: bool = True,
     ) -> tuple[list[dict], str]:
-        """Search using model-written queries, or a cheap local query when requested."""
+        """Use model-written web/image queries, with bounded best-effort providers."""
         queries: list[str] = []
+        image_query = ""
         answer = ""
+        explicit_none = False
         if use_model_queries:
             try:
                 answer = await complete_chat(
@@ -626,22 +628,31 @@ class AIRouter:
                     api_key=entry.api_key,
                     model=entry.model,
                     temperature=0.0,
-                    max_tokens=120,
+                    max_tokens=160,
                     timeout=min(entry.timeout or 60, 45),
                     disable_thinking=True,
                 )
                 text = (answer or "").strip()
-                if text and "NONE" not in text.upper():
-                    for line in text.splitlines():
-                        q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
-                        q = q.replace("\u00ab", "").replace("\u00bb", "")
-                        q = q.strip('"').strip("'").strip()
-                        if 2 < len(q) <= 120:
-                            queries.append(q)
+                explicit_none = text.casefold() == "none"
+                for raw_line in text.splitlines():
+                    line = re.sub(r"^[\s\-*\d.)]+", "", raw_line).strip()
+                    line = line.replace("«", "").replace("»", "").strip().strip('"').strip("'").strip()
+                    if not line or line.casefold() == "none":
+                        continue
+                    image_match = re.match(r"^(?:IMAGE|IMAGES|КАРТИНКИ|ИЗОБРАЖЕНИЯ)\s*:\s*(.+)$", line, re.I)
+                    if image_match:
+                        candidate = image_match.group(1).strip()
+                        if 2 < len(candidate) <= 160:
+                            image_query = candidate
+                        continue
+                    search_match = re.match(r"^(?:SEARCH|WEB|ПОИСК|ВЕБ)\s*:\s*(.+)$", line, re.I)
+                    candidate = (search_match.group(1) if search_match else line).strip()
+                    if 2 < len(candidate) <= 120:
+                        queries.append(candidate)
             except Exception as e:  # noqa: BLE001 - search must never break a chat
-                log.warning("Query generation failed: %s", e)
+                log.warning("Query generation failed: %s", type(e).__name__)
 
-        if not queries:
+        if not queries and not image_query and not explicit_none:
             words = re.findall(
                 r"[A-Za-zА-Яа-яЁё0-9]{3,}", (job.search_query or "").lower()
             )
@@ -651,24 +662,35 @@ class AIRouter:
                 "мне", "нужно", "хочу", "можно", "есть", "это", "the", "and", "for",
                 "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
             }
-            key = [w for w in words if w not in stop][:6]
+            key = [word for word in words if word not in stop][:6]
             queries = [" ".join(key) if key else (job.search_query or "").strip()]
-        queries = [q for q in queries if q][:3]
+        queries = [query for query in queries if query][:3]
 
         results: list[dict] = []
         seen: set[str] = set()
-        for q in queries:
+        for query in queries:
             try:
-                for item in await web_search(q):
+                for item in await web_search(query):
                     url = item.get("url") or ""
                     if url and url not in seen:
                         seen.add(url)
                         results.append(item)
             except Exception as e:  # noqa: BLE001
-                log.warning("Search failed for %r: %s", q[:60], e)
-        log.info("Search queries=%s results=%d", queries, len(results))
+                log.warning("Web search failed for %r: %s", query[:60], type(e).__name__)
 
-        # the query-writing call itself is billed too
+        image_results: list[dict] = []
+        if image_query:
+            try:
+                image_results = await image_search(image_query, 4)
+            except Exception as e:  # defensive: image search must never break the answer
+                log.warning("Image search failed: %s", type(e).__name__)
+
+        log.info(
+            "Search queries=%s image_query=%s web_results=%d image_results=%d",
+            queries, bool(image_query), len(results), len(image_results),
+        )
+
+        # The query-planning call is billable even if a provider returns no hits.
         if answer:
             try:
                 async with SessionLocal() as db:
@@ -684,8 +706,10 @@ class AIRouter:
                     )
                     await db.commit()
             except Exception as e:  # noqa: BLE001
-                log.warning("Search accounting failed: %s", e)
-        return results[:6], answer
+                log.warning("Search accounting failed: %s", type(e).__name__)
+
+        # Keep visual results independent from text-page deduplication and limits.
+        return results[:5] + image_results[:4], answer
 
     async def _prepare_history(
         self, job: Job, entry: EntryConfig
@@ -1079,11 +1103,14 @@ class AIRouter:
 
 
 SEARCH_QUERIES_SYSTEM = (
-    "Ты составляешь поисковые запросы для интернет-поиска. На входе — сообщение "
-    "пользователя. Верни от 1 до 3 коротких поисковых запросов (2-5 слов каждый), "
-    "по одному на строку, без нумерации, кавычек и пояснений — только то, что реально "
-    "надо найти. Если поиск не нужен (простой вопрос, математика, рассуждение, код) — "
-    "верни ровно одно слово NONE."
+    "Ты решаешь, нужен ли внешний поиск по сообщению пользователя, и составляешь запросы. "
+    "Верни от 1 до 3 коротких поисковых запросов строками SEARCH: запрос. "
+    "Если для ответа действительно полезны реальные визуальные примеры или пользователь "
+    "просит показать изображения, дополнительно верни одну строку IMAGE: запрос. "
+    "IMAGE означает поиск настоящих изображений в интернете, а не генерацию рисунка. "
+    "Не добавляй IMAGE для обычных текстовых вопросов, программирования или абстрактных тем. "
+    "Если нужен только визуальный поиск, верни только IMAGE: запрос. Если внешний поиск "
+    "вообще не нужен, верни ровно NONE. Без нумерации и пояснений."
 )
 
 

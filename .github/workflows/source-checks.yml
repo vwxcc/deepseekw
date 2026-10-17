@@ -62,6 +62,20 @@ jobs:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
+          css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+          def css_rule_contains(selector, snippet):
+              start = css.find(selector)
+              end = css.find("}", start) if start >= 0 else -1
+              return start >= 0 and end >= 0 and snippet in css[start:end]
+          if not css_rule_contains(".msg .meta button {", "background: var(--bg);"):
+              raise SystemExit("Message action buttons must match the page background")
+          if ".msg .meta button { background: var(--bg); }" not in css:
+              raise SystemExit("Dark theme action buttons must match the dark page background")
+          if not css_rule_contains(".src-row {", "background: var(--bg);"):
+              raise SystemExit("Source cards must match the page background")
+          if "stroke='%23b8862f'" in css:
+              raise SystemExit("Orange dropdown-arrow accent should stay neutral gray")
+
           js = Path("frontend/js/app.js").read_text(encoding="utf-8")
           # A single-element $() selector may return null; only $() is iterable.
           bad_for_each = [

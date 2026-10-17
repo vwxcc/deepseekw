@@ -56,9 +56,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=40" not in html:
+          if "/assets/css/app.css?v=41" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=45" not in html:
+          if "/assets/js/app.js?v=47" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -99,6 +99,12 @@ jobs:
               "if (!Array.isArray(nodes) || id == null) return null;",
               "const rawIndex = selected[parentKey];",
               "typeof node.id === 'string' && node.id",
+              "function startDeviceSpeech(messageId)",
+              "function bindDeviceSpeechPlayer()",
+              "function openDeviceCodeRunner(item)",
+              "function shouldAskExecutionTarget(text)",
+              "execution_target: selectedExecutionTarget",
+              'data-run-device="',
           ]
           missing = [token for token in required_js if token not in js]
           if missing:

@@ -230,6 +230,49 @@
     </section>
   </div>
 
+  <div id="device-audio-player-shell" class="audio-player-shell" aria-hidden="true">
+    <button class="audio-player-scrim" type="button" data-device-audio-close aria-label="Закрыть системную озвучку"></button>
+    <section class="audio-player-sheet device-audio-sheet" role="dialog" aria-modal="true" aria-labelledby="device-audio-title" tabindex="-1">
+      <div class="audio-sheet-handle" aria-hidden="true"></div>
+      <div class="audio-sheet-head">
+        <div class="audio-sheet-art" aria-hidden="true"><svg class="ic"><use href="#i-audio"/></svg></div>
+        <div class="audio-sheet-titles">
+          <h2 id="device-audio-title">Воспроизведение устройством</h2>
+          <p>Системный голос · beta</p>
+        </div>
+        <button class="icon-btn audio-player-close" id="device-audio-close-btn" type="button" data-device-audio-close title="Закрыть плеер" aria-label="Закрыть плеер"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="device-speech-status" id="device-audio-status" aria-live="polite">Подготавливаю текст…</div>
+      <div class="device-speech-progress">
+        <div class="device-speech-progress-label"><span id="device-audio-word-position">Слова 0–0 из 0</span><span id="device-audio-chunk-position">Фрагмент 0/0</span></div>
+        <div class="device-speech-progress-track"><span id="device-audio-progress-fill"></span></div>
+      </div>
+      <div id="device-audio-current-text" class="device-speech-current-text"></div>
+      <div class="audio-player-controls">
+        <button class="audio-skip-btn" type="button" data-device-audio-action="back" title="Назад на 20 слов" aria-label="Назад на 20 слов"><svg class="ic"><use href="#i-back-10"/></svg></button>
+        <button class="audio-main-play" type="button" id="device-audio-play-toggle" title="Пауза" aria-label="Пауза"><svg class="ic"><use href="#i-play"/></svg></button>
+        <button class="audio-skip-btn" type="button" data-device-audio-action="forward" title="Вперёд на 20 слов" aria-label="Вперёд на 20 слов"><svg class="ic"><use href="#i-forward-10"/></svg></button>
+      </div>
+      <label class="device-audio-rate-label" for="device-audio-rate">Скорость речи
+        <select id="device-audio-rate" aria-label="Скорость системной озвучки">
+          <option value="0.8">0,8×</option><option value="1" selected>1×</option><option value="1.2">1,2×</option><option value="1.5">1,5×</option><option value="1.8">1,8×</option>
+        </select>
+      </label>
+      <p class="usage-note device-speech-note">Переходы в наушниках работают по фрагментам примерно по 20 слов. Доступность управления при выключенном экране зависит от браузера и устройства.</p>
+    </section>
+  </div>
+
+  <div id="device-code-shell" class="device-code-shell" aria-hidden="true">
+    <button class="device-code-scrim" type="button" data-device-code-close aria-label="Закрыть песочницу"></button>
+    <section class="device-code-panel" role="dialog" aria-modal="true" aria-labelledby="device-code-title" tabindex="-1">
+      <header class="device-code-header">
+        <div><h2 id="device-code-title">Песочница на устройстве</h2><p id="device-code-status" aria-live="polite">Код выполняется в изолированном iframe.</p></div>
+        <button class="icon-btn" type="button" data-device-code-close title="Закрыть" aria-label="Закрыть песочницу"><svg class="ic"><use href="#i-x"/></svg></button>
+      </header>
+      <iframe id="device-code-frame" title="Локальная кодовая песочница" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+    </section>
+  </div>
+
   <input type="file" id="file-input" multiple class="hidden-file" />
   <div id="modal-root"></div>
   <div id="toast-root"></div>

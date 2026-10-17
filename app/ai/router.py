@@ -30,6 +30,7 @@ from ..models import (
     RouteType,
     User,
 )
+from .activity_stream import ActivityMarkupParser
 from ..services.files import detect_kind, sha256_bytes
 from ..services.limits import get_limits
 from ..services.sandbox import cleanup, run_python
@@ -213,6 +214,9 @@ class AIRouter:
         self.queue: asyncio.Queue[Job] = asyncio.Queue()
         self.workers: list[asyncio.Task] = []
         self.active: dict[str, Job] = {}
+        # Serialize complete user-facing main responses (including agent steps).
+        # A browser chat switch does not cancel the server-side job.
+        self._primary_generation_lock = asyncio.Lock()
 
     async def start(self) -> None:
         for i in range(self.concurrency):
@@ -449,7 +453,7 @@ class AIRouter:
                 elif job.kind == "merge":
                     await self._run_merge(job)
                 else:
-                    await self._run_message(job)
+                    await self._run_serialized_message(job)
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - defensive
@@ -461,11 +465,56 @@ class AIRouter:
                     self.active.pop(job.message_id, None)
                 self.queue.task_done()
 
+    async def _run_serialized_message(self, job: Job) -> None:
+        """Hold the primary generation slot for the complete response, not one token loop."""
+        announced_wait = False
+        while True:
+            if job.cancel.is_set():
+                await self._finish(
+                    job.message_id, MessageStatus.cancelled,
+                    error="Остановлено пользователем",
+                )
+                await job.output.put(("cancelled", ""))
+                return
+            try:
+                await asyncio.wait_for(self._primary_generation_lock.acquire(), timeout=0.25)
+                break
+            except asyncio.TimeoutError:
+                if not announced_wait:
+                    announced_wait = True
+                    await job.output.put(("ui_status", "Ожидаю завершения предыдущего ответа"))
+        try:
+            await self._run_message(job)
+        finally:
+            self._primary_generation_lock.release()
+
     async def _stream_once(self, job: Job, entry: EntryConfig, messages: list[dict]):
-        """One model turn. Returns (full, thinking, usage) or None when cancelled."""
+        """Stream clean answer text while forwarding short activity metadata separately."""
         full = ""
         thinking = ""
         usage: dict | None = None
+        markup = ActivityMarkupParser()
+
+        async def emit_items(items) -> None:
+            nonlocal full
+            for item in items:
+                kind = item.get("kind")
+                if kind == "text":
+                    text = item.get("text") or ""
+                    if text:
+                        full += text
+                        await job.output.put(("delta", text))
+                elif kind == "status":
+                    await job.output.put(("ui_status", item["text"]))
+                elif kind == "action":
+                    await job.output.put((
+                        "ui_action",
+                        json.dumps(
+                            {"icon": item["icon"], "text": item["text"]},
+                            ensure_ascii=False,
+                        ),
+                    ))
+
         async for kind, piece in stream_chat(
             messages=messages,
             base_url=entry.base_url,
@@ -484,6 +533,7 @@ class AIRouter:
                     usage = None
                 continue
             if job.cancel.is_set():
+                await emit_items(markup.finish())
                 await self._finish(
                     job.message_id,
                     MessageStatus.cancelled,
@@ -494,11 +544,13 @@ class AIRouter:
                 await job.output.put(("cancelled", full or thinking))
                 return None
             if kind == "thinking":
+                # The provider may supply a private reasoning channel. Keep it in its
+                # existing internal field; never turn it into activity-list events.
                 thinking += piece
                 await job.output.put(("thinking", piece))
             else:
-                full += piece
-                await job.output.put(("delta", piece))
+                await emit_items(markup.feed(piece))
+        await emit_items(markup.finish())
         return full, thinking, usage
 
     async def _attach_run_files(self, job: Job, result: dict) -> list[dict]:

@@ -858,13 +858,48 @@ def pdf_report(path: str | Path, spec: dict, style: str | None = None) -> str:
                         from PIL import Image
                         with Image.open(payload) as im:
                             ratio = im.height / im.width
+                            img_copy = im.copy()
                         h = min(0.42, 6.6 / 8.27 * ratio * 0.5)
                         ax = fig.add_axes([0.10, yy - h, 0.80, h])
-                        ax.imshow(im)
+                        ax.imshow(img_copy)
                         ax.axis("off")
                         yy -= h + 0.03
                     except Exception:
                         pass
+                elif kind == "table":
+                    table_data = payload if isinstance(payload, dict) else {}
+                    title = str(table_data.get("title") or "")
+                    head = table_data.get("head") or []
+                    rows = table_data.get("rows") or []
+                    if title:
+                        fig.text(0.08, yy, title, fontsize=12, fontweight="bold",
+                                 color=hx(p["primary"]), fontfamily=font, wrap=True)
+                        yy -= 0.035
+                    display_rows = [[str(cell) for cell in row[:8]] for row in rows[:15]]
+                    display_head = [str(cell) for cell in head[:8]]
+                    if display_rows or display_head:
+                        height = min(0.42, max(0.14, 0.024 * (len(display_rows) + (1 if display_head else 0))))
+                        ax = fig.add_axes([0.08, max(0.08, yy - height), 0.84, height])
+                        ax.axis("off")
+                        tbl = ax.table(
+                            cellText=display_rows if display_rows else None,
+                            colLabels=display_head if display_head else None,
+                            cellLoc="left", colLoc="left", loc="center", bbox=[0, 0, 1, 1],
+                        )
+                        tbl.auto_set_font_size(False)
+                        tbl.set_fontsize(8)
+                        edge = hx(_mix(p["muted"], p["bg"], 0.72))
+                        for (row_index, _column), cell in tbl.get_celld().items():
+                            cell.set_edgecolor(edge)
+                            cell.set_linewidth(0.45)
+                            if display_head and row_index == 0:
+                                cell.set_facecolor(hx(p["primary"]))
+                                cell.get_text().set_color(hx(_contrast(p["primary"])))
+                                cell.get_text().set_weight("bold")
+                            else:
+                                cell.set_facecolor(hx(p["surface"] if row_index % 2 else p["bg"]))
+                                cell.get_text().set_color(hx(p["text"]))
+                        yy -= height + 0.035
                 else:
                     words = str(payload)
                     fig.text(0.08, yy, words, fontsize=11, color=hx(p["text"]),
@@ -889,6 +924,19 @@ def pdf_report(path: str | Path, spec: dict, style: str | None = None) -> str:
                     buffer.append(("bullet", str(it)))
             elif kind == "image" and b.get("image") and os.path.exists(b["image"]):
                 buffer.append(("image", b["image"]))
+            elif kind == "table":
+                # Render tables on dedicated pages in readable chunks instead of
+                # silently dropping them or shrinking the font to an unreadable size.
+                flush()
+                head = b.get("head") or []
+                rows = b.get("rows") or []
+                chunks = [rows[i:i + 15] for i in range(0, len(rows), 15)] or [[]]
+                for chunk_index, chunk in enumerate(chunks, start=1):
+                    table_title = str(b.get("title") or "")
+                    if len(chunks) > 1:
+                        table_title = (table_title + f" · часть {chunk_index}/{len(chunks)}").strip(" ·")
+                    buffer.append(("table", {"title": table_title, "head": head, "rows": chunk}))
+                    flush()
             elif kind == "pagebreak":
                 flush()
             else:

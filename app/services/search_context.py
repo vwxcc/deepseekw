@@ -45,14 +45,18 @@ def _plan_search_queries(answer: str | None, search_query: str | None) -> list[s
     source = (search_query or "").strip()
     if not source:
         return []
-    words = re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", source.lower())
+    words = re.findall(r"[A-Za-zА-Яа-яЁё0-9]{2,}", source.lower())
     stopwords = {
         "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
         "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
         "мне", "нужно", "хочу", "можно", "есть", "это", "работает", "запускает", "the", "and", "for",
+        "in", "on", "as", "at", "by", "is", "an", "or", "to", "of", "be", "we",
+        "he", "it", "do", "so", "if", "up", "no", "my", "me", "us", "am", "you",
+        "на", "по", "из", "не", "да", "но", "от", "до", "за", "во", "ни", "ли",
+        "же", "бы", "то", "их", "мы", "вы", "он", "она", "его", "ее", "эта",
         "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
         "последний", "запрос", "пользователя", "пользователь", "ассистент",
         "контекст", "реплик", "предыдущих", "предыдущий",
     }
     keywords = [word for word in words if word not in stopwords][:6]
-    return [" ".join(keywords)] if keywords else [source[:120]]
+    return [" ".join(keywords)] if keywords else []

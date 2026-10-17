@@ -33,6 +33,7 @@ from ..models import (
 from ..services.files import detect_kind, sha256_bytes
 from ..services.limits import get_limits
 from ..services.sandbox import cleanup, run_python
+from ..services.search_context import _plan_search_queries
 from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, web_search
 from . import model_sets as ms
@@ -521,9 +522,7 @@ class AIRouter:
         self, job: Job, entry: EntryConfig
     ) -> tuple[list[dict], str]:
         """Let the model write the queries, then search with each of them."""
-        queries: list[str] = []
         answer = ""
-        search_declined = False
         try:
             answer = await complete_chat(
                 messages=[
@@ -538,32 +537,10 @@ class AIRouter:
                 timeout=min(entry.timeout or 60, 45),
                 disable_thinking=True,
             )
-            text = (answer or "").strip()
-            search_declined = bool(re.fullmatch(r"NONE", text, flags=re.IGNORECASE))
-            if text and not search_declined:
-                for line in text.splitlines():
-                    q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
-                    q = q.replace("\u00ab", "").replace("\u00bb", "")
-                    q = q.strip('"').strip("'").strip()
-                    if 2 < len(q) <= 120:
-                        queries.append(q)
+            queries = _plan_search_queries(answer, job.search_query)
         except Exception as e:  # noqa: BLE001 - search must never break a chat
             log.warning("Query generation failed: %s", e)
-
-        if not queries and not search_declined:
-            words = re.findall(
-                r"[A-Za-zА-Яа-яЁё0-9]{3,}", (job.search_query or "").lower()
-            )
-            stop = {
-                "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",
-                "расскажи", "найди", "поищи", "что", "как", "где", "когда", "почему",
-                "мне", "нужно", "хочу", "можно", "есть", "это", "the", "and", "for",
-                "про", "для", "или", "если", "тоже", "очень", "самый", "самая",
-                "последний", "запрос", "пользователя", "ассистент", "контекст", "реплик",
-            }
-            key = [w for w in words if w not in stop][:6]
-            queries = [" ".join(key) if key else (job.search_query or "").strip()]
-        queries = [q for q in queries if q][:3]
+            queries = _plan_search_queries("", job.search_query)
 
         stopwords = {
             "какой", "какая", "какие", "сколько", "сейчас", "сегодня", "покажи",

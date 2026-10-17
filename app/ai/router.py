@@ -537,35 +537,40 @@ class AIRouter:
     # --- web search (runs inside the worker, never blocks the UI) ----------
 
     async def _smart_search(
-        self, job: Job, entry: EntryConfig
+        self,
+        job: Job,
+        entry: EntryConfig,
+        *,
+        use_model_queries: bool = True,
     ) -> tuple[list[dict], str]:
-        """Let the model write the queries, then search with each of them."""
+        """Search using model-written queries, or a cheap local query when requested."""
         queries: list[str] = []
         answer = ""
-        try:
-            answer = await complete_chat(
-                messages=[
-                    {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
-                    {"role": "user", "content": (job.search_query or "")[:1500]},
-                ],
-                base_url=entry.base_url,
-                api_key=entry.api_key,
-                model=entry.model,
-                temperature=0.0,
-                max_tokens=120,
-                timeout=min(entry.timeout or 60, 45),
-                disable_thinking=True,
-            )
-            text = (answer or "").strip()
-            if text and "NONE" not in text.upper():
-                for line in text.splitlines():
-                    q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
-                    q = q.replace("\u00ab", "").replace("\u00bb", "")
-                    q = q.strip('"').strip("'").strip()
-                    if 2 < len(q) <= 120:
-                        queries.append(q)
-        except Exception as e:  # noqa: BLE001 - search must never break a chat
-            log.warning("Query generation failed: %s", e)
+        if use_model_queries:
+            try:
+                answer = await complete_chat(
+                    messages=[
+                        {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
+                        {"role": "user", "content": (job.search_query or "")[:1500]},
+                    ],
+                    base_url=entry.base_url,
+                    api_key=entry.api_key,
+                    model=entry.model,
+                    temperature=0.0,
+                    max_tokens=120,
+                    timeout=min(entry.timeout or 60, 45),
+                    disable_thinking=True,
+                )
+                text = (answer or "").strip()
+                if text and "NONE" not in text.upper():
+                    for line in text.splitlines():
+                        q = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
+                        q = q.replace("\u00ab", "").replace("\u00bb", "")
+                        q = q.strip('"').strip("'").strip()
+                        if 2 < len(q) <= 120:
+                            queries.append(q)
+            except Exception as e:  # noqa: BLE001 - search must never break a chat
+                log.warning("Query generation failed: %s", e)
 
         if not queries:
             words = re.findall(
@@ -621,7 +626,11 @@ class AIRouter:
         sources: list[dict] = []
         if job.web_search and job.search_query:
             await job.output.put(("stage", json.dumps({"stage": "search"})))
-            sources, _ = await self._smart_search(job, entry)
+            # The Code Agent uses a locally extracted query so search does not
+            # consume an extra model turn from its 2-3 request budget.
+            sources, _ = await self._smart_search(
+                job, entry, use_model_queries=job.mode != "code"
+            )
             ctx = format_context(sources)
             if ctx:
                 system_prompt = f"{system_prompt}\n\n{ctx}"

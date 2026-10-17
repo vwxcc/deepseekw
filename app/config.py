@@ -90,7 +90,8 @@ class Settings(BaseSettings):
     qwen_provider: str = "openai"
     qwen_api_key: str = ""
     qwen_base_url: str = "https://llm.stage.satel.org/v1"
-    qwen_model: str = "qwen36-35b"
+    qwen_model: str = "qwen36-35b"  # backwards-compatible initial seed / override
+    qwen_model_id: str = ""  # optional explicit external model ID; takes priority over QWEN_MODEL
     qwen_temperature: float = 0.2
     qwen_max_tokens: int = 32000
 

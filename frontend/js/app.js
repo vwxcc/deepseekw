@@ -3489,7 +3489,7 @@
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
     });
-    $('#send-btn').addEventListener('click', sendCurrent);
+    $('#send-btn').addEventListener('click', () => sendCurrent());
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });

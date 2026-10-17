@@ -268,17 +268,19 @@ class AIRouter:
                     "без Auto Routing и добавьте в него активную модель."
                 )
             e = entries[0]
-            primary_base_url, primary_api_key = apply_primary_provider_overrides(
-                e.base_url, e.api_key
+            primary_provider, primary_base_url, primary_api_key, primary_model = (
+                apply_primary_provider_overrides(
+                    e.provider, e.base_url, e.api_key, e.model
+                )
             )
             configs = [
                 EntryConfig(
                     id=e.id,
                     model_set_id=e.model_set_id,
-                    provider=e.provider,
+                    provider=primary_provider,
                     base_url=primary_base_url,
                     api_key=primary_api_key,
-                    model=e.model,
+                    model=primary_model,
                     temperature=e.temperature,
                     max_tokens=e.max_tokens,
                     timeout=e.timeout,

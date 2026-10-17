@@ -2155,7 +2155,7 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
-    $('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;
@@ -2164,7 +2164,7 @@
       const label = $('[data-tool-toggle-label]', btn);
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
-    $('.ask-card', scope).forEach(card => {
+    $$('.ask-card', scope).forEach(card => {
       const input = $('.ask-input', card);
       const send = () => {
         const value = (input.value || '').trim();
@@ -2182,9 +2182,9 @@
       }
     });
 
-    $('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
+    $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
-    $('.think-head', scope).forEach(h => h.addEventListener('click', () => {
+    $$('.think-head', scope).forEach(h => h.addEventListener('click', () => {
       const box = h.closest('.think-box');
       if (!box) return;
       box.classList.toggle('collapsed');
@@ -2246,17 +2246,17 @@
       });
     }
 
-    $('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
     }));
 
-    $('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.dl];
       if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
     }));
 
-    $('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
       const rows = (window.__tableStore || {})[b.dataset.dlTable];
       if (!rows) return;
       openTableMenu(rows);
@@ -2456,9 +2456,10 @@
             node.creatingLabel = 'Запрос принят · ожидаю ответ модели…';
             state.activeAssistantId = node.id;
           }
-          if (!replacedOptimistic || !renderMessageInPlace(node.id, previousId)) {
-            // New/previously absent rows need a complete render as a safe fallback.
-            // renderMessageInPlace already performs that fallback when necessary.
+          if (replacedOptimistic) {
+            renderMessageInPlace(node.id, previousId);
+          } else {
+            renderMessages();
           }
           if (ev === 'assistant_message') bindStreamRefs();
         } else if (ev === 'stage') {
@@ -4362,23 +4363,38 @@
   }
 
   async function useTile(t) {
-    let chat;
+    if (state.chatCreating) return;
+    setChatCreationPending(true);
+    const selectionToken = state.chatOpenToken;
+    let chat = null;
     try {
       chat = await api.post('/api/chats', { title: t.title || t.label });
-    } catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-    state.chats.unshift(chat);
-    renderChatList();
-    await openChat(chat.id);
-    if (t.questions) {
-      try {
-        await api.post('/api/chats/' + chat.id + '/seed', { text: t.questions });
-        state.tree = await api.get('/api/chats/' + chat.id + '/messages');
-        renderMessages();
-      } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
-      toast('Ответьте на вопросы — и я приступлю');
-      $('#input').focus();
-    } else {
-      $('#input').focus();
+      if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
+        throw new Error('Сервер не вернул созданный чат с корректным ID');
+      }
+      upsertChat(chat);
+      if (selectionToken === state.chatOpenToken) {
+        await openChat(chat.id);
+      } else {
+        renderChatList();
+      }
+
+      if (t.questions) {
+        await api.post('/api/chats/' + encodeURIComponent(chat.id) + '/seed', { text: t.questions });
+        const loadedTree = await api.get('/api/chats/' + encodeURIComponent(chat.id) + '/messages');
+        // A late seed response must not replace a different chat selected in the meantime.
+        if (state.currentChatId === chat.id) {
+          state.tree = Array.isArray(loadedTree) ? loadedTree : [];
+          renderMessages();
+          toast('Ответьте на вопросы — и я приступлю');
+        }
+      }
+      if (state.currentChatId === chat.id) $('#input').focus();
+    } catch (e) {
+      toast('Ошибка: ' + (e.message || e), 'error');
+      if (chat) renderChatList();
+    } finally {
+      setChatCreationPending(false);
     }
   }
 

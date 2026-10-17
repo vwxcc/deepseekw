@@ -2449,17 +2449,17 @@
       });
     }
 
-    $('[data-activity-full]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-activity-full]', scope).forEach(button => button.addEventListener('click', () => {
       openActivityStream(button.dataset.activityFull);
     }));
-    $('[data-activity-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-activity-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.activityToggle);
       if (!n) return;
       n.showActivities = !n.showActivities;
       renderMessageInPlace(n.id);
     }));
 
-    $('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const block = button.closest('.code-block');
       if (!block) return;
       const preview = $('.code-preview', block);
@@ -2475,7 +2475,7 @@
         '<span>' + (expanded ? 'Свернуть' : 'Развернуть') + '</span>';
     }));
 
-    $('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
     }));

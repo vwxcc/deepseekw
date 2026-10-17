@@ -282,11 +282,7 @@ async def _memory_block(db: AsyncSession, user_id: str, chat_id: str) -> str:
             Memory.user_id == user_id,
             or_(
                 Memory.chat_id == chat_id,
-                and_(
-                    Memory.chat_id.is_(None),
-                    Memory.message_id.is_(None),
-                    Memory.kind == "preference",
-                ),
+                and_(Memory.chat_id.is_(None), Memory.message_id.is_(None)),
             ),
         )
         .order_by(Memory.created_at.desc())
@@ -295,7 +291,8 @@ async def _memory_block(db: AsyncSession, user_id: str, chat_id: str) -> str:
     rows = [m for m in res.scalars().all() if m.content]
     facts = [
         m.content for m in rows
-        if (m.kind or "fact") == "fact" and m.chat_id == chat_id
+        if (m.kind or "fact") == "fact"
+        and (m.chat_id == chat_id or (m.chat_id is None and m.message_id is None))
     ]
     prefs = [
         m.content for m in rows

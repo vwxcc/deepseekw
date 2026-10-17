@@ -62,6 +62,10 @@ class User(Base):
     github_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # A per-user quota reset marker; historical billing records remain intact.
+    usage_reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     chats: Mapped[list["Chat"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
@@ -380,5 +384,5 @@ class PlanLimit(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     plan: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     key: Mapped[str] = mapped_column(String(32), nullable=False)
-    value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
     text_value: Mapped[str | None] = mapped_column(Text, nullable=True)

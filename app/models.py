@@ -176,6 +176,26 @@ class AudioGeneration(Base):
     )
 
 
+class ReadableTextGeneration(Base):
+    """Cached spoken/readable representation of one assistant answer."""
+
+    __tablename__ = "readable_text_generations"
+
+    message_id: Mapped[str] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="generating", nullable=False)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class Attachment(Base):
     __tablename__ = "attachments"
 

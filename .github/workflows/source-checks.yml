@@ -88,7 +88,7 @@ jobs:
               if re.search(r"(?<!\$)\$\([^)]*\)\s*\.(?:forEach|find|map|filter|some|reduce)\s*\(", line)
           ]
           if bad_for_each:
-              raise SystemExit("Single-element selector used with forEach:\n" + "\n".join(bad_for_each))
+              raise SystemExit("Single-element selector used with a collection method:\n" + "\n".join(bad_for_each))
           router = Path("app/ai/router.py").read_text(encoding="utf-8")
           messages = Path("app/routers/messages.py").read_text(encoding="utf-8")
           required_js = [
@@ -153,6 +153,21 @@ jobs:
               raise SystemExit("Code Agent must stay within the three-turn maximum")
           if "QWEN_MODEL_ID" not in Path("app/ai/provider_config.py").read_text(encoding="utf-8"):
               raise SystemExit("Explicit primary model ID override is missing")
+          if 'qwen_model_id: str = ""' not in Path("app/config.py").read_text(encoding="utf-8"):
+              raise SystemExit("Missing QWEN_MODEL_ID setting")
+          if "toolRunsHtml(n.tool_runs)" not in js or "Шаг ' + (i + 1)" in js:
+              raise SystemExit("Agent execution output must be consolidated without visible step numbering")
+          if "max_steps = min(3, max(1, int(base_steps)))" not in router:
+              raise SystemExit("Code Agent model turns must be capped at three")
+          if "одним блоком run" not in Path("app/ai/prompts.py").read_text(encoding="utf-8"):
+              raise SystemExit("Code Agent prompt must consolidate work into one run block")
+          for token in (
+              "function upsertChat(chat)", "function renderMessageInPlace",
+              "function setChatCreationPending", "if (needsAnswerBody)",
+              "requestToken !== state.chatOpenToken",
+          ):
+              if token not in js:
+                  raise SystemExit("Missing anti-flicker/chat-creation guard: " + token)
           if "toolRunsHtml(n.tool_runs)" not in js or "Шаг ' + (i + 1)" in js:
               raise SystemExit("Agent execution output must be consolidated without visible step numbering")
           for token in ("function upsertChat(chat)", "function renderMessageInPlace", "function setChatCreationPending"):

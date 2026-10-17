@@ -994,10 +994,11 @@
     const record = state.readableText[n.id];
     const cls = record && record.status === 'ready' ? ' is-ready' :
       record && record.status === 'failed' ? ' is-error' : '';
+    const retryClass = record && record.status === 'failed' ? 'readable-text-retry' : 'readable-text-retry hidden';
     return '<div class="readable-text-status-wrap" data-readable-status="' + escapeHtml(n.id) + '">' +
       '<span class="readable-text-status' + cls + '" role="status" aria-live="polite">' +
       escapeHtml(readableTextStatusLabel(n.id)) + '</span>' +
-      '<button type="button" class="readable-text-retry hidden" data-mact="retry-readable-text" data-id="' +
+      '<button type="button" class="' + retryClass + '" data-mact="retry-readable-text" data-id="' +
       escapeHtml(n.id) + '">Повторить</button></div>';
   }
 

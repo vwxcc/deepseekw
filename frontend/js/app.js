@@ -981,7 +981,11 @@
   function readableTextStatusLabel(messageId) {
     const record = state.readableText[messageId];
     if (!record) return 'Проверяю читабельный текст…';
-    if (record.status === 'ready') return 'Текст готов';
+    if (record.status === 'ready') {
+      return record.notice
+        ? 'Текст готов · базовая подготовка (без ИИ)'
+        : 'Текст готов';
+    }
     if (record.status === 'missing') return 'Читабельный текст ещё не создан. Нажмите прослушивание для подготовки.';
     if (record.status === 'failed') {
       const detail = String(record.error || 'ошибка сервиса').trim();
@@ -1009,6 +1013,7 @@
       const label = $('.readable-text-status', status);
       if (label) {
         label.textContent = readableTextStatusLabel(messageId);
+        label.title = String((record && record.notice) || '');
         label.classList.toggle('is-ready', !!(record && record.status === 'ready'));
         label.classList.toggle('is-error', !!(record && record.status === 'failed'));
       }

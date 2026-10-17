@@ -1591,6 +1591,78 @@
     });
   }
 
+  function openDeviceCodeRunner(item) {
+    const shell = $('#device-code-shell');
+    const frame = $('#device-code-frame');
+    const status = $('#device-code-status');
+    if (!shell || !frame || !item) return;
+    const lang = String(item.lang || '').trim().toLowerCase();
+    const code = String(item.code || '');
+    const encode = (value) => btoa(unescape(encodeURIComponent(String(value || ''))));
+    const base64 = encode(code);
+    const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>' +
+      'body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#fff}pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{padding:12px;background:#f5f5f1;border-radius:8px;min-height:28px}.note{color:#6f6f67}</style></head><body>';
+    const output = '<pre id="output" aria-live="polite">Запуск…</pre>';
+    let doc = '';
+    let message = '';
+    if (['html', 'htm'].includes(lang)) {
+      doc = code;
+      message = 'HTML выполняется в iframe с ограничениями браузерной песочницы.';
+    } else if (['js', 'javascript', 'mjs'].includes(lang)) {
+      doc = pageStart + '<p class="note">JavaScript · локальная песочница</p>' + output +
+        '<script>(function(){const out=document.getElementById("output");const write=(v)=>{out.textContent+=String(v)+"\\n"};' +
+        'const source=decodeURIComponent(escape(atob("' + base64 + '")));' +
+        'const safeConsole={log:(...a)=>write(a.join(" ")),info:(...a)=>write(a.join(" ")),warn:(...a)=>write("WARN: "+a.join(" ")),error:(...a)=>write("ERROR: "+a.join(" "))};' +
+        'out.textContent="";try{new Function("console","write",source)(safeConsole,write);}catch(e){write(e&&e.stack?e.stack:String(e));}' +
+        '})();<\/script></body></html>';
+      message = 'JavaScript выполняется локально в изолированном iframe; вывод появится ниже.';
+    } else if (lang === 'css') {
+      doc = pageStart + '<p class="note">CSS · демо-элемент</p><div class="device-demo">Демо-элемент для проверки стилей</div>' +
+        '<script>(function(){const s=decodeURIComponent(escape(atob("' + base64 + '")));const st=document.createElement("style");st.textContent=s;document.head.appendChild(st);})();<\/script></body></html>';
+      message = 'CSS применён к демонстрационному элементу внутри локального iframe.';
+    } else if (['py', 'python', 'python3'].includes(lang)) {
+      doc = pageStart + '<p class="note">Python WebAssembly · первый запуск скачивает среду Pyodide.</p>' + output +
+        '<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"><\/script>' +
+        '<script>(async function(){const out=document.getElementById("output");const write=(v)=>{out.textContent+=String(v)+"\\n"};' +
+        'const source=decodeURIComponent(escape(atob("' + base64 + '")));out.textContent="Загружаю Python runtime…";' +
+        'try{const py=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.27.7/full/"});' +
+        'py.setStdout({batched:(v)=>write(v)});py.setStderr({batched:(v)=>write("ERROR: "+v)});out.textContent="";' +
+        'try{await py.runPythonAsync(source);}catch(e){write(e&&e.message?e.message:String(e));}' +
+        'if(!out.textContent.trim())out.textContent="Код завершён без вывода.";' +
+        '}catch(e){out.textContent="Не удалось загрузить Python. Для запуска нужен интернет и поддержка WebAssembly. "+String(e);}})();' +
+        '<\/script></body></html>';
+      message = 'Загружаю Python в браузере. При первом запуске потребуется интернет для загрузки Pyodide.';
+    } else {
+      toast('Локальная песочница пока поддерживает HTML, CSS, JavaScript и Python. Для остальных языков используйте песочницу на сайте.', 'error');
+      return;
+    }
+
+    if (status) status.textContent = message;
+    shell.classList.add('open');
+    shell.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('device-code-open');
+    frame.srcdoc = doc;
+    requestAnimationFrame(() => shell.querySelector('.device-code-panel')?.focus());
+  }
+
+  function closeDeviceCodeRunner() {
+    const shell = $('#device-code-shell');
+    const frame = $('#device-code-frame');
+    if (shell) {
+      shell.classList.remove('open');
+      shell.setAttribute('aria-hidden', 'true');
+    }
+    if (frame) frame.srcdoc = '';
+    document.body.classList.remove('device-code-open');
+  }
+
+  function bindDeviceCodeRunner() {
+    $('[data-device-code-close]').forEach(button => button.addEventListener('click', closeDeviceCodeRunner));
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && $('#device-code-shell')?.classList.contains('open')) closeDeviceCodeRunner();
+    });
+  }
+
   function toolRunHtml(r, i) {
     const running = !!r.running;
     const files = (r.files || []).map(f => {
@@ -1763,6 +1835,12 @@
     if (messageActions && !messageActions.dataset.actionsBound) {
       messageActions.dataset.actionsBound = 'true';
       messageActions.addEventListener('click', async (event) => {
+        const deviceRun = event.target.closest('[data-run-device]');
+        if (deviceRun && messageActions.contains(deviceRun)) {
+          const item = (window.__codeStore || {})[deviceRun.dataset.runDevice];
+          if (item) openDeviceCodeRunner(item);
+          return;
+        }
         const btn = event.target.closest('[data-mact]');
         if (!btn || !messageActions.contains(btn) || btn.disabled) return;
         const id = btn.dataset.id, act = btn.dataset.mact;

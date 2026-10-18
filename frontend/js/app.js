@@ -3506,6 +3506,21 @@
     let watchdog = null;
     let watchdogExpired = false;
     let responseReceived = false;
+    let budgetModalShown = false;
+    const maybeOpenBudgetModal = (value) => {
+      if (budgetModalShown) return;
+      let text = '';
+      try {
+        text = typeof value === 'string' ? value : JSON.stringify(value == null ? '' : value);
+      } catch (_) {
+        text = String(value == null ? '' : value);
+      }
+      // The upgrade window is only for exhausted dollar budgets, not generic
+      // HTTP 429 responses such as file/chat quotas or unrelated errors.
+      if (!/лимит\\s+исчерпан/i.test(text)) return;
+      budgetModalShown = true;
+      openUsageModal().catch((e) => console.warn('Could not open subscription limits:', e));
+    };
     const armWatchdog = (delay) => {
       if (watchdog) clearTimeout(watchdog);
       watchdog = setTimeout(() => {
@@ -3768,6 +3783,7 @@
           }
           loadUsage();
         } else if (ev === 'error') {
+          maybeOpenBudgetModal(data && (data.error || data.detail || data));
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
           if (n) {
@@ -3793,6 +3809,7 @@
       });
     } catch (err) {
       console.error(err);
+      maybeOpenBudgetModal(err && err.message ? err.message : err);
       const friendlyError = watchdogExpired
         ? (responseReceived
           ? 'Ответ остановился без новых событий более 330 секунд. Можно отправить запрос ещё раз.'

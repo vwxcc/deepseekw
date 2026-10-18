@@ -46,6 +46,32 @@ jobs:
         run: sudo python -m unittest discover -s tests -p 'test_sandbox_runner.py' -v
       - name: Check browser JavaScript syntax
         run: node --check frontend/js/app.js
+      - name: Test subscription modal comparison rendering
+        run: |
+          node <<'JS'
+          const fs = require('fs');
+          const source = fs.readFileSync('frontend/js/app.js', 'utf8');
+          const start = source.indexOf('function planCompareHtml(lim, compare) {');
+          const end = source.indexOf('\\n  let subscriptionModalOpening = false;', start);
+          if (start < 0 || end < 0) throw new Error('Subscription comparison renderer was not found.');
+          const render = new Function(
+            'escapeHtml',
+            'limitValueLabel',
+            source.slice(start, end) + '\\nreturn planCompareHtml;'
+          )(
+            value => String(value ?? ''),
+            (key, value) => value == null ? '∞' : String(value)
+          );
+          const html = render(
+            { budget_usd: 1, window_hours: 5, price: 0 },
+            { pro: { budget_usd: 15, window_hours: 5, price: 19 } }
+          );
+          const tableCount = (html.match(/<table class="cmp">/g) || []).length;
+          if (tableCount !== 2 || !html.includes('Бюджет на окно') || !html.includes('15')) {
+            throw new Error('Subscription comparison renderer returned incomplete markup.');
+          }
+          console.log('Subscription comparison renders both columns without runtime errors.');
+          JS
       - name: Parse the embedded device Python runtime
         run: |
           node <<'JS'

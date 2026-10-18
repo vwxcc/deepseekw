@@ -90,6 +90,22 @@ def _fileplan_runner(plan_source: str) -> tuple[str, str, str]:
     return code, display, plan_source
 
 
+def _normalise_generated_filename(value: Any) -> str:
+    """Clean model-added file-type prefixes from files created by ordinary run code."""
+    raw = Path(str(value or "")).name
+    raw = re.sub(r"\.(ppt|doc|xls)_$", lambda m: "." + m.group(1) + "x", raw, flags=re.I)
+    suffix = Path(raw).suffix
+    stem = raw[:-len(suffix)] if suffix else raw
+    stem = re.sub(
+        r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+",
+        "", stem, flags=re.I,
+    )
+    stem = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "-", stem)
+    stem = re.sub(r"\s+", "-", stem).strip(" .-_")[:140].strip(" .-_")
+    suffix = suffix[:16]
+    return (stem or "generated-file") + suffix
+
+
 def _tool_feedback(run: dict) -> str:
     """Return execution feedback without confusing file plans with executable model code."""
     is_fileplan = run.get("kind") == "fileplan"
@@ -657,19 +673,20 @@ class AIRouter:
                 except OSError:
                     continue
                 fid = str(uuid.uuid4())
-                ext = Path(item["name"]).suffix
+                original_name = _normalise_generated_filename(item.get("name"))
+                ext = Path(original_name).suffix
                 dest = base / f"{fid}{ext}"
                 try:
                     dest.write_bytes(data)
                 except OSError:
                     continue
-                kind = detect_kind(item["name"], "")
+                kind = detect_kind(original_name, "")
                 db.add(
                     File(
                         id=fid,
                         user_id=chat.user_id,
                         storage_path=str(dest),
-                        original_name=item["name"],
+                        original_name=original_name,
                         mime_type="",
                         size=len(data),
                         sha256=sha256_bytes(data),
@@ -682,7 +699,7 @@ class AIRouter:
                     {
                         "id": fid,
                         "file_id": fid,
-                        "name": item["name"],
+                        "name": original_name,
                         "kind": kind,
                         "size": len(data),
                     }

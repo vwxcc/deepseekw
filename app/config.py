@@ -97,8 +97,8 @@ class Settings(BaseSettings):
     qwen_max_tokens: int = 32000
     # Optional usage prices in USD per 1,000,000 tokens. None preserves the
     # price saved on the primary MAIN model entry in the database.
-    qwen_price_in: float | None = Field(default=None, ge=0)
-    qwen_price_out: float | None = Field(default=None, ge=0)
+    qwen_price_in: float | None = Field(default=2.0, ge=0)
+    qwen_price_out: float | None = Field(default=25.0, ge=0)
     qwen_price_cache: float | None = Field(default=None, ge=0)
 
     # --- Admin bootstrap (optional) ---

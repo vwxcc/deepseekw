@@ -1367,7 +1367,9 @@
       "if fmt not in exts: raise ValueError('Локальный резервный сборщик не поддерживает формат: ' + fmt)",
       "title = str(plan.get('title') or 'Созданный файл').strip()[:180]",
       "name = str(plan.get('filename') or title or 'ai-ch-file').replace('\\\\','/').split('/')[-1]",
+       "name = re.sub(r'\\.(ppt|doc|xls)_$', lambda m: '.' + m.group(1) + 'x', name, flags=re.I)",
       "name = re.sub(r'\\.[A-Za-z0-9]{1,8}$', '', name)",
+       "name = re.sub(r'^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+', '', name, flags=re.I)",
       "name = ''.join(ch if ch.isalnum() or ch in ' .-_' else '-' for ch in name).strip(' .-_')[:100] or 'ai-ch-file'",
       "filename = name + exts[fmt]",
       "blocks = plan.get('blocks') or plan.get('slides') or plan.get('sections') or plan.get('items') or []",
@@ -2885,10 +2887,6 @@
             messageNode.deviceRunnerError = 'Сохранение файлов: ' + deviceFilePersistenceErrors.get(messageId);
           }
         }
-        if (data.success && messageNode && messageNode.execution_target === 'both' &&
-            ['queued', 'processing'].includes(messageNode.status)) {
-          try { await api.post('/api/messages/' + encodeURIComponent(messageId) + '/stop'); } catch (_) {}
-        }
         if (isBackground && backgroundEntry) {
           try { backgroundEntry.frame.srcdoc = ''; backgroundEntry.frame.remove(); } catch (e) { /* frame already gone */ }
           backgroundDeviceRunners.delete(messageId);
@@ -2933,6 +2931,11 @@
         const bytes = new Uint8Array(data.bytes);
         if (!bytes.length || bytes.length > 8 * 1024 * 1024) return;
         let normalizedName = String(data.name).replace(/\.(ppt|doc|xls)_$/i, (_, ext) => '.' + ({ ppt: 'pptx', doc: 'docx', xls: 'xlsx' }[ext.toLowerCase()]));
+        const nameExtensionMatch = normalizedName.match(/(\.[A-Za-z0-9]{1,8})$/);
+        const nameExtension = nameExtensionMatch ? nameExtensionMatch[1] : '';
+        let nameStem = nameExtension ? normalizedName.slice(0, -nameExtension.length) : normalizedName;
+        nameStem = nameStem.replace(/^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+/i, '');
+        normalizedName = (nameStem || 'output') + nameExtension;
         if (String(data.mime || '').toLowerCase() === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' &&
             !/\.pptx$/i.test(normalizedName)) {
           const stem = normalizedName.replace(/(?:\.pptx?|[._-]ppt_?)$/i, '').replace(/[._-]+$/g, '');

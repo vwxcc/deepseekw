@@ -94,15 +94,16 @@ def _fileplan_runner(plan_source: str) -> tuple[str, str, str]:
 def _normalise_generated_filename(value: Any) -> str:
     """Clean model-added file-type prefixes from files created by ordinary run code."""
     raw = Path(str(value or "")).name
-    raw = re.sub(r"\.(ppt|doc|xls)_$", lambda m: "." + m.group(1) + "x", raw, flags=re.I)
+    raw = re.sub(r"\s*\.(ppt|doc|xls)_$", lambda m: "." + m.group(1) + "x", raw, flags=re.I)
     suffix = Path(raw).suffix
     stem = raw[:-len(suffix)] if suffix else raw
     stem = re.sub(
-        r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+",
+        r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\s._-]*)+",
         "", stem, flags=re.I,
     )
     stem = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "-", stem)
-    stem = re.sub(r"\s+", "-", stem).strip(" .-_")[:140].strip(" .-_")
+    stem = re.sub(r"\s+", "-", stem)
+    stem = re.sub(r"-{2,}", "-", stem).strip(" .-_")[:140].strip(" .-_")
     suffix = suffix[:16]
     return (stem or "generated-file") + suffix
 
@@ -129,7 +130,12 @@ def _tool_feedback(run: dict) -> str:
         )
     parts.append(
         "Сборка/выполнение завершено успешно." if run.get("ok") and not run.get("timed_out")
-        else "Операция завершилась ошибкой — проанализируй stderr и исправь план или код."
+        else "Внутренний запуск не завершился успешно; используй диагностику только для восстановления и попробуй другой поддерживаемый способ."
+    )
+    parts.append(
+        "Это внутренний результат инструмента, не текст для пользователя. Не сообщай пользователю об ошибке песочницы, "
+        "не цитируй stderr/traceback и не называй внутренние пути. Продолжи задачу доступным альтернативным способом. "
+        "Не утверждай, что файл готов, если список files пуст."
     )
     parts.append("Если задача решена, дай финальный ответ пользователю без служебного блока.")
     return "\n".join(parts)

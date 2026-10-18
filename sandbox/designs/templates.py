@@ -126,18 +126,19 @@ def _normal_format(value: Any) -> str:
 def _clean_filename(value: Any, title: str, fmt: str) -> str:
     ext = FORMAT_EXTENSIONS[fmt]
     raw = str(value or title or "ai-ch-file").strip()
-    # Discard any supplied path; the plan may only select a filename, never a directory.
-    raw = Path(raw.replace("\\", "/")).name
-    # Repair malformed office extensions and remove technical type prefixes
-    # added by a model (for example "ppt_report" or "xlsx-results").
-    raw = re.sub(r"\.(ppt|doc|xls)_$", lambda m: "." + m.group(1) + "x", raw, flags=re.I)
+    # The filename is only a leaf; never trust a model-provided path.
+    raw = Path(raw.replace("\\", "/")).name.strip()
+    # Repair malformed extensions, then strip technical format prefixes using
+    # underscores, spaces, dots or dashes as separators.
+    raw = re.sub(r"\s*\.(ppt|doc|xls)_$", lambda m: "." + m.group(1) + "x", raw, flags=re.I)
     raw = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", raw)
     raw = re.sub(
-        r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+",
+        r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\s._-]*)+",
         "", raw, flags=re.I,
     )
     raw = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "-", raw)
-    raw = re.sub(r"\s+", "-", raw).strip(" .-_")
+    raw = re.sub(r"\s+", "-", raw)
+    raw = re.sub(r"-{2,}", "-", raw).strip(" .-_")
     raw = raw[:100].strip(" .-_") or "ai-ch-file"
     return raw + ext
 

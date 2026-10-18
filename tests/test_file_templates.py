@@ -38,6 +38,23 @@ class FileTemplateTests(unittest.TestCase):
         self.assertNotIn("..", clean["filename"])
         self.assertEqual(clean["blocks"][0]["kind"], "text")
 
+    def test_generated_office_filenames_drop_technical_prefixes(self):
+        cases = [
+            ("ppt_report.pptx", "pptx", "presentation.pitch", "report.pptx"),
+            ("pptx-report.pptx", "pptx", "presentation.pitch", "report.pptx"),
+            ("ppt_ report.pptx", "pptx", "presentation.pitch", "report.pptx"),
+            ("ppt_report.ppt_", "pptx", "presentation.pitch", "report.pptx"),
+            ("xlsx-results.xlsx", "xlsx", "spreadsheet.analytics", "results.xlsx"),
+            ("doc_summary.docx", "docx", "document.editorial", "summary.docx"),
+        ]
+        for supplied, fmt, template_id, expected in cases:
+            with self.subTest(supplied=supplied):
+                clean = templates.validate_plan({
+                    "format": fmt, "template_id": template_id, "title": "Report",
+                    "filename": supplied, "blocks": [{"kind": "text", "text": "Report"}],
+                })
+                self.assertEqual(clean["filename"], expected)
+
     def test_builds_svg_and_png_from_the_same_declarative_plan(self):
         plan = {
             "format": "svg",

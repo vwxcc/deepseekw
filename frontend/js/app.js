@@ -3517,7 +3517,7 @@
       }
       // The upgrade window is only for exhausted dollar budgets, not generic
       // HTTP 429 responses such as file/chat quotas or unrelated errors.
-      if (!/лимит\\s+исчерпан/i.test(text)) return;
+      if (!/лимит\s+исчерпан/i.test(text)) return;
       budgetModalShown = true;
       openUsageModal().catch((e) => console.warn('Could not open subscription limits:', e));
     };

@@ -4320,6 +4320,49 @@
   }
 
   // ---------- share / public ----------
+  function chatTranscriptText() {
+    const chat = state.chats.find(item => String(item.id) === String(state.currentChatId));
+    const title = String(chat && chat.title || 'AI-Ch 1.0').trim() || 'AI-Ch 1.0';
+    const entries = allMessages(state.tree);
+    const parts = entries.map(entry => {
+      const node = entry && entry.node;
+      if (!node) return '';
+      const label = node.role === 'user' ? 'Вы' : (node.role === 'system' ? 'Система' : 'AI-Ch');
+      const content = String(node.content || '').trim();
+      const attachments = Array.isArray(node.attachments) ? node.attachments
+        .map(item => item && item.original_name ? String(item.original_name) : '')
+        .filter(Boolean) : [];
+      return '### ' + label + '\n\n' + content +
+        (attachments.length ? '\n\nВложения: ' + attachments.join(', ') : '');
+    }).filter(Boolean);
+    return '# ' + title + '\n\n' + parts.join('\n\n---\n\n');
+  }
+
+  async function copyAllChatText() {
+    const text = chatTranscriptText();
+    if (!text.trim()) { toast('В чате пока нечего копировать.', 'error'); return; }
+    const ok = await copyText(text);
+    toast(ok ? 'Весь чат скопирован' : 'Не удалось скопировать чат', ok ? '' : 'error');
+  }
+
+  function downloadChatText() {
+    const text = chatTranscriptText();
+    if (!text.trim()) { toast('В чате пока нечего скачивать.', 'error'); return; }
+    const chat = state.chats.find(item => String(item.id) === String(state.currentChatId));
+    const base = String(chat && chat.title || 'ai-ch').replace(/[\\/:*?"<>|]+/g, '-').trim().slice(0, 90) || 'ai-ch';
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = base + '.md';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    toast('Подготовлен файл чата для скачивания.');
+  }
+
   async function openShare() {
     if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
     let st;
@@ -4330,16 +4373,20 @@
     openModal({
       title: 'Поделиться чатом',
       okText: 'Закрыть',
-      body: st.is_public
+      body: (st.is_public
         ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
           '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
           '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button class="chip-btn" id="copy-link">' + icon('copy') + 'Копировать</button>' +
+          '<button class="chip-btn" id="copy-link">' + icon('copy') + 'Копировать ссылку</button>' +
           '<button class="chip-btn" id="open-link">' + icon('link') + 'Открыть</button>' +
           '<button class="chip-btn" id="stop-share">' + icon('x') + 'Отключить</button></div>'
         : '<p>Создать публичную ссылку на этот чат? Доступ будет только на чтение.</p>' +
           '<div style="margin-top:12px"><button class="chip-btn" id="start-share">' +
-          icon('link') + 'Создать ссылку</button></div>',
+          icon('link') + 'Создать ссылку</button></div>') +
+        '<hr style="border:0;border-top:1px solid var(--border-soft);margin:16px 0" />' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="chip-btn" id="copy-all-chat">' + icon('copy') + 'Скопировать всё</button>' +
+        '<button class="chip-btn" id="download-chat">' + icon('download') + 'Скачать чат</button></div>',
       onOk: () => true,
     });
 
@@ -4349,6 +4396,10 @@
       catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
       $('#modal-root').innerHTML = ''; openShare();
     });
+    const copyAll = $('#copy-all-chat');
+    if (copyAll) copyAll.addEventListener('click', copyAllChatText);
+    const downloadAll = $('#download-chat');
+    if (downloadAll) downloadAll.addEventListener('click', downloadChatText);
     const copy = $('#copy-link');
     if (copy) copy.addEventListener('click', async () => {
       const ok = await copyText(url);

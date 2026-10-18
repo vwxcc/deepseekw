@@ -2607,7 +2607,7 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 #composer .composer-row #send-btn,
 #composer .composer-row #stop-btn {
   position: relative;
-  top: 0;
+  top: -2px;
   flex: 0 0 36px;
   width: 36px;
   height: 36px;

@@ -3617,10 +3617,14 @@
         } catch (_) { break; }
       }
       const diagnostic = fragments.filter(Boolean).join('\n');
-      const isMoneyBudget = /лимит\s+(?:тарифа\s+)?исчерпан\s*:\s*(?:(?:израсходовано|потрачено)\s*)?\$|денежн[а-яё\s-]{0,30}бюджет[а-яё\s-]{0,30}(?:исчерпан|превышен)|бюджет[а-яё\s-]{0,40}(?:исчерпан|превышен)|budget[\s_-]{0,40}(?:exhausted|exceeded)/i.test(diagnostic);
+      const isMoneyBudget = (
+        (/лимит\s+(?:тарифа\s+)?исчерпан/i.test(diagnostic) &&
+          /(?:\$|денежн|бюджет|budget|spent|расход)/i.test(diagnostic)) ||
+        /денежн[а-яё\s-]{0,30}бюджет[а-яё\s-]{0,30}(?:исчерпан|превышен)|бюджет[а-яё\s-]{0,40}(?:исчерпан|превышен)|budget[\s_-]{0,40}(?:exhausted|exceeded)/i.test(diagnostic)
+      );
       if (!isMoneyBudget) return false;
       budgetModalShown = true;
-      openUsageModal({ exhausted: true }).catch((e) => console.warn('Could not open subscription limits:', e));
+      openUsageModal({ exhausted: true, refresh: true }).catch((e) => console.warn('Could not open subscription limits:', e));
       return true;
     };
     const armWatchdog = (delay) => {
@@ -3969,7 +3973,23 @@
       setStreaming(false);
       // Limits and sidebar refresh happen in the background and cannot hold the
       // send controls hostage if a secondary endpoint is slow.
-      setTimeout(() => { loadLimits().then(loadUsage).catch((e) => console.warn('Limits refresh failed:', e)); }, 250);
+      setTimeout(async () => {
+        try {
+          await loadLimits();
+          await loadUsage();
+          const w = windowUsage();
+          const budget = Number(w && w.budget_usd);
+          const spent = Number(w && w.spend_usd || 0);
+          // Open the subscription offer as soon as the rolling dollar budget is
+          // reached, including the exact boundary (e.g. Free: $1.00 of $1.00).
+          if (!budgetModalShown && w && Number.isFinite(budget) && Number.isFinite(spent) && spent >= budget) {
+            budgetModalShown = true;
+            await openUsageModal({ exhausted: true });
+          }
+        } catch (e) {
+          console.warn('Limits refresh failed:', e);
+        }
+      }, 250);
       if (state.genTimer) { clearInterval(state.genTimer); state.genTimer = null; }
       state.streamEl = null;
       loadChats().catch((e) => console.warn('Chat list refresh failed:', e));
@@ -5259,28 +5279,114 @@
     setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* noop */ } }, 500);
   }
 
+  function codeDownloadInfo(lang) {
+    const rawKey = String(lang || '').trim().toLowerCase().split(/\s+/)[0];
+    const aliases = {
+      python: 'py', python3: 'py', py3: 'py',
+      javascript: 'js', nodejs: 'js', mjs: 'js',
+      typescript: 'ts', htm: 'html',
+      bash: 'sh', shell: 'sh', zsh: 'sh',
+      cxx: 'cpp', cc: 'cpp', 'c++': 'cpp',
+      csharp: 'cs', 'c#': 'cs',
+      yml: 'yaml', md: 'markdown', gql: 'graphql',
+      rs: 'rust', kt: 'kotlin', golang: 'go'
+    };
+    const key = aliases[rawKey] || rawKey;
+    const known = {
+      py: ['main.py', 'text/x-python;charset=utf-8'],
+      js: ['script.js', 'text/javascript;charset=utf-8'],
+      ts: ['index.ts', 'text/plain;charset=utf-8'],
+      jsx: ['App.jsx', 'text/plain;charset=utf-8'],
+      tsx: ['App.tsx', 'text/plain;charset=utf-8'],
+      html: ['index.html', 'text/html;charset=utf-8'],
+      css: ['styles.css', 'text/css;charset=utf-8'],
+      scss: ['styles.scss', 'text/plain;charset=utf-8'],
+      json: ['data.json', 'application/json;charset=utf-8'],
+      jsonc: ['data.jsonc', 'text/plain;charset=utf-8'],
+      json5: ['data.json5', 'text/plain;charset=utf-8'],
+      yaml: ['config.yaml', 'text/yaml;charset=utf-8'],
+      markdown: ['README.md', 'text/markdown;charset=utf-8'],
+      sql: ['query.sql', 'text/plain;charset=utf-8'],
+      sh: ['script.sh', 'text/plain;charset=utf-8'],
+      ps1: ['script.ps1', 'text/plain;charset=utf-8'],
+      powershell: ['script.ps1', 'text/plain;charset=utf-8'],
+      java: ['Main.java', 'text/x-java-source;charset=utf-8'],
+      c: ['main.c', 'text/plain;charset=utf-8'],
+      cpp: ['main.cpp', 'text/plain;charset=utf-8'],
+      cs: ['Program.cs', 'text/plain;charset=utf-8'],
+      go: ['main.go', 'text/plain;charset=utf-8'],
+      rust: ['main.rs', 'text/plain;charset=utf-8'],
+      php: ['index.php', 'text/plain;charset=utf-8'],
+      ruby: ['main.rb', 'text/plain;charset=utf-8'],
+      kotlin: ['Main.kt', 'text/plain;charset=utf-8'],
+      swift: ['main.swift', 'text/plain;charset=utf-8'],
+      dart: ['main.dart', 'text/plain;charset=utf-8'],
+      lua: ['main.lua', 'text/plain;charset=utf-8'],
+      r: ['script.R', 'text/plain;charset=utf-8'],
+      perl: ['script.pl', 'text/plain;charset=utf-8'],
+      scala: ['Main.scala', 'text/plain;charset=utf-8'],
+      groovy: ['script.groovy', 'text/plain;charset=utf-8'],
+      bat: ['script.bat', 'text/plain;charset=utf-8'],
+      cmd: ['script.cmd', 'text/plain;charset=utf-8'],
+      ini: ['config.ini', 'text/plain;charset=utf-8'],
+      conf: ['config.conf', 'text/plain;charset=utf-8'],
+      toml: ['config.toml', 'text/plain;charset=utf-8'],
+      env: ['.env.example', 'text/plain;charset=utf-8'],
+      xml: ['document.xml', 'application/xml;charset=utf-8'],
+      svg: ['image.svg', 'image/svg+xml;charset=utf-8'],
+      diff: ['changes.diff', 'text/plain;charset=utf-8'],
+      patch: ['changes.patch', 'text/plain;charset=utf-8'],
+      graphql: ['schema.graphql', 'text/plain;charset=utf-8'],
+      proto: ['service.proto', 'text/plain;charset=utf-8'],
+      prisma: ['schema.prisma', 'text/plain;charset=utf-8'],
+      vue: ['App.vue', 'text/plain;charset=utf-8'],
+      svelte: ['App.svelte', 'text/plain;charset=utf-8'],
+      astro: ['App.astro', 'text/plain;charset=utf-8'],
+      dockerfile: ['Dockerfile', 'text/plain;charset=utf-8'],
+      makefile: ['Makefile', 'text/plain;charset=utf-8'],
+      verilog: ['module.v', 'text/plain;charset=utf-8'],
+      vhdl: ['module.vhd', 'text/plain;charset=utf-8'],
+      asm: ['main.asm', 'text/plain;charset=utf-8'],
+      text: ['code.txt', 'text/plain;charset=utf-8'],
+      plaintext: ['code.txt', 'text/plain;charset=utf-8']
+    };
+    const info = known[key] || ['code.txt', 'text/plain;charset=utf-8'];
+    const dot = info[0].lastIndexOf('.');
+    return { filename: info[0], mime: info[1], extension: dot >= 0 ? info[0].slice(dot) : '' };
+  }
+
   function openSaveMenu(p) {
-    const base = (p.title || 'chatstudio').replace(/[^\wа-яА-ЯёЁ\- ]+/g, '').trim().slice(0, 40) || 'chatstudio';
-    const items = [
+    const hasCodeSource = Object.prototype.hasOwnProperty.call(p, 'lang');
+    const sourceInfo = hasCodeSource ? codeDownloadInfo(p.lang) : null;
+    const rawBase = sourceInfo ? sourceInfo.filename.replace(/\.[^.]+$/, '') : (p.title || 'chatstudio');
+    const base = rawBase.replace(/[^\wа-яА-ЯёЁ\- ]+/g, '').trim().slice(0, 40) || 'chatstudio';
+    const items = sourceInfo ? [{
+      id: 'source',
+      label: 'Скачать ' + sourceInfo.filename,
+      hint: sourceInfo.extension ? 'Исходный код · ' + sourceInfo.extension : 'Исходный файл',
+      primary: true
+    }] : [];
+    items.push(
       { id: 'txt', label: 'TXT', hint: 'обычный текст' },
       { id: 'md', label: 'Markdown', hint: '.md' },
       { id: 'docx', label: 'DOCX', hint: 'Word' },
-      { id: 'pdf', label: 'PDF', hint: 'через печать' },
-    ];
+      { id: 'pdf', label: 'PDF', hint: 'через печать' }
+    );
     if (p.svg) items.push({ id: 'svg', label: 'SVG', hint: 'вектор' });
     openModal({
       title: 'Сохранить как',
       okText: 'Закрыть',
       body: '<div class="fmt-grid">' + items.map((it) =>
-        '<button class="fmt-btn" data-fmt="' + it.id + '"><b>' + it.label + '</b><span>' +
+        '<button class="fmt-btn' + (it.primary ? ' fmt-btn-primary' : '') + '" data-fmt="' + it.id + '"><b>' + it.label + '</b><span>' +
         it.hint + '</span></button>').join('') + '</div>',
       onOk: () => true,
     });
-    $$('[data-fmt]').forEach(b => b.addEventListener('click', () => {
+    $('[data-fmt]').forEach(b => b.addEventListener('click', () => {
       const f = b.dataset.fmt;
       const text = p.text || '';
       try {
-        if (f === 'txt') downloadBlob(base + '.txt', new Blob([text], { type: 'text/plain;charset=utf-8' }));
+        if (f === 'source' && sourceInfo) downloadBlob(sourceInfo.filename, new Blob([text], { type: sourceInfo.mime }));
+        else if (f === 'txt') downloadBlob(base + '.txt', new Blob([text], { type: 'text/plain;charset=utf-8' }));
         else if (f === 'md') downloadBlob(base + '.md', new Blob([text], { type: 'text/markdown;charset=utf-8' }));
         else if (f === 'docx') downloadBlob(base + '.docx', textToDocx(text));
         else if (f === 'pdf') printPdf(p.title || 'AI-Ch 1.0', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
@@ -5290,7 +5396,6 @@
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     }));
   }
-
   function openTableMenu(rows) {
     openModal({
       title: 'Скачать таблицу',
@@ -5981,7 +6086,7 @@
     subscriptionModalOpening = true;
     try {
       // Reuse already loaded account limits instead of waiting on every click.
-      if (!state.limits) await loadLimits();
+      if ((options && options.refresh) || !state.limits) await loadLimits();
       if ($('.modal.subscription-usage-modal', $('#modal-root'))) return;
     const data = state.limits || {};
     const lim = data.limits || {};

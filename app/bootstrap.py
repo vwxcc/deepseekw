@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from .database import SessionLocal
-from .models import ModelSet, ModelSetEntry, RouteType, Session, User, utcnow
+from .models import ModelSet, ModelSetEntry, PlanLimit, RouteType, Session, User, utcnow
 from .security import hash_password
 from .services.memory_cleanup import clean_noisy_memories
 
@@ -16,6 +16,7 @@ async def bootstrap() -> None:
         await _seed_admin(db)
         await _seed_model_sets(db)
         await _ensure_primary_main_prices(db)
+        await _ensure_pro_budget(db)
         await _purge_expired_sessions(db)
         await clean_noisy_memories(db)
         await db.commit()
@@ -58,6 +59,28 @@ async def _ensure_primary_main_prices(db: AsyncSession) -> None:
         break
     await db.execute(text(
         "INSERT INTO app_metadata (key, value) VALUES ('main-price-defaults-v3', '1')"
+    ))
+
+
+async def _ensure_pro_budget(db: AsyncSession) -> None:
+    """Migrate the previous built-in Pro budget of $10 to the requested $15 once."""
+    await db.execute(text(
+        "CREATE TABLE IF NOT EXISTS app_metadata "
+        "(key VARCHAR(100) PRIMARY KEY, value VARCHAR(255) NOT NULL)"
+    ))
+    marker = await db.scalar(text(
+        "SELECT value FROM app_metadata WHERE key = 'pro-budget-default-v2'"
+    ))
+    if marker:
+        return
+    row = (await db.execute(
+        select(PlanLimit).where(PlanLimit.plan == "pro", PlanLimit.key == "budget_usd")
+    )).scalars().first()
+    # Only upgrade the old default; preserve a deliberately customized budget.
+    if row is not None and row.value is not None and float(row.value) == 10.0:
+        row.value = 15.0
+    await db.execute(text(
+        "INSERT INTO app_metadata (key, value) VALUES ('pro-budget-default-v2', '1')"
     ))
 
 

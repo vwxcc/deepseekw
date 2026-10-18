@@ -5381,7 +5381,7 @@
         it.hint + '</span></button>').join('') + '</div>',
       onOk: () => true,
     });
-    $('[data-fmt]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-fmt]').forEach(b => b.addEventListener('click', () => {
       const f = b.dataset.fmt;
       const text = p.text || '';
       try {
@@ -6053,7 +6053,8 @@
       sandbox_seconds: 'Секунд на код',
     };
 
-    const rows = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
+    // Keep the rows as an array until after splitting it into two columns.
+    const rowList = order.filter(k => lim[k] !== undefined || pro[k] !== undefined).map(k => {
       const mine = lim[k];
       const theirs = pro[k];
       let mult = '—';
@@ -6063,16 +6064,16 @@
         const m = Number(theirs) / Number(mine);
         mult = m >= 1.05 ? '×' + (Math.round(m * 10) / 10) : '=';
       }
-      return '<tr><td>' + (labels[k] || k) + '</td>' +
+      return '<tr><td>' + escapeHtml(labels[k] || k) + '</td>' +
         '<td>' + limitValueLabel(k, mine) + '</td>' +
         '<td class="pro-col">' + limitValueLabel(k, theirs) + '</td>' +
         '<td class="mult">' + mult + '</td></tr>';
-    }).join('');
-    const half = Math.ceil(rows.length / 2);
+    });
+    const half = Math.ceil(rowList.length / 2);
     const head = '<thead><tr><th>Лимит</th><th>Сейчас</th><th>С подпиской</th><th>×</th></tr></thead>';
     return '<div class="cmp-cols">' +
-      '<table class="cmp">' + head + '<tbody>' + rows.slice(0, half).join('') + '</tbody></table>' +
-      '<table class="cmp">' + head + '<tbody>' + rows.slice(half).join('') + '</tbody></table>' +
+      '<table class="cmp">' + head + '<tbody>' + rowList.slice(0, half).join('') + '</tbody></table>' +
+      '<table class="cmp">' + head + '<tbody>' + rowList.slice(half).join('') + '</tbody></table>' +
       '</div>';
   }
 
@@ -6201,6 +6202,9 @@
       const ok = await copyText('Здравствуйте! Хочу оформить подписку Pro в AI-Ch. Подскажите, пожалуйста, стоимость и порядок оформления.');
       toast(ok ? 'Запрос на оформление Pro скопирован' : 'Не удалось скопировать запрос', ok ? '' : 'error');
     });
+    } catch (e) {
+      console.error('Could not open subscription limits dialog:', e);
+      toast('Не удалось открыть лимиты подписки. Попробуйте ещё раз.', 'error');
     } finally {
       subscriptionModalOpening = false;
     }

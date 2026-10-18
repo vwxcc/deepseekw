@@ -2717,17 +2717,49 @@
     $$('[data-device-code-close]').forEach(button => button.addEventListener('click', closeDeviceCodeRunner));
     window.addEventListener('message', event => {
       const frame = $('#device-code-frame');
-      if (!frame || event.source !== frame.contentWindow || !event.data || typeof event.data !== 'object') return;
+      if (!event.data || typeof event.data !== 'object') return;
       const data = event.data;
+      let backgroundEntry = null;
+      for (const runner of backgroundDeviceRunners.values()) {
+        if (runner && runner.frame && event.source === runner.frame.contentWindow) {
+          backgroundEntry = runner;
+          break;
+        }
+      }
+      const visibleSource = !!(frame && event.source === frame.contentWindow);
+      if (!visibleSource && !backgroundEntry) return;
+      const isBackground = !!backgroundEntry || data.background === true;
+      const messageId = String(data.messageId || (backgroundEntry && backgroundEntry.messageId) || deviceCodeMessageId || '');
       const status = $('#device-code-status');
+      const messageNode = messageId ? findNode(state.tree, messageId) : null;
       if (data.type === 'device-code-status') {
-        if (status && typeof data.message === 'string') status.textContent = data.message.slice(0, 500);
+        if (isBackground) {
+          if (messageNode) messageNode.deviceRunnerStatus = String(data.message || '').slice(0, 500);
+        } else if (status && typeof data.message === 'string') status.textContent = data.message.slice(0, 500);
+        return;
+      }
+      if (data.type === 'device-code-complete') {
+        if (messageNode) {
+          messageNode.deviceRunnerFinishedAt = Date.now();
+          messageNode.deviceRunnerStatus = data.success ? 'completed' : 'failed';
+          messageNode.deviceRunnerFiles = Math.max(0, Number(data.files) || 0);
+        }
+        if (isBackground && backgroundEntry) {
+          try { backgroundEntry.frame.srcdoc = ''; backgroundEntry.frame.remove(); } catch (e) { /* frame already gone */ }
+          backgroundDeviceRunners.delete(messageId);
+        } else if (status) {
+          status.textContent = data.success ? 'Выполнение на устройстве завершено.' : 'Локальный запуск завершился без результата.';
+        }
         return;
       }
       if (data.type === 'device-code-error') {
+        const message = String(data.message || 'Неизвестная ошибка выполнения').slice(0, 50000);
+        if (isBackground) {
+          if (messageNode) messageNode.deviceRunnerError = message;
+          return;
+        }
         const errorBox = $('#device-code-errors');
         if (!errorBox) return;
-        const message = String(data.message || 'Неизвестная ошибка выполнения').slice(0, 50000);
         deviceCodeLastError = [deviceCodeLastError, message].filter(Boolean).join('\n\n---\n\n').slice(-100000);
         errorBox.hidden = false;
         let log = $('.device-code-error-log', errorBox);
@@ -2752,7 +2784,6 @@
       }
       if (data.type !== 'device-code-file' || typeof data.name !== 'string' || !data.bytes) return;
       const fileBox = $('#device-code-files');
-      if (!fileBox) return;
       try {
         const bytes = new Uint8Array(data.bytes);
         if (!bytes.length || bytes.length > 8 * 1024 * 1024) return;
@@ -2764,6 +2795,15 @@
           '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         }[normalizedExt];
         const blob = new Blob([bytes], { type: officeMime || String(data.mime || 'application/octet-stream') });
+        if (isBackground) {
+          if (messageId) rememberDeviceFileForMessage(messageId, normalizedName, blob);
+          if (messageNode) {
+            messageNode.deviceRunnerFiles = (Number(messageNode.deviceRunnerFiles) || 0) + 1;
+            messageNode.deviceRunnerStatus = 'file-created';
+          }
+          return;
+        }
+        if (!fileBox) return;
         const url = URL.createObjectURL(blob);
         deviceCodeFileUrls.push(url);
         fileBox.hidden = false;
@@ -2786,7 +2826,7 @@
           card.appendChild(preview);
         }
         fileBox.appendChild(card);
-        if (deviceCodeMessageId) rememberDeviceFileForMessage(deviceCodeMessageId, link.download, blob);
+        if (messageId) rememberDeviceFileForMessage(messageId, link.download, blob);
         if (status) status.textContent = 'Файл готов: ' + link.download + '. Нажмите ссылку для скачивания.';
       } catch (e) {
         if (status) status.textContent = 'Не удалось подготовить файл для скачивания: ' + String(e && e.message || e);

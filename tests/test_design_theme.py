@@ -76,6 +76,22 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Создание файлов AI-Ch", task_rules)
         self.assertIn("Исполнение", task_rules)
 
+    def test_assistant_emojis_use_monochrome_chatstudio_line_icons(self):
+        root = Path(__file__).resolve().parents[1]
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+
+        # The themed renderer must handle both the curated map and future Unicode emoji,
+        # including emoji in the assistant's interactive action buttons.
+        self.assertIn("const THEMED_EMOJI_EXTRA_ITEMS", app_js)
+        self.assertIn("const EMOJI_SEQUENCE_SOURCE", app_js)
+        self.assertIn("function themedEmojiItem(glyph)", app_js)
+        self.assertIn("function themedEmojiSvg(glyph, item)", app_js)
+        self.assertIn("span.className = 'aich-themed-emoji'", app_js)
+        self.assertNotIn("textarea,button,svg,.katex", app_js)
+        self.assertIn('id="i-mountain"', index_html)
+        self.assertIn("app.js?v=62&rev=65", index_html)
+
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
         self.assertIn("ровно одна генерация модели", prompts.CODE_SYSTEM)

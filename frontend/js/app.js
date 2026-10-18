@@ -1232,6 +1232,17 @@
     return Number.isFinite(ended) && ended > 0 ? Math.max(0, ended - started) : 0;
   }
 
+  function activityStatusEmoji(text) {
+    const value = String(text || '').toLowerCase();
+    if (/(ошиб|не удалось|недоступ|сбой|failed|error)/u.test(value)) return '⚠️';
+    if (/(создан|создаю|файл|документ|презентац|таблиц|изображ|экспорт|сохран)/u.test(value)) return '📄';
+    if (/(код|песочниц|запуск|выполн|исполн|команд)/u.test(value)) return '⚙️';
+    if (/(интернет|поиск|источник|веб)/u.test(value)) return '🔎';
+    if (/(готов|заверш|успеш|результат|провер)/u.test(value)) return '✅';
+    if (/(подбира|маршрут|план|подготавли|анализ)/u.test(value)) return '🧭';
+    return '🔄';
+  }
+
   function activityHtml(n, generating) {
     const items = activityItems(n);
     const runs = Array.isArray(n && n.tool_runs) ? n.tool_runs : [];
@@ -1242,18 +1253,21 @@
     if (!generating && !items.length && !hasTiming && !runs.length) return '';
 
     const duration = formatActivityDuration(activityElapsed(n, generating));
-    const rows = items.map((item, index) => {
-      const last = generating && index === items.length - 1;
+    // Keep the live panel quiet: during generation only its current activity is shown.
+    // The complete saved history remains available through the separate full-stream view.
+    const visibleItems = generating && items.length ? [items[items.length - 1]] : items;
+    const rows = visibleItems.map((item, index) => {
+      const last = generating && index === visibleItems.length - 1;
       const symbol = item.kind === 'action'
         ? icon(ACTIVITY_ICON_NAMES.has(item.icon) ? item.icon : 'sparkle', 'activity-icon')
-        : '<span class="activity-bullet" aria-hidden="true">·</span>';
+        : '<span class="activity-bullet" aria-hidden="true">' + activityStatusEmoji(item.text) + '</span>';
       return '<div class="activity-row' + (last ? ' active' : '') + '">' + symbol +
         '<span class="activity-text">' + escapeHtml(item.text) + '</span>' +
         (last ? thinkAnim() : '') + '</div>';
     }).join('');
     const placeholder = generating && !items.length
-      ? '<div class="activity-row active"><span class="activity-bullet" aria-hidden="true">·</span>' +
-        '<span class="activity-text">Получаю ответ модели…</span>' + thinkAnim() + '</div>' : '';
+      ? '<div class="activity-row active"><span class="activity-bullet" aria-hidden="true">🔄</span>' +
+        '<span class="activity-text">Обрабатываю запрос…</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
     const execution = expanded && runs.length
       ? '<div class="activity-execution">' + toolRunsHtml(runs) + '</div>' : '';
@@ -1264,10 +1278,9 @@
       '<div class="activity-head"><button type="button" class="activity-summary-button" data-activity-toggle="' +
       escapeHtml(n.id) + '" aria-expanded="' + String(expanded) + '">' +
       '<span data-activity-elapsed="' + escapeHtml(n.id) + '">' +
-      (generating ? 'Выполняю запрос · ' + duration : 'Думал ' + duration) + '</span>' +
+      (generating ? 'Думаю · ' + duration : 'Думал ' + duration) + '</span>' +
       icon(expanded ? 'chevron-up' : 'chevron-down') + '</button></div>' +
       '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + fullStream + (rows || placeholder) + execution + '</div>' +
-      (generating ? '<div class="think-tail answer activity-draft">' + escapeHtml(tailText(n.draft || '', 260)) + '</div>' : '') +
       '</section>';
   }
 
@@ -1286,7 +1299,7 @@
       if (!log || !answer) return;
       const wasNearBottom = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90;
       log.textContent = activityItems(n).map((item, index) =>
-        (index + 1) + '. ' + (item.kind === 'action' ? '[' + (item.icon || 'sparkle') + '] ' : '') + item.text
+        (index + 1) + '. ' + (item.kind === 'action' ? '[' + (item.icon || 'sparkle') + '] ' : activityStatusEmoji(item.text) + ' ') + item.text
       ).join('\n') || 'Ожидаю первые статусы…';
       answer.textContent = String(n.publicStream || n.content || n.draft || '');
       if (stateLabel) stateLabel.textContent = n.status === 'completed'
@@ -3210,7 +3223,7 @@
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.stage = data.stage || '';
-            if (data.stage === 'search') appendActivity(n, { kind: 'status', text: 'Ищу в интернете' });
+            if (data.stage === 'search') appendActivity(n, { kind: 'status', text: 'Обрабатываю запрос' });
             else if (data.stage === 'routing') appendActivity(n, { kind: 'status', text: 'Подбираю способ решения' });
             else if (data.stage) appendActivity(n, { kind: 'status', text: 'Подготавливаю ответ' });
             renderActivityPopup(n);

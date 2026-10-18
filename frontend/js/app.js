@@ -1378,9 +1378,11 @@
             '" title="Копировать ответ" aria-label="Копировать ответ">' + icon('copy') + '<span>Копировать</span></button>');
           parts.push('<button class="message-action-labeled" data-mact="save" data-id="' + escapeHtml(n.id) +
             '" title="Сохранить ответ" aria-label="Сохранить ответ">' + icon('download') + '<span>Сохранить</span></button>');
-          parts.push('<button class="message-action-labeled listen-answer-action" data-mact="listen-answer" data-id="' +
-            escapeHtml(n.id) + '" title="Слушать ответ" aria-label="Слушать ответ">' + icon('audio') +
-            '<span>Слушать ответ</span></button>');
+          if (n.status === 'completed') {
+            parts.push('<button class="message-action-labeled listen-answer-action" data-mact="listen-answer" data-id="' +
+              escapeHtml(n.id) + '" title="Слушать ответ" aria-label="Слушать ответ">' + icon('audio') +
+              '<span>Слушать ответ</span></button>');
+          }
           if (n.memories && n.memories.length) {
             parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="memory" data-id="' + escapeHtml(n.id) +
               '" title="Что записано в память" aria-label="Память">' + icon('sparkle') + '</button>');
@@ -1460,7 +1462,7 @@
     const record = state.readableText[messageId];
     if (!record) return 'Проверяю читабельный текст…';
     if (record.status === 'ready') return 'Текст готов';
-    if (record.status === 'missing') return 'Читабельный текст ещё не создан. Нажмите прослушивание для подготовки.';
+    if (record.status === 'missing') return 'Текст ещё не подготовлен.';
     if (record.status === 'failed') {
       const detail = String(record.error || 'ошибка сервиса').trim();
       return 'Не удалось создать читабельный текст: ' + detail.slice(0, 260);
@@ -1490,6 +1492,55 @@
     }
     updateAudioControl(messageId);
     updateDeviceAudioControl(messageId);
+    updateSpeechPlayerUi(messageId);
+  }
+
+  function updateSpeechPlayerUi(messageId) {
+    const id = String(messageId || state.audioMessageId || pendingDeviceSpeechMessageId || '');
+    if (!id) return;
+    const record = state.readableText[id];
+    const textStatus = readableTextStatusLabel(id);
+    const aiStatus = $('#audio-player-status-text');
+    const deviceStatus = $('#device-audio-ready-text');
+    if (aiStatus && String(state.audioMessageId || '') === id) {
+      aiStatus.textContent = state.audioErrors[id] && record && record.status === 'ready'
+        ? 'Текст готов. Ошибка ИИ-аудио: ' + state.audioErrors[id]
+        : textStatus;
+    }
+    if (deviceStatus && (
+      String(deviceSpeechState.messageId || '') === id ||
+      String(pendingDeviceSpeechMessageId || '') === id ||
+      String(state.audioMessageId || '') === id
+    )) deviceStatus.textContent = textStatus;
+
+    const ready = !!state.audioReady[id];
+    const pending = !!state.audioPending[id] || !!state.audioRequestInFlight[id] ||
+      String(state.audioBusyMessageId || '') === id;
+    const otherBusy = !!state.audioBusyMessageId && String(state.audioBusyMessageId) !== id;
+    const quota = audioQuotaSnapshot();
+    const generate = $('#audio-player-generate-btn');
+    const playback = $('#audio-player-playback');
+    if (generate && String(state.audioMessageId || '') === id) {
+      generate.hidden = ready;
+      generate.disabled = pending || otherBusy || quota.remaining === 0;
+      generate.textContent = pending
+        ? (record && record.status === 'ready' ? 'Создаю ИИ-аудио…' : 'Ожидаю готовность текста…')
+        : (quota.remaining === 0 ? 'Лимит озвучки исчерпан' : 'Озвучить ИИ');
+    }
+    if (playback && String(state.audioMessageId || '') === id) playback.hidden = !ready;
+
+    const audio = $('#audio-player-source');
+    if (audio && String(state.audioMessageId || '') === id) {
+      const wantedSrc = '/api/messages/' + encodeURIComponent(id) + '/audio/file';
+      if (ready && audio.getAttribute('src') !== wantedSrc) {
+        audio.src = wantedSrc;
+        audio.load();
+      } else if (!ready && audio.getAttribute('src')) {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      }
+    }
   }
 
   function deviceAudioControlHtml(n) {
@@ -1556,6 +1607,8 @@
 
   function applyAudioStatus(messageId, result) {
     if (!result) return;
+    if (result.error) state.audioErrors[messageId] = String(result.error).slice(0, 500);
+    else if (result.ready || result.generating || result.busy) delete state.audioErrors[messageId];
     const previousBusyId = state.audioBusyMessageId;
     if (result.busy && result.generating_message_id) {
       state.audioBusyMessageId = String(result.generating_message_id);
@@ -1579,6 +1632,7 @@
 
     if (previousBusyId !== state.audioBusyMessageId) updateAllAudioControls();
     updateAudioControl(messageId);
+    updateSpeechPlayerUi(messageId);
   }
 
   async function refreshAudioStatus(messageId) {

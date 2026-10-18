@@ -27,6 +27,30 @@ class BundledSkillTests(unittest.TestCase):
     def test_irrelevant_request_does_not_load_skills(self) -> None:
         self.assertEqual(skills_for("Объясни, что такое интеграл"), "")
 
+    def test_loads_file_generation_skill_for_office_request(self) -> None:
+        prompt = skills_for("Создай красивую презентацию PPTX о космосе")
+        self.assertIn("Специализированный навык: file-generation", prompt)
+        self.assertIn("presentation.education", prompt)
+        self.assertIn("```fileplan", prompt)
+
+    def test_agent_blocks_preserve_order_and_strip_from_visible_answer(self) -> None:
+        from app.ai.prompts import extract_agent_blocks, strip_agent_blocks
+
+        answer = (
+            "Результат ниже.\n"
+            "```run\nprint(2 + 2)\n```\n"
+            "```fileplan\n{\"format\":\"pptx\"}\n```\n"
+            "Файл подготовлен."
+        )
+        self.assertEqual(
+            extract_agent_blocks(answer),
+            [("run", "print(2 + 2)"), ("fileplan", '{"format":"pptx"}')],
+        )
+        cleaned = strip_agent_blocks(answer)
+        self.assertNotIn("```run", cleaned)
+        self.assertNotIn("```fileplan", cleaned)
+        self.assertIn("Файл подготовлен.", cleaned)
+
 
 if __name__ == "__main__":
     unittest.main()

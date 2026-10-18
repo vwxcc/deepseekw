@@ -59,9 +59,9 @@ jobs:
           const runner = (new Function('return (' + source.slice(equals + 1, end).trim() + ')'))();
           new Function('loadPyodide', runner);
           const helperStart = source.indexOf('function deviceCodeForFilePlan(planSource) {');
-          const helperEnd = source.indexOf('\\n  function activityHtml(n, generating)', helperStart);
+          const helperEnd = source.indexOf('\n  function activityHtml(n, generating)', helperStart);
           if (helperStart < 0 || helperEnd < 0) throw new Error('Local file-plan fallback helper was not found.');
-          const makeFallback = new Function(source.slice(helperStart, helperEnd) + '\\nreturn deviceCodeForFilePlan;')();
+          const makeFallback = new Function(source.slice(helperStart, helperEnd) + '\nreturn deviceCodeForFilePlan;')();
           const samplePlan = JSON.stringify({format:'pptx',template_id:'presentation.education',title:'Syntax check',blocks:[{kind:'bullets',items:['First','Second']}]});
           const fallbackCode = makeFallback(samplePlan);
           const { spawnSync } = require('child_process');

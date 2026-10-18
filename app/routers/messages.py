@@ -58,7 +58,7 @@ from ..services.chats import (
 import logging
 
 from ..services.usage import account, est, window_spend as usage_window_spend
-from ..services.limits import get_limits
+from ..services.limits import get_limits, normalize_plan
 from ..services.audio_quota import (
     AudioQuotaExceeded,
     release_audio_generation,
@@ -402,7 +402,7 @@ async def _request_context_block(
     payload = {
         "account": {
             "display_name": (user.name or "")[:120],
-            "subscription_plan": user.plan or "free",
+            "subscription_plan": normalize_plan(user.plan),
             "is_admin": bool(user.is_admin),
             "created_at": user.created_at.isoformat() if user.created_at else None,
         },

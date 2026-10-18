@@ -14,6 +14,7 @@ from ..services.limits import (
     PLANS,
     all_limits,
     get_limits,
+    normalize_plan,
     get_models_for_plan,
     set_limits,
     set_models_for_plan,
@@ -39,7 +40,8 @@ async def my_limits(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Current plan + limits + live usage counters."""
-    limits = await get_limits(db, user.plan or "free")
+    effective_plan = normalize_plan(user.plan)
+    limits = await get_limits(db, effective_plan)
     files = await db.scalar(
         select(func.count()).select_from(File).where(File.user_id == user.id)
     )
@@ -67,7 +69,7 @@ async def my_limits(
     budget_raw = limits.get("budget_usd")
     budget = float(budget_raw) if budget_raw is not None else None
     window_spend, window_reqs = await _window_spend(
-        db, user.id, window_hours, user.plan or "free"
+        db, user.id, window_hours, effective_plan
     )
     audio_cutoff = utcnow() - timedelta(hours=window_hours)
     audio_generations = await db.scalar(
@@ -82,7 +84,7 @@ async def my_limits(
     )
     return {
         "compare": await all_limits(db),
-        "plan": user.plan or "free",
+        "plan": effective_plan,
         "labels": LABELS,
         "limits": limits,
         "window": {
@@ -167,7 +169,8 @@ async def users_overview(
 
     out: list[dict] = []
     for user, requests, tin, tout in rows:
-        limits = await get_limits(db, user.plan or "free")
+        effective_plan = normalize_plan(user.plan)
+        limits = await get_limits(db, effective_plan)
         window_hours = max(1, int(limits.get("window_hours") or 5))
         budget_raw = limits.get("budget_usd")
         budget = float(budget_raw) if budget_raw is not None else None
@@ -185,7 +188,7 @@ async def users_overview(
                 "id": user.id,
                 "email": user.email,
                 "name": user.name or "",
-                "plan": user.plan or "free",
+                "plan": effective_plan,
                 "is_admin": bool(user.is_admin),
                 "avatar": user.avatar or 0,
                 "requests": int(requests or 0),

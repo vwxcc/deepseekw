@@ -75,12 +75,14 @@ TEXT_KEYS = {"models"}
 PLANS = ("free", "pro")
 
 
-def _limits_plan(plan: str) -> str:
-    """Map special account labels to the two plans supported by the limits editor."""
+def normalize_plan(plan: str | None) -> str:
+    """Only an explicitly granted Pro plan receives paid-tier limits."""
     value = str(plan or "free").strip().lower()
-    if value == "max":
-        return "pro"
-    return value if value in PLANS else "free"
+    return "pro" if value == "pro" else "free"
+
+
+def _limits_plan(plan: str | None) -> str:
+    return normalize_plan(plan)
 
 
 def default_limits(plan: str) -> dict[str, int | float | None]:
@@ -102,6 +104,7 @@ async def get_limits(db: AsyncSession, plan: str) -> dict[str, int | float | Non
 
 async def get_models_for_plan(db: AsyncSession, plan: str) -> list[str]:
     """Allowed model-set ids (empty list = все разрешены)."""
+    plan = _limits_plan(plan)
     row = (
         await db.execute(
             select(PlanLimit).where(
@@ -115,6 +118,7 @@ async def get_models_for_plan(db: AsyncSession, plan: str) -> list[str]:
 
 
 async def set_models_for_plan(db: AsyncSession, plan: str, ids: list[str]) -> list[str]:
+    plan = _limits_plan(plan)
     row = (
         await db.execute(
             select(PlanLimit).where(

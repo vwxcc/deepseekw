@@ -93,16 +93,21 @@ async def _seed_admin(db: AsyncSession) -> None:
         return
     email = settings.admin_email.strip().lower()
     result = await db.execute(select(User).where(User.email == email))
-    if result.scalar_one_or_none() is None:
+    user = result.scalar_one_or_none()
+    if user is None:
         db.add(
             User(
                 email=email,
                 password_hash=hash_password(settings.admin_password),
                 name="Admin",
-                plan="max",
+                plan="free",
                 is_admin=True,
             )
         )
+    elif user.is_admin and str(user.plan or "").strip().lower() == "max":
+        # Older startup code implicitly gave the admin Pro limits. Admin rights
+        # are independent from a paid subscription; migrate that implicit grant.
+        user.plan = "free"
 
 
 async def _seed_model_sets(db: AsyncSession) -> None:

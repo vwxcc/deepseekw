@@ -3623,8 +3623,16 @@
   // ---------- composer ----------
   function autoGrow() {
     const t = $('#input');
+    if (!t) return;
     t.style.height = 'auto';
-    t.style.height = Math.min(t.scrollHeight, 200) + 'px';
+    const style = window.getComputedStyle(t);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 25;
+    const padding = (Number.parseFloat(style.paddingTop) || 0) +
+      (Number.parseFloat(style.paddingBottom) || 0);
+    const maxHeight = Math.min(200, lineHeight * 4 + padding + 1);
+    const contentHeight = t.scrollHeight;
+    t.style.height = Math.min(contentHeight, maxHeight) + 'px';
+    t.style.overflowY = contentHeight > maxHeight + 1 ? 'auto' : 'hidden';
   }
 
   function renderAttachments() {

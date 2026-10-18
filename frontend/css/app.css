@@ -2779,3 +2779,12 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 /* Four-line composer scrolling uses a quiet gray thumb only when the text overflows. */
 #composer #input::-webkit-scrollbar-track { background: transparent; }
 #composer #input::-webkit-scrollbar-thumb { background: #aaa89f; border-radius: 8px; }
+
+
+/* Align composer controls in the middle of the input and lift the complete row slightly. */
+#composer .composer-row { transform: translateY(-2px); }
+#composer .composer-row #attach-btn,
+#composer .composer-row #send-btn,
+#composer .composer-row #stop-btn { align-self: center; }
+#composer .composer-row #send-btn,
+#composer .composer-row #stop-btn { top: -1px; }

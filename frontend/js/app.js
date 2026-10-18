@@ -2405,7 +2405,7 @@
         openAudioPlayer(id, !!state.audioReady[id]);
       }
     }));
-    $('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
+    $$('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
     $('#audio-play-toggle')?.addEventListener('click', () => {
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();

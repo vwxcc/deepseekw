@@ -2805,3 +2805,48 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   border-radius: 999px; color: var(--fg-soft); background: var(--bg);
   font-size: 10px; font-style: normal; font-weight: 600; line-height: 1.5;
 }
+
+
+/* Theme-matched line icons replace common emojis in assistant prose. */
+.aich-themed-emoji { display:inline-grid; place-items:center; width:1.08em; height:1.08em; vertical-align:-.16em; color:var(--fg-muted); opacity:.96; margin-inline:.025em; }
+.aich-themed-emoji-icon { width:1em !important; height:1em !important; stroke:currentColor; fill:none; }
+.aich-themed-emoji use { stroke:currentColor; }
+.chat-origin-banner { display:flex; align-items:center; gap:10px; flex-wrap:wrap; width:min(var(--col),calc(100% - 32px)); margin:12px auto 6px; padding:11px 13px; border:1px solid var(--border-soft); border-radius:14px; background:var(--bg-panel); color:var(--fg-muted); box-sizing:border-box; }
+.chat-origin-icon { width:34px; height:34px; flex:0 0 34px; display:grid; place-items:center; border:1px solid var(--border-soft); border-radius:10px; color:var(--fg-muted); }
+.chat-origin-copy { display:grid; gap:3px; min-width:0; flex:1 1 145px; }
+.chat-origin-copy small { font-size:11px; color:var(--fg-soft); }
+.chat-origin-copy strong { color:var(--fg); font-size:13px; font-weight:600; overflow-wrap:anywhere; }
+.chat-origin-link { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:7px 10px; border:1px solid var(--border-soft); border-radius:999px; background:transparent; color:var(--fg); font:inherit; font-size:12px; cursor:pointer; }
+.chat-origin-link:hover { background:var(--bg-hover); }
+.chat-origin-link .ic { width:14px; height:14px; }
+.share-answer-actions { margin-top:16px; display:grid; gap:8px; }
+.share-answer-actions > strong { font-size:13px; color:var(--fg-muted); font-weight:600; }
+.share-answer-row { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:9px 0; border-top:1px solid var(--border-soft); }
+.share-answer-row > span { flex:0 0 70px; color:var(--fg); font-size:13px; font-weight:600; }
+.share-answer-action { border-radius:999px !important; text-decoration:none; }
+.sub-hero { padding:17px; border:1px solid var(--border-soft); border-radius:18px; background:linear-gradient(145deg,var(--bg-panel),var(--bg)); margin:0 0 18px; }
+.sub-hero-top { display:flex; align-items:center; gap:11px; }
+.sub-plan-mark { display:grid; place-items:center; width:43px; height:43px; flex:0 0 43px; border:1px solid var(--border); border-radius:13px; color:var(--fg-muted); background:var(--bg-panel); }
+.sub-plan-mark .ic { width:21px; height:21px; }
+.sub-eyebrow { font-size:10px; letter-spacing:.1em; color:var(--fg-soft); font-weight:700; }
+.sub-plan { font-size:19px; font-weight:650; letter-spacing:-.02em; margin-top:2px; }
+.sub-current-pill { margin-left:auto; border:1px solid var(--border-soft); border-radius:999px; padding:5px 9px; color:var(--fg-muted); font-size:11px; white-space:nowrap; }
+.sub-hero > p { color:var(--fg-muted); line-height:1.5; font-size:13px; margin:14px 0; }
+.sub-plan-summary { display:flex; align-items:center; gap:16px; padding:12px 0 14px; }
+.sub-plan-summary span:not(.sub-plan-summary-divider) { display:grid; gap:3px; }
+.sub-plan-summary b { font-size:13px; color:var(--fg); }
+.sub-plan-summary small { font-size:11px; color:var(--fg-soft); }
+.sub-plan-summary-divider { width:1px; height:27px; background:var(--border); }
+.sub-upgrade-button { width:100%; min-width:0; display:flex; align-items:center; gap:10px; text-align:left; padding:12px 13px; border:1px solid var(--border); border-radius:14px; background:var(--bg-panel); color:var(--fg); font:inherit; cursor:pointer; }
+.sub-upgrade-button > .ic:first-child { width:20px; height:20px; color:var(--fg-muted); flex:0 0 auto; }
+.sub-upgrade-button > .ic:last-child { margin-left:auto; width:16px; height:16px; color:var(--fg-soft); }
+.sub-upgrade-button span { min-width:0; display:grid; gap:3px; }
+.sub-upgrade-button b { font-size:13px; font-weight:650; }
+.sub-upgrade-button small { font-size:11px; color:var(--fg-soft); font-weight:400; }
+.sub-upgrade-button:hover { border-color:var(--fg-soft); background:var(--bg-hover); }
+.sub-usage-section, .sub-comparison-section { margin:15px 0 19px; }
+.sub-admin-note { border-top:1px solid var(--border-soft); padding-top:12px; line-height:1.5; }
+/* Slightly lifted, rounded local execution button with breathing room from thinking text. */
+.device-fallback-row { margin-top:15px !important; padding-top:1px; }
+.device-fallback-button { border-radius:999px !important; min-height:36px; padding:8px 15px !important; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+.device-fallback-button .ic { width:15px; height:15px; }

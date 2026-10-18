@@ -19,6 +19,64 @@
   function icon(id, cls) {
     return '<svg class="ic' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + id + '"/></svg>';
   }
+
+  // Map common text emojis to minimalist neutral SVG line art.
+  const THEMED_EMOJI_ITEMS = [["✅","check-circle","Готово"],["✔️","check-circle","Готово"],["☑️","check-circle","Отмечено"],["❌","x","Ошибка"],["✖️","x","Закрыть"],["⚠️","alert","Внимание"],["⚠","alert","Внимание"],["❗","alert","Важно"],["❓","question","Вопрос"],["ℹ️","info","Информация"],["💡","lightbulb","Идея"],["🧠","brain","Мышление"],["🎯","target","Цель"],["📌","bookmark","Закрепить"],["📍","map-pin","Метка"],["📎","paperclip","Вложение"],["📝","pencil","Заметка"],["✏️","pencil","Редактировать"],["📄","file-text","Документ"],["📃","file-text","Документ"],["📑","book","Закладки"],["📚","book-open","Книги"],["📖","book-open","Читать"],["🔖","bookmark","Закладка"],["📁","folder","Папка"],["📂","folder-open","Открытая папка"],["💾","save","Сохранить"],["📦","package","Пакет"],["📤","upload","Загрузить"],["📥","download","Скачать"],["🖼️","image","Изображение"],["🎨","palette","Палитра"],["🖌️","brush","Кисть"],["📊","chart","Диаграмма"],["📈","chart-line","Рост"],["📉","chart-line","Снижение"],["🧮","calculator","Расчёт"],["💻","terminal","Компьютер"],["🖥️","terminal","Монитор"],["⌨️","table","Клавиатура"],["🖱️","target","Мышь"],["📱","phone","Телефон"],["🔋","gauge","Батарея"],["🔌","settings","Питание"],["⚙️","settings","Настройки"],["🛠️","wrench","Инструменты"],["🔧","wrench","Инструмент"],["🧰","package","Набор инструментов"],["🧪","flask","Эксперимент"],["🔬","microscope","Исследование"],["🧬","network","ДНК"],["🧫","flask","Образец"],["🧹","x","Очистка"],["🧯","shield-check","Безопасность"],["🚀","rocket","Запуск"],["✈️","arrow-right","Самолёт"],["🚗","package","Машина"],["🚲","compass","Велосипед"],["🏠","folder","Дом"],["🏢","package","Здание"],["🌍","globe","Мир"],["🌐","globe-box","Сеть"],["🔗","link","Ссылка"],["🔒","lock","Защита"],["🔓","unlock","Открыть доступ"],["🛡️","shield-check","Защита"],["🔑","lock","Ключ"],["👤","user","Пользователь"],["👥","users","Люди"],["🧑","user","Человек"],["🧑‍💻","code","Разработка"],["🤖","robot","Робот"],["💬","chat","Сообщение"],["🗣️","chat","Обсуждение"],["✉️","mail","Письмо"],["📣","megaphone","Объявление"],["🔔","bell","Уведомление"],["🔕","bell-off","Без звука"],["⭐","star","Избранное"],["🌟","star","Звезда"],["❤️","heart","Нравится"],["💚","heart","Нравится"],["🔥","fire","Огонь"],["⚡","zap","Молния"],["💎","diamond","Ценность"],["🏆","trophy","Победа"],["🎉","party","Праздник"],["🎁","gift-open","Подарок"],["🎓","graduation-cap","Обучение"],["🏅","medal","Медаль"],["⏳","hourglass","Ожидание"],["⏰","clock","Будильник"],["🕒","clock","Время"],["⏱️","clock","Таймер"],["📅","calendar","Календарь"],["➡️","arrow-right","Далее"],["⬆️","arrow-up","Вверх"],["↗️","arrow-up-right","Переход"],["🔄","refresh","Обновить"],["🔃","refresh","Повтор"],["➕","plus","Добавить"],["➖","x","Убрать"],["🧩","puzzle","Часть"],["🪄","wand","Магия"],["👀","eye","Просмотр"],["👍","thumb-up","Нравится"],["👎","thumb-down","Не нравится"],["🙌","users","Ура"],["💪","target","Сила"],["🙏","user","Пожалуйста"],["😊","smile","Радость"],["😎","smile-cool","Круто"],["🚫","x","Запрет"],["🗺️","map","Карта"],["🧵","link","Нить"],["🔀","refresh","Перемешать"],["🔁","refresh","Повторить"],["📡","network","Сигнал"],["🕸️","network","Связи"],["🧱","package","Блоки"],["📋","copy","Буфер"],["🛒","package","Корзина"],["💰","gauge","Деньги"],["🪙","gauge","Монета"],["💵","gauge","Купюра"],["☁️","globe","Облако"],["☀️","sparkle","Солнце"],["🌙","sparkle","Луна"],["🍃","sparkle","Лист"],["🌱","sparkle","Росток"],["🎵","audio","Музыка"],["🎬","image","Видео"],["🎮","puzzle","Игра"],["☕","sparkle","Кофе"],["🍎","sparkle","Яблоко"],["🍕","package","Пицца"],["🌈","palette","Радуга"],["💧","sparkle","Вода"],["🐱","sparkle","Кот"],["🐶","sparkle","Собака"],["🐾","sparkle","Следы"],["🤝","users","Сотрудничество"],["🏁","bookmark","Финиш"],["🌻","sparkle","Цветок"],["🌳","package","Дерево"],["🍰","gift-open","Торт"],["🪫","gauge","Низкий заряд"],["🛟","shield-check","Помощь"],["⚖️","calculator","Баланс"],["♻️","refresh","Переработка"],["🫶","heart","Поддержка"]];
+  const THEMED_EMOJI_MAP = new Map();
+  THEMED_EMOJI_ITEMS.forEach(([glyph, symbol, label]) => {
+    const item = { symbol, label };
+    THEMED_EMOJI_MAP.set(glyph, item);
+    const plain = glyph.replace(/\uFE0F/g, '');
+    if (plain !== glyph) THEMED_EMOJI_MAP.set(plain, item);
+  });
+  const THEMED_EMOJI_PATTERN = new RegExp(Array.from(THEMED_EMOJI_MAP.keys()).sort((a,b)=>b.length-a.length).join('|'), 'gu');
+  function renderThemedEmojis(root) {
+    if (!root) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      const parent = node.parentElement;
+      if (!parent || parent.closest('code,pre,script,style,textarea,button,svg,.katex,.aich-themed-emoji')) continue;
+      THEMED_EMOJI_PATTERN.lastIndex = 0;
+      if (THEMED_EMOJI_PATTERN.test(node.nodeValue || '')) nodes.push(node);
+      THEMED_EMOJI_PATTERN.lastIndex = 0;
+    }
+    nodes.forEach(textNode => {
+      const value = textNode.nodeValue || '';
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      value.replace(new RegExp(THEMED_EMOJI_PATTERN.source, 'gu'), (glyph, offset) => {
+        if (offset > cursor) fragment.appendChild(document.createTextNode(value.slice(cursor, offset)));
+        const item = THEMED_EMOJI_MAP.get(glyph) || THEMED_EMOJI_MAP.get(glyph.replace(/\uFE0F/g, ''));
+        if (!item) fragment.appendChild(document.createTextNode(glyph));
+        else {
+          const span = document.createElement('span');
+          span.className = 'aich-themed-emoji';
+          span.setAttribute('role', 'img');
+          span.setAttribute('aria-label', item.label);
+          span.title = item.label;
+          span.innerHTML = '<svg class="ic aich-themed-emoji-icon" aria-hidden="true"><use href="#i-' + item.symbol + '"></use></svg>';
+          fragment.appendChild(span);
+        }
+        cursor = offset + glyph.length;
+        return glyph;
+      });
+      if (cursor < value.length) fragment.appendChild(document.createTextNode(value.slice(cursor)));
+      textNode.replaceWith(fragment);
+    });
+  }
+  function chatOriginBannerHtml() {
+    const chat = (state.chats || []).find(item => item && item.id === state.currentChatId);
+    if (!chat || !chat.source_chat_id || state.readonly) return '';
+    return '<aside class="chat-origin-banner" aria-label="Источник ветки">' +
+      '<span class="chat-origin-icon" aria-hidden="true">' + icon('git-branch') + '</span>' +
+      '<span class="chat-origin-copy"><small>Ветка создана из чата</small><strong>' +
+      escapeHtml(String(chat.source_chat_title || 'Исходный чат')) + '</strong></span>' +
+      '<button type="button" class="chat-origin-link" data-ui-action="open-origin-chat" data-ui-value="' +
+      escapeHtml(String(chat.source_chat_id)) + '">Открыть исходный чат ' + icon('arrow-right') + '</button></aside>';
+  }
+
   function formatSize(n) {
     if (!n && n !== 0) return '';
     if (n < 1024) return n + ' Б';
@@ -3052,10 +3110,11 @@
     }
     box.classList.remove('empty');
     stopRotation();
-    box.innerHTML = '<div class="msg-wrap">' +
+    box.innerHTML = chatOriginBannerHtml() + '<div class="msg-wrap">' +
       entries.map((e, i) => msgHtml(e, i === entries.length - 1)).join('') + '</div>';
     bindMessageEvents();
     renderMath(box.querySelector('.msg-wrap'));
+    renderThemedEmojis(box.querySelector('.msg-wrap'));
     hydrateAudioStatuses(entries);
     hydrateReadableTextStatuses(entries);
 
@@ -3095,6 +3154,7 @@
     oldMessage.replaceWith(nextMessage);
     bindMessageEvents(nextMessage);
     renderMath(nextMessage);
+    renderThemedEmojis(nextMessage);
     if (String(state.activeAssistantId || '') === String(messageId)) bindStreamRefs();
     if (opts.focusMessageId) {
       const content = $('.content.md', nextMessage);
@@ -3180,6 +3240,9 @@
           } else if (action === 'open') {
             const url = safeHttpUrl(value);
             if (url) window.open(url, '_blank', 'noopener,noreferrer');
+          } else if (action === 'open-origin-chat') {
+            const sourceId = String(value || '');
+            if (sourceId) await openChat(sourceId);
           }
           return;
         }
@@ -4721,6 +4784,22 @@
     catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
 
     const url = st.share_token ? (location.origin + '/?share=' + st.share_token) : '';
+    const answerNodes = allMessages(state.tree).map(entry => entry && entry.node)
+      .filter(node => node && node.role === 'assistant' && node.status === 'completed' && String(node.content || '').trim());
+    await Promise.all(answerNodes.map(async node => {
+      await Promise.all([refreshReadableTextStatus(node.id), refreshAudioStatus(node.id)]);
+    }));
+    const answerActions = answerNodes.map((node, index) => {
+      const number = index + 1;
+      const id = escapeHtml(String(node.id));
+      const readable = state.readableText[node.id];
+      const readableButton = readable && readable.status === 'ready' && String(readable.text || '').trim()
+        ? '<button class="chip-btn share-answer-action" data-share-copy-readable="' + id + '">' + icon('copy') + 'Читабельный текст · ответ ' + number + '</button>' : '';
+      const audioButton = state.audioReady[node.id]
+        ? '<a class="chip-btn share-answer-action" href="/api/messages/' + encodeURIComponent(node.id) + '/audio/file" download="AI-Ch-ответ-' + number + '">' + icon('download') + 'Аудио · ответ ' + number + '</a>' : '';
+      return '<div class="share-answer-row"><span>Ответ ' + number + '</span><button class="chip-btn share-answer-action" data-share-copy-answer="' + id + '">' +
+        icon('copy') + 'Копировать' + '</button>' + readableButton + audioButton + '</div>';
+    }).join('');
     openModal({
       title: 'Поделиться чатом',
       okText: 'Закрыть',
@@ -4737,7 +4816,10 @@
         '<hr style="border:0;border-top:1px solid var(--border-soft);margin:16px 0" />' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="chip-btn" id="copy-all-chat">' + icon('copy') + 'Скопировать всё</button>' +
-        '<button class="chip-btn" id="download-chat">' + icon('download') + 'Скачать чат</button></div>',
+        '<button class="chip-btn" id="download-chat">' + icon('download') + 'Скачать чат</button>' +
+        '<button class="chip-btn" id="create-chat-branch">' + icon('git-branch') + 'Создать ветку в новом чате</button></div>' +
+        '<div class="share-answer-actions"><strong>Отдельные ответы</strong>' +
+        (answerActions || '<p class="usage-note">Завершённых ответов пока нет.</p>') + '</div>',
       onOk: () => true,
     });
 
@@ -4747,6 +4829,40 @@
       catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
       $('#modal-root').innerHTML = ''; openShare();
     });
+    const branch = $('#create-chat-branch');
+    if (branch) branch.addEventListener('click', async () => {
+      const sourceId = state.currentChatId;
+      if (!sourceId) return;
+      branch.disabled = true;
+      try {
+        const created = await api.post('/api/chats/' + encodeURIComponent(sourceId) + '/branch');
+        if (!created || typeof created.id !== 'string' || !created.id) throw new Error('Сервер не вернул ID новой ветки');
+        $('#modal-root').innerHTML = '';
+        upsertChat(created);
+        state.chatListVersion += 1;
+        await loadChats();
+        const opened = await openChat(created.id);
+        if (opened) toast('Ветка создана. Исходный чат сохранён.');
+      } catch (error) {
+        branch.disabled = false;
+        toast('Не удалось создать ветку: ' + (error.message || error), 'error');
+      }
+    });
+    $('[data-share-copy-answer]').forEach(button => button.addEventListener('click', async () => {
+      const node = findNode(state.tree, button.dataset.shareCopyAnswer);
+      if (!node) return;
+      const rendered = $('.msg[data-mid="' + node.id + '"] .content.md');
+      const ok = await copyText((rendered ? rendered.innerText : String(node.content || '')).trim());
+      toast(ok ? 'Ответ скопирован' : 'Не удалось скопировать ответ', ok ? '' : 'error');
+    }));
+    $('[data-share-copy-readable]').forEach(button => button.addEventListener('click', async () => {
+      const readable = state.readableText[button.dataset.shareCopyReadable];
+      if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
+        toast('Читабельный текст ещё не готов', 'error'); return;
+      }
+      const ok = await copyText(readable.text);
+      toast(ok ? 'Читабельный текст скопирован' : 'Не удалось скопировать текст', ok ? '' : 'error');
+    }));
     const copyAll = $('#copy-all-chat');
     if (copyAll) copyAll.addEventListener('click', copyAllChatText);
     const downloadAll = $('#download-chat');
@@ -5776,17 +5892,28 @@
       title: 'Лимиты подписки',
       okText: 'Понятно',
       body:
-        '<div class="sub-head">' +
-          '<div class="sub-plan">Тариф «' + escapeHtml(String(plan).toUpperCase()) + '»' +
-          '<br><em>' + (w && w.budget_usd !== null && w.budget_usd !== undefined
-            ? 'израсходовано ' + Math.round(w.percent) + '% бюджета за ' + w.hours + ' ч'
-            : 'лимит по минутам и файлам') + '</em></div>' +
-        '</div>' +
-        money + rows + audioRow +
-        '<h4 class="sec">Что даёт подписка</h4>' +
-        planCompareHtml(lim, data.compare) +
-        '<p class="usage-note">Подписка оформляется у администратора — напишите ему в чат.</p>',
+        '<section class="sub-hero"><div class="sub-hero-top"><span class="sub-plan-mark">' + icon('shield-check') + '</span>' +
+          '<div><div class="sub-eyebrow">ТЕКУЩИЙ ТАРИФ</div><div class="sub-plan">AI-Ch ' + escapeHtml(String(plan).toUpperCase()) + '</div></div>' +
+          '<span class="sub-current-pill">Активен</span></div>' +
+          '<p>Бюджет считается по стоимости реальных вызовов модели и служебных запросов. ' +
+          (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
+          '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
+          '<span><b>Pro</b><small>лимиты Pro из настроек</small></span></div>' +
+          '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
+          '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +
+          '</button></section><section class="sub-usage-section"><h4 class="sec">Текущее использование</h4>' +
+          '<p class="usage-note">Окно скользящее: учитываются расходы за последние ' +
+          escapeHtml(String(w && w.hours || lim.window_hours || 5)) +
+          ' часов, а не с начала календарного дня. Когда старые расходы выходят из окна, они перестают учитываться.</p>' +
+          money + rows + audioRow + '</section><section class="sub-comparison-section"><h4 class="sec">Лимиты Free и Pro</h4>' +
+          planCompareHtml(lim, data.compare) + '</section>' +
+          '<p class="usage-note sub-admin-note">Автоматическая оплата не подключена. Запрос можно отправить администратору.</p>',
       onOk: () => true,
+    });
+    const copyProRequest = $('#copy-pro-request');
+    if (copyProRequest) copyProRequest.addEventListener('click', async () => {
+      const ok = await copyText('Здравствуйте! Хочу оформить подписку Pro в AI-Ch. Подскажите, пожалуйста, стоимость и порядок оформления.');
+      toast(ok ? 'Запрос на оформление Pro скопирован' : 'Не удалось скопировать запрос', ok ? '' : 'error');
     });
   }
 

@@ -915,12 +915,7 @@
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
   const EFFORT_LABELS = ['Low', 'Medium', 'High', 'Extra', 'Max'];
 
-  const TARIFFS = [
-    { name: 'Free', ctx: 10, out: 20, files: 5, note: 'знакомство и лёгкие задачи' },
-    { name: 'Plus', ctx: 30, out: 45, files: 25, note: 'ежедневная работа' },
-    { name: 'Pro', ctx: 60, out: 70, files: 100, note: 'длинные диалоги и файлы' },
-    { name: 'Max', ctx: 85, out: 90, files: 500, note: 'максимум контекста' },
-  ];
+
 
   const GREETINGS = [
     'Создадим документ?', 'Оформим таблицу?', 'Подготовим презентацию?',
@@ -4312,18 +4307,16 @@
   }
 
   function limitsHtml(plan) {
-    const mine = String(plan || '').toLowerCase();
-    return '<h4 class="sec">Лимиты по тарифам (в % от окна модели)</h4>' +
-      '<div class="tariffs">' + TARIFFS.map(t => {
-        const isMine = t.name.toLowerCase() === mine;
-        return '<div class="tariff' + (isMine ? ' me' : '') + '">' +
-          '<div class="tariff-head"><b>' + t.name + '</b>' +
-          (isMine ? '<span class="badge">ваш тариф</span>' : '') + '</div>' +
-          '<div class="tariff-row"><span>Контекст</span><i><b style="width:' + t.ctx + '%"></b></i><u>' + t.ctx + '%</u></div>' +
-          '<div class="tariff-row"><span>Ответ</span><i><b style="width:' + t.out + '%"></b></i><u>' + t.out + '%</u></div>' +
-          '<div class="tariff-note">' + t.note + ' · файлов: ' + t.files + '</div>' +
-          '</div>';
-      }).join('') + '</div>';
+    const data = state.limits || {};
+    const currentPlan = String(data.plan || plan || 'free').toLowerCase();
+    if (!data.limits || !data.compare || !data.compare.free || !data.compare.pro) {
+      return '<h4 class="sec">Лимиты тарифов</h4>' +
+        '<p class="usage-note">Не удалось загрузить актуальное сравнение тарифов. Закройте окно и попробуйте ещё раз.</p>';
+    }
+    return '<h4 class="sec">Лимиты тарифов Free и Pro</h4>' +
+      '<p class="usage-note">Показаны действующие настройки с сервера. Оплата Pro пока оформляется через администратора.</p>' +
+      planCompareHtml(data.limits, data.compare) +
+      '<p class="usage-note">Ваш текущий тариф: ' + escapeHtml(currentPlan.toUpperCase()) + '.</p>';
   }
 
   async function loadLimits() {
@@ -6094,8 +6087,7 @@
     subscriptionModalOpening = true;
     try {
       // Never keep the subscription dialog hidden behind a slow limits request.
-      // Give fresh data a short head start, then render the dialog with cached data
-      // or an explicit unavailable-state notice. The request itself is time-bounded.
+      // Give fresh data a short head start, then render with cached data or a clear notice.
       let limitsLoadError = false;
       if ((options && options.refresh) || !state.limits) {
         const cachedLimits = state.limits;

@@ -27,6 +27,13 @@ _SKILL_TRIGGERS: dict[str, tuple[str, ...]] = {
         "звучит как ии", "похоже на нейросеть", "слишком шаблонный текст",
         "сделай живее", "humanize", "less robotic", "ai-written",
     ),
+    "file-generation": (
+        "презентац", "pptx", "powerpoint", "слайд", "документ word", "docx",
+        "таблиц excel", "xlsx", "pdf-файл", "инфограф", "векторное изображ",
+        "создай файл", "сгенерируй файл", "сделай файл", "экспортируй в",
+        "csv-файл", "svg-файл", "png-файл", "generate a file", "create a presentation",
+        "create a spreadsheet", "powerpoint presentation",
+    ),
 }
 
 
@@ -82,31 +89,28 @@ ASK_SKILL = (
     "результат. Всегда закрывай блоки кода — незакрытый ``` ломает отображение."
 )
 RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
+FILEPLAN_RE = re.compile(r"```fileplan[^\n]*\n([\s\S]*?)```", re.I)
+AGENT_BLOCK_RE = re.compile(r"```(run|fileplan)[^\n]*\n([\s\S]*?)```", re.I)
 
 RUN_SKILL = (
-    "\n\nСкилл исполнения кода (ты — агент). Если для ответа нужны вычисления, обработка "
-    "данных, графики или файлы (docx, xlsx, pptx, pdf, png, csv, svg), напиши блок кода "
-    "с языком run:\n"
-    "```run\n"
-    "print(2 + 2)\n"
-    "```\n"
-    "Код выполняется на сервере в изолированной рабочей папке. Всё, что он печатает в "
-    "stdout, вернётся тебе как результат, а все созданные им файлы сразу отправляются "
-    "пользователю в чат как вложения — не нужно вставлять их содержимое в ответ.\n"
-    "Доступно: numpy, pandas, matplotlib (backend Agg), Pillow, python-docx, openpyxl, "
-    "python-pptx, pypdf. Примеры: plt.savefig('chart.png'); doc.save('report.docx'); "
-    "prs.save('slides.pptx'); wb.save('data.xlsx').\n"
-    "Пиши ТОЛЬКО относительные пути, не используй input() и сеть. Лимит — 40 секунд. "
-    "Эффективность: объединяй все связанные операции и создание всех файлов в ОДИН блок run; "
-    "не дели один файл, стили, тесты и текст результата на отдельные блоки без необходимости. "
-    "Сразу подготовь законченный, оформленный результат вместо пошаговых черновиков. "
-    "После выполнения проверь результат и при необходимости исправь его, затем дай финальный ответ "
-    "без блока run.\n"
-    "ВАЖНО: в тексте ответа НИКОГДА не пиши пути к файлам (никаких /work/..., /tmp/... "
-    "или абсолютных путей). Просто назови файл по имени — он уже прикреплён к сообщению "
-    "красивой карточкой, пользователь скачает его одним кликом."
+    "\\n\\nИсполнение и проверка. Для вычислений, анализа данных, алгоритмов и программного "
+    "кода используй один законченный блок ```run. Сервер запускает Python 3.12 в отдельном "
+    "изолированном контейнере с отключённой сетью; рабочие файлы относительные, stdout/stderr "
+    "возвращаются модели, созданные файлы прикрепляются к сообщению. Не используй input(), "
+    "абсолютные пути, секреты или переменные окружения; не утверждай успех без подтверждённого "
+    "результата. Собери связанные операции в один блок и проверь фактический вывод.\\n"
+    "Серверные пакеты: numpy, pandas, matplotlib (Agg), Pillow/PIL, python-docx/docx, "
+    "openpyxl, python-pptx/pptx, pypdf, XlsxWriter/xlsxwriter, svgwrite, tabulate, qrcode, "
+    "python-barcode/barcode, odfpy/odf, Markdown/markdown, markdown2, docx2txt, lxml, Jinja2/jinja2 "
+    "и стандартная библиотека Python. Этот перечень относится к серверной песочнице; браузерный "
+    "Python WebAssembly имеет другой набор пакетов. Установку модулей в браузере можно пробовать "
+    "по import, но совместимость и наличие каждого пакета не гарантируются.\\n"
+    "Готовые файлы PPTX, DOCX, XLSX, PDF, SVG, PNG, CSV, JSON, Markdown и TXT создавай через "
+    "декларативный блок ```fileplan и проверенный сборщик шаблонов, а не произвольный Python "
+    "в run. Подробный формат и список шаблонов подключаются только для соответствующих задач. "
+    "Не подменяй запрошенный файл HTML-страницей. В финале кратко назови подтверждённый результат "
+    "без служебного блока и без путей к файлам."
 )
-
 
 COT_RE = re.compile(
     r"^\s*(?:here'?s?\s+(?:a\s+)?(?:my\s+)?thinking process|thinking process|"
@@ -181,8 +185,29 @@ def extract_run_blocks(text: str) -> list[str]:
     return [b.strip() for b in RUN_RE.findall(text or "") if b.strip()]
 
 
+def extract_fileplan_blocks(text: str) -> list[str]:
+    return [b.strip() for b in FILEPLAN_RE.findall(text or "") if b.strip()]
+
+
+def extract_agent_blocks(text: str) -> list[tuple[str, str]]:
+    """Extract run/fileplan blocks in their original order."""
+    return [
+        (match.group(1).lower(), match.group(2).strip())
+        for match in AGENT_BLOCK_RE.finditer(text or "")
+        if match.group(2).strip()
+    ]
+
+
 def strip_run_blocks(text: str) -> str:
-    return re.sub(r"```run[^\n]*\n[\s\S]*?```", "", text or "").strip()
+    return RUN_RE.sub("", text or "").strip()
+
+
+def strip_fileplan_blocks(text: str) -> str:
+    return FILEPLAN_RE.sub("", text or "").strip()
+
+
+def strip_agent_blocks(text: str) -> str:
+    return strip_fileplan_blocks(strip_run_blocks(text or "")).strip()
 
 
 # sandbox paths must never leak into the chat: files arrive as attachments
@@ -300,57 +325,24 @@ IDENTITY = (
 )
 
 AGENT_MODE = (
-    "\n\nКак ты работаешь. Ты не только собеседник, но и агент: если задача требует файла, "
-    "расчёта, графика, документа или презентации — ты ВЫПОЛНЯЕШЬ её кодом, а не описываешь, "
-    "как это сделать.\n"
-    "Правильный цикл: сделать → проверить → поправить → показать результат. Можно делать "
-    "несколько шагов подряд: создать файл, прочитать его обратно, исправить, перегенерировать. "
-    "Не останавливайся на половине, доводи работу до конца.\n"
-    "Уважай ресурсы: если задача объективно огромная (сочинение на миллион слов, сотни слайдов, "
-    "обработка гигантских данных), НЕ начинай молча — предложи короткий план, назови объём и "
-    "спроси подтверждение. Пользователь всегда может остановить тебя в любой момент.\n"
-    "Не выдумывай результат: если код упал — честно покажи ошибку и исправь её."
+    "\\n\\nРежим агента. Делай задачу до проверяемого результата, а не ограничивайся "
+    "инструкцией, как его получить. Для готовых офисных, табличных, графических и текстовых "
+    "файлов используй ```fileplan; для вычислений, программирования и анализа — ```run. "
+    "Подтверди файл или вычисление реальным результатом; при ошибке не выдумывай успех. "
+    "Исправляй доступные ошибки в пределах разрешённых шагов. Не задавай вопросов, если задачу "
+    "уже можно выполнить; при действительно отсутствующем обязательном параметре задай один "
+    "короткий вопрос. Большую или дорогую задачу согласуй до запуска. Не показывай скрытые "
+    "рассуждения, команды инструментов, секреты и внутренние пути."
 )
-
 STYLE_SKILL = (
-    "\n\nОформление. Документы, презентации, таблицы, схемы и графики делай в аккуратном "
-    "современном стиле уровня топовых продуктов — не оставляй «как получилось». "
-    "Стиль выбирай сам по смыслу задачи или по просьбе пользователя.\n"
-    "Базовые системы: Apple-like (воздух, крупная типографика, #F5F5F7/#1D1D1F, #0071E3); "
-    "Microsoft Fluent (#0078D4, строгая сетка); Material 3; IBM Carbon; GitHub Primer; "
-    "Atlassian; Stripe gradient; Vercel monochrome; Linear/Raycast dark; Notion clean; "
-    "Tailwind; Bootstrap; Fluent 2.\n"
-    "Направления: Glassmorphism (матовое стекло), Neumorphism (мягкие тени), Claymorphism "
-    "(пластилин), Neubrutalism (жирные обводки), Brutalism, Swiss/International (сетка + "
-    "Helvetica), Bauhaus (геометрия + первичные цвета), Art Deco (золото + симметрия), "
-    "Mid-century modern, Scandinavian, Japanese minimal, Wabi-sabi, Nordic, Memphis, "
-    "Vaporwave, Y2K, Cyberpunk, Solarpunk, Retro 70s, Isometric 3D, Bento grid, "
-    "Aurora gradient, Kinetic typography, Editorial magazine, Newspaper, Scientific paper, "
-    "Financial report (Bloomberg terminal), Consulting deck (McKinsey), Pitch deck (Sequoia), "
-    "Legal document, Medical chart, Academic poster, Infographic, Data-viz по Тафти, "
-    "Blueprint (чертёж), Terminal/monospace, Pixel art, Hand-drawn sketch, "
-    "Детская иллюстрация, Фотореализм-монтаж, Минимализм без декора.\n"
-    "Общие правила: не больше трёх цветов, одинаковые отступы, выравнивание по сетке, "
-    "читаемые размеры (заголовок ≥ 28 pt, текст ≥ 14 pt), максимум 6 строк на слайд, "
-    "единая типографика во всём документе.\n"
-    "В песочнице уже лежит библиотека дизайна — пользуйся ею вместо ручных цветов:\n"
-    "```run\n"
-    "from designs import theme as T\n"
-    "print(T.catalog())              # 57 готовых стилей\n"
-    "from pptx import Presentation\n"
-    "prs = Presentation()\n"
-    "T.pptx_title(prs, 'Отчёт', '2026 год', 'apple')\n"
-    "T.pptx_bullets(prs, 'Итоги', ['Первое', 'Второе'], 'fluent')\n"
-    "T.pptx_metric(prs, 'Цифры', [('+42%', 'рост'), ('1.2M', 'пользователей')], 'consulting')\n"
-    "T.pptx_image(prs, 'chart.png', 'Динамика', 'minimal')\n"
-    "prs.save('deck.pptx')\n"
-    "```\n"
-    "Для графиков: `T.pyplot('tufte')` и `T.colors('tufte')`. "
-    "Для Word: `T.docx_style(doc, 'editorial')`. Для Excel: `T.xlsx_style(wb, 'carbon')`. "
-    "Стиль выбирай по смыслу задачи (финтех → stripe, наука → scientific, "
-    "питч → pitch, чертёж → blueprint, тёмный продукт → linear)."
+    "\\n\\nДизайн. Выбирай визуальный язык по аудитории и задаче: например Apple-like, Fluent, "
+    "Material, Carbon, Stripe, Vercel, Linear, Notion, editorial, scientific, consulting, "
+    "academic, financial, infographic, blueprint, Swiss, Bauhaus или минимализм. Используй "
+    "готовые стили библиотеки AI-Ch для файлов; каталог шаблонов и все 57 стилей подгружаются "
+    "по требованию в навыке генерации файлов. Единая сетка, отступы и типографика; контрастные "
+    "цвета; без переполнения слайдов, обрезанного текста и фиктивных данных. Стиль не важнее "
+    "читаемости и достоверности. Не дублируй большой пример сборки в системном промпте."
 )
-
 STYLE_PROMPTS: dict[str, str] = {
     "auto": "",
     "apple": "\n\nСтиль этого ответа: Apple-like (#F5F5F7/#1D1D1F, акцент #0071E3, много воздуха).",

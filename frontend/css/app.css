@@ -892,6 +892,15 @@ input[type="range"].orange-range { width: 100%; }
 }
 .fmt-btn b { font-size: 15.4px; }
 .fmt-btn span { font-size: 12.65px; color: var(--fg-soft); }
+.fmt-btn-primary {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 62px;
+  padding: 15px 18px;
+  border-width: 2px;
+}
+.fmt-btn-primary b { font-size: 16.5px; }
+.fmt-btn-primary span { font-size: 13px; }
 .fmt-btn:hover {
   background-image: linear-gradient(135deg, #343431, #55544f 45%, #343431 100%);
   background-size: 240% 240%; animation: goldFlow 3.4s ease infinite;

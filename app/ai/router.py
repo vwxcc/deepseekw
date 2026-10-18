@@ -9,6 +9,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import re
 import time
 import uuid
@@ -243,11 +244,14 @@ def _estimate_text_tokens(value) -> tuple[int, int]:
     return 0, 0
 
 
-def _estimated_model_call_cost(entry: "EntryConfig", messages: list[dict]) -> float:
+def _estimated_model_call_cost(
+    entry: "EntryConfig", messages: list[dict], max_tokens: int | None = None
+) -> float:
     """Upper estimate before a paid call, preventing one call from overshooting a quota."""
     input_tokens, image_tokens = _estimate_text_tokens(messages)
     input_tokens = max(1, input_tokens + image_tokens)
-    output_tokens = max(0, int(entry.max_tokens or 0))
+    configured_output = max_tokens if max_tokens is not None else entry.max_tokens
+    output_tokens = max(0, int(configured_output or 0))
     price_in = max(0.0, float(entry.price_in or 0.0))
     price_out = max(0.0, float(entry.price_out or 0.0))
     return (input_tokens * price_in + output_tokens * price_out) / 1_000_000.0
@@ -1102,6 +1106,12 @@ class AIRouter:
             if entry is None:
                 return
             try:
+                blocked = await self._budget_error(
+                    job, _estimated_model_call_cost(entry, messages, max_tokens=96)
+                )
+                if blocked:
+                    log.info("Skipping title generation: %s", blocked)
+                    return
                 raw = await complete_chat(
                     messages=messages,
                     base_url=entry.base_url,

@@ -743,6 +743,7 @@
     audioStatusPollRunning: false,
     audioMessageId: null,
     audioDuration: 0,
+    audioErrors: Object.create(null),
     readableText: Object.create(null),
     readableTextStatusRequested: new Set(),
     readableTextChatId: null,
@@ -760,6 +761,7 @@
     priming: false, watchdog: null, rate: 1,
   };
   const DEVICE_SPEECH_CHUNK_SIZE = 20;
+  let pendingDeviceSpeechMessageId = null;
   const deviceCodeFileUrls = [];
   const deviceChatFileUrls = [];
   const deviceChatFiles = new Map();
@@ -1255,19 +1257,16 @@
     const expanded = !!n.showActivities;
     const execution = expanded && runs.length
       ? '<div class="activity-execution">' + toolRunsHtml(runs) + '</div>' : '';
-    const toggleLabel = expanded ? 'Скрыть статусы' :
-      (items.length ? 'Показать статусы (' + items.length + ')' : 'Показать статусы');
+    const fullStream = expanded
+      ? '<div class="activity-full-row"><button type="button" data-activity-full="' + escapeHtml(n.id) +
+        '" title="Открыть отдельное окно полного потока">' + icon('expand') + 'Полный поток</button></div>' : '';
     return '<section class="activity-panel' + (expanded ? ' is-expanded' : '') + '" data-activity-panel="' + escapeHtml(n.id) + '">' +
-      '<div class="activity-head"><span class="activity-time" data-activity-elapsed="' + escapeHtml(n.id) + '">' +
+      '<div class="activity-head"><button type="button" class="activity-summary-button" data-activity-toggle="' +
+      escapeHtml(n.id) + '" aria-expanded="' + String(expanded) + '">' +
+      '<span data-activity-elapsed="' + escapeHtml(n.id) + '">' +
       (generating ? 'Выполняю запрос · ' + duration : 'Думал ' + duration) + '</span>' +
-      '<span class="activity-controls">' +
-      (expanded ? '<button type="button" data-activity-full="' + escapeHtml(n.id) + '" title="Открыть отдельное окно полного потока">' +
-        icon('expand') + 'Полный поток</button>' : '') +
-      '<button type="button" data-activity-toggle="' + escapeHtml(n.id) +
-        '" aria-expanded="' + String(expanded) + '">' + icon(expanded ? 'chevron-up' : 'chevron-down') +
-        toggleLabel + '</button>' +
-      '</span></div>' +
-      '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + (rows || placeholder) + execution + '</div>' +
+      icon(expanded ? 'chevron-up' : 'chevron-down') + '</button></div>' +
+      '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + fullStream + (rows || placeholder) + execution + '</div>' +
       (generating ? '<div class="think-tail answer activity-draft">' + escapeHtml(tailText(n.draft || '', 260)) + '</div>' : '') +
       '</section>';
   }
@@ -1379,6 +1378,9 @@
             '" title="Копировать ответ" aria-label="Копировать ответ">' + icon('copy') + '<span>Копировать</span></button>');
           parts.push('<button class="message-action-labeled" data-mact="save" data-id="' + escapeHtml(n.id) +
             '" title="Сохранить ответ" aria-label="Сохранить ответ">' + icon('download') + '<span>Сохранить</span></button>');
+          parts.push('<button class="message-action-labeled listen-answer-action" data-mact="listen-answer" data-id="' +
+            escapeHtml(n.id) + '" title="Слушать ответ" aria-label="Слушать ответ">' + icon('audio') +
+            '<span>Слушать ответ</span></button>');
           if (n.memories && n.memories.length) {
             parts.push('<button class="icon-only-action" data-icon-only="1" data-mact="memory" data-id="' + escapeHtml(n.id) +
               '" title="Что записано в память" aria-label="Память">' + icon('sparkle') + '</button>');
@@ -1424,15 +1426,8 @@
 
     const hasSpeechActions = !isUser && !state.readonly &&
       n.status === 'completed' && String(n.content || '').trim();
-    const audioCtl = hasSpeechActions ? audioControlHtml(n) : '';
-    const deviceAudioCtl = hasSpeechActions ? deviceAudioControlHtml(n) : '';
-    const readableTextStatusCtl = hasSpeechActions ? readableTextStatusHtml(n) : '';
-
     const actionsRow = !isUser && !state.readonly && (meta || hasSpeechActions)
-      ? '<div class="msg-actions-row">' + meta +
-        (hasSpeechActions
-          ? readableTextStatusCtl + '<div class="speech-actions">' + audioCtl + deviceAudioCtl + '</div>'
-          : '') + '</div>' : '';
+      ? '<div class="msg-actions-row">' + meta + '</div>' : '';
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'AI-Ch 1.0') + '</div>' +
@@ -2939,7 +2934,8 @@
         : null;
       if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
           !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {
-        elapsedEl.textContent = 'Выполняю запрос · ' + formatActivityDuration(activityElapsed(elapsedNode, true));
+        elapsedEl.textContent = (elapsedNode.role === 'assistant' ? 'Выполняю запрос · ' : 'Выполняю запрос · ') +
+          formatActivityDuration(activityElapsed(elapsedNode, true));
       }
     }, 1000);
     const controller = new AbortController();

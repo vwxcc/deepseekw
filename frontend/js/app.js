@@ -3617,7 +3617,7 @@
         } catch (_) { break; }
       }
       const diagnostic = fragments.filter(Boolean).join('\n');
-      const isMoneyBudget = /лимит\s+(?:тарифа\s+)?исчерпан\s*:\s*\$|денежн[а-яё\s-]{0,30}бюджет[а-яё\s-]{0,30}(?:исчерпан|превышен)|бюджет[а-яё\s-]{0,40}(?:исчерпан|превышен)|budget[\s_-]{0,40}(?:exhausted|exceeded)/i.test(diagnostic);
+      const isMoneyBudget = /лимит\s+(?:тарифа\s+)?исчерпан\s*:\s*(?:(?:израсходовано|потрачено)\s*)?\$|денежн[а-яё\s-]{0,30}бюджет[а-яё\s-]{0,30}(?:исчерпан|превышен)|бюджет[а-яё\s-]{0,40}(?:исчерпан|превышен)|budget[\s_-]{0,40}(?:exhausted|exceeded)/i.test(diagnostic);
       if (!isMoneyBudget) return false;
       budgetModalShown = true;
       openUsageModal({ exhausted: true }).catch((e) => console.warn('Could not open subscription limits:', e));

@@ -46,6 +46,20 @@ jobs:
         run: sudo python -m unittest discover -s tests -p 'test_sandbox_runner.py' -v
       - name: Check browser JavaScript syntax
         run: node --check frontend/js/app.js
+      - name: Parse the embedded device Python runtime
+        run: |
+          node <<'JS'
+          const fs = require('fs');
+          const source = fs.readFileSync('frontend/js/app.js', 'utf8');
+          const marker = 'const DEVICE_PYTHON_RUNNER_TEMPLATE = ';
+          const begin = source.indexOf(marker);
+          const equals = source.indexOf('=', begin);
+          const end = source.indexOf(';\n', equals);
+          if (begin < 0 || equals < 0 || end < 0) throw new Error('Embedded Python runner was not found.');
+          const runner = (new Function('return (' + source.slice(equals + 1, end).trim() + ')'))();
+          new Function('loadPyodide', runner);
+          console.log('Embedded Python runtime JavaScript syntax is valid.');
+          JS
       - name: Test template-based file generation
         run: |
           python -m pip install matplotlib==3.9.4 python-docx==1.1.2 openpyxl==3.1.5 python-pptx==1.0.2 Pillow==11.0.0 pypdf==5.1.0
@@ -87,6 +101,8 @@ jobs:
               raise SystemExit("Dark theme action buttons must match the dark page background")
           if ".msg.no-msg-entrance { animation: none !important; }" not in css:
               raise SystemExit("In-place message updates must not replay the entrance animation")
+          if "transform: translateY(-2px)" not in css or "align-self: center;" not in css:
+              raise SystemExit("Composer input and buttons must be vertically centred and lifted slightly")
           if not css_rule_contains(".src-row {", "background: var(--bg);"):
               raise SystemExit("Source cards must match the page background")
           if "stroke='%23b8862f'" in css:
@@ -154,6 +170,12 @@ jobs:
               "for (const name of imports)",
               "deviceSpeechState.priming = false",
               "device-code-file-preview",
+              "function deviceCodeForFilePlan(planSource)",
+              "function deviceFallbackHtml(n, runs)",
+              "backgroundDeviceRunners = new Map()",
+              "device-code-complete",
+              "function sourceImports()",
+              "const nativeFailed = new Set()",
           ]
           missing = [token for token in required_js if token not in js]
           if missing:

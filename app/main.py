@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 import re
 from pathlib import Path
@@ -37,6 +38,22 @@ log = logging.getLogger("chatstudio")
 CLEANUP_INTERVAL = 600  # seconds
 
 
+def _validate_production_security() -> None:
+    """Refuse an internet-facing Render startup with known-unsafe session settings."""
+    on_render = bool(os.getenv("RENDER_SERVICE_ID") or os.getenv("RENDER_EXTERNAL_URL"))
+    if not on_render:
+        return
+    secret = (settings.session_secret or "").strip()
+    if secret == "dev-secret-change-me" or len(secret) < 32:
+        raise RuntimeError(
+            "Unsafe session configuration: set SESSION_SECRET to a random value of at least 32 characters on Render."
+        )
+    if not settings.session_cookie_secure:
+        raise RuntimeError(
+            "Unsafe session configuration: set SESSION_COOKIE_SECURE=1 for the HTTPS deployment."
+        )
+
+
 async def _storage_watchdog() -> None:
     """Keep the disk above the configured floor by pruning the oldest files."""
     while True:
@@ -57,6 +74,7 @@ async def _storage_watchdog() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _validate_production_security()
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s"
     )

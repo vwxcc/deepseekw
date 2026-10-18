@@ -183,8 +183,8 @@
 
   // Unicode fallback ensures newly added emoji, skin tones, families and flags
   // are also replaced by neutral outline symbols instead of colorful system glyphs.
-  const EMOJI_SEQUENCE_SOURCE = String.raw`(?:\\p{Regional_Indicator}{2}|[#*0-9]\\uFE0F?\\u20E3|\\p{Emoji_Presentation}\\uFE0F?(?:[\\u{1F3FB}-\\u{1F3FF}])?(?:\\u200D\\p{Extended_Pictographic}\\uFE0F?(?:[\\u{1F3FB}-\\u{1F3FF}])?)*|\\p{Extended_Pictographic}\\uFE0F(?:[\\u{1F3FB}-\\u{1F3FF}])?(?:\\u200D\\p{Extended_Pictographic}\\uFE0F?(?:[\\u{1F3FB}-\\u{1F3FF}])?)*)`;
-  const escapeEmojiRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\  const THEMED_EMOJI_PATTERN = new RegExp(Array.from(THEMED_EMOJI_MAP.keys()).sort((a,b)=>b.length-a.length).join('|'), 'gu');');
+  const EMOJI_SEQUENCE_SOURCE = String.raw`(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Emoji_Presentation}\uFE0F?(?:[\u{1F3FB}-\u{1F3FF}])?(?:\u200D\p{Extended_Pictographic}\uFE0F?(?:[\u{1F3FB}-\u{1F3FF}])?)*|\p{Extended_Pictographic}\uFE0F(?:[\u{1F3FB}-\u{1F3FF}])?(?:\u200D\p{Extended_Pictographic}\uFE0F?(?:[\u{1F3FB}-\u{1F3FF}])?)*)`;
+  const escapeEmojiRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const knownEmojiPattern = Array.from(THEMED_EMOJI_MAP.keys())
     .sort((a, b) => b.length - a.length)
     .map(escapeEmojiRegex).join('|');

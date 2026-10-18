@@ -58,7 +58,16 @@ jobs:
           if (begin < 0 || equals < 0 || end < 0) throw new Error('Embedded Python runner was not found.');
           const runner = (new Function('return (' + source.slice(equals + 1, end).trim() + ')'))();
           new Function('loadPyodide', runner);
-          console.log('Embedded Python runtime JavaScript syntax is valid.');
+          const helperStart = source.indexOf('function deviceCodeForFilePlan(planSource) {');
+          const helperEnd = source.indexOf('\\n  function activityHtml(n, generating)', helperStart);
+          if (helperStart < 0 || helperEnd < 0) throw new Error('Local file-plan fallback helper was not found.');
+          const makeFallback = new Function(source.slice(helperStart, helperEnd) + '\\nreturn deviceCodeForFilePlan;')();
+          const samplePlan = JSON.stringify({format:'pptx',template_id:'presentation.education',title:'Syntax check',blocks:[{kind:'bullets',items:['First','Second']}]});
+          const fallbackCode = makeFallback(samplePlan);
+          const { spawnSync } = require('child_process');
+          const parsedPython = spawnSync('python3', ['-c', 'import ast,sys; ast.parse(sys.stdin.read())'], {input:fallbackCode,encoding:'utf8'});
+          if (parsedPython.status !== 0) throw new Error('Local file-plan fallback emitted invalid Python: ' + parsedPython.stderr);
+          console.log('Embedded Python runtime and local file-plan Python syntax are valid.');
           JS
       - name: Test template-based file generation
         run: |

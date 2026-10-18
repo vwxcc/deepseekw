@@ -90,7 +90,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("span.className = 'aich-themed-emoji'", app_js)
         self.assertNotIn("textarea,button,svg,.katex", app_js)
         self.assertIn('id="i-mountain"', index_html)
-        self.assertIn("app.js?v=62&rev=65", index_html)
+        self.assertIn("app.js?v=63&rev=66", index_html)
 
     def test_brand_name_uses_ai_ch_without_version_suffix(self):
         root = Path(__file__).resolve().parents[1]

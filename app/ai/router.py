@@ -703,20 +703,29 @@ class AIRouter:
         answer = ""
         explicit_none = False
         if use_model_queries:
+            search_messages = [
+                {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
+                {"role": "user", "content": (job.search_query or "")[:1500]},
+            ]
             try:
-                answer = await complete_chat(
-                    messages=[
-                        {"role": "system", "content": SEARCH_QUERIES_SYSTEM},
-                        {"role": "user", "content": (job.search_query or "")[:1500]},
-                    ],
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.0,
-                    max_tokens=160,
-                    timeout=min(entry.timeout or 60, 45),
-                    disable_thinking=True,
+                # This auxiliary call is paid too. Skip query planning if it could
+                # exceed the rolling budget; deterministic keyword search remains available.
+                blocked = await self._budget_error(
+                    job, _estimated_model_call_cost(entry, search_messages, max_tokens=160)
                 )
+                if blocked:
+                    log.info("Skipping paid search query planning: %s", blocked)
+                else:
+                    answer = await complete_chat(
+                        messages=search_messages,
+                        base_url=entry.base_url,
+                        api_key=entry.api_key,
+                        model=entry.model,
+                        temperature=0.0,
+                        max_tokens=160,
+                        timeout=min(entry.timeout or 60, 45),
+                        disable_thinking=True,
+                    )
                 text = (answer or "").strip()
                 explicit_none = text.casefold() == "none"
                 for raw_line in text.splitlines():
@@ -786,7 +795,7 @@ class AIRouter:
                         message_id=job.message_id,
                         entry=entry,
                         action="search_queries",
-                        tokens_in=est(job.search_query),
+                        tokens_in=est(SEARCH_QUERIES_SYSTEM) + est(job.search_query),
                         tokens_out=est(answer),
                     )
                     await db.commit()

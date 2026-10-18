@@ -28,7 +28,7 @@ async def _ensure_primary_main_prices(db: AsyncSession) -> None:
         "(key VARCHAR(100) PRIMARY KEY, value VARCHAR(255) NOT NULL)"
     ))
     marker = await db.scalar(text(
-        "SELECT value FROM app_metadata WHERE key = 'main-price-defaults-v2'"
+        "SELECT value FROM app_metadata WHERE key = 'main-price-defaults-v3'"
     ))
     if marker:
         return
@@ -49,15 +49,15 @@ async def _ensure_primary_main_prices(db: AsyncSession) -> None:
         entry = rows.scalars().first()
         if entry is None:
             continue
-        default_in = float(settings.qwen_price_in if settings.qwen_price_in is not None else 2.0)
-        default_out = float(settings.qwen_price_out if settings.qwen_price_out is not None else 25.0)
+        default_in = 2.0
+        default_out = 25.0
         # This versioned one-time migration intentionally updates the existing
         # primary entry too; later starts leave any administrator edits untouched.
         entry.price_in = default_in
         entry.price_out = default_out
         break
     await db.execute(text(
-        "INSERT INTO app_metadata (key, value) VALUES ('main-price-defaults-v2', '1')"
+        "INSERT INTO app_metadata (key, value) VALUES ('main-price-defaults-v3', '1')"
     ))
 
 

@@ -6,6 +6,7 @@ one active non-router MAIN model set. Other sets and fallback entries are ignore
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -42,7 +43,9 @@ from .provider_config import apply_primary_provider_overrides
 from .prompts import (
     extract_ask,
     extract_memories,
+    extract_agent_blocks,
     extract_run_blocks,
+    strip_agent_blocks,
     strip_cot,
     strip_run_blocks,
     strip_sandbox_paths,
@@ -57,9 +60,42 @@ from .providers import (
 log = logging.getLogger("chatstudio.ai")
 
 
+def _fileplan_runner(plan_source: str) -> tuple[str, str]:
+    """Turn a JSON-only file plan into a fixed renderer call, never model-supplied Python."""
+    try:
+        plan = json.loads(plan_source)
+    except json.JSONDecodeError:
+        plan = {}
+    encoded = base64.b64encode(plan_source.encode("utf-8")).decode("ascii")
+    fmt = str(plan.get("format") or "file").upper()[:8]
+    template = str(plan.get("template_id") or "auto")[:60]
+    title = str(plan.get("title") or "Без названия").strip()[:90]
+    blocks = plan.get("blocks", plan.get("slides", plan.get("sections", [])))
+    count = len(blocks) if isinstance(blocks, list) else 0
+    display = f"План сборки файла · {fmt} · {template} · {title} · блоков: {count}"
+    code = (
+        "import base64, json\n"
+        "from pathlib import Path\n"
+        "from designs.templates import build_from_plan\n"
+        f"plan_source = base64.b64decode({encoded!r}).decode('utf-8')\n"
+        "result = build_from_plan('out', plan_source)\n"
+        "print(json.dumps({"
+        "'ok': True, 'format': result['format'], 'template_id': result['template_id'], "
+        "'title': result['title'], 'style': result['style'], "
+        "'files': [Path(p).name for p in result.get('files', [])], "
+        "'previews': len(result.get('previews', []))"
+        "}, ensure_ascii=False))\n"
+    )
+    return code, display
+
+
 def _tool_feedback(run: dict) -> str:
-    """What the model sees after its code has run."""
-    parts = ["Результат выполнения твоего кода:"]
+    """Return execution feedback without confusing file plans with executable model code."""
+    is_fileplan = run.get("kind") == "fileplan"
+    parts = [
+        "Результат сборки файла по проверенному шаблону:" if is_fileplan
+        else "Результат выполнения кода:"
+    ]
     if run.get("stdout"):
         parts.append("stdout:\n" + run["stdout"])
     if run.get("stderr"):
@@ -67,18 +103,17 @@ def _tool_feedback(run: dict) -> str:
     if not run.get("stdout") and not run.get("stderr"):
         parts.append("(вывод пустой)")
     if run.get("timed_out"):
-        parts.append("Код был остановлен по таймауту — сделай его быстрее.")
+        parts.append("Операция остановлена по таймауту — упрости её.")
     if run.get("files"):
         parts.append(
-            "Созданные файлы (уже отправлены пользователю в чат): "
-            + ", ".join(f["name"] for f in run["files"])
+            "Файлы, уже прикреплённые пользователю: "
+            + ", ".join(str(f.get("name") or "файл") for f in run["files"] if isinstance(f, dict))
         )
     parts.append(
-        "Код завершился успешно."
-        if run.get("ok")
-        else "Код завершился с ошибкой — исправь и запусти снова."
+        "Сборка/выполнение завершено успешно." if run.get("ok") and not run.get("timed_out")
+        else "Операция завершилась ошибкой — проанализируй stderr и исправь план или код."
     )
-    parts.append("Если задача решена, дай финальный ответ пользователю без блока run.")
+    parts.append("Если задача решена, дай финальный ответ пользователю без служебного блока.")
     return "\n".join(parts)
 
 
@@ -810,24 +845,32 @@ class AIRouter:
                         if got is None:
                             return
                         full, thinking, usage = got
-                        runs = extract_run_blocks(full) if agent_on else []
-                        if not runs:
+                        agent_blocks = extract_agent_blocks(full) if agent_on else []
+                        if not agent_blocks:
                             answer = full if full.strip() else thinking
                             break
                         # This response is an additional paid agent turn. Bill it
                         # immediately so the next budget check sees the real spend.
                         await self._bill(job, entry, usage, f"agent_step_{step + 1}")
                         usage = None
-                        for code in runs:
+                        for block_kind, block_payload in agent_blocks:
+                            if block_kind == "fileplan":
+                                code, display_code = _fileplan_runner(block_payload)
+                            else:
+                                code = block_payload
+                                display_code = code
                             await job.output.put(
-                                ("tool_start", json.dumps({"code": code}, ensure_ascii=False))
+                                ("tool_start", json.dumps({
+                                    "code": display_code, "kind": block_kind,
+                                }, ensure_ascii=False))
                             )
                             result = await run_python(
                                 code, timeout=run_timeout, project=job.project
                             )
                             attached = await self._attach_run_files(job, result)
                             run = {
-                                "code": code,
+                                "code": display_code,
+                                "kind": block_kind,
                                 "ok": bool(result.get("ok")),
                                 "stdout": result.get("stdout", ""),
                                 "stderr": result.get("stderr", ""),
@@ -842,12 +885,12 @@ class AIRouter:
                                 {"role": "user", "content": _tool_feedback(run)},
                             ]
                             cleanup(result.get("workdir"))
-                        answer = strip_run_blocks(full)
+                        answer = strip_agent_blocks(full)
                         if step + 1 < max_steps:
                             await job.output.put(("step", json.dumps({"n": step + 1})))
 
-                    if extract_run_blocks(answer):
-                        answer = strip_run_blocks(answer)
+                    if extract_agent_blocks(answer):
+                        answer = strip_agent_blocks(answer)
                     answer = strip_sandbox_paths(answer)
                     if not answer.strip() and code_mode and all_runs:
                         # A one-pass agent may return only a run block. Report the

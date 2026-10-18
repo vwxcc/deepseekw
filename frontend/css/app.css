@@ -2788,3 +2788,20 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 #composer .composer-row #stop-btn { align-self: center; }
 #composer .composer-row #send-btn,
 #composer .composer-row #stop-btn { top: -1px; }
+
+
+/* White composer surface, matching the panel and adjacent composer controls. */
+#composer .composer-inner { background: var(--bg-panel); }
+#composer #input { background: var(--bg-panel) !important; }
+#composer #input:focus { background: var(--bg-panel) !important; }
+
+/* Code Agent is visibly locked while the feature is not available. */
+.new-chat.code-mode { background: var(--bg-panel); border-color: var(--border); color: var(--fg-muted); }
+.new-chat.code-mode .ic { color: var(--fg-muted); }
+.new-chat.code-mode[disabled] { cursor: not-allowed; opacity: .8; box-shadow: none; }
+.new-chat.code-mode[disabled]:hover { border-color: var(--border); box-shadow: none; }
+.new-chat.code-mode .soon-tag {
+  margin-left: auto; padding: 2px 7px; border: 1px solid var(--border-soft);
+  border-radius: 999px; color: var(--fg-soft); background: var(--bg);
+  font-size: 10px; font-style: normal; font-weight: 600; line-height: 1.5;
+}

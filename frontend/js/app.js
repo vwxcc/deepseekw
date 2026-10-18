@@ -927,8 +927,9 @@
     ['#new-chat-btn', '#new-code-btn'].forEach(selector => {
       const button = $(selector);
       if (!button) return;
-      button.disabled = state.chatCreating;
-      button.setAttribute('aria-busy', String(state.chatCreating));
+      const comingSoon = selector === '#new-code-btn';
+      button.disabled = comingSoon || state.chatCreating;
+      button.setAttribute('aria-busy', String(!comingSoon && state.chatCreating));
     });
   }
 
@@ -4588,7 +4589,7 @@
   }
   function bindSidebar() {
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
-    $('#new-code-btn')?.addEventListener('click', () => newChat('code'));
+    // Code Agent is temporarily unavailable; never create a project/chat from this control.
     $('#sidebar-limits-btn').addEventListener('click', openLimits);
     // Консилиум намеренно не возвращаем: восстановлен только режим Код-агента.
     $('#collapse-btn').addEventListener('click', () => {

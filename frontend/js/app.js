@@ -833,6 +833,7 @@
       }
     },
     get(p) { return api.req('GET', p); },
+    getTimed(p, timeoutMs) { return api.req('GET', p, undefined, false, timeoutMs); },
     post(p, b) { return api.req('POST', p, b === undefined ? {} : b); },
     postTimed(p, b, timeoutMs) { return api.req('POST', p, b === undefined ? {} : b, false, timeoutMs); },
     postForm(p, fd) { return api.req('POST', p, fd, true); },
@@ -4326,9 +4327,15 @@
   }
 
   async function loadLimits() {
-    try { state.limits = await api.get('/api/limits'); }
-    catch (e) { state.limits = null; }
-    updateAllAudioControls();
+    try {
+      state.limits = await api.getTimed('/api/limits', 8000);
+      return null;
+    } catch (e) {
+      // Keep previously loaded limits available if a refresh fails.
+      return e;
+    } finally {
+      updateAllAudioControls();
+    }
   }
 
   async function openContextMenu() {
@@ -6085,11 +6092,40 @@
     if (subscriptionModalOpening) return;
     subscriptionModalOpening = true;
     try {
-      // Reuse already loaded account limits instead of waiting on every click.
-      if ((options && options.refresh) || !state.limits) await loadLimits();
+      // Never keep the subscription dialog hidden behind a slow limits request.
+      // Give fresh data a short head start, then render the dialog with cached data
+      // or an explicit unavailable-state notice. The request itself is time-bounded.
+      let limitsLoadError = false;
+      if ((options && options.refresh) || !state.limits) {
+        const cachedLimits = state.limits;
+        const loading = loadLimits();
+        let loadingWaitTimer = null;
+        const result = await Promise.race([
+          loading,
+          new Promise(resolve => {
+            loadingWaitTimer = setTimeout(() => resolve({ timedOut: true }), 1500);
+          }),
+        ]);
+        if (loadingWaitTimer) clearTimeout(loadingWaitTimer);
+        if (result && result.timedOut) {
+          limitsLoadError = true;
+          if (cachedLimits) state.limits = cachedLimits;
+        } else if (result instanceof Error) {
+          limitsLoadError = true;
+          if (cachedLimits) state.limits = cachedLimits;
+        }
+      }
       if ($('.modal.subscription-usage-modal', $('#modal-root'))) return;
     const data = state.limits || {};
     const lim = data.limits || {};
+    const limitsUnavailable = limitsLoadError && !state.limits;
+    const limitsLoadNotice = limitsLoadError
+      ? '<section class="usage-note" role="status">' +
+        (limitsUnavailable
+          ? 'Не удалось загрузить показатели лимитов. Окно подписки открыто; повторите открытие окна позже, чтобы обновить данные.'
+          : 'Не удалось обновить показатели лимитов. Показаны последние загруженные данные.') +
+        '</section>'
+      : '';
     const pro = (data.compare && data.compare.pro) || {};
     const plan = data.plan || 'free';
     const w = data.window || null;
@@ -6107,10 +6143,12 @@
       ['database', 'Хранилище', limitValueLabel('user_storage', pro.user_storage) + (free.user_storage !== undefined ? ' вместо ' + limitValueLabel('user_storage', free.user_storage) : '')],
       ['terminal', 'Время выполнения кода', limitValueLabel('sandbox_seconds', pro.sandbox_seconds) + ' с на запуск' + (free.sandbox_seconds !== undefined ? ' вместо ' + limitValueLabel('sandbox_seconds', free.sandbox_seconds) + ' с' : '')],
     ];
-    const proBenefitsHtml = '<div class="sub-benefits-grid">' + benefitRows.map(item =>
-      '<div class="sub-benefit-card"><span class="sub-benefit-icon">' + icon(item[0]) + '</span>' +
-      '<span class="sub-benefit-copy"><b>' + escapeHtml(item[1]) + '</b><small>' + escapeHtml(item[2]) + '</small></span></div>'
-    ).join('') + '</div>';
+    const proBenefitsHtml = limitsUnavailable
+      ? '<p class="usage-note">Преимущества тарифа временно недоступны: не удалось загрузить настройки лимитов.</p>'
+      : '<div class="sub-benefits-grid">' + benefitRows.map(item =>
+        '<div class="sub-benefit-card"><span class="sub-benefit-icon">' + icon(item[0]) + '</span>' +
+        '<span class="sub-benefit-copy"><b>' + escapeHtml(item[1]) + '</b><small>' + escapeHtml(item[2]) + '</small></span></div>'
+      ).join('') + '</div>';
     const exhaustedNotice = exhausted
       ? '<section class="limit-exhausted-banner" role="status"><span class="limit-exhausted-icon">' +
         icon('gauge') + '</span><div><strong>Лимит запросов на текущем тарифе исчерпан</strong><p>' +
@@ -6171,14 +6209,110 @@
     openModal({
       title: exhausted ? 'Лимит запросов исчерпан' : 'Лимиты подписки',
       okText: exhausted ? 'Закрыть' : 'Понятно',
-      body: exhaustedNotice +
+      body: limitsLoadNotice + exhaustedNotice +
         '<section class="sub-hero"><div class="sub-hero-top"><span class="sub-plan-mark">' + icon('shield-check') + '</span>' +
           '<div><div class="sub-eyebrow">ТЕКУЩИЙ ТАРИФ</div><div class="sub-plan">AI-Ch ' + escapeHtml(String(plan).toUpperCase()) + '</div></div>' +
           '<span class="sub-current-pill">' + (exhausted ? 'Лимит исчерпан' : 'Активен') + '</span></div>' +
           '<p>Бюджет считается по стоимости реальных вызовов модели и служебных запросов. ' +
           (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
           '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
-          '<span><b>Pro</b><small>' + (proPrice > 0 ? '$' + proPrice.toFixed(2) + ' / месяц' : 'цена не задана') + '</small></span></div>' +
+          '<span><b>Pro</b><small>' + (limitsUnavailable ? 'условия временно недоступны' : (proPrice > 0 ? '          '<h4 class="sub-benefits-heading">Что даёт Pro</h4>' + proBenefitsHtml +
+          '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
+          '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +
+          '</button></section><section class="sub-usage-section"><h4 class="sec">Текущее использование</h4>' +
+          '<p class="usage-note">Окно скользящее: учитываются расходы за последние ' +
+          escapeHtml(String(w && w.hours || lim.window_hours || 5)) +
+          ' часов, а не с начала календарного дня. Когда старые расходы выходят из окна, они перестают учитываться.</p>' +
+          (limitsUnavailable
+            ? '<p class="usage-note">Текущие показатели использования скрыты, чтобы не показывать неподтверждённые значения.</p>'
+            : money + rows + audioRow) +
+          '</section><section class="sub-comparison-section"><h4 class="sec">Лимиты Free и Pro</h4>' +
+          (limitsUnavailable
+            ? '<p class="usage-note">Сравнение тарифов временно недоступно.</p>'
+            : planCompareHtml(lim, data.compare)) + '</section>' +
+          '<p class="usage-note sub-admin-note">Автоматическая оплата не подключена. Запрос можно отправить администратору.</p>',
+      onOk: () => true,
+    });
+    const subscriptionModal = $('.modal', $('#modal-root'));
+    if (subscriptionModal) {
+      subscriptionModal.classList.add('subscription-usage-modal');
+      if (exhausted) subscriptionModal.classList.add('is-limit-exhausted');
+    }
+    const copyProRequest = $('#copy-pro-request');
+    if (copyProRequest) copyProRequest.addEventListener('click', async () => {
+      const ok = await copyText('Здравствуйте! Хочу оформить подписку Pro в AI-Ch. Подскажите, пожалуйста, стоимость и порядок оформления.');
+      toast(ok ? 'Запрос на оформление Pro скопирован' : 'Не удалось скопировать запрос', ok ? '' : 'error');
+    });
+    } finally {
+      subscriptionModalOpening = false;
+    }
+  }
+
+  // ---------- boot ----------
+  async function boot() {
+    showApp();
+    applySidebar();
+
+    // The empty welcome screen needs no server data. Render it immediately
+    // rather than waiting for the sidebar, files, models, memory and limits.
+    const welcomeRenderedEarly = !state.currentChatId && allMessages(state.tree).length === 0;
+    if (welcomeRenderedEarly) renderMessages();
+
+    if (state.user && state.user.is_admin) {
+      $('#sidebar-limits-btn').classList.remove('hidden');
+      await loadSystem();
+      setInterval(loadSystem, 20000);
+    }
+    $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
+    await loadChats();
+    await loadFiles();
+    await loadModelSets();
+    await loadMemory();
+    await loadLimits();
+    await loadUsage();
+
+    // The welcome screen was already rendered above. Any chat interaction during
+    // the asynchronous boot data loads renders its own current state; rebuilding
+    // it here caused an avoidable second DOM replacement and animation restart.
+    if (!welcomeRenderedEarly) renderMessages();
+  }
+
+  async function init() {
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
+    const token = new URLSearchParams(location.search).get('share');
+    if (token) { await showPublicView(token); return; }
+    try {
+      const me = await api.get('/api/auth/me');
+      state.user = me;
+      await boot();
+    } catch (e) {
+      showAuth();
+    }
+  }
+
+  function syncAppViewportHeight() {
+    const viewport = window.visualViewport;
+    const h = viewport && viewport.height ? viewport.height : window.innerHeight;
+    const top = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
+    document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
+    document.documentElement.style.setProperty('--app-offset-top', Math.round(top) + 'px');
+  }
+  syncAppViewportHeight();
+  window.addEventListener('resize', syncAppViewportHeight, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncAppViewportHeight, { passive: true });
+    window.visualViewport.addEventListener('scroll', syncAppViewportHeight, { passive: true });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  // KaTeX loads with defer: re-render math once it is available
+  window.addEventListener('load', () => {
+    const box = document.getElementById('messages');
+    if (box) renderMath(box.querySelector('.msg-wrap'));
+  });
+})();
+ + proPrice.toFixed(2) + ' / месяц' : 'цена не задана')) + '</small></span></div>' +
           '<h4 class="sub-benefits-heading">Что даёт Pro</h4>' + proBenefitsHtml +
           '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
           '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +

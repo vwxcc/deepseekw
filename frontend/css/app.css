@@ -2688,7 +2688,7 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 .speech-mode-switch {
   display: flex;
   width: min(100%, 420px);
-  gap: 3px;
+  gap: 0;
   margin: 0 auto 22px;
   padding: 3px;
   border: 1px solid var(--border-soft);

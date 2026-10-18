@@ -44,7 +44,7 @@ DEFAULTS: dict[str, dict[str, int | float | None]] = {
         "compress_max": 85,
         "compress_per_day": None,
         "price": 19,
-        "budget_usd": 10,
+        "budget_usd": 15,
         "window_hours": 5,
     },
 }

@@ -128,7 +128,14 @@ def _clean_filename(value: Any, title: str, fmt: str) -> str:
     raw = str(value or title or "ai-ch-file").strip()
     # Discard any supplied path; the plan may only select a filename, never a directory.
     raw = Path(raw.replace("\\", "/")).name
+    # Repair malformed office extensions and remove technical type prefixes
+    # added by a model (for example "ppt_report" or "xlsx-results").
+    raw = re.sub(r"\.(ppt|doc|xls)_$", lambda m: "." + m.group(1) + "x", raw, flags=re.I)
     raw = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", raw)
+    raw = re.sub(
+        r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+",
+        "", raw, flags=re.I,
+    )
     raw = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "-", raw)
     raw = re.sub(r"\s+", "-", raw).strip(" .-_")
     raw = raw[:100].strip(" .-_") or "ai-ch-file"

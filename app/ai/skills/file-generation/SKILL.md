@@ -16,7 +16,9 @@ version: 1
 - PNG: `image.infographic`, `image.poster`, `image.chart`, `image.social-card`.
 - CSV: `data.csv`; JSON: `data.json`; Markdown: `document.markdown`; plain text: `document.plain-text`.
 
-Выбирай подходящий шаблон и стиль автоматически по задаче. В каталоге есть 57 готовых стилей (например `apple`, `fluent`, `stripe`, `notion`, `swiss`, `bauhaus`, `editorial`, `scientific`, `consulting`, `financial`, `academic`, `tufte`, `infographic`, `blueprint`, `minimal`). Пользовательская палитра допускает только HEX `#RRGGBB). Не передавай неподтверждённые шаблоны или стили.
+Выбирай подходящий шаблон и стиль автоматически по задаче. В каталоге есть 57 готовых стилей (например `apple`, `fluent`, `stripe`, `notion`, `swiss`, `bauhaus`, `editorial`, `scientific`, `consulting`, `financial`, `academic`, `tufte`, `infographic`, `blueprint`, `minimal`). Пользовательская палитра допускает только HEX `#RRGGBB`. Не передавай неподтверждённые шаблоны или стили.
+
+**Имя файла:** используй короткое, понятное имя по содержанию. Не добавляй технические префиксы вроде `ppt_`, `doc_`, `xls_`, `pdf_`, `svg_`, `png_`, `csv_`, `json_`, `md_` или `txt_`. Если указываешь `filename`, используй расширение запрошенного формата и не маскируй один формат другим.
 
 ## Схема плана
 

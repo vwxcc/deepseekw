@@ -2558,3 +2558,213 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 .aich-output-file-download { flex:0 0 auto; color:var(--fg-muted); }
 .aich-output-file-download .ic { width:17px; height:17px; }
 @media (max-width:520px) { .aich-message-files-grid { grid-template-columns:minmax(0,1fr); } }
+
+
+/* Focused UI alignment: compact single-line composer with a four-line limit. */
+#composer .composer-inner {
+  width: calc(100% - 30px);
+  max-width: calc(var(--col) - 30px);
+  margin-inline: auto;
+  border-radius: 25px;
+}
+#composer .composer-row {
+  display: flex;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 0 2px;
+}
+#composer .composer-row .spacer { display: none !important; }
+#composer #input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+  margin: 0;
+  line-height: 1.5;
+  min-height: 26px;
+  max-height: 6em;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #aaa89f transparent;
+  border-radius: 15px;
+  padding: 5px 13px;
+}
+#composer #input::-webkit-scrollbar { width: 6px; }
+#composer #input::-webkit-scrollbar-thumb {
+  background: #aaa89f;
+  border-radius: 8px;
+  border: 1px solid var(--bg);
+}
+#composer .composer-row #attach-btn {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  align-self: flex-end;
+}
+#composer .composer-row #send-btn,
+#composer .composer-row #stop-btn {
+  position: relative;
+  top: 0;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  align-self: flex-end;
+}
+@media (max-width: 620px) {
+  #composer { padding-left: 4px; padding-right: 4px; }
+  #composer .composer-inner { width: calc(100% - 22px); }
+  #composer .composer-row { gap: 6px; }
+  #composer .composer-row #attach-btn,
+  #composer .composer-row #send-btn,
+  #composer .composer-row #stop-btn { flex-basis: 34px; width: 34px; height: 34px; }
+}
+
+/* The collapsed sidebar uses the same brand mark, not a hamburger/panel glyph. */
+#menu-btn, #sidebar-open-btn { width: 38px; height: 38px; }
+#menu-btn .ic, #sidebar-open-btn .ic { width: 22px; height: 22px; }
+
+/* Interactive answer elements follow the warm page surface instead of pure white. */
+.aich-ui-callout,
+.aich-ui-action,
+.ask-option,
+.ask-input {
+  background: var(--bg);
+}
+.aich-ui-action:hover,
+.ask-option:hover,
+.ask-option.is-selected {
+  background: var(--bg-user);
+}
+.ask-input:focus { background: var(--bg); }
+
+/* Share actions blend into the same surface as the conversation. */
+#share-btn { background: var(--bg); border-color: var(--border-soft); }
+#share-btn:hover { background: var(--bg-hover); }
+
+/* One summary control owns expansion; the full stream stays first inside the panel. */
+.activity-summary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 7px;
+  padding: 4px 7px;
+  margin: -4px 0 -4px -7px;
+  color: var(--fg-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13.4px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  text-align: left;
+}
+.activity-summary-button:hover,
+.activity-summary-button[aria-expanded="true"] {
+  color: var(--fg);
+  background: var(--bg-user);
+}
+.activity-summary-button .ic { width: 15px; height: 15px; }
+.activity-full-row { display: flex; margin: 2px 0 7px; }
+.activity-full-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  background: var(--bg);
+  font: inherit;
+  font-size: 12.7px;
+  cursor: pointer;
+}
+.activity-full-row button:hover { background: var(--bg-user); color: var(--fg); }
+
+/* Shared AI / system speech-player mode tabs. */
+.speech-mode-switch {
+  display: flex;
+  width: min(100%, 420px);
+  gap: 3px;
+  margin: 0 auto 22px;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: 13px;
+  background: var(--bg);
+}
+.speech-mode-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--fg-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.speech-mode-tab.is-active {
+  color: var(--fg);
+  background: var(--bg-panel);
+  box-shadow: 0 1px 3px rgba(45, 40, 30, .10);
+}
+.speech-generation-status {
+  width: min(100%, 560px);
+  margin: 0 auto 13px;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.speech-generation-status strong { color: var(--fg); font-weight: 750; }
+.speech-generate-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 560px);
+  min-height: 44px;
+  margin: 0 auto 18px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.speech-generate-button:hover { background: var(--bg-user); }
+.speech-generate-button:disabled { opacity: .55; cursor: wait; }
+#device-audio-status { font-weight: 600; }
+#device-audio-ready-text { overflow-wrap: anywhere; }
+#device-audio-play-toggle:disabled { opacity: .45; cursor: default; }
+
+.msg .meta button.listen-answer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-color: var(--border-soft);
+  color: var(--fg-muted);
+}
+.msg .meta button.listen-answer-action:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.audio-player-controls .audio-skip-btn { width: 86px; height: 86px; }
+@media (max-width: 620px) {
+  .audio-player-controls .audio-skip-btn { width: 86px; height: 86px; }
+}

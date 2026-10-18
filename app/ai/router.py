@@ -758,7 +758,14 @@ class AIRouter:
             }
             key = [word for word in words if word not in stop][:6]
             queries = [" ".join(key) if key else (job.search_query or "").strip()]
-        queries = [query for query in queries if query][:3]
+        # Always search the user's original wording as well as model-generated
+        # query variants. This preserves explicit locations (for example, Kazan)
+        # and reduces the risk that query planning silently substitutes another city.
+        original_query = (job.search_query or "").strip()
+        queries = list(dict.fromkeys(
+            ([original_query] if original_query else [])
+            + [query.strip() for query in queries if query.strip()]
+        ))[:3]
 
         results: list[dict] = []
         seen: set[str] = set()

@@ -1,6 +1,7 @@
 """Application configuration loaded from environment / .env file."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic import Field
@@ -22,7 +23,13 @@ class Settings(BaseSettings):
     # --- Auth / sessions ---
     # Development fallback is rejected by the production startup guard.
     session_secret: str = "dev-secret-change-me"
-    session_cookie_secure: bool = True
+    # Default Secure cookies on Render, but preserve plain-HTTP local development.
+    # An explicit environment value still takes precedence.
+    session_cookie_secure: bool = Field(
+        default_factory=lambda: bool(
+            os.getenv("RENDER_SERVICE_ID") or os.getenv("RENDER_EXTERNAL_URL")
+        )
+    )
     session_max_age: int = 60 * 60 * 24 * 7  # 7 days
     csrf_protection: bool = True
 

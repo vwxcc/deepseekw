@@ -87,12 +87,13 @@ BLOCK_ALIASES = {
 
 
 def catalog() -> dict[str, Any]:
-    """Return a serialisable catalogue of every template and all 57 design styles."""
+    """Return templates plus the current design-style and vector-asset catalogue."""
     return {
         "templates": [dict(item) for item in TEMPLATES],
         "styles": [
             {"id": theme.palette(style)["name"], "description": theme.palette(style)["mood"],
-             "font": theme.palette(style)["font"], "palette": theme.palette(style)}
+             "font": theme.palette(style)["font"], "palette": theme.palette(style),
+             "visuals": theme.visual_spec(style)}
             for style in theme.catalog() if not style.startswith("_")
         ],
         "formats": list(FORMAT_EXTENSIONS),
@@ -110,7 +111,7 @@ def catalog_text() -> str:
         if style.startswith("_"):
             continue
         p = theme.palette(style)
-        styles.append(f'{style} ({p["mood"]})')
+        styles.append(f'{style} ({p["mood"]}; шрифт: {p["font"]})')
     lines.append("All design styles: " + ", ".join(styles))
     return "\n".join(lines)
 
@@ -417,17 +418,26 @@ def _render_svg(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
     accent = html.escape(p["accent"])
     muted = html.escape(p["muted"])
     surface = html.escape(p["surface"])
-    title = html.escape(str(plan.get("title") or "Инфографика"))
-    subtitle = html.escape(str(plan.get("subtitle") or ""))
+    style = str(plan.get("style") or "minimal")
+    font_family = html.escape(str(p.get("font") or "Inter"))
+    title = html.escape(str(plan.get("title") or "Инфографика")[:25])
+    subtitle = html.escape(str(plan.get("subtitle") or "")[:60])
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         f'<rect width="{width}" height="{height}" rx="24" fill="{bg}"/>',
         f'<rect width="{width}" height="16" fill="{primary}"/>',
         f'<rect x="70" y="64" width="12" height="110" rx="6" fill="{accent}"/>',
-        f'<text x="110" y="108" font-family="Inter,Manrope,sans-serif" font-size="46" font-weight="700" fill="{fg}">{title}</text>',
+        f'<text x="110" y="108" font-family="{font_family},Inter,Manrope,sans-serif" font-size="42" font-weight="700" fill="{fg}">{title}</text>',
     ]
+    # Small, original vector art in the hero area. Colours follow the selected style.
+    hero_svg = theme.svg_illustration("default", style=style, width=205, height=123)
+    hero_svg = hero_svg.replace(
+        '<svg xmlns="http://www.w3.org/2000/svg"',
+        f'<svg xmlns="http://www.w3.org/2000/svg" x="{width - 260}" y="28"', 1
+    )
+    parts.append(hero_svg)
     if subtitle:
-        parts.append(f'<text x="110" y="156" font-family="Inter,Manrope,sans-serif" font-size="23" fill="{muted}">{subtitle}</text>')
+        parts.append(f'<text x="110" y="156" font-family="{font_family},Inter,Manrope,sans-serif" font-size="21" fill="{muted}">{subtitle}</text>')
     y = 220
     for index, block in enumerate(blocks[:16]):
         kind = str(block.get("kind") or "text").lower()
@@ -443,11 +453,11 @@ def _render_svg(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
                 parts.append(f'<rect x="{mx}" y="{y}" width="6" height="142" rx="3" fill="{accent if i % 2 else primary}"/>')
                 val = html.escape(str(metric.get("value", "")))
                 label = html.escape(str(metric.get("label", "")))
-                parts.append(f'<text x="{mx+26}" y="{y+58}" font-family="Inter,Manrope,sans-serif" font-size="36" font-weight="700" fill="{primary}">{val}</text>')
-                parts.append(f'<text x="{mx+26}" y="{y+98}" font-family="Inter,Manrope,sans-serif" font-size="17" fill="{muted}">{label}</text>')
+                parts.append(f'<text x="{mx+26}" y="{y+58}" font-family="{font_family},Inter,Manrope,sans-serif" font-size="36" font-weight="700" fill="{primary}">{val}</text>')
+                parts.append(f'<text x="{mx+26}" y="{y+98}" font-family="{font_family},Inter,Manrope,sans-serif" font-size="17" fill="{muted}">{label}</text>')
             y += 166
             continue
-        heading = html.escape(str(block.get("title") or block.get("kicker") or f"Блок {index+1}"))
+        heading = html.escape(str(block.get("title") or block.get("kicker") or f"Блок {index+1}")[:46])
         text = str(block.get("text") or "")
         items = block.get("items") or []
         rows = block.get("rows") or []
@@ -459,7 +469,11 @@ def _render_svg(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
         else:
             card_h = min(170, 92 + min(3, len(items)) * 22)
         parts.append(f'<rect x="{x}" y="{y}" width="{card_w}" height="{card_h}" rx="16" fill="{surface}" stroke="{html.escape(p["muted"])}" stroke-opacity=".22"/>')
-        parts.append(f'<text x="{x+26}" y="{y+34}" font-family="Inter,Manrope,sans-serif" font-size="22" font-weight="650" fill="{primary}">{heading}</text>')
+        icon_kind = {"table": "table", "quote": "sparkle", "metrics": "chart",
+                     "metric": "chart", "two_col": "globe", "section": "book",
+                     "bullets": "book"}.get(kind, "file")
+        parts.append(theme.svg_icon(icon_kind, style=style, size=38, x=x+14, y=y+7))
+        parts.append(f'<text x="{x+64}" y="{y+34}" font-family="{font_family},Inter,Manrope,sans-serif" font-size="21" font-weight="650" fill="{primary}">{heading}</text>')
         if kind == "table":
             columns = head or (rows[0] if rows else [])
             row_values = rows if head else rows[1:]
@@ -467,7 +481,7 @@ def _render_svg(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
             if columns:
                 parts.append(f'<rect x="{x+18}" y="{y+48}" width="{card_w-36}" height="27" rx="5" fill="{primary}" fill-opacity=".12"/>')
                 for ci, cell in enumerate(columns[:8]):
-                    parts.append(f'<text x="{x+26+ci*cell_w}" y="{y+68}" font-family="Inter,Manrope,sans-serif" font-size="13" fill="{fg}">{html.escape(str(cell))}</text>')
+                    parts.append(f'<text x="{x+26+ci*cell_w}" y="{y+68}" font-family="{font_family},Inter,Manrope,sans-serif" font-size="13" fill="{fg}">{html.escape(str(cell))}</text>')
             for ri, row in enumerate(row_values[:5]):
                 if y+96+ri*22 < y+card_h-8:
                     for ci, cell in enumerate(row[:8]):
@@ -487,14 +501,35 @@ def _render_svg(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
     return str(path)
 
 
-def _font_for_size(size: int):
+def _font_for_size(size: int, family: str = "Inter", bold: bool = False):
+    """Pick a bundled font matching the selected style, then use safe fallbacks."""
     from PIL import ImageFont
-    candidates = (
-        "/srv/fonts/Manrope-Regular.ttf",
+
+    family_key = re.sub(r"[^a-z]+", "", str(family or "").lower())
+    font_files = {
+        "inter": "/srv/fonts/Inter-Regular.ttf",
+        "manrope": "/srv/fonts/Manrope-Regular.ttf",
+        "lora": "/srv/fonts/Lora-Regular.ttf",
+        "ptserif": "/srv/fonts/PT_Serif-Web-Regular.ttf",
+        "playfairdisplay": "/srv/fonts/PlayfairDisplay.ttf",
+        "montserrat": "/srv/fonts/Montserrat-Regular.ttf",
+    }
+    candidates = []
+    if bold and family_key in {"ptserif"}:
+        candidates.append("/srv/fonts/PT_Serif-Web-Bold.ttf")
+    preferred = font_files.get(family_key)
+    if preferred:
+        candidates.append(preferred)
+    candidates.extend((
         "/srv/fonts/Inter-Regular.ttf",
+        "/srv/fonts/Manrope-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    )
+    ))
+    seen = set()
     for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
         try:
             return ImageFont.truetype(candidate, size=size)
         except OSError:
@@ -533,11 +568,11 @@ def _render_png(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
     height = min(4400, max(900, int(plan.get("height") or 0), 300 + 250 * max(1, len(blocks))))
     image = Image.new("RGB", (width, height), p["bg"])
     draw = ImageDraw.Draw(image)
-    title_font = _font_for_size(max(30, width // 28))
-    subtitle_font = _font_for_size(max(16, width // 68))
-    heading_font = _font_for_size(max(19, width // 66))
-    body_font = _font_for_size(max(15, width // 92))
-    muted_font = _font_for_size(max(12, width // 110))
+    title_font = _font_for_size(max(30, width // 28), p.get("font", "Inter"))
+    subtitle_font = _font_for_size(max(16, width // 68), p.get("font", "Inter"))
+    heading_font = _font_for_size(max(19, width // 66), p.get("font", "Inter"), bold=True)
+    body_font = _font_for_size(max(15, width // 92), p.get("font", "Inter"))
+    muted_font = _font_for_size(max(12, width // 110), p.get("font", "Inter"))
     margin, gap = width // 22, 18
     draw.rectangle((0, 0, width, 16), fill=p["primary"])
     draw.rounded_rectangle((margin, 58, margin + 12, 160), radius=6, fill=p["accent"])

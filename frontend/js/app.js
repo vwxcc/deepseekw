@@ -1,4 +1,4 @@
-/* AI-Ch 1.0 — SPA (vanilla JS) */
+/* AI CH — SPA (vanilla JS) */
 (() => {
   'use strict';
 
@@ -1327,7 +1327,7 @@
     state.chats = state.chats.filter(c => c.id !== id);
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
-      $('#chat-title').textContent = 'AI-Ch 1.0';
+      $('#chat-title').textContent = 'AI CH';
       renderMessages();
     }
     renderChatList();
@@ -1867,7 +1867,7 @@
     window.__aichActivityWindows[n.id] = popup;
     popup.document.open();
     popup.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>Полный поток · AI-Ch 1.0</title><style>' +
+      '<title>Полный поток · AI CH</title><style>' +
       ':root{color-scheme:light dark;--bg:#faf9f5;--fg:#34332f;--muted:#77756e;--line:#e5e2d9}' +
       '@media(prefers-color-scheme:dark){:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
       '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif}' +
@@ -1991,7 +1991,7 @@
       ? '<div class="msg-actions-row">' + meta + '</div>' : '';
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
-      '<div class="role">' + (isUser ? 'Вы' : 'AI-Ch 1.0') + '</div>' +
+      '<div class="role">' + (isUser ? 'Вы' : 'AI CH') + '</div>' +
       inner + askCard + actionsRow + memLine + '</div>';
   }
 
@@ -3567,7 +3567,7 @@
         if (n) {
           const el = $('.msg[data-mid="' + id + '"] .content');
           openSaveMenu({
-            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'AI-Ch 1.0',
+            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'AI CH',
             text: n.content || '',
             html: el ? el.innerHTML : '',
           });
@@ -5102,7 +5102,7 @@
   // ---------- share / public ----------
   function chatTranscriptText() {
     const chat = state.chats.find(item => String(item.id) === String(state.currentChatId));
-    const title = String(chat && chat.title || 'AI-Ch 1.0').trim() || 'AI-Ch 1.0';
+    const title = String(chat && chat.title || 'AI CH').trim() || 'AI CH';
     const entries = allMessages(state.tree);
     const parts = entries.map(entry => {
       const node = entry && entry.node;
@@ -5599,7 +5599,7 @@
         else if (f === 'txt') downloadBlob(base + '.txt', new Blob([text], { type: 'text/plain;charset=utf-8' }));
         else if (f === 'md') downloadBlob(base + '.md', new Blob([text], { type: 'text/markdown;charset=utf-8' }));
         else if (f === 'docx') downloadBlob(base + '.docx', textToDocx(text));
-        else if (f === 'pdf') printPdf(p.title || 'AI-Ch 1.0', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
+        else if (f === 'pdf') printPdf(p.title || 'AI CH', p.html || ('<pre>' + escapeHtml(text) + '</pre>'));
         else if (f === 'svg' && p.svg) downloadBlob(base + '.svg', new Blob([p.svg], { type: 'image/svg+xml' }));
         $('#modal-root').innerHTML = '';
         toast('Файл сохранён');
@@ -6040,7 +6040,7 @@
           const res = await api.post('/api/github/chats/' + state.currentChatId + '/git', {
             action: act,
             repo: ($('#gh-repo') || {}).value ? $('#gh-repo').value.trim() : '',
-            message: 'Update from AI-Ch 1.0',
+            message: 'Update from AI CH',
           });
           log((res.log || '') + (res.ok ? '\n✓ готово' : '\n✗ ошибка'));
           loadProject(false);

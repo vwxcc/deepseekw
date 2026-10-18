@@ -509,6 +509,37 @@
     if (findNode(state.tree, id)) renderMessageInPlace(id);
   }
 
+  function normaliseOutputFilename(value, mime) {
+    const rawMime = String(mime || '').toLowerCase().split(';')[0].trim();
+    const mimeExtensions = {
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+      'application/vnd.ms-powerpoint': '.ppt',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'application/msword': '.doc',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+      'application/vnd.ms-excel': '.xls',
+      'application/pdf': '.pdf', 'image/svg+xml': '.svg', 'image/png': '.png',
+      'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
+      'text/csv': '.csv', 'application/json': '.json', 'text/markdown': '.md',
+      'text/plain': '.txt', 'application/zip': '.zip',
+    };
+    let raw = String(value || 'output').replace(/\\/g, '/').split('/').pop().trim();
+    raw = raw.replace(/\s*\.(ppt|doc|xls)_$/i, (_, ext) => '.' + ({ ppt: 'pptx', doc: 'docx', xls: 'xlsx' }[ext.toLowerCase()]));
+    const extensionMatch = raw.match(/(\.[A-Za-z0-9]{1,8})$/);
+    let extension = extensionMatch ? extensionMatch[1].toLowerCase() : '';
+    let stem = extension ? raw.slice(0, -extensionMatch[1].length) : raw;
+    stem = stem.replace(/^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\s._-]*)+/i, '');
+    stem = stem.replace(/^[\s._-]+|[\s._-]+$/g, '');
+    stem = stem.replace(/[\\/:*?"<>|\x00-\x1f]+/g, '-').replace(/\s+/g, '-').replace(/-+/g, '-');
+    if (mimeExtensions[rawMime] && (rawMime.indexOf('officedocument') >= 0 || !extension)) extension = mimeExtensions[rawMime];
+    if (!extension) extension = mimeExtensions[rawMime] || '.bin';
+    stem = stem.replace(/[.\s_-]+$/g, '').slice(0, 140);
+    if (!stem) stem = extension === '.pptx' || extension === '.ppt' ? 'presentation'
+      : extension === '.docx' || extension === '.doc' ? 'document'
+      : extension === '.xlsx' || extension === '.xls' ? 'spreadsheet' : 'output';
+    return stem + extension;
+  }
+
   const deviceFilePersistence = new Map();
   const deviceFilePersistenceErrors = new Map();
   function persistDeviceFileForMessage(messageId, name, blob) {
@@ -518,8 +549,9 @@
     const task = previous.catch(() => false).then(async () => {
       let uploaded = null;
       try {
+        const safeName = normaliseOutputFilename(name, blob.type);
         const form = new FormData();
-        form.append('files', blob, String(name || 'output.bin'));
+        form.append('files', blob, safeName);
         const created = await api.postForm('/api/files', form);
         uploaded = Array.isArray(created) ? created.find(file => file && file.id) : null;
         if (!uploaded) throw new Error('Сервер не подтвердил сохранение файла');
@@ -536,7 +568,7 @@
         state.files = [uploaded].concat((state.files || []).filter(file => file.id !== uploaded.id));
         renderFiles();
         (deviceChatFiles.get(id) || []).slice().forEach(file => {
-          if (file.name.toLowerCase() === String(name || '').toLowerCase()) revokeDeviceChatFileUrl(file.url);
+          if (file.name.toLowerCase() === safeName.toLowerCase()) revokeDeviceChatFileUrl(file.url);
         });
         deviceFilePersistenceErrors.delete(id);
         return true;
@@ -1369,7 +1401,7 @@
       "name = str(plan.get('filename') or title or 'ai-ch-file').replace('\\\\','/').split('/')[-1]",
        "name = re.sub(r'\\.(ppt|doc|xls)_$', lambda m: '.' + m.group(1) + 'x', name, flags=re.I)",
       "name = re.sub(r'\\.[A-Za-z0-9]{1,8}$', '', name)",
-       "name = re.sub(r'^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+', '', name, flags=re.I)",
+       "name = re.sub(r'^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\\s._-]*)+', '', name, flags=re.I)",
       "name = ''.join(ch if ch.isalnum() or ch in ' .-_' else '-' for ch in name).strip(' .-_')[:100] or 'ai-ch-file'",
       "filename = name + exts[fmt]",
       "blocks = plan.get('blocks') or plan.get('slides') or plan.get('sections') or plan.get('items') or []",
@@ -2984,17 +3016,7 @@
           }
           return;
         }
-        let normalizedName = String(data.name).replace(/\.(ppt|doc|xls)_$/i, (_, ext) => '.' + ({ ppt: 'pptx', doc: 'docx', xls: 'xlsx' }[ext.toLowerCase()]));
-        const nameExtensionMatch = normalizedName.match(/(\.[A-Za-z0-9]{1,8})$/);
-        const nameExtension = nameExtensionMatch ? nameExtensionMatch[1] : '';
-        let nameStem = nameExtension ? normalizedName.slice(0, -nameExtension.length) : normalizedName;
-        nameStem = nameStem.replace(/^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[_-])+/i, '');
-        normalizedName = (nameStem || 'output') + nameExtension;
-        if (String(data.mime || '').toLowerCase() === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' &&
-            !/\.pptx$/i.test(normalizedName)) {
-          const stem = normalizedName.replace(/(?:\.pptx?|[._-]ppt_?)$/i, '').replace(/[._-]+$/g, '');
-          normalizedName = (stem || 'presentation') + '.pptx';
-        }
+        let normalizedName = normaliseOutputFilename(data.name, data.mime);
         const normalizedExt = normalizedName.slice(normalizedName.lastIndexOf('.')).toLowerCase();
         const officeMime = {
           '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -3572,9 +3594,31 @@
       } catch (_) {
         text = String(value == null ? '' : value);
       }
-      // The upgrade window is only for exhausted dollar budgets, not generic
-      // HTTP 429 responses such as file/chat quotas or unrelated errors.
-      if (!/лимит\s+исчерпан/i.test(text)) return false;
+      // Parse JSON-wrapped HTTP errors as well as plain SSE messages. Only a
+      // depleted dollar budget opens this window; unrelated quota errors remain errors.
+      const fragments = [text];
+      let parsed = value;
+      for (let depth = 0; depth < 3; depth += 1) {
+        if (typeof parsed !== 'string') {
+          try { parsed = JSON.stringify(parsed); } catch (_) { parsed = String(parsed); }
+          if (parsed) fragments.push(parsed);
+        }
+        if (typeof parsed !== 'string') break;
+        try {
+          parsed = JSON.parse(parsed);
+          if (parsed && typeof parsed === 'object') {
+            ['detail', 'error', 'message', 'description'].forEach(key => {
+              if (parsed[key] !== undefined) {
+                try { fragments.push(typeof parsed[key] === 'string' ? parsed[key] : JSON.stringify(parsed[key])); }
+                catch (_) { fragments.push(String(parsed[key])); }
+              }
+            });
+          }
+        } catch (_) { break; }
+      }
+      const diagnostic = fragments.filter(Boolean).join('\n');
+      const isMoneyBudget = /лимит\s+(?:тарифа\s+)?исчерпан\s*:\s*\$|денежн[а-яё\s-]{0,30}бюджет[а-яё\s-]{0,30}(?:исчерпан|превышен)|бюджет[а-яё\s-]{0,40}(?:исчерпан|превышен)|budget[\s_-]{0,40}(?:exhausted|exceeded)/i.test(diagnostic);
+      if (!isMoneyBudget) return false;
       budgetModalShown = true;
       openUsageModal({ exhausted: true }).catch((e) => console.warn('Could not open subscription limits:', e));
       return true;
@@ -3764,18 +3808,27 @@
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
-            const runs = n.tool_runs || [];
-            const idx = runs.findIndex(r => r.running);
-            if (idx >= 0) runs[idx] = data; else runs.push(data);
+            const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
+            const idx = runs.findIndex(r => r && r.running);
+            const suppressSandboxFailure = (!data.ok || data.timed_out) && !isCurrentCodeAgent();
+            if (idx >= 0) {
+              if (suppressSandboxFailure) runs.splice(idx, 1);
+              else runs[idx] = data;
+            } else if (!suppressSandboxFailure) {
+              runs.push(data);
+            }
             n.tool_runs = runs;
             if (data.files && data.files.length) {
               n.attachments = (n.attachments || []).concat(data.files.map(f => ({
-                id: f.id, file_id: f.file_id, name: f.name, kind: f.kind, size: f.size,
+                id: f.id, file_id: f.file_id, name: normaliseOutputFilename(f.name, ''),
+                kind: f.kind, size: f.size,
               })));
-              appendActivity(n, { kind: 'status', text: 'Файлы созданы · проверяю результат' });
+              appendActivity(n, { kind: 'status', text: 'Файлы подготовлены · завершаю проверку результата' });
+            } else if (suppressSandboxFailure) {
+              appendActivity(n, { kind: 'status', text: 'Продолжаю подготовку результата' });
             } else {
               appendActivity(n, { kind: 'status', text: data.ok && !data.timed_out
-                ? 'Результат выполнения готов · завершаю проверку' : 'Проверяю ошибку выполнения' });
+                ? 'Результат выполнения готов · завершаю проверку' : 'Продолжаю обработку результата' });
             }
           }
           if (state.currentChatId === streamContext.chatId) {
@@ -3991,7 +4044,11 @@
     const draft = input.value;
     const content = draft.trim();
     if (!content || state.streaming || state.sending || state.chatLoading) return;
-    const selectedExecutionTarget = executionTarget || (shouldAskExecutionTarget(content) ? 'both' : 'site');
+    const asksForArtifact = /(?:файл|документ|презентац|таблиц|excel|powerpoint|word|xlsx?|pptx?|docx?|pdf|svg|png|csv|json|markdown|\bmd\b|\btxt\b|отч[её]т|инфограф|диаграмм|изображени|presentation|spreadsheet|report)/i.test(content) &&
+      /(?:созда|сгенер|подготов|сделай|сформир|состав|собери|пришли|выгруз|экспорт|запиши|сохрани|конверт|преобраз|нарисуй|построй|оформи|генер|разработ|нужн|хочу|create|generate|prepare|make|build|export|save|convert|draw|render)/i.test(content);
+    const selectedExecutionTarget = asksForArtifact
+      ? 'both'
+      : (executionTarget || (shouldAskExecutionTarget(content) ? 'both' : 'site'));
 
     // Validate pending attachments before reading IDs; a stale/null item must not abort sending.
     const pending = Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [];
@@ -5925,7 +5982,23 @@
     const plan = data.plan || 'free';
     const w = data.window || null;
     const use = data.usage || {};
+    const free = (data.compare && data.compare.free) || {};
     const proPrice = Number(pro.price || 0);
+    const windowHours = Number(w && w.hours || lim.window_hours || 5);
+    const moneyDetail = pro.budget_usd == null ? 'без денежного лимита'
+      : (free.budget_usd != null
+        ? '$' + Number(pro.budget_usd).toFixed(2) + ' вместо $' + Number(free.budget_usd).toFixed(2) + ' за ' + windowHours + ' ч'
+        : '$' + Number(pro.budget_usd).toFixed(2) + ' за ' + windowHours + ' ч');
+    const benefitRows = [
+      ['wallet', 'Бюджет на ИИ', moneyDetail],
+      ['file-text', 'Размер файла', limitValueLabel('file_size', pro.file_size) + ' на файл' + (free.file_size !== undefined ? ' вместо ' + limitValueLabel('file_size', free.file_size) : '')],
+      ['database', 'Хранилище', limitValueLabel('user_storage', pro.user_storage) + (free.user_storage !== undefined ? ' вместо ' + limitValueLabel('user_storage', free.user_storage) : '')],
+      ['terminal', 'Время выполнения кода', limitValueLabel('sandbox_seconds', pro.sandbox_seconds) + ' с на запуск' + (free.sandbox_seconds !== undefined ? ' вместо ' + limitValueLabel('sandbox_seconds', free.sandbox_seconds) + ' с' : '')],
+    ];
+    const proBenefitsHtml = '<div class="sub-benefits-grid">' + benefitRows.map(item =>
+      '<div class="sub-benefit-card"><span class="sub-benefit-icon">' + icon(item[0]) + '</span>' +
+      '<span class="sub-benefit-copy"><b>' + escapeHtml(item[1]) + '</b><small>' + escapeHtml(item[2]) + '</small></span></div>'
+    ).join('') + '</div>';
     const exhaustedNotice = exhausted
       ? '<section class="limit-exhausted-banner" role="status"><span class="limit-exhausted-icon">' +
         icon('gauge') + '</span><div><strong>Лимит запросов на текущем тарифе исчерпан</strong><p>' +
@@ -5993,7 +6066,8 @@
           '<p>Бюджет считается по стоимости реальных вызовов модели и служебных запросов. ' +
           (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
           '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
-          '<span><b>Pro</b><small>лимиты Pro из настроек</small></span></div>' +
+          '<span><b>Pro</b><small>' + (proPrice > 0 ? '$' + proPrice.toFixed(2) + ' / месяц' : 'цена не задана') + '</small></span></div>' +
+          '<h4 class="sub-benefits-heading">Что даёт Pro</h4>' + proBenefitsHtml +
           '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
           '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +
           '</button></section><section class="sub-usage-section"><h4 class="sec">Текущее использование</h4>' +

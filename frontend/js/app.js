@@ -1691,6 +1691,17 @@
     if (hasCompletedAnswer) startAudioStatusPolling();
   }
 
+  function startPendingDeviceSpeechIfReady(messageId) {
+    const id = String(messageId || '');
+    const record = state.readableText[id];
+    const shell = $('#device-audio-player-shell');
+    if (!id || String(pendingDeviceSpeechMessageId || '') !== id ||
+        !record || record.status !== 'ready' || !String(record.text || '').trim() ||
+        !shell || !shell.classList.contains('open')) return;
+    pendingDeviceSpeechMessageId = null;
+    startDeviceSpeech(id);
+  }
+
   async function refreshReadableTextStatus(messageId) {
     try {
       const result = await api.get('/api/messages/' + encodeURIComponent(messageId) + '/readable-text');
@@ -1703,6 +1714,7 @@
       state.readableText[messageId] = result;
       updateReadableTextUi(messageId);
       if (result.status === 'generating') startReadableTextStatusPolling();
+      if (result.status === 'ready') startPendingDeviceSpeechIfReady(messageId);
       return result;
     } catch (e) {
       return null;
@@ -1780,6 +1792,7 @@
       state.readableText[messageId] = result && result.status ? result : { status: 'generating', text: null, error: null };
       updateReadableTextUi(messageId);
       if (state.readableText[messageId].status === 'generating') startReadableTextStatusPolling();
+      if (state.readableText[messageId].status === 'ready') startPendingDeviceSpeechIfReady(messageId);
       return state.readableText[messageId];
     } catch (err) {
       let latest = null;
@@ -1794,6 +1807,7 @@
         state.readableText[messageId] = latest;
         updateReadableTextUi(messageId);
         if (latest.status === 'generating') startReadableTextStatusPolling();
+        if (latest.status === 'ready') startPendingDeviceSpeechIfReady(messageId);
         return latest;
       }
       state.readableText[messageId] = {
@@ -2237,6 +2251,7 @@
   }
 
   function closeDeviceSpeechPlayer() {
+    pendingDeviceSpeechMessageId = null;
     deviceSpeechState.active = false;
     deviceSpeechState.playing = false;
     deviceSpeechState.pending = false;
@@ -2263,25 +2278,68 @@
 
   function startDeviceSpeech(messageId) {
     if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') {
-      toast('Системная озвучка недоступна в этом браузере. Используйте генерацию аудио.', 'error');
+      toast('Системная озвучка недоступна в этом браузере. Используйте генерацию ИИ-аудио.', 'error');
       return;
     }
-    const node = findNode(state.tree, messageId);
+    const id = String(messageId || '');
+    const node = findNode(state.tree, id);
     if (!node || !String(node.content || '').trim()) return;
-    if ($('#audio-player-shell') && $('#audio-player-shell').classList.contains('open')) closeAudioPlayer();
+    const aiShell = $('#audio-player-shell');
+    if (aiShell && aiShell.classList.contains('open')) closeAudioPlayer();
     if (deviceSpeechState.active) closeDeviceSpeechPlayer();
-    const readable = state.readableText[messageId];
+
+    state.audioMessageId = id;
+    deviceSpeechState.messageId = id;
+    const chat = state.chats.find(c => c.id === state.currentChatId);
+    const shell = $('#device-audio-player-shell');
+    if (!shell) return;
+    const title = $('#device-audio-title');
+    if (title) title.textContent = (chat && chat.title ? chat.title : 'Ответ') + ' · системная озвучка';
+    shell.classList.add('open');
+    shell.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('audio-player-open');
+    if (navigator.mediaSession && typeof window.MediaMetadata === 'function') {
+      try {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: title ? title.textContent : 'Системная озвучка',
+          artist: 'ai-ch',
+          album: 'Воспроизведение устройством',
+        });
+      } catch (e) { /* optional */ }
+    }
+    installDeviceSpeechMediaSessionHandlers();
+
+    const readable = state.readableText[id];
+    const status = $('#device-audio-status');
     if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
-      toast('Сначала дождитесь создания читабельного текста.', 'error');
+      pendingDeviceSpeechMessageId = id;
+      if (status) status.textContent = 'Подготавливаю читабельный текст…';
+      updateSpeechPlayerUi(id);
+      updateDeviceSpeechControls();
+      if (!readable || readable.status === 'missing' || readable.status === 'failed') {
+        generateReadableText(id, true).then(record => {
+          if (record && record.status === 'ready') startPendingDeviceSpeechIfReady(id);
+          else if (record && record.status === 'failed' && status) {
+            status.textContent = 'Не удалось подготовить текст для системной озвучки.';
+          }
+        }).catch(() => {
+          if (status) status.textContent = 'Не удалось связаться с сервером подготовки текста.';
+        });
+      } else {
+        startReadableTextStatusPolling();
+      }
+      requestAnimationFrame(() => $('#device-audio-close-btn')?.focus());
       return;
     }
+
+    pendingDeviceSpeechMessageId = null;
     const text = String(readable.text);
     const words = text.match(/\S+/g) || [];
     if (!words.length) {
-      toast('В этом ответе нет текста для озвучивания.', 'error');
+      if (status) status.textContent = 'В этом ответе нет текста для озвучивания.';
       return;
     }
-    deviceSpeechState.messageId = messageId;
+    deviceSpeechState.messageId = id;
     deviceSpeechState.text = text;
     deviceSpeechState.words = words;
     deviceSpeechState.chunks = [];
@@ -2294,22 +2352,8 @@
     deviceSpeechState.playing = false;
     deviceSpeechState.pending = false;
     deviceSpeechState.priming = false;
-    const chat = state.chats.find(c => c.id === state.currentChatId);
-    const shell = $('#device-audio-player-shell');
-    if (!shell) return;
-    const title = $('#device-audio-title');
-    if (title) title.textContent = (chat && chat.title ? chat.title : 'Ответ') + ' · системная озвучка';
-    shell.classList.add('open');
-    shell.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('audio-player-open');
-    if (navigator.mediaSession && typeof window.MediaMetadata === 'function') {
-      try { navigator.mediaSession.metadata = new window.MediaMetadata({title: title ? title.textContent : 'Системная озвучка', artist: 'ai-ch', album: 'Воспроизведение устройством'}); } catch (e) { /* optional */ }
-    }
-    installDeviceSpeechMediaSessionHandlers();
-    const status = $('#device-audio-status');
     if (status) status.textContent = 'Запускаю системный голос…';
-    // Call speak directly from the user's tap; speakDeviceChunk only clears a stale queue if needed.
-    deviceSpeechState.priming = false;
+    updateSpeechPlayerUi(id);
     speakDeviceChunk(0, true);
     requestAnimationFrame(() => $('#device-audio-close-btn')?.focus());
   }

@@ -2905,3 +2905,19 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   .limit-exhausted-icon { width: 32px; height: 32px; flex-basis: 32px; }
   .modal.subscription-usage-modal .sub-plan-summary { gap: 10px; }
 }
+
+
+/* Composer touch-up: lift the input row a little; vertically center controls and move plus left. */
+#composer .composer-row {
+  align-items: center;
+  transform: translateY(-4px);
+}
+#composer .composer-row #attach-btn,
+#composer .composer-row #input,
+#composer .composer-row #send-btn,
+#composer .composer-row #stop-btn {
+  align-self: center;
+}
+#composer .composer-row #attach-btn { margin-left: -4px; }
+#composer .composer-row #send-btn,
+#composer .composer-row #stop-btn { top: 0; }

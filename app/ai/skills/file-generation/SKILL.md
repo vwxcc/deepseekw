@@ -1,0 +1,49 @@
+---
+name: file-generation
+version: 1
+---
+# Генерация файлов AI-Ch — декларативный fileplan
+
+Когда пользователь просит **готовый файл** или артефакт (в первую очередь PPTX, DOCX, XLSX, PDF, SVG, PNG, CSV, JSON, MD, TXT), выводи один закрытый блок ```fileplan с валидным JSON. Не подменяй запрошенный формат HTML-превью: презентация должна быть настоящим `.pptx`, документ — `.docx`, таблица — `.xlsx`. Не собирай эти форматы самодельным Python-кодом в ```run; сервер использует фиксированный проверенный рендерер `designs.templates.build_from_plan`. План содержит только данные и команды макета, не исполняемый код.
+
+## Доступные форматы и шаблоны
+
+- PPTX: `presentation.editorial` (воздушная редакционная), `presentation.pitch` (питч-дек), `presentation.education` (учебная), `presentation.data-story` (данные и графики), `presentation.consulting` (деловая/консалтинговая), `presentation.product` (обзор продукта), `presentation.minimal` (минимализм).
+- DOCX: `document.editorial`, `document.research`, `document.proposal`, `document.academic`, `document.resume`, `document.manual`.
+- PDF: `pdf.report`, `pdf.research`, `pdf.handout`.
+- XLSX: `spreadsheet.analytics`, `spreadsheet.finance`, `spreadsheet.tracker`, `spreadsheet.catalog`.
+- SVG: `vector.infographic`, `vector.flowchart`, `vector.process`, `vector.poster`.
+- PNG: `image.infographic`, `image.poster`, `image.chart`, `image.social-card`.
+- CSV: `data.csv`; JSON: `data.json`; Markdown: `document.markdown`; plain text: `document.plain-text`.
+
+Выбирай подходящий шаблон и стиль автоматически по задаче. В каталоге есть 57 готовых стилей (например `apple`, `fluent`, `stripe`, `notion`, `swiss`, `bauhaus`, `editorial`, `scientific`, `consulting`, `financial`, `academic`, `tufte`, `infographic`, `blueprint`, `minimal`). Пользовательская палитра допускает только HEX `#RRGGBB). Не передавай неподтверждённые шаблоны или стили.
+
+## Схема плана
+
+Минимально нужны `format`, совместимый `template_id`, `title` и содержимое. Допустимы `filename`, `subtitle`, `author`, `style`, `palette`, `blocks` (синонимы: `slides`, `sections`, `items`), а для книг Excel — `sheets`. Типичный блок использует `kind`/ `layout`, `title`, `text`, `items`; таблицы — `head` и `rows`; метрики — `items: [{"value":"42%","label":"рост"}]`; сравнение в две колонки — `left` и `right`. Учитывай форматные ограничения: презентации не должны быть стеной текста; группируй одну главную мысль на слайд, делай ясную иерархию, короткие подписи, реальные цифры только при наличии надёжных данных. Для XLSX задавай листы с `name`, `head`, `rows`. Для SVG/PNG держи таблицы компактными.
+
+Пример:
+```fileplan
+{
+  "version": 1,
+  "format": "pptx",
+  "template_id": "presentation.education",
+  "filename": "gemini-ai-overview.pptx",
+  "title": "Gemini AI",
+  "subtitle": "Возможности, применение и ограничения",
+  "style": "editorial",
+  "blocks": [
+    {"kind": "section", "title": "Что такое Gemini", "text": "Краткое и точное объяснение технологии."},
+    {"kind": "bullets", "title": "Основные возможности", "items": ["Текст и документы", "Работа с изображениями", "Помощь с кодом"]},
+    {"kind": "metrics", "title": "Что учитывать", "items": [{"value": "Качество", "label": "проверять результат"}, {"value": "Данные", "label": "учитывать приватность"}]}
+  ]
+}
+```
+
+## Гарантии и ошибки
+
+- План валидируется до записи: укажи существующий `template_id` именно для указанного `format`; не выдумывай поля и не используй исполняемый код.
+- Путь не задаётся пользователем: передавай только имя файла. Рендерер безопасно очищает имя и создаёт реальный файл.
+- Серверная песочница изолирована, сеть в процессе исполнения отключена; файлы прикрепляются только после успешного создания/получения результата.
+- Если результат сборки содержит ошибку, анализируй реальную ошибку и исправляй план по доступному агентскому циклу. Никогда не утверждай, что файл создан, пока результат не подтвердил файл. Не обещай, что локальный браузер способен собирать любой офисный формат: его Python WebAssembly и пакеты отличаются от серверной среды.
+- Для программирования, вычислений и анализа данных без требования готового артефакта используй ```run; не отправляй ```fileplan, когда пользователю нужен исполняемый код, а не файл.

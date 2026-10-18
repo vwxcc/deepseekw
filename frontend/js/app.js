@@ -3059,7 +3059,7 @@
   function renderEmptyState() {
     const box = $('#messages');
     box.classList.add('empty');
-    box.innerHTML =
+    box.innerHTML = chatOriginBannerHtml() +
       '<div class="empty-state">' +
         '<h2 class="greet" id="greet-text">' +
           escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +

@@ -307,8 +307,57 @@ def validate_plan(plan: Any) -> dict[str, Any]:
         for i, block in enumerate(clean["blocks"]):
             if block["kind"] not in supported:
                 raise ValueError(f"Текстовый документ, блок {i + 1}: неподдерживаемый тип {block['kind']}.")
-    elif fmt in ("csv", "json"):
-        # These formats are driven by their explicit tabular/data payload.
+    elif fmt == "csv":
+        raw_sheets = plan.get("sheets")
+        if raw_sheets is not None and not isinstance(raw_sheets, list):
+            raise ValueError("Для CSV sheets должен быть списком таблиц.")
+        if not raw_sheets:
+            if plan.get("head") or plan.get("rows"):
+                raw_sheets = [{"name": title, "head": plan.get("head") or [], "rows": plan.get("rows") or []}]
+            else:
+                tables = [b for b in clean["blocks"] if b.get("kind") == "table" and (b.get("head") or b.get("rows"))]
+                if tables:
+                    raw_sheets = [{"name": b.get("title") or f"Таблица {i + 1}",
+                                   "head": b.get("head") or [], "rows": b.get("rows") or []}
+                                  for i, b in enumerate(tables)]
+                elif clean["blocks"]:
+                    raw_sheets = [{
+                        "name": title,
+                        "head": ["Раздел", "Содержание"],
+                        "rows": [[
+                            b.get("title") or b.get("kicker") or b.get("kind") or "Раздел",
+                            str(b.get("text") or b.get("body") or b.get("content") or " · ".join(
+                                str(item.get("label") or item.get("value") or "") if isinstance(item, dict) else str(item)
+                                for item in (b.get("items") or [])
+                            )),
+                        ] for b in clean["blocks"]],
+                    }]
+                else:
+                    raise ValueError("Для CSV укажи head/rows или таблицу в blocks.")
+        if not isinstance(raw_sheets, list) or not raw_sheets:
+            raise ValueError("Для CSV нужен хотя бы один лист с данными.")
+        if len(raw_sheets) > 12:
+            raise ValueError("В CSV можно объединить не более 12 таблиц.")
+        normal_sheets = []
+        total_rows = 0
+        for index, sheet in enumerate(raw_sheets, start=1):
+            if not isinstance(sheet, dict):
+                raise ValueError(f"Таблица CSV {index} должна быть объектом.")
+            head, rows = sheet.get("head") or [], sheet.get("rows") or []
+            if not isinstance(head, list) or not isinstance(rows, list):
+                raise ValueError(f"Таблица CSV {index}: head и rows должны быть списками.")
+            if len(head) > 40 or any(not isinstance(row, (list, tuple)) or len(row) > 40 for row in rows):
+                raise ValueError(f"Таблица CSV {index}: максимум 40 столбцов.")
+            if len(rows) > 1500:
+                raise ValueError(f"Таблица CSV {index}: максимум 1500 строк.")
+            total_rows += len(rows)
+            normal_sheets.append({"name": str(sheet.get("name") or f"Таблица {index}")[:100],
+                                  "head": head, "rows": rows})
+        if total_rows > 5000:
+            raise ValueError("Слишком много строк для одного CSV (общий предел 5000).")
+        clean["sheets"] = normal_sheets
+    elif fmt == "json":
+        # JSON remains a faithful structured export of the validated plan.
         pass
     elif fmt == "xlsx":
         sheets = plan.get("sheets")

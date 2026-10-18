@@ -1823,38 +1823,72 @@
   }
 
   async function generateAnswerAudio(messageId) {
-    const readable = state.readableText[messageId];
-    if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
-      toast('Сначала дождитесь создания читабельного текста.', 'error');
+    const node = findNode(state.tree, messageId);
+    if (!node || node.role !== 'assistant' || node.status !== 'completed' || !String(node.content || '').trim()) {
+      toast('Озвучить можно только готовый ответ.', 'error');
+      return;
+    }
+    if (state.audioReady[messageId]) {
+      updateSpeechPlayerUi(messageId);
       return;
     }
     if (state.audioPending[messageId] || state.audioRequestInFlight[messageId]) return;
     if (state.audioBusyMessageId && String(state.audioBusyMessageId) !== String(messageId)) {
-      toast('Уже создаётся другая озвучка. Дождитесь завершения.', 'error');
+      toast('Уже создаётся другая озвучка. Дождитесь её завершения.', 'error');
       return;
     }
+
+    state.audioErrors[messageId] = '';
     state.audioRequestInFlight[messageId] = true;
     state.audioPending[messageId] = true;
     state.audioBusyMessageId = String(messageId);
     updateAllAudioControls();
+    updateSpeechPlayerUi(messageId);
     startAudioStatusPolling();
     try {
+      // The server queues text preparation and TTS independently of this page.
       const result = await api.post('/api/messages/' + encodeURIComponent(messageId) + '/audio', {});
       state.audioRequestInFlight[messageId] = false;
-      state.audioPending[messageId] = false;
-      state.audioReady[messageId] = !!(result && result.ready);
       state.audioStatusRequested.add(messageId);
-      state.audioBusyMessageId = null;
-      updateAllAudioControls();
-      await loadLimits();
-      toast('Озвучка ИИ готова — нажмите «Озвучка ИИ», чтобы слушать.');
+      if (result && result.ready) {
+        state.audioReady[messageId] = true;
+        state.audioPending[messageId] = false;
+        state.audioBusyMessageId = null;
+        delete state.audioErrors[messageId];
+        updateAllAudioControls();
+        updateSpeechPlayerUi(messageId);
+        await loadLimits();
+        toast('ИИ-озвучка готова. Нажмите ▶ в плеере.');
+      } else {
+        state.audioPending[messageId] = true;
+        state.audioBusyMessageId = String(messageId);
+        updateAllAudioControls();
+        updateSpeechPlayerUi(messageId);
+        startAudioStatusPolling();
+        await refreshAudioStatus(messageId);
+        await loadLimits();
+        toast('ИИ-озвучка запущена на сервере. Можно закрыть сайт — подготовка продолжится.');
+      }
     } catch (err) {
       state.audioRequestInFlight[messageId] = false;
-      state.audioPending[messageId] = false;
-      if (String(state.audioBusyMessageId) === String(messageId)) state.audioBusyMessageId = null;
+      const status = await refreshAudioStatus(messageId);
+      if (status && status.ready) {
+        state.audioReady[messageId] = true;
+        state.audioPending[messageId] = false;
+        state.audioBusyMessageId = null;
+        updateSpeechPlayerUi(messageId);
+      } else if (status && status.generating) {
+        state.audioPending[messageId] = true;
+        state.audioBusyMessageId = String(messageId);
+        updateSpeechPlayerUi(messageId);
+      } else {
+        state.audioPending[messageId] = false;
+        if (String(state.audioBusyMessageId) === String(messageId)) state.audioBusyMessageId = null;
+        if (status && status.error) state.audioErrors[messageId] = String(status.error);
+        updateSpeechPlayerUi(messageId);
+        toast('Не удалось запустить озвучку: ' + (err.message || 'ошибка сервера'), 'error');
+      }
       updateAllAudioControls();
-      toast('Не удалось озвучить ответ: ' + (err.message || 'ошибка сервера'), 'error');
-      await refreshAudioStatus(messageId);
       await loadLimits();
     }
   }
@@ -1885,11 +1919,12 @@
 
   function openAudioPlayer(messageId, autoplay) {
     const n = findNode(state.tree, messageId);
-    if (!n || !state.audioReady[messageId]) return;
-    if (deviceSpeechState.active) closeDeviceSpeechPlayer();
+    if (!n || n.role !== 'assistant' || !String(n.content || '').trim()) return;
+    const deviceShell = $('#device-audio-player-shell');
+    if (deviceShell && deviceShell.classList.contains('open')) closeDeviceSpeechPlayer();
     const shell = $('#audio-player-shell'), audio = $('#audio-player-source');
     if (!shell || !audio) return;
-    state.audioMessageId = messageId;
+    state.audioMessageId = String(messageId);
     const chat = state.chats.find(c => c.id === state.currentChatId);
     const playerTitle = (chat && chat.title) || 'Ответ';
     $('#audio-player-title').textContent = playerTitle;
@@ -1902,14 +1937,28 @@
     }
     installFileAudioMediaSessionHandlers();
     audio.pause();
-    audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
+    if (state.audioReady[messageId]) {
+      audio.src = '/api/messages/' + encodeURIComponent(messageId) + '/audio/file';
+    } else {
+      audio.removeAttribute('src');
+    }
     audio.playbackRate = Number($('#audio-player-rate') && $('#audio-player-rate').value) || 1;
     audio.load();
     shell.classList.add('open');
     shell.setAttribute('aria-hidden', 'false');
     document.body.classList.add('audio-player-open');
     updateAudioPlayerControls();
-    if (autoplay) audio.play().catch(() => toast('Нажмите воспроизведение, чтобы запустить аудио.', 'error'));
+    updateSpeechPlayerUi(messageId);
+    refreshReadableTextStatus(messageId).then(record => {
+      if (!record) return null;
+      if (record.status === 'missing' || record.status === 'failed') {
+        return generateReadableText(messageId, true);
+      }
+      return record;
+    }).then(() => updateSpeechPlayerUi(messageId)).catch(() => {});
+    if (autoplay && state.audioReady[messageId]) {
+      audio.play().catch(() => toast('Нажмите воспроизведение, чтобы запустить аудио.', 'error'));
+    }
     requestAnimationFrame(() => $('#audio-close-btn')?.focus());
   }
 
@@ -1968,7 +2017,7 @@
     const button = $('#device-audio-play-toggle');
     if (button) {
       button.innerHTML = icon(deviceSpeechState.playing ? 'pause' : 'play');
-      button.title = deviceSpeechState.playing ? 'Пауза' :
+      button.title = deviceSpeechState.playing ? 'Приостановить озвучивание' :
         (deviceSpeechState.pending ? 'Запускаю озвучку…' : 'Воспроизвести / повторить запуск');
       button.setAttribute('aria-label', button.title);
       button.disabled = !deviceSpeechState.active;
@@ -2159,7 +2208,6 @@
     if (!deviceSpeechState.active) return;
     try { window.speechSynthesis.pause(); } catch (e) { /* speech API varies by browser */ }
     deviceSpeechState.playing = false;
-    if ($('#device-audio-status')) $('#device-audio-status').textContent = 'Пауза.';
     updateDeviceSpeechControls();
   }
 

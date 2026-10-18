@@ -4848,14 +4848,14 @@
         toast('Не удалось создать ветку: ' + (error.message || error), 'error');
       }
     });
-    $('[data-share-copy-answer]').forEach(button => button.addEventListener('click', async () => {
+    $$('[data-share-copy-answer]').forEach(button => button.addEventListener('click', async () => {
       const node = findNode(state.tree, button.dataset.shareCopyAnswer);
       if (!node) return;
       const rendered = $('.msg[data-mid="' + node.id + '"] .content.md');
       const ok = await copyText((rendered ? rendered.innerText : String(node.content || '')).trim());
       toast(ok ? 'Ответ скопирован' : 'Не удалось скопировать ответ', ok ? '' : 'error');
     }));
-    $('[data-share-copy-readable]').forEach(button => button.addEventListener('click', async () => {
+    $$('[data-share-copy-readable]').forEach(button => button.addEventListener('click', async () => {
       const readable = state.readableText[button.dataset.shareCopyReadable];
       if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
         toast('Читабельный текст ещё не готов', 'error'); return;

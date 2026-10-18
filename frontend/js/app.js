@@ -3784,31 +3784,9 @@
           }
           loadUsage();
         } else if (ev === 'error') {
-          const budgetLimitReached = maybeOpenBudgetModal(data && (data.error || data.detail || data));
+          maybeOpenBudgetModal(data && (data.error || data.detail || data));
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
-          if (budgetLimitReached) {
-            // A quota rejection is a plan state, not a generation error. Keep any
-            // partial answer neutral, and remove only unsent optimistic placeholders.
-            if (n) {
-              if (String(n.content || n.draft || '').trim()) {
-                n.status = 'completed'; n.creating = false; n.error = null;
-                n.activityFinishedAt = Date.now();
-                n.activityElapsedMs = Math.max(0, n.activityFinishedAt - activityStartTime(n));
-                saveActivityItems(n);
-              } else {
-                removeFromTree(state.tree, n.id);
-              }
-            }
-            [state.tmpUser, state.tmpAssistant].forEach(item => {
-              if (item && item.id && /^tmp_/.test(String(item.id))) removeFromTree(state.tree, item.id);
-            });
-            state.tmpUser = null;
-            state.tmpAssistant = null;
-            state.activeAssistantId = null;
-            if (state.currentChatId === streamContext.chatId) renderMessages();
-            return;
-          }
           if (n) {
             n.status = 'failed'; n.creating = false; n.error = data.error;
             n.activityFinishedAt = Date.now();
@@ -3853,8 +3831,8 @@
         }
       }
       if (budgetLimitReached) {
-        // Budget exhaustion is explained in the subscription dialog. Do not stack
-        // red error toasts or leave a failed optimistic message in the conversation.
+        // Explain the exhausted budget in the subscription dialog instead of
+        // stacking a red error toast and a failed optimistic message.
         [state.tmpUser, state.tmpAssistant].forEach(item => {
           if (item && item.id && /^tmp_/.test(String(item.id))) removeFromTree(state.tree, item.id);
         });
@@ -3862,22 +3840,18 @@
         renderMessages();
       } else {
         toast('Ошибка: ' + friendlyError, 'error');
-        // The optimistic messages must not hang — turn them into a plain error.
         const a = state.activeAssistantId ? findNode(state.tree, state.activeAssistantId) : null;
         if (a && a.status !== 'completed' && a.status !== 'cancelled') {
           a.status = 'failed'; a.creating = false;
           a.error = (err && err.message) ? err.message : 'запрос не прошёл';
           renderMessages();
         }
-        // If the server never answered, the synthetic bubble is a ghost:
-        // drop it and re-sync from the real history so nothing stays on screen.
         const ghost = state.tmpAssistant ? findNode(state.tree, state.tmpAssistant.id) : null;
         if (ghost && /^tmp_/.test(ghost.id) && state.currentChatId) {
           const recoveryChatId = state.currentChatId;
           openChat(recoveryChatId).catch((e) => console.warn('Chat recovery failed:', e));
         }
       }
-      // Forget temporary ids so a retry starts a clean branch.
       state.tmpUser = null; state.tmpAssistant = null;
     } finally {
       if (watchdog) clearTimeout(watchdog);
@@ -5887,7 +5861,6 @@
     const exhausted = !!(options && options.exhausted);
     if (exhausted && $('.modal.subscription-usage-modal', $('#modal-root'))) return;
     await loadLimits();
-    // Multiple failed send attempts must not repeatedly rebuild/re-animate this dialog.
     if (exhausted && $('.modal.subscription-usage-modal', $('#modal-root'))) return;
     const data = state.limits || {};
     const lim = data.limits || {};
@@ -5901,284 +5874,7 @@
         icon('gauge') + '</span><div><strong>Лимит запросов на текущем тарифе исчерпан</strong><p>' +
         escapeHtml(
           (w && w.budget_usd !== null && w.budget_usd !== undefined
-            ? 'Израсходовано 
-    if (w && w.budget_usd !== null && w.budget_usd !== undefined) {
-      const left = Math.max(0, Number(w.budget_usd) - Number(w.spend_usd));
-      const pct = Math.min(100, Math.round(w.percent));
-      money = '<div class="lim-row ' + (pct >= 80 ? 'warn' : '') + '">' +
-        '<div class="lr-top"><b>Деньги за ' + w.hours + ' ч</b>' +
-        '<i>$' + Number(w.spend_usd).toFixed(2) + ' из $' + Number(w.budget_usd).toFixed(2) +
-        ' · осталось $' + left.toFixed(2) + ' (' + (100 - pct) + '%)</i></div>' +
-        '<div class="lr-bar"><i style="width:' + pct + '%"></i></div></div>';
-    }
-
-    const defs = [
-      ['files', 'files_count', 'Файлы'],
-      ['storage', 'user_storage', 'Хранилище'],
-    ];
-    const rows = defs.map(d => {
-      const used = Number(use[d[0]] || 0);
-      const cap = lim[d[1]];
-      const unlimited = cap === null || cap === undefined;
-      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
-      const right = unlimited
-        ? limitValueLabel(d[1], used) + ' · без лимита'
-        : limitValueLabel(d[1], used) + ' из ' + limitValueLabel(d[1], cap) +
-          ' · осталось ' + limitValueLabel(d[1], Math.max(0, cap - used));
-      return '<div class="lim-row ' + (unlimited ? 'unlimited' : (pct >= 80 ? 'warn' : '')) + '">' +
-        '<div class="lr-top"><b>' + d[2] + '</b><i>' + right + ' · ' +
-        (unlimited ? '∞' : pct + '%') + '</i></div>' +
-        '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
-    }).join('');
-
-    const audioUsed = Number(w && w.audio_generations || 0);
-    const audioCap = w && w.audio_limit !== undefined ? w.audio_limit : lim.audio_generations;
-    const audioUnlimited = audioCap === null || audioCap === undefined;
-    const audioHours = Number(w && w.hours || lim.window_hours || 5);
-    const audioPct = audioUnlimited ? 0 : Math.min(100, Math.round(audioUsed / Math.max(1, Number(audioCap)) * 100));
-    const audioRight = audioUnlimited
-      ? audioUsed + ' · без лимита'
-      : audioUsed + ' из ' + audioCap + ' за ' + audioHours + ' ч · осталось ' + Math.max(0, Number(audioCap) - audioUsed);
-    const audioRow = '<div class="lim-row ' + (audioUnlimited ? 'unlimited' : (audioPct >= 80 ? 'warn' : '')) + '">' +
-      '<div class="lr-top"><b>Голосовые ответы</b><i>' + audioRight + ' · ' +
-      (audioUnlimited ? '∞' : audioPct + '%') + '</i></div>' +
-      '<div class="lr-bar"><i style="width:' + (audioUnlimited ? 100 : audioPct) + '%"></i></div></div>';
-
-    openModal({
-      title: exhausted ? 'Лимит запросов исчерпан' : 'Лимиты подписки',
-      okText: 'Закрыть',
-      body: exhaustedNotice +
-        '<section class="sub-hero"><div class="sub-hero-top"><span class="sub-plan-mark">' + icon('shield-check') + '</span>' +
-          '<div><div class="sub-eyebrow">ТЕКУЩИЙ ТАРИФ</div><div class="sub-plan">AI-Ch ' + escapeHtml(String(plan).toUpperCase()) + '</div></div>' +
-          '<span class="sub-current-pill">' + (exhausted ? 'Лимит исчерпан' : 'Активен') + '</span></div>' +
-          '<p>Бюджет считается по стоимости реальных вызовов модели и служебных запросов. ' +
-          (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
-          '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
-          '<span><b>Pro</b><small>лимиты Pro из настроек</small></span></div>' +
-          '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
-          '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +
-          '</button></section><section class="sub-usage-section"><h4 class="sec">Текущее использование</h4>' +
-          '<p class="usage-note">Окно скользящее: учитываются расходы за последние ' +
-          escapeHtml(String(w && w.hours || lim.window_hours || 5)) +
-          ' часов, а не с начала календарного дня. Когда старые расходы выходят из окна, они перестают учитываться.</p>' +
-          money + rows + audioRow + '</section><section class="sub-comparison-section"><h4 class="sec">Лимиты Free и Pro</h4>' +
-          planCompareHtml(lim, data.compare) + '</section>' +
-          '<p class="usage-note sub-admin-note">Автоматическая оплата не подключена. Запрос можно отправить администратору.</p>',
-      onOk: () => true,
-    });
-    const subscriptionModal = $('.modal', $('#modal-root'));
-    if (subscriptionModal) {
-      subscriptionModal.classList.add('subscription-usage-modal');
-      if (exhausted) subscriptionModal.classList.add('is-limit-exhausted');
-    }
-    const copyProRequest = $('#copy-pro-request');
-    if (copyProRequest) copyProRequest.addEventListener('click', async () => {
-      const ok = await copyText('Здравствуйте! Хочу оформить подписку Pro в AI-Ch. Подскажите, пожалуйста, стоимость и порядок оформления.');
-      toast(ok ? 'Запрос на оформление Pro скопирован' : 'Не удалось скопировать запрос', ok ? '' : 'error');
-    });
-  }
-
-  // ---------- boot ----------
-  async function boot() {
-    showApp();
-    applySidebar();
-
-    // The empty welcome screen needs no server data. Render it immediately
-    // rather than waiting for the sidebar, files, models, memory and limits.
-    const welcomeRenderedEarly = !state.currentChatId && allMessages(state.tree).length === 0;
-    if (welcomeRenderedEarly) renderMessages();
-
-    if (state.user && state.user.is_admin) {
-      $('#sidebar-limits-btn').classList.remove('hidden');
-      await loadSystem();
-      setInterval(loadSystem, 20000);
-    }
-    $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    await loadChats();
-    await loadFiles();
-    await loadModelSets();
-    await loadMemory();
-    await loadLimits();
-    await loadUsage();
-
-    // The welcome screen was already rendered above. Any chat interaction during
-    // the asynchronous boot data loads renders its own current state; rebuilding
-    // it here caused an avoidable second DOM replacement and animation restart.
-    if (!welcomeRenderedEarly) renderMessages();
-  }
-
-  async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
-    const token = new URLSearchParams(location.search).get('share');
-    if (token) { await showPublicView(token); return; }
-    try {
-      const me = await api.get('/api/auth/me');
-      state.user = me;
-      await boot();
-    } catch (e) {
-      showAuth();
-    }
-  }
-
-  function syncAppViewportHeight() {
-    const viewport = window.visualViewport;
-    const h = viewport && viewport.height ? viewport.height : window.innerHeight;
-    const top = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
-    document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
-    document.documentElement.style.setProperty('--app-offset-top', Math.round(top) + 'px');
-  }
-  syncAppViewportHeight();
-  window.addEventListener('resize', syncAppViewportHeight, { passive: true });
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', syncAppViewportHeight, { passive: true });
-    window.visualViewport.addEventListener('scroll', syncAppViewportHeight, { passive: true });
-  }
-
-  document.addEventListener('DOMContentLoaded', init);
-
-  // KaTeX loads with defer: re-render math once it is available
-  window.addEventListener('load', () => {
-    const box = document.getElementById('messages');
-    if (box) renderMath(box.querySelector('.msg-wrap'));
-  });
-})();
- + Number(w.spend_usd || 0).toFixed(2) + ' из 
-    if (w && w.budget_usd !== null && w.budget_usd !== undefined) {
-      const left = Math.max(0, Number(w.budget_usd) - Number(w.spend_usd));
-      const pct = Math.min(100, Math.round(w.percent));
-      money = '<div class="lim-row ' + (pct >= 80 ? 'warn' : '') + '">' +
-        '<div class="lr-top"><b>Деньги за ' + w.hours + ' ч</b>' +
-        '<i>$' + Number(w.spend_usd).toFixed(2) + ' из $' + Number(w.budget_usd).toFixed(2) +
-        ' · осталось $' + left.toFixed(2) + ' (' + (100 - pct) + '%)</i></div>' +
-        '<div class="lr-bar"><i style="width:' + pct + '%"></i></div></div>';
-    }
-
-    const defs = [
-      ['files', 'files_count', 'Файлы'],
-      ['storage', 'user_storage', 'Хранилище'],
-    ];
-    const rows = defs.map(d => {
-      const used = Number(use[d[0]] || 0);
-      const cap = lim[d[1]];
-      const unlimited = cap === null || cap === undefined;
-      const pct = unlimited ? 0 : Math.min(100, Math.round(used / cap * 100));
-      const right = unlimited
-        ? limitValueLabel(d[1], used) + ' · без лимита'
-        : limitValueLabel(d[1], used) + ' из ' + limitValueLabel(d[1], cap) +
-          ' · осталось ' + limitValueLabel(d[1], Math.max(0, cap - used));
-      return '<div class="lim-row ' + (unlimited ? 'unlimited' : (pct >= 80 ? 'warn' : '')) + '">' +
-        '<div class="lr-top"><b>' + d[2] + '</b><i>' + right + ' · ' +
-        (unlimited ? '∞' : pct + '%') + '</i></div>' +
-        '<div class="lr-bar"><i style="width:' + (unlimited ? 100 : pct) + '%"></i></div></div>';
-    }).join('');
-
-    const audioUsed = Number(w && w.audio_generations || 0);
-    const audioCap = w && w.audio_limit !== undefined ? w.audio_limit : lim.audio_generations;
-    const audioUnlimited = audioCap === null || audioCap === undefined;
-    const audioHours = Number(w && w.hours || lim.window_hours || 5);
-    const audioPct = audioUnlimited ? 0 : Math.min(100, Math.round(audioUsed / Math.max(1, Number(audioCap)) * 100));
-    const audioRight = audioUnlimited
-      ? audioUsed + ' · без лимита'
-      : audioUsed + ' из ' + audioCap + ' за ' + audioHours + ' ч · осталось ' + Math.max(0, Number(audioCap) - audioUsed);
-    const audioRow = '<div class="lim-row ' + (audioUnlimited ? 'unlimited' : (audioPct >= 80 ? 'warn' : '')) + '">' +
-      '<div class="lr-top"><b>Голосовые ответы</b><i>' + audioRight + ' · ' +
-      (audioUnlimited ? '∞' : audioPct + '%') + '</i></div>' +
-      '<div class="lr-bar"><i style="width:' + (audioUnlimited ? 100 : audioPct) + '%"></i></div></div>';
-
-    openModal({
-      title: 'Лимиты подписки',
-      okText: 'Понятно',
-      body:
-        '<section class="sub-hero"><div class="sub-hero-top"><span class="sub-plan-mark">' + icon('shield-check') + '</span>' +
-          '<div><div class="sub-eyebrow">ТЕКУЩИЙ ТАРИФ</div><div class="sub-plan">AI-Ch ' + escapeHtml(String(plan).toUpperCase()) + '</div></div>' +
-          '<span class="sub-current-pill">Активен</span></div>' +
-          '<p>Бюджет считается по стоимости реальных вызовов модели и служебных запросов. ' +
-          (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
-          '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
-          '<span><b>Pro</b><small>лимиты Pro из настроек</small></span></div>' +
-          '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
-          '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +
-          '</button></section><section class="sub-usage-section"><h4 class="sec">Текущее использование</h4>' +
-          '<p class="usage-note">Окно скользящее: учитываются расходы за последние ' +
-          escapeHtml(String(w && w.hours || lim.window_hours || 5)) +
-          ' часов, а не с начала календарного дня. Когда старые расходы выходят из окна, они перестают учитываться.</p>' +
-          money + rows + audioRow + '</section><section class="sub-comparison-section"><h4 class="sec">Лимиты Free и Pro</h4>' +
-          planCompareHtml(lim, data.compare) + '</section>' +
-          '<p class="usage-note sub-admin-note">Автоматическая оплата не подключена. Запрос можно отправить администратору.</p>',
-      onOk: () => true,
-    });
-    const copyProRequest = $('#copy-pro-request');
-    if (copyProRequest) copyProRequest.addEventListener('click', async () => {
-      const ok = await copyText('Здравствуйте! Хочу оформить подписку Pro в AI-Ch. Подскажите, пожалуйста, стоимость и порядок оформления.');
-      toast(ok ? 'Запрос на оформление Pro скопирован' : 'Не удалось скопировать запрос', ok ? '' : 'error');
-    });
-  }
-
-  // ---------- boot ----------
-  async function boot() {
-    showApp();
-    applySidebar();
-
-    // The empty welcome screen needs no server data. Render it immediately
-    // rather than waiting for the sidebar, files, models, memory and limits.
-    const welcomeRenderedEarly = !state.currentChatId && allMessages(state.tree).length === 0;
-    if (welcomeRenderedEarly) renderMessages();
-
-    if (state.user && state.user.is_admin) {
-      $('#sidebar-limits-btn').classList.remove('hidden');
-      await loadSystem();
-      setInterval(loadSystem, 20000);
-    }
-    $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    await loadChats();
-    await loadFiles();
-    await loadModelSets();
-    await loadMemory();
-    await loadLimits();
-    await loadUsage();
-
-    // The welcome screen was already rendered above. Any chat interaction during
-    // the asynchronous boot data loads renders its own current state; rebuilding
-    // it here caused an avoidable second DOM replacement and animation restart.
-    if (!welcomeRenderedEarly) renderMessages();
-  }
-
-  async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
-    const token = new URLSearchParams(location.search).get('share');
-    if (token) { await showPublicView(token); return; }
-    try {
-      const me = await api.get('/api/auth/me');
-      state.user = me;
-      await boot();
-    } catch (e) {
-      showAuth();
-    }
-  }
-
-  function syncAppViewportHeight() {
-    const viewport = window.visualViewport;
-    const h = viewport && viewport.height ? viewport.height : window.innerHeight;
-    const top = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
-    document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
-    document.documentElement.style.setProperty('--app-offset-top', Math.round(top) + 'px');
-  }
-  syncAppViewportHeight();
-  window.addEventListener('resize', syncAppViewportHeight, { passive: true });
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', syncAppViewportHeight, { passive: true });
-    window.visualViewport.addEventListener('scroll', syncAppViewportHeight, { passive: true });
-  }
-
-  document.addEventListener('DOMContentLoaded', init);
-
-  // KaTeX loads with defer: re-render math once it is available
-  window.addEventListener('load', () => {
-    const box = document.getElementById('messages');
-    if (box) renderMath(box.querySelector('.msg-wrap'));
-  });
-})();
- + Number(w.budget_usd).toFixed(2) + '. '
+            ? 'Израсходовано $' + Number(w.spend_usd || 0).toFixed(2) + ' из $' + Number(w.budget_usd).toFixed(2) + '. '
             : '') +
           'Запрос не был отправлен. ' +
           (w && w.hours
@@ -6231,12 +5927,12 @@
       '<div class="lr-bar"><i style="width:' + (audioUnlimited ? 100 : audioPct) + '%"></i></div></div>';
 
     openModal({
-      title: 'Лимиты подписки',
-      okText: 'Понятно',
-      body:
+      title: exhausted ? 'Лимит запросов исчерпан' : 'Лимиты подписки',
+      okText: exhausted ? 'Закрыть' : 'Понятно',
+      body: exhaustedNotice +
         '<section class="sub-hero"><div class="sub-hero-top"><span class="sub-plan-mark">' + icon('shield-check') + '</span>' +
           '<div><div class="sub-eyebrow">ТЕКУЩИЙ ТАРИФ</div><div class="sub-plan">AI-Ch ' + escapeHtml(String(plan).toUpperCase()) + '</div></div>' +
-          '<span class="sub-current-pill">Активен</span></div>' +
+          '<span class="sub-current-pill">' + (exhausted ? 'Лимит исчерпан' : 'Активен') + '</span></div>' +
           '<p>Бюджет считается по стоимости реальных вызовов модели и служебных запросов. ' +
           (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
           '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
@@ -6252,6 +5948,11 @@
           '<p class="usage-note sub-admin-note">Автоматическая оплата не подключена. Запрос можно отправить администратору.</p>',
       onOk: () => true,
     });
+    const subscriptionModal = $('.modal', $('#modal-root'));
+    if (subscriptionModal) {
+      subscriptionModal.classList.add('subscription-usage-modal');
+      if (exhausted) subscriptionModal.classList.add('is-limit-exhausted');
+    }
     const copyProRequest = $('#copy-pro-request');
     if (copyProRequest) copyProRequest.addEventListener('click', async () => {
       const ok = await copyText('Здравствуйте! Хочу оформить подписку Pro в AI-Ch. Подскажите, пожалуйста, стоимость и порядок оформления.');

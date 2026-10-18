@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>AI-Ch 1.0</title>
   <meta name="theme-color" content="#faf9f5" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=44&rev=46" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=44&rev=47" />  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <!-- ===================== icon sprite ===================== -->
@@ -185,10 +185,10 @@
     </aside>
 
     <main id="chat-area">
-      <button class="icon-btn floating hidden" id="sidebar-open-btn" title="Показать панель"><svg class="ic"><use href="#i-panel"/></svg></button>
+      <button class="icon-btn floating hidden" id="sidebar-open-btn" title="Показать панель"><svg class="ic"><use href="#i-logo"/></svg></button>
       <header id="chat-header">
         <div class="head-left">
-          <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-menu"/></svg></button>
+          <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-logo"/></svg></button>
         </div>
         <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">AI-Ch 1.0</div>
         <div class="head-right">
@@ -216,7 +216,7 @@
           <div class="attach-list" id="attach-list"></div>
           <textarea id="input" rows="1" placeholder="Введите запрос…"></textarea>
           <div class="composer-row">
-            <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-paperclip"/></svg></button>
+            <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-plus"/></svg></button>
             <span class="spacer"></span>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
@@ -259,6 +259,10 @@
     <button class="audio-player-scrim" type="button" data-audio-close aria-label="Закрыть аудиоплеер"></button>
     <section class="audio-player-sheet" role="dialog" aria-modal="true" aria-labelledby="audio-player-title" tabindex="-1">
       <div class="audio-sheet-handle" aria-hidden="true"></div>
+      <div class="speech-mode-switch" role="tablist" aria-label="Источник озвучивания">
+        <button class="speech-mode-tab is-active" type="button" role="tab" aria-selected="true" data-player-mode="ai">ИИ</button>
+        <button class="speech-mode-tab" type="button" role="tab" aria-selected="false" data-player-mode="device">Системный</button>
+      </div>
       <div class="audio-sheet-head">
         <div class="audio-sheet-art" aria-hidden="true"><svg class="ic"><use href="#i-audio"/></svg></div>
         <div class="audio-sheet-titles">
@@ -266,6 +270,9 @@
         </div>
         <button class="icon-btn audio-player-close" id="audio-close-btn" type="button" data-audio-close title="Закрыть плеер" aria-label="Закрыть плеер"><svg class="ic"><use href="#i-x"/></svg></button>
       </div>
+      <div class="speech-generation-status" aria-live="polite"><strong>Готовность текста:</strong> <span id="audio-player-status-text">Проверяю состояние…</span></div>
+      <button class="speech-generate-button" id="audio-player-generate-btn" type="button">Озвучить ИИ</button>
+      <div id="audio-player-playback" hidden>
       <audio id="audio-player-source" preload="metadata"></audio>
       <div class="audio-progress-wrap">
         <input id="audio-progress" class="audio-progress" type="range" min="0" max="1000" value="0" aria-label="Перемотка аудио" disabled />
@@ -285,6 +292,7 @@
           <option value="2.5">2,5×</option><option value="3">3×</option>
         </select>
       </label>
+      </div>
     </section>
   </div>
 
@@ -292,14 +300,19 @@
     <button class="audio-player-scrim" type="button" data-device-audio-close aria-label="Закрыть системную озвучку"></button>
     <section class="audio-player-sheet device-audio-sheet" role="dialog" aria-modal="true" aria-labelledby="device-audio-title" tabindex="-1">
       <div class="audio-sheet-handle" aria-hidden="true"></div>
+      <div class="speech-mode-switch" role="tablist" aria-label="Источник озвучивания">
+        <button class="speech-mode-tab" type="button" role="tab" aria-selected="false" data-player-mode="ai">ИИ</button>
+        <button class="speech-mode-tab is-active" type="button" role="tab" aria-selected="true" data-player-mode="device">Системный</button>
+      </div>
       <div class="audio-sheet-head">
         <div class="audio-sheet-art" aria-hidden="true"><svg class="ic"><use href="#i-audio"/></svg></div>
         <div class="audio-sheet-titles">
           <h2 id="device-audio-title">Воспроизведение устройством</h2>
-          <p>Системный голос · beta</p>
+
         </div>
         <button class="icon-btn audio-player-close" id="device-audio-close-btn" type="button" data-device-audio-close title="Закрыть плеер" aria-label="Закрыть плеер"><svg class="ic"><use href="#i-x"/></svg></button>
       </div>
+      <div class="speech-generation-status device-speech-ready-status" aria-live="polite"><strong>Готовность текста:</strong> <span id="device-audio-ready-text">Проверяю состояние…</span></div>
       <div class="device-speech-status" id="device-audio-status" aria-live="polite">Подготавливаю текст…</div>
       <div class="device-speech-progress">
         <div class="device-speech-progress-label"><span id="device-audio-word-position">Слова 0–0 из 0</span><span id="device-audio-chunk-position">Фрагмент 0/0</span></div>
@@ -316,7 +329,7 @@
           <option value="0.5">0,5×</option><option value="0.6">0,6×</option><option value="0.75">0,75×</option><option value="0.85">0,85×</option><option value="1" selected>1×</option><option value="1.1">1,1×</option><option value="1.25">1,25×</option><option value="1.5">1,5×</option><option value="1.75">1,75×</option><option value="2">2×</option><option value="2.25">2,25×</option><option value="2.5">2,5×</option>
         </select>
       </label>
-      <p class="usage-note device-speech-note">Переходы в наушниках работают по фрагментам примерно по 20 слов. Доступность управления при выключенном экране зависит от браузера и устройства.</p>
+      <p class="usage-note device-speech-note">Доступность управления при выключенном экране зависит от браузера и устройства.</p>
     </section>
   </div>
 

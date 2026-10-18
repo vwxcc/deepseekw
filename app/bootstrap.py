@@ -51,11 +51,10 @@ async def _ensure_primary_main_prices(db: AsyncSession) -> None:
             continue
         default_in = float(settings.qwen_price_in if settings.qwen_price_in is not None else 2.0)
         default_out = float(settings.qwen_price_out if settings.qwen_price_out is not None else 25.0)
-        legacy_seed = abs(float(entry.price_in or 0) - 1.0) < 1e-9 and abs(float(entry.price_out or 0) - 10.0) < 1e-9
-        if legacy_seed or not (entry.price_in or 0):
-            entry.price_in = default_in
-        if legacy_seed or not (entry.price_out or 0):
-            entry.price_out = default_out
+        # This versioned one-time migration intentionally updates the existing
+        # primary entry too; later starts leave any administrator edits untouched.
+        entry.price_in = default_in
+        entry.price_out = default_out
         break
     await db.execute(text(
         "INSERT INTO app_metadata (key, value) VALUES ('main-price-defaults-v2', '1')"

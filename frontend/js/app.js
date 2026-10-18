@@ -2386,7 +2386,20 @@
     audio.addEventListener('ended', updateAudioPlayerControls);
     const rateSelect = $('#audio-player-rate');
     if (rateSelect) rateSelect.addEventListener('change', () => { audio.playbackRate = Number(rateSelect.value) || 1; });
-    $$('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
+    $('#audio-player-generate-btn')?.addEventListener('click', () => {
+      if (state.audioMessageId) generateAnswerAudio(state.audioMessageId);
+    });
+    $('[data-player-mode]').forEach(btn => btn.addEventListener('click', () => {
+      const mode = btn.dataset.playerMode;
+      const id = String(state.audioMessageId || pendingDeviceSpeechMessageId || deviceSpeechState.messageId || '');
+      if (!id) return;
+      if (mode === 'device') startDeviceSpeech(id);
+      else {
+        if ($('#device-audio-player-shell')?.classList.contains('open')) closeDeviceSpeechPlayer();
+        openAudioPlayer(id, !!state.audioReady[id]);
+      }
+    }));
+    $('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
     $('#audio-play-toggle')?.addEventListener('click', () => {
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();
@@ -2860,12 +2873,15 @@
       } else if (act === 'copy-user') {
         const n = findNode(state.tree, id);
         if (n) await copyWithFeedback(btn, n.content || '');
+      } else if (act === 'listen-answer') {
+        openAudioPlayer(id, !!state.audioReady[id]);
       } else if (act === 'generate-audio') {
-        if (ensureReadableTextBeforePlayback(id)) await generateAnswerAudio(id);
+        openAudioPlayer(id, false);
+        await generateAnswerAudio(id);
       } else if (act === 'play-audio') {
         openAudioPlayer(id, true);
       } else if (act === 'device-audio') {
-        if (ensureReadableTextBeforePlayback(id)) startDeviceSpeech(id);
+        startDeviceSpeech(id);
       } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
       else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }

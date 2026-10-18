@@ -155,7 +155,7 @@
   }
 
   // ---------- markdown ----------
-  const FULL_RENDER_LIMIT = 30000;
+  const FULL_RENDER_LIMIT = 60000;
   let _mathStore = [];
   const MATH_RE = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\$([^$\n]+?)\$|\\\(([\s\S]+?)\\\)/g;
 
@@ -5971,11 +5971,18 @@
       '</div>';
   }
 
+  let subscriptionModalOpening = false;
   async function openUsageModal(options) {
     const exhausted = !!(options && options.exhausted);
-    if (exhausted && $('.modal.subscription-usage-modal', $('#modal-root'))) return;
-    await loadLimits();
-    if (exhausted && $('.modal.subscription-usage-modal', $('#modal-root'))) return;
+    // SSE and the catch path may report the same depleted budget.
+    // Set the guard before await so the dialog can only be mounted once.
+    if ($('.modal.subscription-usage-modal', $('#modal-root'))) return;
+    if (subscriptionModalOpening) return;
+    subscriptionModalOpening = true;
+    try {
+      // Reuse already loaded account limits instead of waiting on every click.
+      if (!state.limits) await loadLimits();
+      if ($('.modal.subscription-usage-modal', $('#modal-root'))) return;
     const data = state.limits || {};
     const lim = data.limits || {};
     const pro = (data.compare && data.compare.pro) || {};
@@ -6089,6 +6096,9 @@
       const ok = await copyText('Здравствуйте! Хочу оформить подписку Pro в AI-Ch. Подскажите, пожалуйста, стоимость и порядок оформления.');
       toast(ok ? 'Запрос на оформление Pro скопирован' : 'Не удалось скопировать запрос', ok ? '' : 'error');
     });
+    } finally {
+      subscriptionModalOpening = false;
+    }
   }
 
   // ---------- boot ----------

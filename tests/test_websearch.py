@@ -68,6 +68,42 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Example", block)
         self.assertIn("https://example.org/article", block)
         self.assertIn("A useful snippet", block)
+        self.assertIn("недоверенные данные", block)
+
+    def test_extract_page_content_discards_scripts_and_navigation(self) -> None:
+        source = (
+            "<html><head><title>Useful Article</title>"
+            '<meta name="description" content="Page summary"></head><body>'
+            "<nav>Menu only</nav><main><h1>Useful heading</h1>"
+            "<p>First important paragraph.</p><p>Second useful paragraph.</p></main>"
+            "<script>secret_fake_text()</script><footer>Footer only</footer>"
+            "</body></html>"
+        )
+        page = websearch._extract_page_content(source)
+        self.assertEqual(page["title"], "Useful Article")
+        self.assertEqual(page["description"], "Page summary")
+        self.assertIn("First important paragraph.", page["text"])
+        self.assertIn("Second useful paragraph.", page["text"])
+        self.assertNotIn("secret_fake_text", page["text"])
+        self.assertNotIn("Menu only", page["text"])
+        self.assertNotIn("Footer only", page["text"])
+
+    async def test_page_reader_rejects_local_and_non_http_hosts(self) -> None:
+        self.assertFalse(await websearch._is_public_http_url("http://127.0.0.1/"))
+        self.assertFalse(await websearch._is_public_http_url("http://localhost/"))
+        self.assertFalse(await websearch._is_public_http_url("file:///etc/passwd"))
+
+    async def test_read_search_results_adds_real_page_text(self) -> None:
+        enriched = dict(GOOD_RESULT)
+        with patch.object(
+            websearch, "read_web_page",
+            new=AsyncMock(return_value={"title": "Real title", "description": "Description",
+                                        "text": "The actual page body"}),
+        ):
+            result = await websearch.read_search_results([enriched], limit=1)
+        self.assertEqual(result[0]["page_text"], "The actual page body")
+        self.assertEqual(result[0]["page_title"], "Real title")
+        self.assertIn("The actual page body", websearch.format_context(result))
 
     async def test_duckduckgo_html_parser_extracts_result(self) -> None:
         page = (

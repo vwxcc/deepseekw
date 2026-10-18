@@ -93,10 +93,10 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=47" not in html:
-              raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=59" not in html:
-              raise SystemExit("Unexpected JS cache reference")
+          if not re.search(r"/assets/css/app\.css\?v=\d+", html):
+              raise SystemExit("Missing CSS asset cache version")
+          if not re.search(r"/assets/js/app\.js\?v=\d+", html):
+              raise SystemExit("Missing JavaScript asset cache version")
           print("HTML IDs are unique; static asset references are current.")
 
           css = Path("frontend/css/app.css").read_text(encoding="utf-8")

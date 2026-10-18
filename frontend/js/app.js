@@ -1383,6 +1383,31 @@
     ].join('\\n');
   }
 
+  function deviceFallbackLabel(n) {
+    const parent = n && n.parent_message_id ? findNode(state.tree, n.parent_message_id) : null;
+    const query = String((parent && parent.content) || (n && n.user_text) || '').toLowerCase();
+    if (/(презентац|слайд|pptx|powerpoint|power point)/u.test(query)) return 'Создать презентацию';
+    if (/(docx|word|документ|отч[её]т|резюме)/u.test(query)) return 'Создать документ';
+    if (/(xlsx|excel|таблиц[ауы]|электронн[а-я ]+таблиц)/u.test(query)) return 'Создать таблицу';
+    if (/(изображени|картинк|инфограф|png|svg|постер)/u.test(query)) return 'Создать изображение';
+    if (/(pdf)/u.test(query)) return 'Создать PDF';
+    return 'Выполнить код (2)';
+  }
+
+  function isDeviceFallbackRun(run) {
+    if (!run || typeof run !== 'object') return false;
+    if (run.kind === 'fileplan') return typeof run.device_plan === 'string' && !!run.device_plan.trim();
+    const code = typeof run.code === 'string' ? run.code.trim() : '';
+    return !!code && !/^План сборки файла\\b/u.test(code);
+  }
+
+  function deviceFallbackHtml(n, runs) {
+    if (!Array.isArray(runs) || !runs.some(isDeviceFallbackRun)) return '';
+    return '<div class="device-fallback-row"><button type="button" class="device-fallback-button" data-run-device="' +
+      escapeHtml(n.id) + '">' + icon('play') + '<span>' + escapeHtml(deviceFallbackLabel(n)) +
+      '</span></button></div>';
+  }
+
   function activityHtml(n, generating) {
     const items = activityItems(n);
     const runs = Array.isArray(n && n.tool_runs) ? n.tool_runs : [];
@@ -1421,6 +1446,7 @@
       (generating ? 'Думаю · ' + duration : 'Думал ' + duration) + '</span>' +
       icon(expanded ? 'chevron-up' : 'chevron-down') + '</button></div>' +
       '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + fullStream + (rows || placeholder) + execution + '</div>' +
+      deviceFallbackHtml(n, runs) +
       '</section>';
   }
 

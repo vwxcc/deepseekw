@@ -46,6 +46,10 @@ jobs:
         run: sudo python -m unittest discover -s tests -p 'test_sandbox_runner.py' -v
       - name: Check browser JavaScript syntax
         run: node --check frontend/js/app.js
+      - name: Test template-based file generation
+        run: |
+          python -m pip install matplotlib==3.9.4 python-docx==1.1.2 openpyxl==3.1.5 python-pptx==1.0.2 Pillow==11.0.0 pypdf==5.1.0
+          python -m unittest discover -s tests -p 'test_file_templates.py' -v
       - name: Check static HTML IDs and cache references
         run: |
           python - <<'PY'
@@ -66,9 +70,9 @@ jobs:
           duplicates = sorted({value for value in parser.ids if parser.ids.count(value) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
-          if "/assets/css/app.css?v=44" not in html:
+          if "/assets/css/app.css?v=45" not in html:
               raise SystemExit("Unexpected CSS cache reference")
-          if "/assets/js/app.js?v=55" not in html:
+          if "/assets/js/app.js?v=56" not in html:
               raise SystemExit("Unexpected JS cache reference")
           print("HTML IDs are unique; static asset references are current.")
 
@@ -116,7 +120,7 @@ jobs:
               "function audioQuotaSnapshot()",
               "function startDeviceSpeech(messageId)",
               "function bindDeviceSpeechPlayer()",
-              "function openDeviceCodeRunner(item, messageId)",
+              "function openDeviceCodeRunner(item, messageId, options)",
               "function activityStartTime(n)",
               "$$('[data-activity-elapsed]').find",
               "function activityHtml(n, generating)",
@@ -143,11 +147,11 @@ jobs:
               "docx2txt",
               "python-barcode",
               "pyodideAliases",
-              "function sourceImportNames()",
-              "const nativeLoadFailed",
+              "function sourceImports()",
+              "const nativeFailed = new Set()",
               "sys.stdlib_module_names",
-              "requestedImports.includes",
-              "For other third-party imports, make a best-effort PyPI attempt.",
+              "imports.includes",
+              "for (const name of imports)",
               "deviceSpeechState.priming = false",
               "device-code-file-preview",
           ]

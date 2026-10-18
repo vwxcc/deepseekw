@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
 
     # --- Auth / sessions ---
+    # Development fallback is rejected by the production startup guard.
     session_secret: str = "dev-secret-change-me"
-    session_cookie_secure: bool = False
+    session_cookie_secure: bool = True
     session_max_age: int = 60 * 60 * 24 * 7  # 7 days
     csrf_protection: bool = True
 

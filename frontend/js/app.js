@@ -1340,14 +1340,14 @@
       "            fig=plt.figure(figsize=(8.27,11.69)); fig.patch.set_facecolor('#FAF9F5'); fig.text(.09,.94,title,fontsize=22,fontweight='bold',color='#304F70',wrap=True); y=.87",
       "            if plan.get('subtitle') and pi==0: fig.text(.09,y,str(plan['subtitle']),fontsize=11,color='#66645D',wrap=True); y-=.05",
       "            for i,b in enumerate(page):",
-      "                fig.text(.09,y,heading(b,i),fontsize=14,fontweight='bold',color='#304F70',wrap=True); y-=.035; txt=textwrap.fill(body(b),width=88)[:3500]; fig.text(.1,y,txt,fontsize=10,color='#282824',va='top',linespacing=1.4); y-=min(.24,.025*(txt.count('\\\\n')+1)+.055)",
+      "                fig.text(.09,y,heading(b,i),fontsize=14,fontweight='bold',color='#304F70',wrap=True); y-=.035; txt=textwrap.fill(body(b),width=88)[:3500]; fig.text(.1,y,txt,fontsize=10,color='#282824',va='top',linespacing=1.4); y-=min(.24,.025*(txt.count('\\n')+1)+.055)",
       "            pdf.savefig(fig,bbox_inches='tight'); plt.close(fig)",
       "elif fmt == 'svg':",
       "    esc=html.escape; width=1200; height=max(900,240+len(blocks[:16])*150); parts=[f'<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#FAF9F5\"/><rect width=\"12\" height=\"100%\" fill=\"#426992\"/><text x=\"58\" y=\"90\" font-family=\"Arial,sans-serif\" font-size=\"38\" font-weight=\"700\" fill=\"#262522\">{esc(title)}</text>']",
       "    y=155",
       "    for i,b in enumerate(blocks[:16]):",
       "        parts.append(f'<rect x=\"58\" y=\"{y}\" width=\"1080\" height=\"118\" rx=\"15\" fill=\"#FFFFFF\" stroke=\"#D9D6CE\"/><text x=\"82\" y=\"{y+36}\" font-family=\"Arial,sans-serif\" font-size=\"22\" font-weight=\"700\" fill=\"#426992\">{esc(heading(b,i))}</text><text x=\"82\" y=\"{y+72}\" font-family=\"Arial,sans-serif\" font-size=\"17\" fill=\"#393832\">{esc(textwrap.shorten(body(b),width=115,placeholder=\"…\"))}</text>'); y+=145",
-      "    parts.append('</svg>'); Path(filename).write_text('\\\\n'.join(parts),encoding='utf-8')",
+      "    parts.append('</svg>'); Path(filename).write_text('\\n'.join(parts),encoding='utf-8')",
       "elif fmt == 'png':",
       "    from PIL import Image, ImageDraw, ImageFont",
       "    w=1600; h=min(4400,max(900,300+250*max(1,len(blocks)))); im=Image.new('RGB',(w,h),'#FAF9F5'); d=ImageDraw.Draw(im)",
@@ -1378,9 +1378,9 @@
       "            if head: out.extend(['','| '+' | '.join(map(str,head))+' |','| '+' | '.join('---' for _ in head)+' |'])",
       "            out.extend('| '+' | '.join(map(str,row))+' |' for row in rows)",
       "        elif txt: out.extend(['',txt])",
-      "    Path(filename).write_text(('\\\\n'.join(out)).strip()+'\\\\n',encoding='utf-8')",
+      "    Path(filename).write_text(('\\n'.join(out)).strip()+'\\n',encoding='utf-8')",
       "print('Локальный файл создан:', filename)"
-    ].join('\\n');
+    ].join('\n');
   }
 
   function deviceFallbackLabel(n) {

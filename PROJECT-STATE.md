@@ -74,7 +74,7 @@ If credentials were ever committed or published, deleting them from the latest v
              │                          │
     ┌────────▼────────┐        ┌────────▼──────────────┐
     │ AI Router       │        │ Sandbox               │
-    │ 2 воркера, SSE  │        │ chatstudio-sandbox    │
+    │ 2 воркера, SSE  │        │ isolated runner       │
     │ кластеры+fallback│       │ без сети, read-only   │
     └────────┬────────┘        │ shared designs        │
              │                 └───────────────────────┘

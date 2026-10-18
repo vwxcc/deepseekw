@@ -75,15 +75,24 @@ TEXT_KEYS = {"models"}
 PLANS = ("free", "pro")
 
 
+def _limits_plan(plan: str) -> str:
+    """Map special account labels to the two plans supported by the limits editor."""
+    value = str(plan or "free").strip().lower()
+    if value == "max":
+        return "pro"
+    return value if value in PLANS else "free"
+
+
 def default_limits(plan: str) -> dict[str, int | float | None]:
-    return dict(DEFAULTS.get(plan, DEFAULTS["free"]))
+    return dict(DEFAULTS.get(_limits_plan(plan), DEFAULTS["free"]))
 
 
 async def get_limits(db: AsyncSession, plan: str) -> dict[str, int | float | None]:
     """Effective limits: stored overrides merged over the defaults."""
-    limits = default_limits(plan)
+    limits_plan = _limits_plan(plan)
+    limits = default_limits(limits_plan)
     rows = (
-        await db.execute(select(PlanLimit).where(PlanLimit.plan == plan))
+        await db.execute(select(PlanLimit).where(PlanLimit.plan == limits_plan))
     ).scalars().all()
     for row in rows:
         if row.key in limits:

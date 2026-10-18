@@ -522,6 +522,23 @@ async def get_messages(
     return await build_message_tree(db, result.scalars().all())
 
 
+async def _check_budget_before_send(user: User, db: AsyncSession) -> None:
+    """Reject exhausted accounts before persisting another user message or empty chat."""
+    limits = await get_limits(db, user.plan or "free")
+    budget_value = limits.get("budget_usd")
+    if budget_value is None:
+        return
+    budget = max(0.0, float(budget_value))
+    hours = max(1, int(limits.get("window_hours") or 5))
+    spent, _ = await usage_window_spend(db, user.id, hours)
+    if spent >= budget:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Лимит исчерпан: ${spent:.2f} из ${budget:.2f} за последние {hours} ч. "
+            "Это скользящее окно: новые запросы откроются, когда старые расходы выйдут из окна.",
+        )
+
+
 @router.post("/chats/{chat_id}/messages")
 async def send_message(
     request: Request,
@@ -534,6 +551,7 @@ async def send_message(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
+    await _check_budget_before_send(user, db)
     execution_target = (data.execution_target or "site").strip().lower()
     if execution_target not in {"site", "device", "both"}:
         execution_target = "site"
@@ -685,6 +703,7 @@ async def send_first_message(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
+    await _check_budget_before_send(user, db)
 
     # Validate attachments before creating a chat so invalid uploads do not leave
     # an empty chat behind.

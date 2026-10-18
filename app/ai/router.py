@@ -216,6 +216,43 @@ class ModelPool:
 pool = ModelPool()
 
 
+def _estimate_text_tokens(value) -> tuple[int, int]:
+    """Conservative text-token estimate; encoded image data is counted as image tokens."""
+    if isinstance(value, str):
+        if value.startswith("data:image/"):
+            return 0, 1700
+        return math.ceil(len(value) / 3.0), 0
+    if isinstance(value, dict):
+        if value.get("type") == "image_url" or "image_url" in value:
+            return 0, 1700
+        total_text = total_images = 0
+        for key, item in value.items():
+            if key in {"url", "image", "image_url"}:
+                continue
+            text_tokens, image_tokens = _estimate_text_tokens(item)
+            total_text += text_tokens
+            total_images += image_tokens
+        return total_text, total_images
+    if isinstance(value, (list, tuple)):
+        total_text = total_images = 0
+        for item in value:
+            text_tokens, image_tokens = _estimate_text_tokens(item)
+            total_text += text_tokens
+            total_images += image_tokens
+        return total_text, total_images
+    return 0, 0
+
+
+def _estimated_model_call_cost(entry: "EntryConfig", messages: list[dict]) -> float:
+    """Upper estimate before a paid call, preventing one call from overshooting a quota."""
+    input_tokens, image_tokens = _estimate_text_tokens(messages)
+    input_tokens = max(1, input_tokens + image_tokens)
+    output_tokens = max(0, int(entry.max_tokens or 0))
+    price_in = max(0.0, float(entry.price_in or 0.0))
+    price_out = max(0.0, float(entry.price_out or 0.0))
+    return (input_tokens * price_in + output_tokens * price_out) / 1_000_000.0
+
+
 def _clean_title(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'").strip()
     t = t.splitlines()[0].strip() if t else ""
@@ -451,15 +488,15 @@ class AIRouter:
         except Exception as e:  # noqa: BLE001 - accounting must never break a chat
             log.warning("Billing failed (%s): %s", action, e)
 
-    async def _budget_error(self, job: Job) -> str | None:
-        """Block the request when the dollar budget of the window is used up."""
+    async def _budget_error(self, job: Job, estimated_cost_usd: float = 0.0) -> str | None:
+        """Block paid calls when the rolling-window budget is used or insufficient."""
         if not job.user_id:
             return None
         try:
             async with SessionLocal() as db:
                 user = await db.get(User, job.user_id)
-                if user is None or user.is_admin:
-                    return None
+                if user is None:
+                    return "Не удалось проверить владельца запроса. Повторите попытку."
                 limits = await get_limits(db, user.plan or "free")
                 budget_value = limits.get("budget_usd")
                 if budget_value is None:
@@ -470,10 +507,19 @@ class AIRouter:
         except Exception as e:  # noqa: BLE001
             log.warning("Budget check failed: %s", e)
             return "Не удалось проверить расходный лимит. Повторите запрос позже."
+        estimate = max(0.0, float(estimated_cost_usd or 0.0))
+        remaining = max(0.0, budget - spent)
         if spent >= budget:
             return (
                 f"Лимит исчерпан: израсходовано ${spent:.2f} из ${budget:.2f} "
-                f"за {hours} ч. Лимит обновится автоматически."
+                f"за последние {hours} ч. Новые запросы откроются, когда часть расходов выйдет из скользящего окна."
+            )
+        if estimate > remaining + 1e-9:
+            return (
+                f"Недостаточно бюджета для безопасного запуска следующего запроса: "
+                f"осталось ${remaining:.4f} из ${budget:.2f} за последние {hours} ч.; "
+                f"оценка верхней границы одного вызова — ${estimate:.4f}. "
+                f"Запрос не отправлен модели, чтобы не превысить лимит."
             )
         return None
 
@@ -832,7 +878,9 @@ class AIRouter:
                     for step in range(max_steps):
                         # Search and earlier agent calls may already have consumed
                         # the remaining budget, so check before every paid model turn.
-                        blocked = await self._budget_error(job)
+                        blocked = await self._budget_error(
+                            job, _estimated_model_call_cost(entry, messages)
+                        )
                         if blocked:
                             if step == 0:
                                 await self._finish(job.message_id, MessageStatus.failed, error=blocked)

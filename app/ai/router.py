@@ -60,7 +60,7 @@ from .providers import (
 log = logging.getLogger("chatstudio.ai")
 
 
-def _fileplan_runner(plan_source: str) -> tuple[str, str]:
+def _fileplan_runner(plan_source: str) -> tuple[str, str, str]:
     """Turn a JSON-only file plan into a fixed renderer call, never model-supplied Python."""
     try:
         plan = json.loads(plan_source)
@@ -86,7 +86,7 @@ def _fileplan_runner(plan_source: str) -> tuple[str, str]:
         "'previews': len(result.get('previews', []))"
         "}, ensure_ascii=False))\n"
     )
-    return code, display
+    return code, display, plan_source
 
 
 def _tool_feedback(run: dict) -> str:
@@ -854,15 +854,21 @@ class AIRouter:
                         await self._bill(job, entry, usage, f"agent_step_{step + 1}")
                         usage = None
                         for block_kind, block_payload in agent_blocks:
+                            device_plan = None
                             if block_kind == "fileplan":
-                                code, display_code = _fileplan_runner(block_payload)
+                                code, display_code, raw_plan = _fileplan_runner(block_payload)
+                                # Bound local fallbacks and persisted metadata; the isolated
+                                # server renderer remains authoritative for large plans.
+                                if len(raw_plan.encode("utf-8")) <= 80_000:
+                                    device_plan = raw_plan
                             else:
                                 code = block_payload
                                 display_code = code
+                            start_payload = {"code": display_code, "kind": block_kind}
+                            if device_plan is not None:
+                                start_payload["device_plan"] = device_plan
                             await job.output.put(
-                                ("tool_start", json.dumps({
-                                    "code": display_code, "kind": block_kind,
-                                }, ensure_ascii=False))
+                                ("tool_start", json.dumps(start_payload, ensure_ascii=False))
                             )
                             result = await run_python(
                                 code, timeout=run_timeout, project=job.project
@@ -877,6 +883,8 @@ class AIRouter:
                                 "timed_out": bool(result.get("timed_out")),
                                 "files": attached,
                             }
+                            if device_plan is not None:
+                                run["device_plan"] = device_plan
                             await job.output.put(("tool", json.dumps(run, ensure_ascii=False)))
                             all_runs.append(run)
                             messages = [

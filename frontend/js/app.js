@@ -2584,19 +2584,37 @@
     });
   }
 
-  function openDeviceCodeRunner(item, messageId) {
+  function openDeviceCodeRunner(item, messageId, options) {
+    const background = !!(options && options.background);
     const shell = $('#device-code-shell');
     const frame = $('#device-code-frame');
     const status = $('#device-code-status');
     const fileBox = $('#device-code-files');
     const errorBox = $('#device-code-errors');
-    if (!shell || !frame || !item) return;
-    deviceCodeMessageId = typeof messageId === 'string' && messageId ? messageId : null;
-
-    deviceCodeFileUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* no-op */ } });
-    deviceCodeFileUrls.length = 0; deviceCodeLastError = ''; deviceCodeErrorUrl = null;
-    if (fileBox) { fileBox.replaceChildren(); fileBox.hidden = true; }
-    if (errorBox) { errorBox.replaceChildren(); errorBox.hidden = true; }
+    if (!item || (!background && (!shell || !frame))) return;
+    const normalizedMessageId = typeof messageId === 'string' && messageId ? messageId : null;
+    if (background && !normalizedMessageId) return;
+    let targetFrame = frame;
+    if (background) {
+      const previous = backgroundDeviceRunners.get(normalizedMessageId);
+      if (previous && previous.frame) {
+        try { previous.frame.srcdoc = ''; previous.frame.remove(); } catch (e) { /* frame already gone */ }
+      }
+      targetFrame = document.createElement('iframe');
+      targetFrame.title = 'Фоновое выполнение кода AI-Ch';
+      targetFrame.setAttribute('sandbox', 'allow-scripts');
+      targetFrame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
+      document.body.appendChild(targetFrame);
+      backgroundDeviceRunners.set(normalizedMessageId, {
+        frame: targetFrame, messageId: normalizedMessageId, startedAt: Date.now(),
+      });
+    } else {
+      deviceCodeMessageId = normalizedMessageId;
+      deviceCodeFileUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* no-op */ } });
+      deviceCodeFileUrls.length = 0; deviceCodeLastError = ''; deviceCodeErrorUrl = null;
+      if (fileBox) { fileBox.replaceChildren(); fileBox.hidden = true; }
+      if (errorBox) { errorBox.replaceChildren(); errorBox.hidden = true; }
+    }
 
     const rawLang = String(item.lang || '').trim().toLowerCase();
     const lang = rawLang === 'run' ? 'python' : rawLang;
@@ -2644,7 +2662,10 @@
         '<script>(function(){const s=decodeURIComponent(escape(atob("' + base64 + '")));const st=document.createElement("style");st.textContent=s;document.head.appendChild(st);})();<\/script></body></html>';
       message = 'CSS применяется к демонстрационному интерфейсу. Для полноценного дизайна запускайте HTML/CSS вместе.';
     } else if (['py', 'python', 'python3'].includes(lang)) {
-      const pyScript = DEVICE_PYTHON_RUNNER_TEMPLATE.replace('__BASE64__', base64);
+      const pyScript = DEVICE_PYTHON_RUNNER_TEMPLATE
+        .replace('__BASE64__', base64)
+        .replace('__MESSAGE_ID__', JSON.stringify(normalizedMessageId || ''))
+        .replace('__BACKGROUND__', background ? 'true' : 'false');
       doc = pageStart + '<p class="note">Python WebAssembly · модули загружаются по import; файлы документов и изображения можно скачать ниже.</p>' +
         output + '<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"><\/script>' +
         '<script>' + pyScript + '<\/script></body></html>';
@@ -2659,14 +2680,18 @@
       else if (/<body[^>]*>/i.test(doc)) doc = doc.replace(/<body[^>]*>/i, body => body + runnerHook);
       else doc += runnerHook;
     }
+    if (background) {
+      targetFrame.srcdoc = doc;
+      return;
+    }
     if (status) status.textContent = message;
     if (fileBox) fileBox.hidden = true;
-    if (lang === 'html' || lang === 'htm') frame.onload = () => { if (status && shell.classList.contains('open')) status.textContent = 'Интерактивный результат загружен и готов к работе на устройстве.'; };
-    else frame.onload = null;
+    if (lang === 'html' || lang === 'htm') targetFrame.onload = () => { if (status && shell.classList.contains('open')) status.textContent = 'Интерактивный результат загружен и готов к работе на устройстве.'; };
+    else targetFrame.onload = null;
     shell.classList.add('open');
     shell.setAttribute('aria-hidden', 'false');
     document.body.classList.add('device-code-open');
-    frame.srcdoc = doc;
+    targetFrame.srcdoc = doc;
     requestAnimationFrame(() => shell.querySelector('.device-code-panel')?.focus());
   }
 

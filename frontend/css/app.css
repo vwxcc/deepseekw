@@ -2505,8 +2505,8 @@ body { font-weight: 400; }
 /* AI-authored interactive response blocks and web image cards. */
 .aich-ui-callout { display:flex; align-items:flex-start; gap:14px; margin:16px 0; padding:16px 18px;
   border:1px solid var(--border-soft); border-radius:16px; background:var(--bg-panel); }
-.aich-ui-callout.tone-success { background:color-mix(in srgb, var(--bg-panel) 90%, #8fae8b 10%); }
-.aich-ui-callout.tone-warning { background:color-mix(in srgb, var(--bg-panel) 90%, #c99b53 10%); }
+.aich-ui-callout.tone-success { background:color-mix(in srgb, var(--bg) 88%, #8fae8b 12%); }
+.aich-ui-callout.tone-warning { background:color-mix(in srgb, var(--bg) 88%, #c99b53 12%); }
 .aich-ui-emoji { flex:0 0 auto; font-size:2.8em; line-height:1.05; }
 .aich-ui-copy { min-width:0; display:grid; gap:5px; padding-top:2px; overflow-wrap:anywhere; }
 .aich-ui-copy strong { font-weight:700; }
@@ -2583,9 +2583,9 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   margin: 0;
   line-height: 1.5;
   min-height: 26px;
-  max-height: 6em;
+  max-height: 7em;
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #aaa89f transparent;
@@ -2764,7 +2764,18 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   border-color: var(--border);
   color: var(--fg);
 }
-.audio-player-controls .audio-skip-btn { width: 86px; height: 86px; }
+.audio-player-controls .audio-skip-btn { width: 84px; height: 84px; }
 @media (max-width: 620px) {
-  .audio-player-controls .audio-skip-btn { width: 86px; height: 86px; }
+  .audio-player-controls .audio-skip-btn { width: 84px; height: 84px; }
 }
+
+
+/* Keep the requested Listen label visible on phones while retaining the compact row. */
+@media (max-width: 620px) {
+  .msg .meta button.listen-answer-action span { display: inline; }
+  .msg .meta button.listen-answer-action { white-space: nowrap; gap: 5px; padding-inline: 8px; }
+}
+
+/* Four-line composer scrolling uses a quiet gray thumb only when the text overflows. */
+#composer #input::-webkit-scrollbar-track { background: transparent; }
+#composer #input::-webkit-scrollbar-thumb { background: #aaa89f; border-radius: 8px; }

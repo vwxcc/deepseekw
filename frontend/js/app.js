@@ -5388,7 +5388,7 @@
         it.hint + '</span></button>').join('') + '</div>',
       onOk: () => true,
     });
-    $('[data-fmt]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-fmt]').forEach(b => b.addEventListener('click', () => {
       const f = b.dataset.fmt;
       const text = p.text || '';
       try {

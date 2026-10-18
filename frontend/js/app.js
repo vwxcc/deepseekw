@@ -2391,11 +2391,16 @@
     });
     $('[data-player-mode]').forEach(btn => btn.addEventListener('click', () => {
       const mode = btn.dataset.playerMode;
+      const aiShell = $('#audio-player-shell');
+      const deviceShell = $('#device-audio-player-shell');
       const id = String(state.audioMessageId || pendingDeviceSpeechMessageId || deviceSpeechState.messageId || '');
       if (!id) return;
-      if (mode === 'device') startDeviceSpeech(id);
-      else {
-        if ($('#device-audio-player-shell')?.classList.contains('open')) closeDeviceSpeechPlayer();
+      if (mode === 'device') {
+        if (deviceShell && deviceShell.classList.contains('open')) return;
+        startDeviceSpeech(id);
+      } else {
+        if (aiShell && aiShell.classList.contains('open')) return;
+        if (deviceShell && deviceShell.classList.contains('open')) closeDeviceSpeechPlayer();
         openAudioPlayer(id, !!state.audioReady[id]);
       }
     }));
@@ -3096,7 +3101,7 @@
         : null;
       if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
           !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {
-        elapsedEl.textContent = (elapsedNode.role === 'assistant' ? 'Выполняю запрос · ' : 'Выполняю запрос · ') +
+        elapsedEl.textContent = 'Выполняю запрос · ' +
           formatActivityDuration(activityElapsed(elapsedNode, true));
       }
     }, 1000);

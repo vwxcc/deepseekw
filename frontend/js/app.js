@@ -2222,6 +2222,7 @@
     if (!deviceSpeechState.active) return;
     try { window.speechSynthesis.pause(); } catch (e) { /* speech API varies by browser */ }
     deviceSpeechState.playing = false;
+    if ($('#device-audio-status')) $('#device-audio-status').textContent = '';
     updateDeviceSpeechControls();
   }
 

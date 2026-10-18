@@ -6216,7 +6216,8 @@
           '<p>Бюджет считается по стоимости реальных вызовов модели и служебных запросов. ' +
           (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
           '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
-          '<span><b>Pro</b><small>' + (limitsUnavailable ? 'условия временно недоступны' : (proPrice > 0 ? '          '<h4 class="sub-benefits-heading">Что даёт Pro</h4>' + proBenefitsHtml +
+          '<span><b>Pro</b><small>' + (limitsUnavailable ? 'условия временно недоступны' : (proPrice > 0 ? '$' + proPrice.toFixed(2) + ' / месяц' : 'цена не задана')) + '</small></span></div>' +
+          '<h4 class="sub-benefits-heading">Что даёт Pro</h4>' + proBenefitsHtml +
           '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
           '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +
           '</button></section><section class="sub-usage-section"><h4 class="sec">Текущее использование</h4>' +

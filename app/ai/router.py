@@ -38,7 +38,7 @@ from ..services.files import detect_kind, sha256_bytes
 from ..services.limits import get_limits
 from ..services.sandbox import cleanup, run_python
 from ..services.usage import account, est, record, window_spend
-from ..services.websearch import format_context, image_search, read_search_results, web_search
+from ..services.websearch import format_context, image_search, read_search_results, read_web_page, web_search
 from . import model_sets as ms
 from . import prompts
 from .provider_config import apply_primary_provider_overrides
@@ -802,8 +802,41 @@ class AIRouter:
 
         # Independent query variants run concurrently instead of multiplying wait time.
         batches = await asyncio.gather(*(search_one(query) for query in queries))
+
+        # If the user supplied one or two URLs, read those pages directly as well
+        # as searching. The reader validates public hosts and every redirect.
+        direct_urls: list[str] = []
+        for candidate in re.findall(r"https?://[^\s<>()\"']+", job.search_query or "", re.I):
+            candidate = candidate.rstrip(".,;!?)]}»”'")
+            if candidate and candidate not in direct_urls:
+                direct_urls.append(candidate)
+            if len(direct_urls) >= 2:
+                break
+
+        async def read_direct(url: str) -> dict | None:
+            try:
+                page = await read_web_page(url)
+            except Exception as exc:  # direct reading is optional
+                log.warning("Direct web page read failed: %s", type(exc).__name__)
+                return None
+            if not page or not page.get("text"):
+                return None
+            return {
+                "title": page.get("title") or url,
+                "url": url,
+                "snippet": page.get("description") or "",
+                "page_text": page["text"],
+                **({"page_title": page["title"]} if page.get("title") else {}),
+                **({"page_description": page["description"]} if page.get("description") else {}),
+            }
+
+        direct_pages = await asyncio.gather(*(read_direct(url) for url in direct_urls))
         results: list[dict] = []
         seen: set[str] = set()
+        for item in direct_pages:
+            if item:
+                seen.add(item["url"])
+                results.append(item)
         for batch in batches:
             for item in batch:
                 url = item.get("url") or ""
@@ -818,8 +851,9 @@ class AIRouter:
             except Exception as e:  # defensive: image search must never break the answer
                 log.warning("Image search failed: %s", type(e).__name__)
 
-        # Read actual source-page text for top results as well as snippets.
-        results = await read_search_results(results[:10], limit=4)
+        # Read up to four pages in total, counting URLs already read directly.
+        already_read = sum(1 for item in results if item.get("page_text"))
+        results = await read_search_results(results[:10], limit=max(0, 4 - already_read))
 
         log.info(
             "Search queries=%s image_query=%s web_results=%d pages_read=%d image_results=%d",

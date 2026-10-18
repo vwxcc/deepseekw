@@ -105,6 +105,13 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["page_title"], "Real title")
         self.assertIn("The actual page body", websearch.format_context(result))
 
+    async def test_read_search_results_does_not_fetch_already_read_pages(self) -> None:
+        enriched = {**GOOD_RESULT, "page_text": "Already read"}
+        with patch.object(websearch, "read_web_page", new=AsyncMock()) as reader:
+            result = await websearch.read_search_results([enriched], limit=1)
+        reader.assert_not_awaited()
+        self.assertEqual(result[0]["page_text"], "Already read")
+
     async def test_duckduckgo_html_parser_extracts_result(self) -> None:
         page = (
             '<a class="result-link" href="https://example.org/article">'
@@ -152,6 +159,21 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         ):
             results = await websearch.web_search("test query", 3)
         self.assertEqual(results, [GOOD_RESULT])
+
+    async def test_search_merges_duckduckgo_and_bing_results(self) -> None:
+        second = {
+            "title": "Another source",
+            "url": "https://another.example.org/report",
+            "snippet": "Independent result",
+        }
+        with (
+            patch.object(websearch.settings, "searxng_url", ""),
+            patch.object(websearch, "duckduckgo_search", new=AsyncMock(return_value=[GOOD_RESULT])),
+            patch.object(websearch, "bing_search", new=AsyncMock(return_value=[GOOD_RESULT, second])),
+        ):
+            results = await websearch.web_search("test query", 4)
+        self.assertEqual([row["url"] for row in results],
+                         ["https://example.org/article", "https://another.example.org/report"])
 
 
     def test_bing_image_parser_extracts_safe_image_and_source_urls(self) -> None:

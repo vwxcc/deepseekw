@@ -258,6 +258,7 @@ async def read_search_results(results: list[dict], limit: int = 4) -> list[dict]
     candidates = [
         item for item in (results or [])
         if isinstance(item, dict) and item.get("kind") != "image" and item.get("url")
+        and not item.get("page_text")
     ][:count]
     semaphore = asyncio.Semaphore(4)
 
@@ -282,17 +283,25 @@ async def read_search_results(results: list[dict], limit: int = 4) -> list[dict]
 
 
 async def web_search(query: str, limit: int | None = None) -> list[dict]:
-    """Return search results; a failing optional SearXNG must not disable search."""
+    """Merge results from available public providers within one bounded time budget."""
     query = (query or "").strip()
     if not settings.web_search_enabled or not query:
         return []
 
-    count = max(1, min(int(limit or settings.web_search_results or 5), 10))
-    total_timeout = max(3, min(int(settings.web_search_timeout or 8), 15))
+    count = max(1, min(int(limit or settings.web_search_results or 8), 10))
+    total_timeout = max(3, min(int(settings.web_search_timeout or 12), 15))
     deadline = asyncio.get_running_loop().time() + total_timeout
+    out: list[dict] = []
+    seen: set[str] = set()
 
-    # SearXNG is optional. Never burn the whole request timeout on a stale
-    # Docker-only hostname before trying an Internet-accessible fallback.
+    def add_results(items: list[dict]) -> None:
+        for item in items:
+            url = item.get("url") or ""
+            if url and url not in seen:
+                seen.add(url)
+                out.append(item)
+
+    # SearXNG is optional; keep any useful hits and continue if the list is short.
     base = (settings.searxng_url or "").rstrip("/")
     if base:
         remaining = deadline - asyncio.get_running_loop().time()
@@ -305,16 +314,11 @@ async def web_search(query: str, limit: int | None = None) -> list[dict]:
                 ) as client:
                     resp = await client.get(
                         f"{base}/search",
-                        params={
-                            "q": query,
-                            "format": "json",
-                            "language": "ru",
-                            "safesearch": "0",
-                        },
+                        params={"q": query, "format": "json", "language": "ru", "safesearch": "0"},
                     )
                     resp.raise_for_status()
                     data = resp.json()
-                out = []
+                searx_results = []
                 for item in (data.get("results") or []):
                     result = _normalise_result(
                         item.get("title") or item.get("url") or "",
@@ -322,44 +326,39 @@ async def web_search(query: str, limit: int | None = None) -> list[dict]:
                         item.get("content") or "",
                     )
                     if result:
-                        out.append(result)
-                    if len(out) >= count:
-                        break
-                if out:
-                    return out
-                log.info("SearXNG returned no usable results; trying public fallbacks")
-            except Exception as e:  # network-dependent by design
-                log.warning("SearXNG unavailable; using public fallback: %s", type(e).__name__)
+                        searx_results.append(result)
+                add_results(searx_results)
+                if len(out) >= count:
+                    return out[:count]
+            except Exception as exc:  # network-dependent by design
+                log.warning("SearXNG unavailable; will try public fallbacks: %s", type(exc).__name__)
 
+    # Reserve part of the deadline for Bing instead of letting a stalled DDG
+    # request consume all available time. Results from both engines are merged.
     remaining = deadline - asyncio.get_running_loop().time()
-    # Reserve part of the total time budget for a second provider instead of
-    # letting a stalled DuckDuckGo request consume the whole search window.
     ddg_timeout = min(remaining, max(1.5, min(4.5, remaining * 0.55)))
-    if ddg_timeout > 0.25:
+    if ddg_timeout > 0.25 and len(out) < count:
         try:
-            results = await asyncio.wait_for(
-                duckduckgo_search(query, count),
-                timeout=ddg_timeout,
-            )
-            if results:
-                log.info("DuckDuckGo returned %d results", len(results))
-                return results[:count]
-        except Exception as e:  # includes wait_for timeout
-            log.warning("DuckDuckGo search unavailable: %s", type(e).__name__)
+            results = await asyncio.wait_for(duckduckgo_search(query, count), timeout=ddg_timeout)
+            add_results(results)
+            log.info("DuckDuckGo contributed %d results", len(results))
+        except Exception as exc:  # includes wait_for timeout
+            log.warning("DuckDuckGo search unavailable: %s", type(exc).__name__)
 
     remaining = deadline - asyncio.get_running_loop().time()
-    if remaining > 0.25:
+    if remaining > 0.25 and len(out) < count:
         try:
             results = await asyncio.wait_for(
                 bing_search(query, count, timeout=remaining),
                 timeout=remaining,
             )
-            if results:
-                log.info("Bing returned %d results", len(results))
-                return results[:count]
-        except Exception as e:  # includes wait_for timeout
-            log.warning("Bing search unavailable: %s", type(e).__name__)
+            add_results(results)
+            log.info("Bing contributed %d results", len(results))
+        except Exception as exc:  # includes wait_for timeout
+            log.warning("Bing search unavailable: %s", type(exc).__name__)
 
+    if out:
+        return out[:count]
     log.warning("All search providers returned no results")
     return []
 

@@ -29,7 +29,217 @@
     const plain = glyph.replace(/\uFE0F/g, '');
     if (plain !== glyph) THEMED_EMOJI_MAP.set(plain, item);
   });
-  const THEMED_EMOJI_PATTERN = new RegExp(Array.from(THEMED_EMOJI_MAP.keys()).sort((a,b)=>b.length-a.length).join('|'), 'gu');
+
+  // Broader emoji coverage for the assistant's most common expressive symbols.
+  // Every entry resolves to the same calm, monochrome AI-Ch outline sprite.
+  const THEMED_EMOJI_EXTRA_ITEMS = [
+    ["😀","smile","Радость"],["😃","smile","Радость"],["😄","smile","Радость"],["😁","smile","Улыбка"],
+    ["😆","smile","Смех"],["😅","smile","Смех"],["🤣","smile","Смех"],["😂","smile","Смех"],
+    ["🙂","smile","Улыбка"],["🙃","smile","Ирония"],["😉","smile-cool","Подмигивание"],["😊","smile","Радость"],
+    ["😇","smile","Доброта"],["🥰","heart","Тепло"],["😍","heart","Восхищение"],["🤩","star","Восторг"],
+    ["😘","heart","Поцелуй"],["😗","smile","Улыбка"],["😚","heart","Поцелуй"],["😙","smile","Улыбка"],
+    ["🥲","smile","Тронут"],["😋","smile","Вкусно"],["😛","smile","Шутка"],["😜","smile-cool","Шутка"],
+    ["🤪","smile-cool","Игривость"],["😝","smile","Шутка"],["🤑","wallet","Деньги"],["🤗","heart-hands","Поддержка"],
+    ["🤭","smile","Смущение"],["🫢","smile","Удивление"],["🫣","eye","Подглядывание"],["🤫","user","Тишина"],
+    ["🤔","brain","Размышление"],["🫡","check-circle","Принято"],["🤐","user","Молчание"],["🤨","eye","Сомнение"],
+    ["😐","smile","Нейтрально"],["😑","smile","Без эмоций"],["😶","user","Молчание"],["🫥","eye","Незаметность"],
+    ["😏","smile-cool","Уверенность"],["😒","smile","Недовольство"],["🙄","eye","Скепсис"],["😬","smile","Неловкость"],
+    ["😮","smile","Удивление"],["😯","smile","Удивление"],["😲","smile","Изумление"],["😳","smile","Смущение"],
+    ["🥺","heart","Просьба"],["🥹","heart","Тронут"],["😦","smile","Удивление"],["😧","alert","Тревога"],
+    ["😨","alert","Страх"],["😰","alert","Тревога"],["😥","smile","Облегчение"],["😢","smile","Грусть"],
+    ["😭","smile","Слёзы"],["😱","alert","Испуг"],["😖","smile","Огорчение"],["😣","smile","Напряжение"],
+    ["😞","smile","Разочарование"],["😓","smile","Усталость"],["😩","smile","Усталость"],["😫","smile","Усталость"],
+    ["🥱","smile","Сонливость"],["😤","zap","Решимость"],["😡","alert","Злость"],["😠","alert","Недовольство"],
+    ["🤬","alert","Злость"],["🤯","brain","Потрясение"],["😈","smile-cool","Озорство"],["👿","alert","Недовольство"],
+    ["💀","alert","Череп"],["☠️","alert","Опасность"],["💩","sparkle","Символ"],["🤡","smile","Клоун"],
+    ["👻","sparkle","Призрак"],["👽","robot","Инопланетянин"],["👾","gamepad","Игра"],["🤖","robot","Робот"],
+    ["😺","cat","Кот"],["😸","cat","Кот"],["😹","cat","Кот"],["😻","cat","Кот"],["😼","cat","Кот"],
+    ["😽","cat","Кот"],["🙀","cat","Кот"],["😿","cat","Кот"],["😾","cat","Кот"],
+    ["🙋","user","Вопрос"],["🙋‍♂️","user","Вопрос"],["🙋‍♀️","user","Вопрос"],["🙆","users","Согласие"],
+    ["🙅","ban","Отказ"],["🙇","user","Поклон"],["🤦","user","Разочарование"],["🤷","users","Не знаю"],
+    ["🙍","user","Недовольство"],["🙎","user","Недовольство"],["🙌","hands","Ура"],["👏","hands","Аплодисменты"],
+    ["🤝","handshake","Сотрудничество"],["🫶","heart-hands","Поддержка"],["💋","heart","Поцелуй"],
+    ["💯","check-circle","Сто процентов"],["💢","alert","Раздражение"],["💫","sparkle","Звёзды"],
+    ["💤","moon","Сон"],["💭","chat","Мысль"],["🗯️","chat","Реплика"],["💬","chat","Сообщение"],
+    ["🩷","heart","Сердце"],["🩵","heart","Сердце"],["🩶","heart","Сердце"],["🤍","heart","Сердце"],
+    ["🖤","heart","Сердце"],["💜","heart","Сердце"],["💙","heart","Сердце"],["💛","heart","Сердце"],
+    ["🧡","heart","Сердце"],["💔","heart","Разбитое сердце"],["❤️‍🔥","heart","Сильные чувства"],
+    ["❤️‍🩹","heart","Поддержка"],["💞","heart","Сердца"],["💕","heart","Сердца"],["💖","heart","Сердце"],
+    ["💗","heart","Сердце"],["💘","heart","Сердце"],["💝","gift-open","Подарок"],["💌","mail","Письмо"],
+    ["🌦️","cloud","Погода"],["🌧️","cloud","Дождь"],["⛈️","cloud","Гроза"],["🌩️","cloud","Гроза"],
+    ["🌨️","cloud","Снег"],["🌥️","cloud","Облачно"],["🌤️","sun","Прояснение"],["🌪️","cloud","Ветер"],
+    ["🌫️","cloud","Туман"],["🌬️","cloud","Ветер"],["❄️","sparkle","Снег"],["☃️","sparkle","Снеговик"],
+    ["⛄","sparkle","Снеговик"],["🌊","droplet","Волна"],["🌋","mountain","Вулкан"],["🏔️","mountain","Горы"],
+    ["⛰️","mountain","Горы"],["🌄","sun","Рассвет"],["🌅","sun","Закат"],["🌇","sun","Закат"],
+    ["🌆","building","Город"],["🌃","moon","Ночь"],["🌌","sparkle","Космос"],["🪐","sparkle","Планета"],
+    ["🌵","sprout","Кактус"],["🪴","sprout","Растение"],["🍀","leaf","Удача"],["☘️","leaf","Клевер"],
+    ["🪷","flower","Цветок"],["🌾","sprout","Колос"],["🪻","flower","Цветок"],["🪹","tree","Гнездо"],
+    ["🪺","tree","Гнездо"],["🪵","tree","Дерево"],["🌴","tree","Пальма"],["🌲","tree","Ель"],
+    ["🌷","flower","Цветок"],["🌼","flower","Цветок"],["🌸","flower","Цветок"],["💐","flower","Букет"],
+    ["🥀","flower","Цветок"],["🍂","leaf","Листопад"],["🍁","leaf","Клён"],["🌿","leaf","Зелень"],
+    ["🥑","apple","Авокадо"],["🍓","apple","Ягода"],["🍇","apple","Виноград"],["🍉","apple","Арбуз"],
+    ["🍌","apple","Банан"],["🍍","apple","Ананас"],["🥭","apple","Манго"],["🍑","apple","Персик"],
+    ["🍒","apple","Вишня"],["🫐","apple","Ягоды"],["🥝","apple","Киви"],["🍋","apple","Лимон"],
+    ["🍐","apple","Груша"],["🍊","apple","Апельсин"],["🥥","apple","Кокос"],["🥕","sprout","Морковь"],
+    ["🌽","sprout","Кукуруза"],["🥦","leaf","Овощи"],["🥬","leaf","Зелень"],["🧄","sprout","Чеснок"],
+    ["🧅","sprout","Лук"],["🥔","package","Картофель"],["🍠","package","Батат"],["🥐","package","Выпечка"],
+    ["🥯","package","Выпечка"],["🍞","package","Хлеб"],["🥖","package","Багет"],["🥨","package","Крендель"],
+    ["🧀","package","Сыр"],["🥚","package","Яйцо"],["🍳","package","Еда"],["🥞","package","Блины"],
+    ["🧇","package","Вафли"],["🥓","package","Еда"],["🥩","package","Еда"],["🍗","package","Еда"],
+    ["🍖","package","Еда"],["🌭","package","Еда"],["🍔","package","Еда"],["🥪","package","Еда"],
+    ["🌮","package","Еда"],["🌯","package","Еда"],["🫔","package","Еда"],["🥙","package","Еда"],
+    ["🧆","package","Еда"],["🥗","leaf","Салат"],["🥘","package","Еда"],["🫕","package","Еда"],
+    ["🥫","package","Консервы"],["🍝","package","Паста"],["🍜","package","Суп"],["🍲","package","Еда"],
+    ["🍛","package","Еда"],["🍣","package","Еда"],["🍱","package","Еда"],["🥟","package","Еда"],
+    ["🫓","package","Лепёшка"],["🍤","package","Еда"],["🍙","package","Еда"],["🍚","package","Еда"],
+    ["🍘","package","Еда"],["🍥","package","Еда"],["🥠","package","Еда"],["🥮","package","Еда"],
+    ["🍢","package","Еда"],["🍡","package","Еда"],["🍧","package","Десерт"],["🍨","package","Десерт"],
+    ["🍦","package","Десерт"],["🧁","cake","Десерт"],["🍪","cake","Десерт"],["🍩","cake","Десерт"],
+    ["🍫","cake","Шоколад"],["🍬","cake","Конфета"],["🍭","cake","Леденец"],["🍮","cake","Десерт"],
+    ["🍯","package","Мёд"],["🥛","coffee","Молоко"],["🍼","coffee","Напиток"],["🫖","coffee","Чайник"],
+    ["🍵","coffee","Чай"],["🧋","coffee","Напиток"],["🥤","coffee","Напиток"],["🧃","coffee","Сок"],
+    ["🍺","coffee","Напиток"],["🍻","coffee","Напиток"],["🥂","coffee","Тост"],["🍷","coffee","Напиток"],
+    ["🍸","coffee","Коктейль"],["🍹","coffee","Напиток"],["🧉","coffee","Напиток"],["🥢","package","Палочки"],
+    ["🥄","package","Ложка"],["🍴","package","Приборы"],["🔪","wrench","Нож"],["⚽","target","Спорт"],
+    ["🏀","target","Спорт"],["🏈","target","Спорт"],["⚾","target","Спорт"],["🥎","target","Спорт"],
+    ["🎾","target","Спорт"],["🏐","target","Спорт"],["🏉","target","Спорт"],["🥏","target","Спорт"],
+    ["🎱","target","Бильярд"],["🏓","target","Спорт"],["🏸","target","Спорт"],["🥍","target","Спорт"],
+    ["🥅","target","Ворота"],["🏒","target","Спорт"],["🏑","target","Спорт"],["🥊","arm-flex","Бокс"],
+    ["🥋","arm-flex","Единоборства"],["🥇","medal","Медаль"],["🥈","medal","Медаль"],["🥉","medal","Медаль"],
+    ["🎖️","medal","Медаль"],["🏵️","medal","Медаль"],["🏋️","arm-flex","Тренировка"],["🤸","users","Гимнастика"],
+    ["🤼","users","Спорт"],["🤽","users","Спорт"],["🤾","users","Спорт"],["🚴","bicycle","Велоспорт"],
+    ["🏃","user","Бег"],["🚶","user","Ходьба"],["🧘","user","Медитация"],["🏄","user","Сёрфинг"],
+    ["🏊","user","Плавание"],["⛷️","user","Лыжи"],["🏂","user","Сноуборд"],["🛹","bicycle","Скейтборд"],
+    ["🛼","bicycle","Ролики"],["🎯","target","Цель"],["🎳","target","Боулинг"],["🎮","gamepad","Игра"],
+    ["🕹️","gamepad","Игра"],["🎲","puzzle","Кости"],["♟️","puzzle","Шахматы"],["🧩","puzzle","Головоломка"],
+    ["🎸","music","Музыка"],["🎹","music","Музыка"],["🥁","music","Музыка"],["🎷","music","Музыка"],
+    ["🎺","music","Музыка"],["🪇","music","Музыка"],["🎻","music","Музыка"],["🎧","audio","Наушники"],
+    ["🎤","audio","Микрофон"],["🎼","music","Ноты"],["🎵","music","Музыка"],["🎶","music","Музыка"],
+    ["📸","image","Фото"],["📷","image","Фотоаппарат"],["📹","film","Видео"],["🎥","film","Кино"],
+    ["🎞️","film","Киноплёнка"],["📽️","film","Проектор"],["🎙️","audio","Микрофон"],["🛰️","globe","Спутник"],
+    ["🛜","network","Сеть"],["📶","network","Сигнал"],["🛜","network","Сеть"],["🔍","search","Поиск"],
+    ["🔎","search","Поиск"],["🪛","wrench","Отвёртка"],["🔩","wrench","Болт"],["🪚","wrench","Пила"],
+    ["🪓","wrench","Топор"],["🪜","ruler","Лестница"],["🪝","link","Крюк"],["🧲","wrench","Магнит"],
+    ["🧻","file-text","Бумага"],["🪒","wrench","Инструмент"],["🪥","wrench","Щётка"],["🧴","package","Флакон"],
+    ["🧷","paperclip","Булавка"],["🪡","pencil","Игла"],["🧵","thread","Нить"],["🪢","link","Узел"],
+    ["📸","image","Фото"],["🛗","building","Лифт"],["🪞","image","Зеркало"],["🪟","building","Окно"],
+    ["🛏️","home","Кровать"],["🪑","home","Стул"],["🧳","package","Чемодан"],["🛍️","package","Покупки"],
+    ["🧸","gift-open","Игрушка"],["🪅","party","Праздник"],["🪩","sparkle","Диско"],["🪇","music","Музыка"],
+    ["🧿","eye","Оберег"],["🪬","shield-check","Защита"],["🪄","wand","Магия"],["🧯","fire-extinguisher","Огнетушитель"],
+    ["🧑‍⚕️","user","Медицина"],["🧑‍🎓","graduation-cap","Учёба"],["🧑‍🏫","graduation-cap","Преподавание"],
+    ["🧑‍🚀","rocket","Космонавт"],["🧑‍🍳","package","Повар"],["🧑‍🔬","microscope","Исследователь"],
+    ["🧑‍🎨","palette","Художник"],["🧑‍🔧","wrench","Механик"],["🧑‍💼","user","Работа"],
+    ["🧑‍⚖️","scale","Судья"],["🧑‍🌾","sprout","Фермер"],["🧑‍🚒","fire-extinguisher","Пожарный"],
+    ["🧑‍✈️","plane","Пилот"],["🧑‍🦽","user","Человек"],["🧑‍🦯","user","Человек"],["🧑‍🦼","user","Человек"],
+    ["👨‍👩‍👧‍👦","users","Семья"],["👩‍👩‍👧‍👧","users","Семья"],["👨‍👨‍👦‍👦","users","Семья"],
+    ["🧑‍🤝‍🧑","users","Люди"],["👫","users","Люди"],["👭","users","Люди"],["👬","users","Люди"],
+    ["💃","users","Танец"],["🕺","users","Танец"],["🫂","heart-hands","Поддержка"],
+    ["🌍","globe","Мир"],["🌎","globe","Мир"],["🌏","globe","Мир"],["🌐","globe-box","Сеть"],
+    ["🏳️","flag","Флаг"],["🏴","flag","Флаг"],["🏁","flag","Финиш"],["🚩","flag","Флаг"],["🎌","flag","Флаги"],
+    ["🏳️‍🌈","flag","Равенство"],["🏳️‍⚧️","flag","Равенство"],
+    ["🛸","rocket","Космос"],["🚁","plane","Вертолёт"],["🚂","car","Транспорт"],["🚆","car","Транспорт"],
+    ["🚇","car","Транспорт"],["🚈","car","Транспорт"],["🚉","car","Станция"],["🚊","car","Транспорт"],
+    ["🚝","car","Транспорт"],["🚄","car","Транспорт"],["🚅","car","Транспорт"],["🚗","car","Машина"],
+    ["🚕","car","Такси"],["🚙","car","Машина"],["🚌","car","Автобус"],["🚎","car","Транспорт"],
+    ["🏎️","car","Гоночная машина"],["🚓","car","Транспорт"],["🚑","car","Скорая помощь"],["🚒","car","Пожарная машина"],
+    ["🚐","car","Транспорт"],["🚚","car","Грузовик"],["🚜","car","Трактор"],["🛵","bicycle","Скутер"],
+    ["🛴","bicycle","Самокат"],["🛶","bicycle","Лодка"],["⛵","bicycle","Парусник"],["🚤","bicycle","Катер"],
+    ["🛥️","bicycle","Катер"],["🚢","bicycle","Корабль"],["✈️","plane","Самолёт"],["🛫","plane","Вылет"],
+    ["🛬","plane","Прилёт"],["🪂","plane","Парашют"],["🚀","rocket","Ракета"],["🛣️","map","Дорога"],
+    ["🛤️","map","Железная дорога"],["🗽","building","Памятник"],["🗼","building","Башня"],["🏰","building","Замок"],
+    ["🏯","building","Замок"],["🏟️","building","Стадион"],["🎡","building","Аттракцион"],["🎢","building","Аттракцион"],
+    ["🎠","building","Карусель"],["⛲","droplet","Фонтан"],["⛺","home","Палатка"],["🏕️","home","Лагерь"],
+    ["🗻","mountain","Гора"],["🏖️","sun","Пляж"],["🏝️","tree","Остров"],["🏜️","sun","Пустыня"],
+    ["🧭","compass","Компас"],["🗺️","map","Карта"],["🧳","package","Чемодан"],
+    ["🛡️","shield-check","Защита"],["🔐","lock","Защита"],["🔏","lock","Защита"],["🗝️","key","Ключ"],
+    ["🔑","key","Ключ"],["🧑‍💻","code","Разработка"],["💻","terminal","Компьютер"],["🖥️","terminal","Монитор"],
+    ["⌚","clock","Часы"],["⏲️","timer","Таймер"],["⏰","clock","Будильник"],["📡","network","Антенна"],
+    ["🔋","battery","Батарея"],["🪫","battery-low","Разряд"],["🔌","plug","Питание"],["📺","film","Телевизор"],
+    ["📻","audio","Радио"],["📟","phone","Пейджер"],["☎️","phone","Телефон"],["📞","phone","Телефон"],
+    ["📬","mail","Почта"],["📮","mail","Почта"],["📦","package","Посылка"],["🗃️","database","Архив"],
+    ["🗂️","folder","Папки"],["🗄️","database","Шкаф"],["🧾","file-text","Чек"],["🗒️","file-text","Заметка"],
+    ["🗓️","calendar","Календарь"],["📇","users","Контакты"],["📰","file-text","Новости"],["🗞️","file-text","Газета"],
+    ["📜","file-text","Документ"],["📜","file-text","Документ"],["🪧","info","Табличка"],["🪪","user","Документ"],
+    ["🧮","calculator","Расчёт"],["📏","ruler","Линейка"],["📐","ruler","Угольник"],["🖇️","paperclip","Скрепки"],
+    ["📍","map-pin","Метка"],["🧷","paperclip","Булавка"],["📛","alert","Идентификатор"],["🔖","bookmark","Закладка"],
+    ["📚","book-open","Книги"],["📓","book","Тетрадь"],["📔","book","Тетрадь"],["📕","book","Книга"],
+    ["📗","book","Книга"],["📘","book","Книга"],["📙","book","Книга"],["📒","book","Блокнот"],
+    ["✉️","mail","Письмо"],["📨","mail","Письмо"],["📩","mail","Письмо"],["📫","mail","Почта"],
+    ["💼","package","Работа"],["📌","bookmark","Закрепить"],["📎","paperclip","Вложение"],["📝","pencil","Заметка"],
+    ["✏️","pencil","Редактировать"],["🖊️","pencil","Письмо"],["🖋️","pencil","Письмо"],["🖌️","brush","Кисть"],
+    ["🖍️","palette","Мелок"],["📃","file-text","Документ"],["📄","file-text","Документ"],["🗑️","trash","Корзина"],
+    ["🧹","broom","Уборка"],["🪣","package","Ведро"],["🧺","package","Корзина"],["🧼","package","Мыло"],
+    ["🧽","package","Губка"],["🧯","fire-extinguisher","Безопасность"],["🚿","droplet","Душ"],["🛁","droplet","Ванна"],
+    ["🚽","home","Ванная"],["🧴","package","Флакон"],["🧪","flask","Эксперимент"],["🔬","microscope","Исследование"],
+    ["🧬","dna","ДНК"],["🩺","heart","Медицина"],["💊","package","Медицина"],["🩹","package","Первая помощь"],
+    ["🩼","user","Опора"],["🩻","file-text","Снимок"],["🧫","flask","Образец"],["🧹","broom","Уборка"]
+  ];
+  THEMED_EMOJI_EXTRA_ITEMS.forEach(([glyph, symbol, label]) => {
+    const item = { symbol, label };
+    THEMED_EMOJI_MAP.set(glyph, item);
+    const plain = glyph.replace(/\uFE0F/g, '');
+    if (plain !== glyph) THEMED_EMOJI_MAP.set(plain, item);
+  });
+
+  // Unicode fallback ensures newly added emoji, skin tones, families and flags
+  // are also replaced by neutral outline symbols instead of colorful system glyphs.
+  const EMOJI_SEQUENCE_SOURCE = String.raw`(?:\\p{Regional_Indicator}{2}|[#*0-9]\\uFE0F?\\u20E3|\\p{Emoji_Presentation}\\uFE0F?(?:[\\u{1F3FB}-\\u{1F3FF}])?(?:\\u200D\\p{Extended_Pictographic}\\uFE0F?(?:[\\u{1F3FB}-\\u{1F3FF}])?)*|\\p{Extended_Pictographic}\\uFE0F(?:[\\u{1F3FB}-\\u{1F3FF}])?(?:\\u200D\\p{Extended_Pictographic}\\uFE0F?(?:[\\u{1F3FB}-\\u{1F3FF}])?)*)`;
+  const escapeEmojiRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\  const THEMED_EMOJI_PATTERN = new RegExp(Array.from(THEMED_EMOJI_MAP.keys()).sort((a,b)=>b.length-a.length).join('|'), 'gu');');
+  const knownEmojiPattern = Array.from(THEMED_EMOJI_MAP.keys())
+    .sort((a, b) => b.length - a.length)
+    .map(escapeEmojiRegex).join('|');
+  const THEMED_EMOJI_PATTERN = new RegExp('(?:' + knownEmojiPattern + ')|' + EMOJI_SEQUENCE_SOURCE, 'gu');
+
+  function themedEmojiItem(glyph) {
+    const plain = glyph.replace(/\uFE0F/g, '');
+    const known = THEMED_EMOJI_MAP.get(glyph) || THEMED_EMOJI_MAP.get(plain);
+    if (known) return known;
+
+    const keycap = glyph.match(/^([#*0-9])\uFE0F?\u20E3$/u);
+    if (keycap) return { symbol: null, label: 'Символ ' + keycap[1], keycap: keycap[1] };
+
+    const firstBase = Array.from(glyph).find(char =>
+      char !== '\uFE0E' && char !== '\uFE0F' && char !== '\u200D' &&
+      !/[\u{1F3FB}-\u{1F3FF}]/u.test(char) &&
+      !/[\u{E0020}-\u{E007F}]/u.test(char)
+    ) || glyph;
+    const cp = firstBase.codePointAt(0);
+    if (/\p{Regional_Indicator}/u.test(glyph) || cp === 0x1F3F4) return { symbol: 'flag', label: 'Флаг' };
+    if ((cp >= 0x1F600 && cp <= 0x1F64F) || (cp >= 0x1F910 && cp <= 0x1F92F)) {
+      return { symbol: 'smile', label: 'Эмоция' };
+    }
+    if ((cp >= 0x1F466 && cp <= 0x1F487) || (cp >= 0x1F574 && cp <= 0x1F596) ||
+        (cp >= 0x1F9D1 && cp <= 0x1F9DD) || (cp >= 0x1FAC3 && cp <= 0x1FAC5)) {
+      return { symbol: 'user', label: 'Человек' };
+    }
+    if ((cp >= 0x1F400 && cp <= 0x1F43F) || (cp >= 0x1F980 && cp <= 0x1F9AE) ||
+        (cp >= 0x1F577 && cp <= 0x1F579)) return { symbol: 'paw', label: 'Животное' };
+    if ((cp >= 0x1F330 && cp <= 0x1F343) || (cp >= 0x1F344 && cp <= 0x1F34F)) {
+      return { symbol: 'leaf', label: 'Природа' };
+    }
+    if ((cp >= 0x1F3A0 && cp <= 0x1F3BF)) return { symbol: 'party', label: 'Развлечение' };
+    if ((cp >= 0x1F3C0 && cp <= 0x1F3F0)) return { symbol: 'trophy', label: 'Спорт' };
+    if ((cp >= 0x1F680 && cp <= 0x1F6FF)) return { symbol: 'car', label: 'Транспорт' };
+    if ((cp >= 0x1F950 && cp <= 0x1F96F) || (cp >= 0x1F9C0 && cp <= 0x1F9C2) ||
+        (cp >= 0x1FAD0 && cp <= 0x1FADF) || (cp >= 0x1F32D && cp <= 0x1F37F)) {
+      return { symbol: 'package', label: 'Предмет' };
+    }
+    if ((cp >= 0x1F4A0 && cp <= 0x1F4FF) || (cp >= 0x1FA70 && cp <= 0x1FAFF)) {
+      return { symbol: 'package', label: 'Предмет' };
+    }
+    if (cp >= 0x2600 && cp <= 0x27BF) return { symbol: 'sparkle', label: 'Символ' };
+    return { symbol: 'sparkle', label: 'Символ' };
+  }
+
+  function themedEmojiSvg(glyph, item) {
+    if (item.keycap) {
+      const label = escapeHtml(item.keycap);
+      return '<svg class="ic aich-themed-emoji-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+        '<rect x="2.8" y="2.8" width="18.4" height="18.4" rx="5" fill="none" stroke="currentColor" stroke-width="1.7"/>' +
+        '<text x="12" y="16" fill="currentColor" font-size="10.5" text-anchor="middle" font-family="inherit">' + label + '</text></svg>';
+    }
+    return '<svg class="ic aich-themed-emoji-icon" aria-hidden="true"><use href="#i-' + item.symbol + '"></use></svg>';
+  }
   function renderThemedEmojis(root) {
     if (!root) return;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -37,7 +247,7 @@
     let node;
     while ((node = walker.nextNode())) {
       const parent = node.parentElement;
-      if (!parent || parent.closest('code,pre,script,style,textarea,button,svg,.katex,.aich-themed-emoji')) continue;
+      if (!parent || parent.closest('code,pre,script,style,textarea,svg,.katex,.aich-themed-emoji')) continue;
       THEMED_EMOJI_PATTERN.lastIndex = 0;
       if (THEMED_EMOJI_PATTERN.test(node.nodeValue || '')) nodes.push(node);
       THEMED_EMOJI_PATTERN.lastIndex = 0;
@@ -48,7 +258,7 @@
       let cursor = 0;
       value.replace(new RegExp(THEMED_EMOJI_PATTERN.source, 'gu'), (glyph, offset) => {
         if (offset > cursor) fragment.appendChild(document.createTextNode(value.slice(cursor, offset)));
-        const item = THEMED_EMOJI_MAP.get(glyph) || THEMED_EMOJI_MAP.get(glyph.replace(/\uFE0F/g, ''));
+        const item = themedEmojiItem(glyph);
         if (!item) fragment.appendChild(document.createTextNode(glyph));
         else {
           const span = document.createElement('span');
@@ -56,7 +266,7 @@
           span.setAttribute('role', 'img');
           span.setAttribute('aria-label', item.label);
           span.title = item.label;
-          span.innerHTML = '<svg class="ic aich-themed-emoji-icon" aria-hidden="true"><use href="#i-' + item.symbol + '"></use></svg>';
+          span.innerHTML = themedEmojiSvg(glyph, item);
           fragment.appendChild(span);
         }
         cursor = offset + glyph.length;

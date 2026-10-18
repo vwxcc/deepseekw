@@ -610,22 +610,48 @@ def _render_simple_text(outdir: Path, plan: dict[str, Any], fmt: str) -> list[st
         lines = [str(plan.get("title") or "")]
         if plan.get("subtitle"):
             lines.extend(["", str(plan["subtitle"])])
-        for block in plan.get("blocks") or []:
+        for index, block in enumerate(plan.get("blocks") or [], start=1):
             kind = block.get("kind", "text")
-            text = str(block.get("text") or "")
+            title = str(block.get("title") or block.get("kicker") or "")
+            text = str(block.get("text") or block.get("body") or block.get("content") or "")
+            items = block.get("items") or []
+            heading_prefix = "## " if fmt == "md" else ""
             if kind in ("h1", "h2", "h3"):
-                lines.extend(["", "#" * int(kind[1]) + " " + text])
+                value = text or title or f"Раздел {index}"
+                prefix = ("#" * int(kind[1]) + " ") if fmt == "md" else ""
+                lines.extend(["", prefix + value])
+            elif kind == "section":
+                if title:
+                    lines.extend(["", heading_prefix + title])
+                if text:
+                    lines.extend(["", text])
             elif kind in ("bullets", "numbers"):
-                lines.extend(["", *[(f"- {item}" if kind == "bullets" else f"{i}. {item}") for i, item in enumerate(block.get("items") or [], 1)]])
+                if title:
+                    lines.extend(["", heading_prefix + title])
+                lines.extend(["", *[(f"- {item}" if kind == "bullets" else f"{i}. {item}") for i, item in enumerate(items, 1)]])
             elif kind == "table":
+                if title:
+                    lines.extend(["", heading_prefix + title])
                 head = block.get("head") or []
                 rows = block.get("rows") or []
                 if head:
                     lines.extend(["", "| " + " | ".join(map(str, head)) + " |",
                                   "| " + " | ".join("---" for _ in head) + " |"])
                 lines.extend("| " + " | ".join(map(str, row)) + " |" for row in rows)
-            elif text:
-                lines.extend(["", text])
+            elif kind in ("quote", "callout"):
+                if title:
+                    lines.extend(["", heading_prefix + title])
+                if text:
+                    lines.extend(["", ("> " if fmt == "md" else "") + text])
+            elif kind == "pagebreak":
+                lines.extend(["", "\\f", ""])
+            else:
+                if title and title != text:
+                    lines.extend(["", heading_prefix + title])
+                if text:
+                    lines.extend(["", text])
+                elif items:
+                    lines.extend(["", *["- " + str(item) for item in items]])
         out.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return [str(out)]
 

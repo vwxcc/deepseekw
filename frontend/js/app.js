@@ -3169,6 +3169,19 @@
       renderMessageInPlace(n.id);
     }));
 
+    $$('[data-run-device]', scope).forEach(button => button.addEventListener('click', () => {
+      const n = findNode(state.tree, button.dataset.runDevice);
+      if (!n) return;
+      const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
+      const run = runs.slice().reverse().find(isDeviceFallbackRun);
+      if (!run) { toast('Для этого сообщения нет кода, который можно повторно запустить.', 'error'); return; }
+      const code = run.kind === 'fileplan'
+        ? deviceCodeForFilePlan(run.device_plan)
+        : String(run.code || '');
+      if (!code.trim()) { toast('Не удалось подготовить локальный код для этой задачи.', 'error'); return; }
+      openDeviceCodeRunner({ lang: 'run', code: code }, n.id);
+    }));
+
     $$('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const block = button.closest('.code-block');
       if (!block) return;
@@ -3514,15 +3527,19 @@
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
-            n.tool_runs = (n.tool_runs || []).concat([
-              { code: data.code || '', running: true, ok: true, files: [] },
-            ]);
+            const blockKind = data.kind === 'fileplan' ? 'fileplan' : 'run';
+            const planSource = typeof data.device_plan === 'string' ? data.device_plan : '';
+            const deviceCode = blockKind === 'fileplan'
+              ? (planSource ? deviceCodeForFilePlan(planSource) : '')
+              : (typeof data.code === 'string' ? data.code : '');
+            const item = { code: data.code || '', kind: blockKind, running: true, ok: true, files: [] };
+            if (planSource) item.device_plan = planSource;
+            n.tool_runs = (n.tool_runs || []).concat([item]);
             appendActivity(n, { kind: 'status', text: 'Запускаю код в изолированной песочнице на сервере' });
-            if (state.currentChatId === streamContext.chatId && n.execution_target === 'both' &&
-                !n.deviceRunnerStarted && typeof data.code === 'string' && data.code.trim()) {
+            if (n.execution_target === 'both' && !n.deviceRunnerStarted && deviceCode.trim()) {
               n.deviceRunnerStarted = true;
               appendActivity(n, { kind: 'status', text: 'Параллельно запускаю код на устройстве' });
-              openDeviceCodeRunner({ lang: 'run', code: data.code }, n.id);
+              openDeviceCodeRunner({ lang: 'run', code: deviceCode }, n.id, { background: true });
             }
           }
           if (state.currentChatId === streamContext.chatId) {

@@ -2389,7 +2389,7 @@
     $('#audio-player-generate-btn')?.addEventListener('click', () => {
       if (state.audioMessageId) generateAnswerAudio(state.audioMessageId);
     });
-    $('[data-player-mode]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-player-mode]').forEach(btn => btn.addEventListener('click', () => {
       const mode = btn.dataset.playerMode;
       const aiShell = $('#audio-player-shell');
       const deviceShell = $('#device-audio-player-shell');

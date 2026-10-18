@@ -67,8 +67,10 @@ from ..services.audio_quota import (
 from ..services.audio_state import (
     AudioGenerationInProgress,
     active_audio_generation,
+    audio_generation_error,
     begin_audio_generation,
     finish_audio_generation,
+    set_audio_generation_error,
 )
 from ..services.sandbox import list_project_files
 from ..services.tts import (
@@ -1248,6 +1250,7 @@ async def message_audio_status(
         "generating": bool(not ready and generating_message_id == message.id),
         "busy": busy,
         "generating_message_id": generating_message_id if busy or not ready else None,
+        "error": audio_generation_error(user.id, message.id) if not ready else None,
         "url": f"/api/messages/{message.id}/audio/file",
         "format": fmt,
     }
@@ -1275,14 +1278,75 @@ async def get_message_audio(
     )
 
 
+async def _generate_queued_message_audio(
+    user_id: str, message_id: str, reservation_id: str
+) -> None:
+    """Generate audio server-side after the readable-text job is finished.
+
+    This task belongs to FastAPI's background queue, not to the browser request.
+    Closing the tab therefore does not cancel audio generation.
+    """
+    success = False
+    try:
+        # The text-preparation task is scheduled before this one when needed.
+        # Poll persisted state as a fallback for jobs started by another worker.
+        deadline = asyncio.get_running_loop().time() + 15 * 60
+        source = ""
+        while asyncio.get_running_loop().time() < deadline:
+            async with SessionLocal() as task_db:
+                readable = await task_db.get(ReadableTextGeneration, message_id)
+                if readable is not None and readable.user_id == user_id:
+                    if readable.status == "ready" and (readable.text or "").strip():
+                        source = readable.text.strip()
+                        break
+                    if readable.status == "failed":
+                        detail = str(readable.error or "").strip()
+                        raise TTSGenerationError(
+                            "Не удалось подготовить читабельный текст"
+                            + (": " + detail if detail else ".")
+                        )
+            await asyncio.sleep(1)
+        if not source:
+            raise TTSGenerationError(
+                "Подготовка читабельного текста не завершилась за отведённое время."
+            )
+
+        fmt = normalized_audio_format()
+        path = audio_file_path(user_id, message_id, fmt)
+        if not path.is_file():
+            audio_bytes, generated_format = await generate_speech(source, prepared=True)
+            if generated_format != fmt:
+                raise TTSGenerationError("Формат аудио изменился во время генерации.")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(path.write_bytes, audio_bytes)
+        success = True
+        set_audio_generation_error(user_id, message_id, None)
+        log.info("Queued TTS generation completed for message %s", message_id)
+    except Exception as exc:
+        detail = str(exc).strip() or "Не удалось создать ИИ-озвучку."
+        set_audio_generation_error(user_id, message_id, detail)
+        log.warning("Queued TTS generation failed for message %s: %s", message_id, detail)
+        # Failed jobs do not consume a successful audio-generation quota slot.
+        try:
+            async with SessionLocal() as task_db:
+                reservation = await task_db.get(AudioGeneration, reservation_id)
+                if reservation is not None:
+                    await release_audio_generation(task_db, reservation)
+        except Exception:
+            log.exception("Could not release failed TTS reservation for message %s", message_id)
+    finally:
+        finish_audio_generation(user_id, message_id)
+
+
 @router.post("/messages/{message_id}/audio")
 async def create_message_audio(
+    background_tasks: BackgroundTasks,
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Generate speech while allowing no parallel generation for one account."""
+    """Queue speech generation on the server; clients may close after enqueueing."""
     if message.role != Role.assistant or message.status != MessageStatus.completed:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Озвучить можно только готовый ответ ассистента.")
     source = (message.content or "").strip()
@@ -1294,45 +1358,27 @@ async def create_message_audio(
     except ValueError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Некорректный TTS_RESPONSE_FORMAT.") from exc
 
-    # Cached playback is free and should not block a new generation.
+    # Cached playback remains immediate and does not consume a new quota slot.
     if path.is_file():
         return {
             "ready": True,
+            "generating": False,
+            "queued": False,
             "url": f"/api/messages/{message.id}/audio/file",
             "format": fmt,
             "size": path.stat().st_size,
         }
 
-    readable = await db.get(ReadableTextGeneration, message.id)
-    if (
-        readable is None
-        or readable.user_id != user.id
-        or readable.status != "ready"
-        or not (readable.text or "").strip()
-    ):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "Сначала дождитесь создания читабельного текста.",
-        )
-    source = readable.text.strip()
-
     try:
         begin_audio_generation(user.id, message.id)
     except AudioGenerationInProgress as exc:
         if exc.message_id == message.id:
-            detail = "Озвучка этого ответа уже создаётся на другом устройстве."
+            detail = "Озвучка этого ответа уже создаётся. Она продолжится на сервере."
         else:
             detail = "Уже создаётся другая озвучка. Дождитесь её завершения."
         raise HTTPException(status.HTTP_409_CONFLICT, detail) from exc
 
     reservation = None
-
-    async def release_reservation() -> None:
-        try:
-            await release_audio_generation(db, reservation)
-        except Exception:
-            log.exception("Could not release audio quota reservation for message %s", message.id)
-
     try:
         try:
             reservation = await reserve_audio_generation(
@@ -1341,42 +1387,28 @@ async def create_message_audio(
         except AudioQuotaExceeded as exc:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
 
-        try:
-            audio_bytes, generated_format = await generate_speech(source, prepared=True)
-            if generated_format != fmt:
-                raise HTTPException(
-                    status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    "Формат аудио изменился во время генерации.",
-                )
-            path.parent.mkdir(parents=True, exist_ok=True)
-            await asyncio.to_thread(path.write_bytes, audio_bytes)
-        except TTSNotConfiguredError as exc:
-            await release_reservation()
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-        except ValueError as exc:
-            await release_reservation()
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-        except TTSGenerationError as exc:
-            await release_reservation()
-            log.warning("TTS generation failed for message %s: %s", message.id, exc)
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
-        except OSError as exc:
-            await release_reservation()
-            log.exception("Could not persist TTS audio for message %s", message.id)
-            raise HTTPException(
-                status.HTTP_500_INTERNAL_SERVER_ERROR, "Не удалось сохранить аудиофайл."
-            ) from exc
-        except BaseException:
-            await release_reservation()
-            raise
-
-        return {
-            "ready": True,
-            "url": f"/api/messages/{message.id}/audio/file",
-            "format": fmt,
-            "size": path.stat().st_size,
-        }
-    finally:
+        # Reuse the established readable-text state machine. If the text is not
+        # ready, it adds its preparation task before the queued audio task below.
+        await create_message_readable_text(
+            background_tasks, message, user, None, db
+        )
+        background_tasks.add_task(
+            _generate_queued_message_audio,
+            str(user.id), str(message.id), str(reservation.id),
+        )
+    except Exception:
+        if reservation is not None:
+            try:
+                await release_audio_generation(db, reservation)
+            except Exception:
+                log.exception("Could not release queued TTS reservation for message %s", message.id)
         finish_audio_generation(user.id, message.id)
+        raise
 
-
+    return {
+        "ready": False,
+        "generating": True,
+        "queued": True,
+        "url": f"/api/messages/{message.id}/audio/file",
+        "format": fmt,
+    }

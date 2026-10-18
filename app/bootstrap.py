@@ -1,7 +1,7 @@
 """Seed default data on startup (admin user + default model sets)."""
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -22,7 +22,16 @@ async def bootstrap() -> None:
 
 
 async def _ensure_primary_main_prices(db: AsyncSession) -> None:
-    """Fill unset rates on the primary non-router MAIN model only."""
+    """Set initial rates for the primary MAIN model once, without resetting admin edits."""
+    await db.execute(text(
+        "CREATE TABLE IF NOT EXISTS app_metadata "
+        "(key VARCHAR(100) PRIMARY KEY, value VARCHAR(255) NOT NULL)"
+    ))
+    marker = await db.scalar(text(
+        "SELECT value FROM app_metadata WHERE key = 'main-price-defaults-v2'"
+    ))
+    if marker:
+        return
     sets = await db.execute(
         select(ModelSet).where(
             ModelSet.route_type == RouteType.MAIN,
@@ -40,11 +49,17 @@ async def _ensure_primary_main_prices(db: AsyncSession) -> None:
         entry = rows.scalars().first()
         if entry is None:
             continue
-        if not (entry.price_in or 0):
-            entry.price_in = float(settings.qwen_price_in if settings.qwen_price_in is not None else 1.0)
-        if not (entry.price_out or 0):
-            entry.price_out = float(settings.qwen_price_out if settings.qwen_price_out is not None else 10.0)
+        default_in = float(settings.qwen_price_in if settings.qwen_price_in is not None else 2.0)
+        default_out = float(settings.qwen_price_out if settings.qwen_price_out is not None else 25.0)
+        legacy_seed = abs(float(entry.price_in or 0) - 1.0) < 1e-9 and abs(float(entry.price_out or 0) - 10.0) < 1e-9
+        if legacy_seed or not (entry.price_in or 0):
+            entry.price_in = default_in
+        if legacy_seed or not (entry.price_out or 0):
+            entry.price_out = default_out
         break
+    await db.execute(text(
+        "INSERT INTO app_metadata (key, value) VALUES ('main-price-defaults-v2', '1')"
+    ))
 
 
 async def _purge_expired_sessions(db: AsyncSession) -> None:
@@ -92,8 +107,8 @@ async def _seed_model_sets(db: AsyncSession) -> None:
                     temperature=settings.qwen_temperature,
                     max_tokens=settings.qwen_max_tokens,
                     timeout=settings.request_timeout,
-                    price_in=(float(settings.qwen_price_in) if settings.qwen_price_in is not None else 1.0) if route == RouteType.MAIN else 0.0,
-                    price_out=(float(settings.qwen_price_out) if settings.qwen_price_out is not None else 10.0) if route == RouteType.MAIN else 0.0,
+                    price_in=(float(settings.qwen_price_in) if settings.qwen_price_in is not None else 2.0) if route == RouteType.MAIN else 0.0,
+                    price_out=(float(settings.qwen_price_out) if settings.qwen_price_out is not None else 25.0) if route == RouteType.MAIN else 0.0,
                     is_active=True,
                 )
             )

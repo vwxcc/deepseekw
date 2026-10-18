@@ -55,6 +55,8 @@ class ChatOut(ORMModel):
     mode: str = "chat"
     model_name: str | None = None
     bundle_id: str | None = None
+    source_chat_id: str | None = None
+    source_chat_title: str | None = None
 
 
 class ChatCreate(BaseModel):

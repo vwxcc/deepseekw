@@ -793,6 +793,36 @@ async def continue_message(
     )
 
 
+@router.post("/messages/{message_id}/attachments")
+async def attach_message_files(
+    data: dict,
+    message: Message = Depends(get_owned_message),
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist generated files as normal owned files linked to their message."""
+    raw_ids = data.get("file_ids") if isinstance(data, dict) else None
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Не переданы ID файлов")
+    file_ids = list(dict.fromkeys(value for value in raw_ids if isinstance(value, str) and value.strip()))
+    if not file_ids or len(file_ids) != len(raw_ids):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный список файлов")
+    if len(file_ids) > settings.max_files_per_request:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Слишком много файлов за один запрос")
+    result = await db.execute(select(File).where(File.user_id == user.id, File.id.in_(file_ids)))
+    owned_files = result.scalars().all()
+    if len(owned_files) != len(file_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Один или несколько файлов не найдены")
+    existing = await db.execute(select(Attachment).where(Attachment.message_id == message.id))
+    linked = {item.file_id for item in existing.scalars().all()}
+    for file_id in file_ids:
+        if file_id not in linked:
+            db.add(Attachment(message_id=message.id, file_id=file_id))
+    await db.commit()
+    return (await message_attachments(db, [message.id])).get(message.id, [])
+
+
 @router.post("/messages/{message_id}/stop")
 async def stop_message(
     message: Message = Depends(get_owned_message),

@@ -369,7 +369,11 @@ DOC_SKILL = """
 Порядок:
 1. Посмотри стили: designs.theme.catalog() — там 57 стилей (apple, stripe, consulting,
    editorial, carbon, fluent, glass, neural, tufte, ...). Выбери подходящий теме.
-2. Собери spec (обычный dict) и вызови designs.docgen.build("/work/out", spec).
+2. Создай каталог вывода внутри текущей рабочей папки (не используй абсолютный /work/out):
+   import os
+   out_dir = os.path.join(os.getcwd(), "out")
+   os.makedirs(out_dir, exist_ok=True)
+   Затем вызови designs.docgen.build(out_dir, spec).
 3. Коротко напиши, что внутри файла. Файлы прикрепятся к ответу автоматически.
 
 Формат задаётся spec["format"]: "pptx" | "docx" | "xlsx" | "pdf".
@@ -382,7 +386,7 @@ DOC_SKILL = """
   {"kind":"numbers","items":[...]}            нумерованный список
   {"kind":"callout","text":...}               выделенная врезка
   {"kind":"table","head":[...],"rows":[[...]]} таблица
-  {"kind":"image","image":"/work/out/x.png","caption":...}
+  {"kind":"image","image":os.path.join(out_dir, "x.png"),"caption":...}
   {"kind":"pagebreak"}
 
 Блоки для pptx (каждый = отдельный слайд):
@@ -391,7 +395,7 @@ DOC_SKILL = """
   {"kind":"two_col","title":...,"left":{"title","text"},"right":{...}}
   {"kind":"metrics","title":...,"items":[{"value":"48,1","label":"млрд ₽"}]}
   {"kind":"chart","title":...,"chart_id":"growth","note":...}
-  {"kind":"image","title":...,"image":"/work/out/pic.png","caption":...}
+  {"kind":"image","title":...,"image":os.path.join(out_dir, "pic.png"),"caption":...}
   {"kind":"table","title":...,"head":[...],"rows":[[...]]}
   {"kind":"quote","text":...,"author":...}
 
@@ -424,7 +428,9 @@ DOC_SKILL = """
              "kicker": "Итоги"},
         ],
     }
-    res = docgen.build("/work/out", spec)
+    out_dir = os.path.join(os.getcwd(), "out")
+os.makedirs(out_dir, exist_ok=True)
+res = docgen.build(out_dir, spec)
     print(res["files"])
 
 Правила оформления: 4–8 слайдов для презентации, 1–3 абзаца на слайд, цифры — в metrics,

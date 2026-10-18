@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_user, get_db, get_owned_chat, require_csrf
-from ..models import Chat, Message, User
+from ..models import Attachment, Chat, Message, MessageStatus, Suggestion, User
 from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut, SharedChatOut
 from ..services.limits import allow, get_limits
 
@@ -94,6 +94,67 @@ async def create_chat(
     await db.commit()
     await db.refresh(chat)
     return ChatOut.model_validate(chat)
+
+
+@router.post("/{chat_id}/branch", response_model=ChatOut, status_code=status.HTTP_201_CREATED)
+async def branch_chat(
+    source: Chat = Depends(get_owned_chat),
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new independent chat from a snapshot of the source history."""
+    branch = Chat(
+        user_id=user.id,
+        title=("Ветка · " + (source.title or "Чат"))[:255],
+        mode=source.mode or "chat",
+        model_name=source.model_name,
+        bundle_id=source.bundle_id,
+        effort=source.effort,
+        source_chat_id=source.id,
+        source_chat_title=source.title or "Чат",
+    )
+    db.add(branch)
+    await db.flush()
+    result = await db.execute(
+        select(Message).where(Message.chat_id == source.id).order_by(Message.created_at, Message.id)
+    )
+    originals = result.scalars().all()
+    id_map = {item.id: str(uuid.uuid4()) for item in originals}
+    clones = []
+    for item in originals:
+        cloned_status = item.status
+        if cloned_status in (MessageStatus.queued, MessageStatus.processing):
+            cloned_status = MessageStatus.completed
+        clones.append(Message(
+            id=id_map[item.id], chat_id=branch.id,
+            user_id=user.id if item.user_id is not None else None,
+            role=item.role, content=item.content or "",
+            parent_message_id=id_map.get(item.parent_message_id),
+            status=cloned_status, model_set_id=item.model_set_id, error=item.error,
+            tokens_in=item.tokens_in or 0, tokens_out=item.tokens_out or 0,
+            tokens_cached=item.tokens_cached or 0, rating=item.rating or 0,
+            sources=item.sources, tool_runs=item.tool_runs,
+            execution_target=item.execution_target or "site", created_at=item.created_at,
+        ))
+    if clones:
+        db.add_all(clones)
+        await db.flush()
+        old_ids = list(id_map)
+        attachments = await db.execute(select(Attachment).where(Attachment.message_id.in_(old_ids)))
+        db.add_all([
+            Attachment(message_id=id_map[item.message_id], file_id=item.file_id)
+            for item in attachments.scalars().all() if item.message_id in id_map
+        ])
+        suggestions = await db.execute(select(Suggestion).where(Suggestion.message_id.in_(old_ids)))
+        db.add_all([
+            Suggestion(message_id=id_map[item.message_id], chat_id=branch.id,
+                       position=item.position, text=item.text)
+            for item in suggestions.scalars().all() if item.message_id in id_map
+        ])
+    await db.commit()
+    await db.refresh(branch)
+    return ChatOut.model_validate(branch)
 
 
 @router.get("/{chat_id}", response_model=ChatOut)

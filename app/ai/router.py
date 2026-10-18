@@ -493,7 +493,14 @@ class AIRouter:
             log.warning("Billing failed (%s): %s", action, e)
 
     async def _budget_error(self, job: Job, estimated_cost_usd: float = 0.0) -> str | None:
-        """Block paid calls when the rolling-window budget is used or insufficient."""
+        """Block only when actual rolling-window spend has reached the configured budget.
+
+        The estimated cost of the next call must not block a request while the
+        account still has budget left. The user asked for a hard stop only at
+        100% actual usage; estimated cost is therefore intentionally non-blocking.
+        Keep the parameter for existing call sites and compatibility.
+        """
+        del estimated_cost_usd
         if not job.user_id:
             return None
         try:
@@ -505,25 +512,20 @@ class AIRouter:
                 budget_value = limits.get("budget_usd")
                 if budget_value is None:
                     return None
-                budget = float(budget_value)
+                budget = max(0.0, float(budget_value))
                 hours = max(1, int(limits.get("window_hours") or 5))
                 spent, _ = await window_spend(db, user.id, hours)
         except Exception as e:  # noqa: BLE001
             log.warning("Budget check failed: %s", e)
             return "Не удалось проверить расходный лимит. Повторите запрос позже."
-        estimate = max(0.0, float(estimated_cost_usd or 0.0))
-        remaining = max(0.0, budget - spent)
+
+        # Stop only once actual recorded spend is 100% (or more) of the limit.
+        # Do not reject an otherwise valid request based on the remaining balance
+        # or a conservative estimate of its potential maximum cost.
         if spent >= budget:
             return (
                 f"Лимит исчерпан: израсходовано ${spent:.2f} из ${budget:.2f} "
                 f"за последние {hours} ч. Новые запросы откроются, когда часть расходов выйдет из скользящего окна."
-            )
-        if estimate > remaining + 1e-9:
-            return (
-                f"Недостаточно бюджета для безопасного запуска следующего запроса: "
-                f"осталось ${remaining:.4f} из ${budget:.2f} за последние {hours} ч.; "
-                f"оценка верхней границы одного вызова — ${estimate:.4f}. "
-                f"Запрос не отправлен модели, чтобы не превысить лимит."
             )
         return None
 

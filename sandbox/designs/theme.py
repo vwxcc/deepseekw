@@ -1,4 +1,4 @@
-"""ChatStudio design library — 57 готовых стилей оформления.
+"""AI-Ch design library — коллекция согласованных стилей оформления и векторных акцентов.
 
 Агент внутри песочницы может делать так::
 
@@ -82,6 +82,15 @@ STYLES: dict[str, dict] = {
     "kids": ("#FFF9F0", "#FFFFFF", "#3D2C1E", "#8A7566", "#FF6B6B", "#4ECDC4", "Nunito", "детская иллюстрация"),
     "photo": ("#0A0A0A", "#161616", "#FFFFFF", "#A0A0A0", "#FFFFFF", "#F5A623", "Inter", "фотореализм, монтаж"),
     "minimal": ("#FFFFFF", "#FFFFFF", "#111111", "#777777", "#111111", "#777777", "Helvetica", "только типографика"),
+    # --- дополнительные редакционные и продуктовые темы ---
+    "claude": ("#FAF9F6", "#F3F0E8", "#302E2A", "#777268", "#625F58", "#C77D52", "Lora", "тёплый редакционный минимализм, мягкие карточки и тонкая графика"),
+    "warm-paper": ("#FBF7F0", "#FFFFFF", "#332B24", "#817467", "#8C5A3B", "#D8A56D", "PT Serif", "кремовая бумага, терракота, выразительная книжная типографика"),
+    "ocean": ("#F1F8FC", "#FFFFFF", "#17324D", "#607A8D", "#176B87", "#5BB7A7", "Manrope", "морская глубина, чистая инфографика и плавные контуры"),
+    "botanical": ("#F5F8F0", "#FFFFFF", "#263B2B", "#6F806F", "#477653", "#B5A45A", "Lora", "ботанические линии, спокойный шалфей и натуральные оттенки"),
+    "rose-gold": ("#FFF8F6", "#FFFFFF", "#382B2D", "#8B7779", "#A85D66", "#C9A46A", "Playfair Display", "деликатная розово-золотая редакционная эстетика"),
+    "midnight": ("#10131D", "#1A2030", "#F2F4FA", "#9AA5BA", "#8A78FF", "#4ED7D0", "Inter", "ночной интерфейс, индиго и бирюзовые световые детали"),
+    "soft-tech": ("#F5F7FA", "#FFFFFF", "#1F2937", "#687589", "#4969C8", "#26A69A", "Manrope", "мягкий технологичный стиль с аккуратными схемами и пиктограммами"),
+    "citrus": ("#FFFDF3", "#FFFFFF", "#2D3028", "#737565", "#6E8F32", "#E3A72F", "Montserrat", "свежие лимонные акценты, органические формы и крупные метрики"),
 }
 
 FALLBACK = "minimal"
@@ -255,12 +264,31 @@ def pptx_image(prs, image_path, caption="", style="minimal"):
 # ---------------------------------------------------------------- matplotlib
 
 def pyplot(style="tufte"):
-    """Настроить matplotlib под стиль и вернуть палитру."""
+    """Настроить matplotlib под палитру и доступный bundled font стиля."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     p = get(style)
+    font_files = {
+        "Inter": "/srv/fonts/Inter-Regular.ttf",
+        "Manrope": "/srv/fonts/Manrope-Regular.ttf",
+        "Lora": "/srv/fonts/Lora-Regular.ttf",
+        "PT Serif": "/srv/fonts/PT_Serif-Web-Regular.ttf",
+        "Playfair Display": "/srv/fonts/PlayfairDisplay.ttf",
+        "Montserrat": "/srv/fonts/Montserrat-Regular.ttf",
+    }
+    font_family = "DejaVu Sans"
+    font_path = font_files.get(p["font"])
+    if font_path:
+        try:
+            from matplotlib import font_manager
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+        except (OSError, RuntimeError, ValueError):
+            # Keep plotting reliable if a bundled font was not copied to /srv/fonts.
+            font_family = "DejaVu Sans"
+
     plt.rcParams.update({
         "figure.facecolor": p["bg"],
         "axes.facecolor": p["bg"],
@@ -272,12 +300,108 @@ def pyplot(style="tufte"):
         "ytick.color": p["muted"],
         "grid.color": p["muted"],
         "grid.alpha": 0.25,
-        "font.family": "DejaVu Sans",
+        "font.family": font_family,
         "axes.spines.top": False,
         "axes.spines.right": False,
         "figure.dpi": 150,
     })
     return p
+
+
+
+# ---------------------------------------------------------------- SVG visual assets
+_ICON_PATHS: dict[str, str] = {
+    "sparkle": '<path d="M32 9l4.8 13.2L50 27l-13.2 4.8L32 45l-4.8-13.2L14 27l13.2-4.8Z"/><path d="M49 42l2.4 6.6L58 51l-6.6 2.4L49 60l-2.4-6.6L40 51l6.6-2.4Z"/>',
+    "chat": '<path d="M13 14h38a5 5 0 0 1 5 5v17a5 5 0 0 1-5 5H31L19 49v-8h-6a5 5 0 0 1-5-5V19a5 5 0 0 1 5-5Z"/><path d="M20 25h24M20 32h17"/>',
+    "book": '<path d="M8 15c9-3 17-1 24 4 7-5 15-7 24-4v32c-9-3-17-1-24 4-7-5-15-7-24-4Z"/><path d="M32 19v32M14 24c5-1 9 0 13 2M14 32c5-1 9 0 13 2M38 26c4-2 8-3 13-2M38 34c4-2 8-3 13-2"/>',
+    "chart": '<path d="M10 52V12M10 52h45"/><rect x="18" y="34" width="8" height="18" rx="2"/><rect x="32" y="24" width="8" height="28" rx="2"/><rect x="46" y="14" width="8" height="38" rx="2"/>',
+    "file": '<path d="M18 8h20l11 11v37H18a5 5 0 0 1-5-5V13a5 5 0 0 1 5-5Z"/><path d="M38 8v12h11M22 31h19M22 39h19M22 47h13"/>',
+    "shield": '<path d="M32 7 52 15v15c0 13-8 21-20 27C20 51 12 43 12 30V15Z"/><path d="m22 32 7 7 14-15"/>',
+    "globe": '<circle cx="32" cy="32" r="23"/><path d="M9 32h46M32 9c7 7 11 15 11 23S39 48 32 55C25 48 21 40 21 32S25 16 32 9Z"/>',
+    "leaf": '<path d="M52 10C28 10 12 21 12 39c0 9 6 15 15 15 18 0 29-17 25-44Z"/><path d="M14 51c9-12 19-21 32-30M27 37l-1-11M35 30l11 1"/>',
+    "rocket": '<path d="M37 8c8 4 13 12 14 22L34 47 17 30C20 18 28 11 37 8Z"/><circle cx="38" cy="23" r="4"/><path d="m17 30-7 8 14 1M34 47l1 10 8-7M21 45l-7 7M20 14l-6-4M48 11l5-4"/>',
+    "lightbulb": '<path d="M22 39a16 16 0 1 1 20 0c-3 2-4 5-4 8H26c0-3-1-6-4-8Z"/><path d="M27 52h10M29 57h6M32 3v5M8 18l5 2M56 18l-5 2"/>',
+    "database": '<ellipse cx="32" cy="14" rx="21" ry="8"/><path d="M11 14v36c0 5 9 9 21 9s21-4 21-9V14M11 26c0 5 9 9 21 9s21-4 21-9M11 38c0 5 9 9 21 9s21-4 21-9"/>',
+    "table": '<rect x="9" y="11" width="46" height="42" rx="3"/><path d="M9 24h46M9 38h46M24 11v42M40 11v42"/>',
+}
+
+
+def svg_icon(name: str = "sparkle", style: str = "minimal", size: int = 64,
+             x: int | None = None, y: int | None = None) -> str:
+    """Return a lightweight, palette-matched original line icon as standalone/nested SVG."""
+    p = get(style)
+    drawing = _ICON_PATHS.get(str(name or "sparkle").strip().lower(), _ICON_PATHS["sparkle"])
+    side = max(20, min(256, int(size)))
+    position = (f' x="{int(x)}"' if x is not None else "") + (f' y="{int(y)}"' if y is not None else "")
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg"{position} width="{side}" height="{side}" viewBox="0 0 64 64" '
+        'role="img" aria-label="AI-Ch decorative icon">'
+        f'<rect x="3" y="3" width="58" height="58" rx="16" fill="{p["surface"]}" '
+        f'stroke="{p["muted"]}" stroke-opacity=".28"/>'
+        f'<g fill="none" stroke="{p["primary"]}" stroke-width="2.6" stroke-linecap="round" '
+        f'stroke-linejoin="round">{drawing}</g>'
+        f'<circle cx="12" cy="12" r="2.2" fill="{p["accent"]}"/>'
+        '</svg>'
+    )
+
+
+def svg_illustration(kind: str = "chat", style: str = "minimal",
+                     width: int = 240, height: int = 144) -> str:
+    """Return an original miniature vector illustration coloured for any catalogued style."""
+    p = get(style)
+    w, h = max(120, min(640, int(width))), max(84, min(360, int(height)))
+    art: dict[str, str] = {
+        "chat": (
+            f'<rect x="63" y="26" width="104" height="68" rx="15" fill="{p["surface"]}" stroke="{p["muted"]}" stroke-opacity=".52" stroke-width="2"/>'
+            f'<path d="M85 47h58M85 60h42M85 73h28" stroke="{p["primary"]}" stroke-width="3" stroke-linecap="round"/>'
+            f'<path d="M115 91v15l16-12" fill="{p["surface"]}" stroke="{p["muted"]}" stroke-width="2" stroke-linejoin="round"/>'
+            f'<circle cx="178" cy="27" r="15" fill="{p["primary"]}" fill-opacity=".12"/>'
+            f'<path d="M178 16v22M167 27h22" stroke="{p["accent"]}" stroke-width="2.6" stroke-linecap="round"/>'
+        ),
+        "growth": (
+            f'<path d="M42 112h156M48 112V35" stroke="{p["muted"]}" stroke-width="2" stroke-linecap="round"/>'
+            f'<rect x="64" y="82" width="22" height="30" rx="5" fill="{p["primary"]}" fill-opacity=".8"/>'
+            f'<rect x="101" y="61" width="22" height="51" rx="5" fill="{p["primary"]}" fill-opacity=".65"/>'
+            f'<rect x="138" y="39" width="22" height="73" rx="5" fill="{p["accent"]}" fill-opacity=".85"/>'
+            f'<path d="m63 53 42-18 33 5 31-19m-11 0 11 0-2 11" fill="none" stroke="{p["primary"]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
+        ),
+        "document": (
+            f'<rect x="76" y="13" width="88" height="116" rx="10" fill="{p["surface"]}" stroke="{p["muted"]}" stroke-opacity=".56" stroke-width="2"/>'
+            f'<path d="M94 38h51M94 52h51M94 66h42M94 80h51M94 94h31" stroke="{p["primary"]}" stroke-width="3" stroke-linecap="round"/>'
+            f'<path d="M145 13v19h19" fill="{p["bg"]}" stroke="{p["muted"]}" stroke-width="2" stroke-linejoin="round"/>'
+            f'<circle cx="174" cy="105" r="17" fill="{p["primary"]}" fill-opacity=".12"/>'
+            f'<path d="m166 105 6 6 11-13" stroke="{p["accent"]}" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        ),
+        "learning": (
+            f'<path d="M36 35c27-8 47-2 66 9v65c-19-11-39-17-66-9Z" fill="{p["surface"]}" stroke="{p["muted"]}" stroke-width="2"/>'
+            f'<path d="M204 35c-27-8-47-2-66 9v65c19-11 39-17 66-9Z" fill="{p["surface"]}" stroke="{p["muted"]}" stroke-width="2"/>'
+            f'<path d="M52 52c15-3 27 0 37 5M52 68c15-3 27 0 37 5M152 57c10-5 22-8 37-5M152 73c10-5 22-8 37-5" stroke="{p["primary"]}" stroke-width="3" stroke-linecap="round"/>'
+            f'<path d="m116 31 8-10 7 7-8 10-12 4Z" fill="{p["accent"]}" fill-opacity=".86"/>'
+        ),
+        "default": (
+            f'<circle cx="120" cy="72" r="49" fill="{p["primary"]}" fill-opacity=".08"/>'
+            f'<circle cx="120" cy="72" r="31" fill="{p["surface"]}" stroke="{p["muted"]}" stroke-opacity=".55" stroke-width="2"/>'
+            f'<path d="M120 48l7 17 17 7-17 7-7 17-7-17-17-7 17-7Z" fill="{p["accent"]}" fill-opacity=".92"/>'
+            f'<circle cx="53" cy="34" r="4" fill="{p["primary"]}"/><circle cx="187" cy="109" r="5" fill="{p["accent"]}"/>'
+        ),
+    }
+    inner = art.get(str(kind or "default").strip().lower(), art["default"])
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 240 144" role="img" aria-label="AI-Ch miniature illustration">'
+        f'<rect x="1" y="1" width="238" height="142" rx="20" fill="{p["surface"]}" stroke="{p["muted"]}" stroke-opacity=".18"/>'
+        f'{inner}</svg>'
+    )
+
+
+def visual_spec(name: str = "minimal") -> dict[str, str]:
+    """Style tokens for a matching font, icon, and illustration system."""
+    p = get(name)
+    return {
+        "style": p["name"], "font": p["font"], "icon_style": "rounded-line",
+        "icon_primary": p["primary"], "icon_accent": p["accent"],
+        "icon_surface": p["surface"], "illustration_style": "compact-editorial-vector",
+        "mood": p["mood"],
+    }
 
 
 def colors(style="tufte", n=6) -> list[str]:
@@ -348,7 +472,7 @@ def xlsx_style(workbook, style="carbon", sheet=None):
 
 
 __all__ = [
-    "STYLES", "catalog", "get", "palette", "hexcolor",
+    "STYLES", "catalog", "get", "palette", "hexcolor", "svg_icon", "svg_illustration", "visual_spec",
     "pptx_slide", "pptx_text", "pptx_title", "pptx_bullets", "pptx_metric", "pptx_image",
     "pyplot", "colors", "docx_style", "xlsx_style",
 ]

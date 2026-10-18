@@ -1462,18 +1462,27 @@ input[type="range"].orange-range { width: 100%; }
   src: url('/assets/fonts/ys-bold.woff2') format('woff2'); }
 @font-face { font-family: 'Lora'; font-weight: 400; font-style: normal; font-display: swap;
   src: url('/assets/fonts/lora-cyrillic-400.woff2') format('woff2');
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  unicode-range: U+0301, U+0400-052F, U+2DE0-2DFF, U+A640-A69F, U+2116; }
 @font-face { font-family: 'Lora'; font-weight: 400; font-style: normal; font-display: swap;
-  src: url('/assets/fonts/lora-latin-400.woff2') format('woff2'); }
+  src: url('/assets/fonts/lora-latin-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: 'Lora'; font-weight: 600; font-style: normal; font-display: swap;
   src: url('/assets/fonts/lora-cyrillic-600.woff2') format('woff2');
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  unicode-range: U+0301, U+0400-052F, U+2DE0-2DFF, U+A640-A69F, U+2116; }
 @font-face { font-family: 'Lora'; font-weight: 600; font-style: normal; font-display: swap;
-  src: url('/assets/fonts/lora-latin-600.woff2') format('woff2'); }
+  src: url('/assets/fonts/lora-latin-600.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'PT Serif'; font-weight: 400; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/pt-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0400-052F, U+2DE0-2DFF, U+A640-A69F, U+2000-206F, U+2116, U+20AC; }
+@font-face { font-family: 'PT Serif'; font-weight: 700; font-style: normal; font-display: swap;
+  src: url('/assets/fonts/pt-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0400-052F, U+2DE0-2DFF, U+A640-A69F, U+2000-206F, U+2116, U+20AC; }
 
 :root {
   --font-ui: 'YS Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-lit: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-document: 'PT Serif', 'Lora', Georgia, serif;
 }
 html, body, button, input, textarea, select {
   font-family: var(--font-ui);
@@ -2973,4 +2982,57 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 @media (max-width: 620px) {
   .sub-benefits-grid { grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .sub-benefit-card { padding: 10px 11px; }
+}
+
+
+/* Matching mini-illustration for the Keep chatting-style usage dialog. */
+.sub-keep-chatting-art {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, .78fr);
+  align-items: center;
+  gap: 14px;
+  margin: 5px 0 13px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-panel) 84%, var(--bg) 16%);
+  overflow: hidden;
+}
+.sub-keep-chatting-art-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 106px;
+  color: var(--fg-muted);
+}
+.sub-keep-chatting-copy { display: grid; gap: 5px; min-width: 0; }
+.sub-keep-chatting-copy strong {
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 650;
+  color: var(--fg);
+}
+.sub-keep-chatting-copy span {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+.sub-keep-chatting-copy .sub-keep-chatting-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--keep-chatting-accent, #C77D52);
+}
+.sub-hero { --keep-chatting-accent: #C77D52; }
+@media (max-width: 620px) {
+  .sub-keep-chatting-art {
+    grid-template-columns: minmax(0, 1fr) minmax(98px, .72fr);
+    gap: 8px;
+    padding: 8px;
+  }
+  .sub-keep-chatting-art-svg { max-height: 82px; }
+  .sub-keep-chatting-copy strong { font-size: 12px; }
+  .sub-keep-chatting-copy span { font-size: 10.5px; }
 }

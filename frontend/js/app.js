@@ -6210,6 +6210,24 @@
           (w && w.hours ? 'Окно расходов — последние ' + w.hours + ' часов (скользящее).' : 'Окно расхода указано ниже.') + '</p>' +
           '<div class="sub-plan-summary"><span><b>Free</b><small>базовые лимиты</small></span><span class="sub-plan-summary-divider"></span>' +
           '<span><b>Pro</b><small>' + (limitsUnavailable ? 'условия временно недоступны' : (proPrice > 0 ? '$' + proPrice.toFixed(2) + ' / месяц' : 'цена не задана')) + '</small></span></div>' +
+          '<div class="sub-keep-chatting-art" aria-label="Иллюстрация возможностей тарифа Pro">' +
+            '<svg class="sub-keep-chatting-art-svg" viewBox="0 0 360 132" role="img" aria-hidden="true">' +
+              '<rect x="2" y="2" width="356" height="128" rx="15" fill="var(--bg)" stroke="var(--border-soft)"/>' +
+              '<rect x="18" y="24" width="118" height="72" rx="14" fill="var(--bg-panel)" stroke="currentColor" stroke-opacity=".42" stroke-width="1.6"/>' +
+              '<path d="M42 45h68M42 57h50M42 69h39" fill="none" stroke="currentColor" stroke-opacity=".72" stroke-width="3" stroke-linecap="round"/>' +
+              '<circle cx="115" cy="87" r="11" fill="var(--bg-panel)" stroke="var(--keep-chatting-accent, #C77D52)" stroke-width="1.7"/>' +
+              '<path d="m110 87 3 3 6-7" fill="none" stroke="var(--keep-chatting-accent, #C77D52)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+              '<path d="M151 61h31m-7-7 7 7-7 7" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+              '<rect x="199" y="76" width="18" height="30" rx="4" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".22" stroke="var(--keep-chatting-accent, #C77D52)" stroke-opacity=".72"/>' +
+              '<rect x="226" y="61" width="18" height="45" rx="4" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".36" stroke="var(--keep-chatting-accent, #C77D52)" stroke-opacity=".72"/>' +
+              '<rect x="253" y="43" width="18" height="63" rx="4" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".56" stroke="var(--keep-chatting-accent, #C77D52)" stroke-opacity=".72"/>' +
+              '<path d="m199 56 28-12 25 5 27-22m-11 0h11v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+              '<path d="m315 73 4 10 10 4-10 4-4 10-4-10-10-4 10-4Z" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".28" stroke="var(--keep-chatting-accent, #C77D52)" stroke-width="1.4" stroke-linejoin="round"/>' +
+              '<circle cx="310" cy="28" r="3" fill="var(--keep-chatting-accent, #C77D52)"/><circle cx="336" cy="51" r="2" fill="currentColor" fill-opacity=".45"/>' +
+            '</svg>' +
+            '<div class="sub-keep-chatting-copy"><strong>Продолжай работу над идеей</strong>' +
+              '<span><i class="sub-keep-chatting-dot"></i>Сравни актуальные лимиты Free и Pro ниже</span></div>' +
+          '</div>' +
           '<h4 class="sub-benefits-heading">Что даёт Pro</h4>' + proBenefitsHtml +
           '<button type="button" class="sub-upgrade-button" id="copy-pro-request">' + icon('sparkle') +
           '<span><b>Запросить оформление Pro</b><small>Скопировать сообщение администратору</small></span>' + icon('arrow-right') +

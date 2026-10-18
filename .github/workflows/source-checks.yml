@@ -99,6 +99,7 @@ jobs:
         run: |
           python -m pip install matplotlib==3.9.4 python-docx==1.1.2 openpyxl==3.1.5 python-pptx==1.0.2 Pillow==11.0.0 pypdf==5.1.0
           python -m unittest discover -s tests -p 'test_file_templates.py' -v
+          python -m unittest discover -s tests -p 'test_design_theme.py' -v
       - name: Check static HTML IDs and cache references
         run: |
           python - <<'PY'
@@ -144,6 +145,19 @@ jobs:
               raise SystemExit("Orange dropdown-arrow accent should stay neutral gray")
 
           js = Path("frontend/js/app.js").read_text(encoding="utf-8")
+          if "sub-keep-chatting-art" not in js or "Продолжай работу над идеей" not in js:
+              raise SystemExit("The original Keep chatting-style limits illustration is missing")
+          if ".sub-keep-chatting-art {" not in css:
+              raise SystemExit("The limits illustration has no responsive styling")
+          if "@font-face { font-family: 'PT Serif'" not in css:
+              raise SystemExit("Local PT Serif font-face is missing")
+          for font in ("ys-regular.woff2", "lora-cyrillic-600.woff2", "pt-400.woff2"):
+              if not Path("frontend/fonts", font).is_file():
+                  raise SystemExit("Missing local font asset: " + font)
+          if not all(f'href="/assets/fonts/{font}"' in html for font in (
+              "ys-regular.woff2", "lora-cyrillic-600.woff2", "pt-400.woff2"
+          )):
+              raise SystemExit("Local font preload links are incomplete")
           # A single-element $() selector may return null; only $() is iterable.
           bad_for_each = [
               f"{line_no}: {line.strip()}"

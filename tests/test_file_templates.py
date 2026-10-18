@@ -15,7 +15,7 @@ class FileTemplateTests(unittest.TestCase):
     def test_catalog_exposes_formats_templates_and_design_styles(self):
         catalog = templates.catalog()
         self.assertGreaterEqual(len(catalog["templates"]), 25)
-        self.assertEqual(len(catalog["styles"]), 57)
+        self.assertEqual(len(catalog["styles"]), 65)
         formats = {item["format"] for item in catalog["templates"]}
         self.assertTrue({"pptx", "docx", "xlsx", "svg", "png", "pdf"} <= formats)
         self.assertIn("presentation.pitch", {item["id"] for item in catalog["templates"]})

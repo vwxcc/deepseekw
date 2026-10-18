@@ -90,7 +90,22 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("span.className = 'aich-themed-emoji'", app_js)
         self.assertNotIn("textarea,button,svg,.katex", app_js)
         self.assertIn('id="i-mountain"', index_html)
-        self.assertIn("app.js?v=62&rev=65", index_html)
+        self.assertIn("app.js?v=63&rev=66", index_html)
+
+    def test_brand_name_uses_ai_ch_without_version_suffix(self):
+        root = Path(__file__).resolve().parents[1]
+        paths = [
+            root / "app" / "ai" / "prompts.py",
+            root / "frontend" / "index.html",
+            root / "frontend" / "js" / "app.js",
+            root / "frontend" / "css" / "app.css",
+        ]
+        for path in paths:
+            with self.subTest(path=str(path.relative_to(root))):
+                content = path.read_text(encoding="utf-8")
+                self.assertNotRegex(content, r"(?i)\bAI[\s-]*CH\s*1\.0\b")
+        index = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("app.js?v=63&rev=66", index)
 
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)

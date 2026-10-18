@@ -2921,3 +2921,47 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 #composer .composer-row #attach-btn { margin-left: -4px; }
 #composer .composer-row #send-btn,
 #composer .composer-row #stop-btn { top: 0; }
+
+
+/* Subscription dialog: compact, readable Pro benefit cards. */
+.sub-benefits-heading {
+  margin: 14px 0 9px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+}
+.sub-benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0 0 15px;
+}
+.sub-benefit-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--bg-panel) 88%, var(--accent-soft) 12%);
+}
+.sub-benefit-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  color: var(--fg-muted);
+  background: var(--bg);
+}
+.sub-benefit-icon .ic { width: 17px; height: 17px; }
+.sub-benefit-copy { display: grid; gap: 4px; min-width: 0; }
+.sub-benefit-copy b { font-size: 12.5px; line-height: 1.35; color: var(--fg); }
+.sub-benefit-copy small { font-size: 11.5px; line-height: 1.45; color: var(--fg-muted); overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .sub-benefits-grid { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .sub-benefit-card { padding: 10px 11px; }
+}

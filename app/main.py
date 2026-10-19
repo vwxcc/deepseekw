@@ -28,7 +28,9 @@ from .routers import (
     memory,
     messages,
     models,
+    projects as projects_router,
     public,
+    scheduled as scheduled_router,
     system,
     skills as skills_router,
 )
@@ -106,6 +108,8 @@ app.include_router(system.router)
 app.include_router(limits.router)
 app.include_router(github.router)
 app.include_router(skills_router.router)
+app.include_router(projects_router.router)
+app.include_router(scheduled_router.router)
 
 
 @app.get("/api/health")

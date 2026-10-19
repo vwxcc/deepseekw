@@ -3502,3 +3502,36 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
   #chat-title.chat-title-search { max-width: 100%; padding: 0 2px; font-size: 13px; }
   .chat-actions-primary .chip-btn { min-height: 45px; }
 }
+
+
+/* Keep every standard and legacy submenu within a phone-sized viewport */
+@media (max-width: 620px) {
+  .modal-back {
+    padding: max(8px, env(safe-area-inset-top)) 7.5vw max(8px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .modal, .modal.wide, .modal.limits-modal {
+    width: 85vw;
+    max-width: 85vw;
+    max-height: 85dvh;
+    min-width: 0;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal h3 { flex: 0 0 auto; }
+  .modal .modal-body,
+  .modal.wide .modal-body,
+  .modal.limits-modal .modal-body {
+    min-height: 0;
+    max-height: calc(85dvh - 145px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #c8c3b7 transparent;
+  }
+  .modal .row { flex: 0 0 auto; flex-wrap: wrap; }
+  .modal .row button { max-width: 100%; }
+}

@@ -3112,3 +3112,37 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   .device-fallback-code-toggle { min-height: 42px; }
   .device-fallback-code { max-height: 34vh; font-size: 11px; }
 }
+
+
+/* AI CH file and action-card polish. */
+.aich-web-images-toggle { width:fit-content; max-width:100%; display:inline-flex; align-items:center; gap:8px; margin:0 0 10px; padding:7px 10px; border:1px solid var(--border-soft); border-radius:10px; background:var(--bg-panel); color:var(--fg-muted); font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.aich-web-images-toggle:hover { background:var(--bg-user); color:var(--fg); }
+.aich-web-images-toggle .ic { width:14px; height:14px; flex:0 0 auto; }
+.aich-web-images.is-collapsed .aich-web-images-grid { display:none !important; }
+.aich-output-file-icon { position:relative; width:42px; height:46px; gap:1px; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:9px; }
+.aich-output-file-icon .aich-output-file-glyph { display:grid; place-items:center; }
+.aich-output-file-icon .aich-output-file-glyph .ic { width:21px; height:21px; }
+.aich-output-file-icon small { display:block; max-width:100%; font-size:8px; line-height:1; letter-spacing:.03em; font-weight:800; }
+.aich-output-file-icon.filetype-docx { color:#246acb; background:#edf4ff; border-color:#c9ddfb; }
+.aich-output-file-icon.filetype-pptx { color:#bb5a2b; background:#fff1e9; border-color:#f2d1bf; }
+.aich-output-file-icon.filetype-xlsx { color:#21764c; background:#eaf7ef; border-color:#c6e7d2; }
+.aich-output-file-icon.filetype-pdf { color:#bc3d3d; background:#fff0ef; border-color:#f2ccca; }
+.aich-output-file-icon.filetype-svg, .aich-output-file-icon.filetype-image { color:#7655ae; background:#f3efff; border-color:#ddd0fa; }
+.aich-output-file-icon.filetype-code { color:#666256; background:#f0eee6; border-color:#dcd8ca; }
+.aich-output-file-icon.filetype-html { color:#326b87; background:#eaf5fa; border-color:#cce5ef; }
+.aich-output-file-icon.filetype-archive { color:#71684d; background:#f6f0dd; border-color:#e8dfbf; }
+.aich-output-file-icon.filetype-text { color:#615c52; background:#f3f0e7; border-color:#e1dccd; }
+.aich-output-file-icon.filetype-generic { color:var(--fg-muted); background:var(--bg); }
+.aich-message-files-grid { grid-template-columns:minmax(0,1fr); max-width:min(100%,720px); }
+.aich-ui-callout { width:min(75%,720px); box-sizing:border-box; }
+.aich-ui-emoji { font-size:1.96em; }
+.aich-ui-actions-heading > span { font-size:1.45em; }
+.aich-ui-action { width:min(75%,720px); }
+.aich-ui-action-emoji { font-size:1.86em; }
+.aich-ui-actions-carousel { display:flex; align-items:stretch; gap:12px; width:100%; max-width:100%; overflow-x:auto; overflow-y:hidden; padding:2px 2px 9px; scroll-snap-type:x mandatory; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; scrollbar-width:none; overscroll-behavior-x:contain; }
+.aich-ui-actions-carousel::-webkit-scrollbar { display:none; }
+.aich-ui-actions-carousel > .aich-ui-action { flex:0 0 min(75%,360px); width:auto; max-width:min(75%,360px); scroll-snap-align:start; scroll-snap-stop:normal; }
+@media (max-width:600px) {
+  .aich-ui-callout, .aich-ui-action { width:92%; }
+  .aich-ui-actions-carousel > .aich-ui-action { flex-basis:82%; max-width:82%; }
+}

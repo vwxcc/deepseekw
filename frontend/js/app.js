@@ -643,8 +643,8 @@
     const localRunnable = ['html', 'htm', 'svg', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3', 'py3', 'run']
       .includes(runnableLanguage);
     const runButton = localRunnable
-      ? '<button data-run-device="' + id + '" title="Выполнить этот код в песочнице на устройстве">' +
-          icon('terminal') + 'Выполнить на устройстве</button>'
+      ? '<button data-run-device="' + id + '" title="Запустить код в песочнице на устройстве">' +
+          icon('terminal') + 'Run</button>'
       : '';
     const lines = String(code).split('\n');
     const collapsed = lines.length > 5;
@@ -698,8 +698,9 @@
             escapeHtml(domain) + '</a>' : '') + '</figcaption></figure>';
       }).filter(Boolean).slice(0, 6);
     if (!rows.length) return '';
-    return '<section class="aich-web-images" aria-label="Изображения из интернет-поиска">' +
-      '<div class="aich-web-images-title"><span aria-hidden="true">🖼️</span> Изображения из интернета</div>' +
+    return '<section class="aich-web-images is-collapsed" aria-label="Изображения из интернет-поиска">' +
+      '<button type="button" class="aich-web-images-toggle" data-web-images-toggle aria-expanded="false">' +
+      icon('image') + '<span>Показать изображения из интернета</span>' + icon('chevron-down') + '</button>' +
       '<div class="aich-web-images-grid">' + rows.join('') + '</div></section>';
   }
 
@@ -811,6 +812,27 @@
     return task;
   }
 
+  function outputFileIconHtml(filename) {
+    const name = String(filename || '');
+    const match = name.match(/\.([a-z0-9]{1,8})$/i);
+    const ext = match ? match[1].toLowerCase() : '';
+    const kinds = {
+      docx: ['DOCX', 'docx'], doc: ['DOC', 'docx'],
+      pptx: ['PPTX', 'pptx'], ppt: ['PPT', 'pptx'],
+      xlsx: ['XLSX', 'xlsx'], xls: ['XLS', 'xlsx'],
+      pdf: ['PDF', 'pdf'], csv: ['CSV', 'xlsx'], tsv: ['TSV', 'xlsx'],
+      svg: ['SVG', 'svg'], png: ['PNG', 'image'], jpg: ['JPG', 'image'],
+      jpeg: ['JPEG', 'image'], webp: ['WEBP', 'image'],
+      html: ['HTML', 'html'], htm: ['HTML', 'html'],
+      js: ['JS', 'code'], py: ['PY', 'code'], json: ['JSON', 'code'],
+      zip: ['ZIP', 'archive'], md: ['MD', 'text'], txt: ['TXT', 'text']
+    };
+    const spec = kinds[ext] || [ext ? ext.toUpperCase().slice(0, 5) : 'FILE', 'generic'];
+    return '<span class="aich-output-file-icon filetype-' + spec[1] + '" aria-hidden="true">' +
+      '<span class="aich-output-file-glyph">' + icon('file') + '</span>' +
+      '<small>' + escapeHtml(spec[0]) + '</small></span>';
+  }
+
   function messageFilesHtml(message) {
     if (!message || typeof message !== 'object' || !message.id) return '';
     const serverFiles = [];
@@ -836,7 +858,7 @@
       const image = file.kind === 'image' || mime.indexOf('image/') === 0;
       const visual = image
         ? '<img class="aich-output-file-preview" src="' + url + '?inline=1" alt="' + escapeHtml(name) + '" loading="lazy" />'
-        : '<span class="aich-output-file-icon" aria-hidden="true">' + icon('file') + '</span>';
+        : outputFileIconHtml(name);
       return '<a class="aich-output-file" href="' + url + '" target="_blank" rel="noopener noreferrer">' +
         visual + '<span class="aich-output-file-copy"><strong>' + escapeHtml(name) + '</strong><small>' +
         escapeHtml(formatSize(file.size || 0)) + ' · сервер</small></span><span class="aich-output-file-download" aria-hidden="true">' +
@@ -847,7 +869,7 @@
       const image = String(file.mime || '').toLowerCase().indexOf('image/') === 0;
       const visual = image
         ? '<img class="aich-output-file-preview" src="' + escapeHtml(file.url) + '" alt="' + escapeHtml(name) + '" loading="lazy" />'
-        : '<span class="aich-output-file-icon" aria-hidden="true">' + icon('file') + '</span>';
+        : outputFileIconHtml(name);
       return '<a class="aich-output-file" href="' + escapeHtml(file.url) + '" download="' + escapeHtml(name) + '">' +
         visual + '<span class="aich-output-file-copy"><strong>' + escapeHtml(name) + '</strong><small>' +
         escapeHtml(formatSize(file.size || 0)) + ' · устройство</small></span><span class="aich-output-file-download" aria-hidden="true">' +
@@ -891,7 +913,9 @@
     }
     if (spec.type === 'actions' && Array.isArray(spec.items)) {
       const buttons = spec.items.slice(0, 6).map(actionButton).filter(Boolean);
-      return buttons.length ? '<section class="aich-ui-actions" aria-label="' +
+      const isCarousel = spec.layout === 'carousel' || spec.presentation === 'carousel' || spec.carousel === true;
+      const actionsClass = isCarousel ? 'aich-ui-actions aich-ui-actions-carousel' : 'aich-ui-actions';
+      return buttons.length ? '<section class="' + actionsClass + '" aria-label="' +
         escapeHtml(title || 'Интерактивные действия') + '">' +
         (title ? '<div class="aich-ui-actions-heading"><span aria-hidden="true">' + emoji + '</span><strong>' + escapeHtml(title) + '</strong></div>' : '') +
         buttons.join('') + '</section>' : codeBlockHtml('json', code);

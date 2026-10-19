@@ -90,7 +90,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("span.className = 'aich-themed-emoji'", app_js)
         self.assertNotIn("textarea,button,svg,.katex", app_js)
         self.assertIn('id="i-mountain"', index_html)
-        self.assertIn("app.js?v=63&rev=66", index_html)
+        self.assertIn("app.js?v=68&rev=71", index_html)
 
     def test_brand_name_uses_ai_ch_without_version_suffix(self):
         root = Path(__file__).resolve().parents[1]
@@ -105,7 +105,7 @@ class DesignThemeTests(unittest.TestCase):
                 content = path.read_text(encoding="utf-8")
                 self.assertNotRegex(content, r"(?i)\bAI[\s-]*CH\s*1\.0\b")
         index = (root / "frontend" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("app.js?v=63&rev=66", index)
+        self.assertIn("app.js?v=68&rev=71", index)
 
     def test_sandbox_panel_is_reduced_by_20_percent_on_desktop_and_mobile(self):
         root = Path(__file__).resolve().parents[1]
@@ -114,7 +114,7 @@ class DesignThemeTests(unittest.TestCase):
 
         self.assertIn("width: min(80%, 704px); height: min(67.2vh, 624px);", css)
         self.assertIn("width: 80%; height: min(73.6vh, 720px); border-radius: 19px;", css)
-        self.assertIn("app.css?v=51&rev=54", index_html)
+        self.assertIn("app.css?v=53&rev=56", index_html)
 
     def test_file_generation_is_template_based_and_sandbox_errors_are_brief(self):
         self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий файл", prompts.CORE_RULES)
@@ -135,8 +135,8 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn('iframe sandbox="" loading="lazy" title="Предпросмотр SVG"', app_js)
         self.assertIn(r"const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);", app_js)
         self.assertIn(".svg-preview iframe", app_css)
-        self.assertIn("app.js?v=64&rev=67", index_html)
-        self.assertIn("app.css?v=52&rev=55", index_html)
+        self.assertIn("app.js?v=68&rev=71", index_html)
+        self.assertIn("app.css?v=53&rev=56", index_html)
 
     def test_failed_file_generation_offers_short_device_fallback(self):
         self.assertIn("Нажми „Выполнить на устройстве“ под кодом", prompts.CORE_RULES)
@@ -158,11 +158,38 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Pillow", app_js)
         self.assertIn("const hasLocalFallback = isDeviceFallbackRun(data);", app_js)
         self.assertIn("&& !hasLocalFallback", app_js)
-        self.assertIn("app.js?v=67&rev=70", index_html)
+        self.assertIn("app.js?v=68&rev=71", index_html)
 
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
         self.assertIn("ровно одна генерация модели", prompts.CODE_SYSTEM)
+
+    def test_failed_fileplan_is_not_explained_as_a_sandbox_error(self):
+        self.assertIn("не пиши «не получилось в песочнице»", prompts.CORE_RULES)
+        self.assertIn("не заменяй файл содержимым его слайдов/страниц", prompts.CORE_RULES)
+        self.assertIn("не выводи слайды/страницы обычным текстом вместо файла", prompts.DOC_SKILL)
+
+    def test_generated_file_aliases_are_deduplicated(self):
+        from app.ai.router import _deduplicate_generated_file_items, _normalise_generated_filename
+
+        files = [
+            {"name": "ppt_report.pptx"},
+            {"name": "report.pptx"},
+            {"name": "report.ppt_"},
+        ]
+        result = _deduplicate_generated_file_items(files)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(_normalise_generated_filename(result[0]["name"]), "report.pptx")
+
+    def test_local_fallback_code_is_optional_and_execution_button_is_prominent(self):
+        root = Path(__file__).resolve().parents[1]
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+        css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("data-fallback-code-toggle", app_js)
+        self.assertIn("seenOutputNames", app_js)
+        self.assertIn("min-height: 48px", css)
+        self.assertIn("app.js?v=68&rev=71", index_html)
 
 
 if __name__ == "__main__":

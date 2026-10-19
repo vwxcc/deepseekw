@@ -4,7 +4,8 @@
 
   // ---------- utils ----------
   const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const $ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  let workspaceUploadIntent = false;
   // Static contract: never emit a chat execution button containing data-run-device="; file runs are started only after the complete answer.
   const actionCarouselTimers = new WeakMap();
 
@@ -5045,7 +5046,6 @@
   }
 
   // ---------- files ----------
-  let workspaceUploadIntent = false;
   const workspaceFileFilters = { query: '', source: 'all', kind: 'all', sort: 'date-desc' };
 
   async function loadFiles() {

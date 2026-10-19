@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_user, get_db, get_owned_chat, require_csrf
-from ..models import Attachment, Chat, Message, MessageStatus, Suggestion, User
+from ..models import Attachment, Chat, Message, MessageStatus, Project, Suggestion, User
 from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut, SharedChatOut
 from ..services.limits import allow, get_limits
 
@@ -169,7 +169,18 @@ async def rename_chat(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    chat.title = data.title.strip() or chat.title
+    if data.title is not None:
+        chat.title = data.title.strip() or chat.title
+    if data.is_pinned is not None:
+        chat.is_pinned = data.is_pinned
+    if "project_id" in data.model_fields_set:
+        if data.project_id is None:
+            chat.project_id = None
+        else:
+            project = await db.get(Project, data.project_id)
+            if project is None or project.user_id != chat.user_id:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Проект не найден")
+            chat.project_id = project.id
     await db.commit()
     await db.refresh(chat)
     return ChatOut.model_validate(chat)

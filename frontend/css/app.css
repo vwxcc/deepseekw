@@ -24,7 +24,7 @@
   --shadow-sm: 0 1px 2px rgba(60, 50, 35, .05);
   --shadow: 0 2px 12px rgba(60, 50, 35, .07);
   --shadow-lg: 0 12px 40px rgba(40, 34, 24, .16);
-  --sidebar-w: 272px;
+  --sidebar-w: 326px;
   --col: 760px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -3181,3 +3181,20 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 .device-fallback-status { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; width:min(75%,660px); margin-top:8px; padding:8px 10px; border:1px solid var(--border-soft); border-radius:11px; background:var(--bg-panel); color:var(--fg-muted); font-size:12px; }
 .device-fallback-status > span { min-width:0; overflow-wrap:anywhere; }
 .device-fallback-status button { min-height:32px; padding:6px 9px; border:1px solid var(--border-soft); border-radius:8px; background:var(--bg); color:var(--fg); font:inherit; cursor:pointer; }
+
+
+/* Responsive dialog sizing: keep submenus compact and internally scrollable on phones. */
+#modal-root .modal-back { padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+#modal-root .modal,
+#modal-root .modal.wide {
+  width: min(620px, 85vw); max-width: 85vw; max-height: 85vh; max-height: 85dvh;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #c8c3b7 transparent;
+}
+#modal-root .modal .modal-body { min-height: 0; max-height: 62vh; max-height: 62dvh; overflow-y: auto; overscroll-behavior: contain; }
+#modal-root .modal::-webkit-scrollbar, #modal-root .modal .modal-body::-webkit-scrollbar { width: 7px; }
+#modal-root .modal::-webkit-scrollbar-thumb, #modal-root .modal .modal-body::-webkit-scrollbar-thumb { background: #c8c3b7; border-radius: 8px; }
+@media (max-width: 620px) {
+  #modal-root .modal, #modal-root .modal.wide { width: 85vw; max-width: 85vw; max-height: 85dvh; padding: 18px; border-radius: 16px; }
+  #modal-root .modal .modal-body { max-height: 58dvh; }
+}

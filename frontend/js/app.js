@@ -27,10 +27,12 @@
         const next = carousel.scrollLeft + step;
         carousel.scrollTo({ left: next >= max - 4 ? 0 : next, behavior: 'smooth' });
       };
-      actionCarouselTimers.set(carousel, {
-        first: window.setTimeout(advance, 500),
-        interval: window.setInterval(advance, 2000),
-      });
+      const timer = { first: null, interval: null };
+      timer.first = window.setTimeout(() => {
+        advance();
+        if (carousel.isConnected) timer.interval = window.setInterval(advance, 2000);
+      }, 500);
+      actionCarouselTimers.set(carousel, timer);
     });
   }
 

@@ -46,7 +46,7 @@ from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, image_search, read_search_results, read_web_page, web_search
 from . import model_sets as ms
 from . import prompts
-from .provider_config import apply_primary_provider_overrides, get_think_provider_overrides
+from .provider_config import apply_primary_provider_overrides
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -60,6 +60,7 @@ from .prompts import (
 from .providers import (
     ProviderError,
     complete_chat,
+    complete_chat_with_usage,
     is_model_unavailable_error,
     stream_chat,
 )
@@ -309,7 +310,6 @@ class Job:
     user_text: str = ""
     model_set_id: str | None = None
     effort: str | None = None
-    think_mode: bool = False
     user_id: str | None = None
     mode: str = "chat"
     execution_target: str = "site"
@@ -492,9 +492,8 @@ class AIRouter:
         self,
         route_type: RouteType,
         model_set_id: str | None = None,
-        think_mode: bool = False,
     ) -> tuple[str, str, list[EntryConfig]]:
-        """Resolve the primary model or its separate Think override."""
+        """Resolve the configured primary MAIN model."""
         del route_type, model_set_id
         async with SessionLocal() as db:
             result = await db.execute(
@@ -542,35 +541,7 @@ class AIRouter:
                 else (getattr(e, "price_cache", 0.0) or 0.0)
             )
             entry_id, resolved_name = e.id, mset.name
-            if think_mode:
-                primary_provider, primary_base_url, primary_api_key, primary_model = (
-                    get_think_provider_overrides()
-                )
-                missing = [
-                    label for label, value in (
-                        ("THINK_BASE_URL", primary_base_url),
-                        ("THINK_API_KEY", primary_api_key),
-                        ("THINK_MODEL_ID (или THINK_MODEL)", primary_model),
-                    ) if not value
-                ]
-                if missing:
-                    raise ProviderError(
-                        "Think не настроен в Render: заполните " + ", ".join(missing)
-                        + ". Основная модель не будет подменена автоматически."
-                    )
-                temperature = (
-                    settings.think_temperature if settings.think_temperature is not None
-                    else e.temperature
-                )
-                max_tokens = (
-                    settings.think_max_tokens if settings.think_max_tokens is not None
-                    else e.max_tokens
-                )
-                price_in = settings.think_price_in if settings.think_price_in is not None else (getattr(e, "price_in", 0.0) or 0.0)
-                price_out = settings.think_price_out if settings.think_price_out is not None else (getattr(e, "price_out", 0.0) or 0.0)
-                price_cache = settings.think_price_cache if settings.think_price_cache is not None else (getattr(e, "price_cache", 0.0) or 0.0)
-                entry_id, resolved_name = f"{e.id}:think", f"{mset.name} · Think"
-            configs = [EntryConfig(
+                        configs = [EntryConfig(
                 id=entry_id,
                 model_set_id=e.model_set_id,
                 provider=primary_provider,
@@ -760,8 +731,10 @@ class AIRouter:
         finally:
             self._primary_generation_lock.release()
 
-    async def _stream_once(self, job: Job, entry: EntryConfig, messages: list[dict]):
-        """Stream clean answer text while forwarding short activity metadata separately."""
+    async def _stream_once(
+        self, job: Job, entry: EntryConfig, messages: list[dict], *, defer_output: bool = False
+    ):
+        """Stream clean answer text; defer client events during automatic model selection."""
         full = ""
         thinking = ""
         usage: dict | None = None
@@ -775,17 +748,20 @@ class AIRouter:
                     text = item.get("text") or ""
                     if text:
                         full += text
-                        await job.output.put(("delta", text))
+                        if not defer_output:
+                            await job.output.put(("delta", text))
                 elif kind == "status":
-                    await job.output.put(("ui_status", item["text"]))
+                    if not defer_output:
+                        await job.output.put(("ui_status", item["text"]))
                 elif kind == "action":
-                    await job.output.put((
-                        "ui_action",
-                        json.dumps(
-                            {"icon": item["icon"], "text": item["text"]},
-                            ensure_ascii=False,
-                        ),
-                    ))
+                    if not defer_output:
+                        await job.output.put((
+                            "ui_action",
+                            json.dumps(
+                                {"icon": item["icon"], "text": item["text"]},
+                                ensure_ascii=False,
+                            ),
+                        ))
 
         async for kind, piece in stream_chat(
             messages=messages,
@@ -1363,7 +1339,7 @@ class AIRouter:
 
         try:
             mset_id, mset_name, entries = await self._resolve_entries(
-                job.route_type, job.model_set_id, think_mode=job.think_mode
+                job.route_type, job.model_set_id
             )
         except ProviderError as e:
             await self._finish(job.message_id, MessageStatus.failed, error=str(e))

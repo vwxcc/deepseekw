@@ -256,12 +256,18 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("if (!(options && options.libraryOnly))", app_js)
         self.assertIn("const options = { libraryOnly: workspaceUploadIntent }", app_js)
         self.assertIn("workspaceUploadIntent = true;", app_js)
+        self.assertIn("addEventListener('cancel', () => { workspaceUploadIntent = false; })", app_js)
+        self.assertEqual(app_js.count("let workspaceUploadIntent = false;"), 1)
+        self.assertLess(app_js.index("let workspaceUploadIntent = false;"), app_js.index("function bindComposer()"))
 
     def test_chat_pinning_search_and_file_workspace_controls_are_bound(self):
         root = Path(__file__).resolve().parents[1]
         app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
         index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
         app_css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
+        self.assertIn("width: 85vw;", app_css)
+        self.assertIn("max-height: calc(85dvh - 145px)", app_css)
+        self.assertNotIn('<span class="sidebar-usage-label">Лимиты</span>', index_html)
 
         for action in ("chat-action-new", "chat-action-pin", "chat-action-project", "chat-action-files", "chat-action-find"):
             with self.subTest(action=action):
@@ -309,6 +315,10 @@ class DesignThemeTests(unittest.TestCase):
         app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
         css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
         index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+        router = (root / "app" / "ai" / "router.py").read_text(encoding="utf-8")
+        self.assertIn("профессиональному шаблону", router)
+        self.assertIn("минимум на половине слайдов", router)
+        self.assertIn("PNG-иллюстрации", router)
         self.assertIn("data-fallback-code-toggle", app_js)
         self.assertIn("seenOutputNames", app_js)
         self.assertIn("Подготавливаю файл", app_js)

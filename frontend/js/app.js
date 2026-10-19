@@ -4970,9 +4970,155 @@
   }
 
   // ---------- files ----------
+  const workspaceFileFilters = { query: '', source: 'all', kind: 'all', sort: 'date-desc' };
+
   async function loadFiles() {
     state.files = await api.get('/api/files');
     renderFiles();
+    renderFilesWorkspace();
+  }
+
+  function workspaceFileKind(file) {
+    const name = String(file && file.original_name || '').toLowerCase();
+    const ext = name.includes('.') ? name.split('.').pop() : '';
+    const kind = String(file && file.kind || '').toLowerCase();
+    if (kind === 'image' || ['svg','png','jpg','jpeg','webp','gif','bmp','avif'].includes(ext)) return 'image';
+    if (['ppt','pptx','odp','key'].includes(ext) || ['slide','presentation'].includes(kind)) return 'slide';
+    if (['csv','tsv','xls','xlsx','ods'].includes(ext) || ['sheet','table','csv','xlsx'].includes(kind)) return 'table';
+    if (['py','js','ts','jsx','tsx','html','css','json','sql','sh','bash','ipynb','rs','java','c','cpp','h','go','php','rb'].includes(ext) || ['code','text'].includes(kind)) return 'code';
+    if (['pdf','doc','docx','odt','rtf','txt','md','epub','xml'].includes(ext) || ['pdf','doc','docx','text'].includes(kind)) return 'doc';
+    return 'other';
+  }
+
+  function workspaceFileKindLabel(kind) {
+    return ({ image: 'Изображение', doc: 'Документ', table: 'Таблица', slide: 'Презентация', code: 'Код', other: 'Файл' })[kind] || 'Файл';
+  }
+
+  function renderFilesWorkspace() {
+    const box = $('#workspace-files-list');
+    if (!box) return;
+    const sourceItems = Array.isArray(state.files) ? state.files : [];
+    const filters = workspaceFileFilters;
+    const query = String(filters.query || '').trim().toLocaleLowerCase();
+    let items = sourceItems.filter(file => {
+      if (!file || !file.id) return false;
+      if (query && !String(file.original_name || '').toLocaleLowerCase().includes(query)) return false;
+      const source = file.source === 'ai' ? 'ai' : 'user';
+      if (filters.source !== 'all' && filters.source !== source) return false;
+      if (filters.kind !== 'all' && workspaceFileKind(file) !== filters.kind) return false;
+      return true;
+    });
+    const nameCmp = (a, b) => String(a.original_name || '').localeCompare(String(b.original_name || ''), 'ru', { sensitivity: 'base' });
+    items.sort((a, b) => {
+      if (filters.sort === 'name-asc') return nameCmp(a, b);
+      if (filters.sort === 'name-desc') return nameCmp(b, a);
+      if (filters.sort === 'size-desc') return (Number(b.size) || 0) - (Number(a.size) || 0);
+      if (filters.sort === 'size-asc') return (Number(a.size) || 0) - (Number(b.size) || 0);
+      if (filters.sort === 'type') return workspaceFileKind(a).localeCompare(workspaceFileKind(b)) || nameCmp(a, b);
+      const dateA = Date.parse(a.created_at || '') || 0;
+      const dateB = Date.parse(b.created_at || '') || 0;
+      return filters.sort === 'date-asc' ? dateA - dateB : dateB - dateA;
+    });
+    const summary = $('#workspace-files-summary');
+    if (summary) summary.textContent = items.length + (items.length === 1 ? ' файл' : ' файлов');
+    if (!items.length) {
+      box.innerHTML = '<div class="files-workspace-empty"><span class="files-empty-art">' + icon('folder') +
+        '</span><strong>' + (sourceItems.length ? 'Ничего не найдено' : 'Файлов пока нет') +
+        '</strong><p>' + (sourceItems.length ? 'Измените фильтры или поисковый запрос.' : 'Загружайте файлы или попросите AI CH создать документ.') +
+        '</p></div>';
+      return;
+    }
+    box.innerHTML = items.map(file => {
+      const id = encodeURIComponent(String(file.id));
+      const name = String(file.original_name || 'Файл');
+      const kind = workspaceFileKind(file);
+      const source = file.source === 'ai' ? 'ai' : 'user';
+      const created = file.created_at ? new Date(file.created_at) : null;
+      const date = created && Number.isFinite(created.getTime()) ? created.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+      const isImage = kind === 'image';
+      const image = isImage
+        ? '<img class="workspace-file-image" src="/api/files/' + id + '/download" alt="' + escapeHtml(name) +
+          '" loading="lazy" decoding="async" />'
+        : '<span class="workspace-file-glyph">' + icon(kind === 'slide' ? 'file-text' : kind === 'table' ? 'table' : kind === 'code' ? 'code' : kind === 'doc' ? 'file-text' : 'file') + '</span>';
+      return '<article class="workspace-file-card">' +
+        '<a class="workspace-file-preview' + (isImage ? ' is-image' : '') + '" href="/api/files/' + id + '/download" ' +
+          (isImage ? 'target="_blank" rel="noopener noreferrer" ' : 'download ') + 'aria-label="Открыть ' + escapeHtml(name) + '">' + image + '</a>' +
+        '<div class="workspace-file-info"><div class="workspace-file-labels"><span class="workspace-source-badge ' + source + '">' +
+          (source === 'ai' ? 'AI CH' : 'Вы') + '</span><span class="workspace-file-kind">' + workspaceFileKindLabel(kind) + '</span></div>' +
+        '<strong class="workspace-file-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</strong>' +
+        '<div class="workspace-file-meta"><span>' + escapeHtml(date) + '</span><span>' + formatSize(Number(file.size) || 0) + '</span></div>' +
+        '<div class="workspace-file-actions"><a class="chip-btn workspace-file-download" href="/api/files/' + id + '/download" download="' + escapeHtml(name) + '">' +
+        icon('download') + 'Скачать</a><button type="button" class="icon-btn workspace-file-delete" data-workspace-file-delete="' + escapeHtml(String(file.id)) + '" title="Удалить файл" aria-label="Удалить файл">' + icon('trash') + '</button></div></div></article>';
+    }).join('');
+  }
+
+  async function openFilesWorkspace() {
+    const shell = $('#files-workspace-shell');
+    if (!shell) return;
+    toggleFiles(false);
+    try {
+      if (!Array.isArray(state.files)) await loadFiles();
+      else renderFilesWorkspace();
+      shell.classList.remove('hidden');
+      shell.classList.add('open');
+      shell.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('files-workspace-open');
+      requestAnimationFrame(() => $('.files-workspace', shell)?.focus());
+    } catch (error) {
+      toast('Не удалось открыть файлы: ' + error.message, 'error');
+    }
+  }
+
+  function closeFilesWorkspace() {
+    const shell = $('#files-workspace-shell');
+    if (!shell) return;
+    shell.classList.remove('open');
+    shell.classList.add('hidden');
+    shell.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('files-workspace-open');
+  }
+
+  function bindFilesWorkspace() {
+    $('#files-quick-btn')?.addEventListener('click', openFilesWorkspace);
+    queryAll('[data-files-workspace-close]').forEach(button => button.addEventListener('click', closeFilesWorkspace));
+    $('#workspace-file-upload')?.addEventListener('click', () => $('#file-input')?.click());
+    $('#workspace-file-search')?.addEventListener('input', event => {
+      workspaceFileFilters.query = event.target.value || '';
+      renderFilesWorkspace();
+    });
+    $('#workspace-file-source')?.addEventListener('change', event => {
+      workspaceFileFilters.source = event.target.value || 'all';
+      renderFilesWorkspace();
+    });
+    $('#workspace-file-kind')?.addEventListener('change', event => {
+      workspaceFileFilters.kind = event.target.value || 'all';
+      renderFilesWorkspace();
+    });
+    $('#workspace-file-sort')?.addEventListener('change', event => {
+      workspaceFileFilters.sort = event.target.value || 'date-desc';
+      renderFilesWorkspace();
+    });
+    $('#workspace-files-list')?.addEventListener('click', async event => {
+      const button = event.target.closest('[data-workspace-file-delete]');
+      if (!button) return;
+      const id = String(button.dataset.workspaceFileDelete || '');
+      const file = (state.files || []).find(item => String(item.id) === id);
+      if (!file || !confirm('Удалить файл «' + (file.original_name || 'Файл') + '»?')) return;
+      button.disabled = true;
+      try {
+        await api.del('/api/files/' + encodeURIComponent(id));
+        state.files = (state.files || []).filter(item => String(item.id) !== id);
+        renderFiles();
+        renderFilesWorkspace();
+        toast('Файл удалён');
+      } catch (error) {
+        button.disabled = false;
+        toast('Не удалось удалить файл: ' + error.message, 'error');
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && $('#files-workspace-shell')?.classList.contains('open')) closeFilesWorkspace();
+    });
   }
 
   function kindIcon() {
@@ -6914,7 +7060,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindFilesWorkspace(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

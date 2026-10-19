@@ -5150,6 +5150,7 @@
   }
 
   let workspaceProjectsData = [];
+  let workspaceProjectChats = [];
   let projectWorkspaceActiveId = null;
   let projectWorkspaceEditor = null;
 
@@ -5159,9 +5160,15 @@
     return workspaceProjectsData;
   }
 
+  async function loadWorkspaceProjectChats() {
+    const chats = await api.get('/api/chats');
+    workspaceProjectChats = Array.isArray(chats) ? chats.filter(chat => chat && chat.id) : [];
+    return workspaceProjectChats;
+  }
+
   async function openProjectsWorkspace() {
     try {
-      await loadUserProjects();
+      await Promise.all([loadUserProjects(), loadWorkspaceProjectChats()]);
       const shell = $('#projects-workspace-shell');
       shell.classList.remove('hidden');
       shell.classList.add('open');
@@ -5203,7 +5210,7 @@
       ? workspaceProjectsData.find(item => String(item.id) === String(projectWorkspaceActiveId))
       : null;
     if (active) {
-      const chats = (Array.isArray(state.chats) ? state.chats : []).filter(chat =>
+      const chats = workspaceProjectChats.filter(chat =>
         chat && String(chat.project_id || '') === String(active.id));
       box.innerHTML = '<div class="workspace-project-detail">' +
         '<button type="button" class="chip-btn" data-project-action="back">' + icon('chevron-down') + ' Все проекты</button>' +
@@ -5221,7 +5228,7 @@
         ).join('') + '</div>' : '<div class="files-workspace-empty project-no-chats"><span class="files-empty-art">' + icon('chat') +
           '</span><strong>В проекте пока нет чатов</strong><p>Добавьте открытый чат через меню «Поделиться».</p></div>') +
         '<button type="button" class="chip-btn workspace-project-add-current" data-project-action="add-current-chat" ' +
-        (!state.currentChatId || String((state.chats || []).find(chat => chat.id === state.currentChatId)?.project_id || '') === String(active.id) ? 'disabled' : '') +
+        (!state.currentChatId || String(workspaceProjectChats.find(chat => chat.id === state.currentChatId)?.project_id || '') === String(active.id) ? 'disabled' : '') +
         '>' + icon('plus') + (state.currentChatId ? 'Добавить открытый чат в проект' : 'Сначала откройте чат') + '</button>' +
         '</section></div>';
       return;
@@ -5255,7 +5262,7 @@
       const saved = editor && editor.id
         ? await api.patch('/api/projects/' + encodeURIComponent(editor.id), payload)
         : await api.post('/api/projects', payload);
-      await Promise.all([loadUserProjects(), loadChats()]);
+      await Promise.all([loadUserProjects(), loadWorkspaceProjectChats(), loadChats()]);
       projectWorkspaceEditor = null;
       projectWorkspaceActiveId = saved.id;
       renderProjectsWorkspace();
@@ -5314,7 +5321,7 @@
         if (!confirm('Удалить проект «' + project.title + '»? Его чаты останутся в списке чатов.')) return;
         try {
           await api.del('/api/projects/' + encodeURIComponent(project.id));
-          await Promise.all([loadUserProjects(), loadChats()]);
+          await Promise.all([loadUserProjects(), loadWorkspaceProjectChats(), loadChats()]);
           if (String(projectWorkspaceActiveId || '') === String(project.id)) projectWorkspaceActiveId = null;
           toast('Проект удалён; чаты сохранены');
           renderProjectsWorkspace();

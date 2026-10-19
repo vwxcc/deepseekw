@@ -138,6 +138,28 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("app.js?v=64&rev=67", index_html)
         self.assertIn("app.css?v=52&rev=55", index_html)
 
+    def test_failed_file_generation_offers_short_device_fallback(self):
+        self.assertIn("Нажми „Выполнить на устройстве“ под кодом", prompts.CORE_RULES)
+        self.assertIn("Следом приложи ОДИН законченный блок", prompts.CORE_RULES)
+        self.assertIn("не описывай состояние WASM/песочницы", prompts.CORE_RULES)
+        self.assertIn("собирай OOXML через стандартные zipfile, struct и XML", prompts.DOC_SKILL)
+
+    def test_pyodide_loads_many_packages_without_duplicate_load_failures(self):
+        root = Path(__file__).resolve().parents[1]
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("pyodide/v314.0.7/full/", app_js)
+        self.assertIn("const isPackageLoaded = name =>", app_js)
+        self.assertIn("if (isPackageLoaded(packageName)) continue;", app_js)
+        self.assertIn("python-pptx", app_js)
+        self.assertIn("python-docx", app_js)
+        self.assertIn("reportlab", app_js)
+        self.assertIn("Pillow", app_js)
+        self.assertIn("const hasLocalFallback = isDeviceFallbackRun(data);", app_js)
+        self.assertIn("&& !hasLocalFallback", app_js)
+        self.assertIn("app.js?v=65&rev=68", index_html)
+
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
         self.assertIn("ровно одна генерация модели", prompts.CODE_SYSTEM)

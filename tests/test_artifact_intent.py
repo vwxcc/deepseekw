@@ -24,6 +24,9 @@ class ArtifactIntentTests(unittest.TestCase):
             "Мне нужна таблица Excel для учёта расходов",
             "Документ: правила проекта",
             "PPTX: история интернета",
+            "Нарисуй схему электрической цепи",
+            "Сделай картинку с котом",
+            "Создай логотип AI CH",
         )
         for value in examples:
             with self.subTest(value=value):

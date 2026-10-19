@@ -637,9 +637,13 @@ class AIRouter:
         self, job: Job, primary: EntryConfig, fast: EntryConfig, messages: list[dict]
     ) -> tuple[tuple[str, str, dict | None], EntryConfig] | None:
         """Choose the first complete valid answer; keep partial losing output invisible."""
+        primary_events: list[tuple[str, str]] = []
+
         async def primary_call():
             try:
-                value = await self._stream_once(job, primary, messages, defer_output=True)
+                value = await self._stream_once(
+                    job, primary, messages, defer_output=True, deferred_events=primary_events
+                )
                 return ("primary", time.monotonic(), value, None)
             except Exception as exc:
                 return ("primary", time.monotonic(), None, exc)
@@ -689,6 +693,8 @@ class AIRouter:
                         visible = str(full or thinking or "").strip()
                         if winner is None and visible:
                             winner = ((str(full or ""), str(thinking or ""), usage), primary)
+                            for event in primary_events:
+                                await job.output.put(event)
                         elif not visible:
                             errors.append("primary: пустой ответ")
                         continue
@@ -935,9 +941,15 @@ class AIRouter:
             self._primary_generation_lock.release()
 
     async def _stream_once(
-        self, job: Job, entry: EntryConfig, messages: list[dict], *, defer_output: bool = False
+        self,
+        job: Job,
+        entry: EntryConfig,
+        messages: list[dict],
+        *,
+        defer_output: bool = False,
+        deferred_events: list[tuple[str, str]] | None = None,
     ):
-        """Stream clean answer text; defer client events during automatic model selection."""
+        """Stream clean answer text; optionally buffer activity UI events until a winner is chosen."""
         full = ""
         thinking = ""
         usage: dict | None = None
@@ -954,17 +966,25 @@ class AIRouter:
                         if not defer_output:
                             await job.output.put(("delta", text))
                 elif kind == "status":
-                    if not defer_output:
-                        await job.output.put(("ui_status", item["text"]))
+                    event = ("ui_status", str(item["text"]))
+                    if defer_output:
+                        if deferred_events is not None:
+                            deferred_events.append(event)
+                    else:
+                        await job.output.put(event)
                 elif kind == "action":
-                    if not defer_output:
-                        await job.output.put((
-                            "ui_action",
-                            json.dumps(
-                                {"icon": item["icon"], "text": item["text"]},
-                                ensure_ascii=False,
-                            ),
-                        ))
+                    event = (
+                        "ui_action",
+                        json.dumps(
+                            {"icon": item["icon"], "text": item["text"]},
+                            ensure_ascii=False,
+                        ),
+                    )
+                    if defer_output:
+                        if deferred_events is not None:
+                            deferred_events.append(event)
+                    else:
+                        await job.output.put(event)
 
         async for kind, piece in stream_chat(
             messages=messages,

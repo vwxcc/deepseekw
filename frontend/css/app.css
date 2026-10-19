@@ -3146,3 +3146,38 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   .aich-ui-callout, .aich-ui-action { width:92%; }
   .aich-ui-actions-carousel > .aich-ui-action { flex-basis:82%; max-width:82%; }
 }
+
+
+/* Background file-generation and code-inspection overlays. */
+.device-code-files { display:flex; flex-direction:column; flex-wrap:nowrap; align-items:stretch; max-height:38%; overflow-x:hidden; overflow-y:auto; }
+.device-code-file-card { width:100%; box-sizing:border-box; }
+.device-code-shell.background-status-mode #device-code-frame { display:none; }
+.device-code-background-status { flex:1 1 auto; min-height:90px; max-height:58%; overflow:auto; padding:16px 18px; white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.6 var(--mono); color:var(--fg); background:var(--bg); border-bottom:1px solid var(--border-soft); }
+.device-code-background-status[hidden] { display:none !important; }
+@media (max-width:600px) { .device-code-files { max-height:43%; padding:8px 10px; } .device-code-file-card { width:100%; } .device-code-background-status { padding:12px 13px; } }
+.aich-code-viewer-shell { position:fixed; inset:0; z-index:10090; display:flex; align-items:center; justify-content:center; padding:18px; padding-bottom:calc(18px + env(safe-area-inset-bottom, 0px)); visibility:hidden; opacity:0; pointer-events:none; transition:opacity .18s ease,visibility .18s ease; }
+.aich-code-viewer-shell.open { visibility:visible; opacity:1; pointer-events:auto; }
+.aich-code-viewer-scrim { position:absolute; inset:0; width:100%; height:100%; border:0; background:rgba(22,21,19,.42); }
+.aich-code-viewer-panel { position:relative; display:flex; flex-direction:column; width:min(920px,96%); max-height:min(84dvh,880px); min-height:240px; overflow:hidden; border:1px solid var(--border); border-radius:18px; background:var(--bg-panel); box-shadow:var(--shadow-lg); }
+.aich-code-viewer-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 15px; border-bottom:1px solid var(--border-soft); }
+.aich-code-viewer-head > div:first-child { display:grid; gap:4px; min-width:0; }
+.aich-code-viewer-head strong { font-size:14px; font-weight:700; }
+.aich-code-viewer-language { width:fit-content; padding:3px 7px; border-radius:6px; background:var(--bg-user); color:var(--fg-muted); font-size:11px; }
+.aich-code-viewer-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+.aich-code-viewer-actions button { min-height:36px; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:7px 10px; border:1px solid var(--border-soft); border-radius:9px; background:var(--bg); color:var(--fg); font:inherit; font-size:12px; cursor:pointer; }
+.aich-code-viewer-actions button:hover { background:var(--bg-hover); border-color:var(--border); }
+.aich-code-viewer-actions .ic { width:14px; height:14px; }
+.aich-code-viewer-actions .aich-code-viewer-close { width:36px; padding:0; }
+.aich-code-viewer-source { flex:1 1 auto; min-height:0; overflow:auto; margin:0; padding:17px; background:var(--bg-code); color:var(--fg); font:12.5px/1.65 var(--mono); tab-size:4; white-space:pre; overscroll-behavior:contain; }
+.aich-code-viewer-source code { font:inherit; overflow-wrap:normal; }
+@media (max-width:600px) {
+ .aich-code-viewer-shell { padding:0; padding-bottom:env(safe-area-inset-bottom, 0px); align-items:flex-end; }
+ .aich-code-viewer-panel { width:100%; max-height:88dvh; min-height:45dvh; border-radius:18px 18px 0 0; }
+ .aich-code-viewer-head { align-items:flex-start; padding:11px 12px; }
+ .aich-code-viewer-actions { gap:4px; }
+ .aich-code-viewer-actions button { padding:7px 8px; font-size:11px; }
+ .aich-code-viewer-source { padding:13px; font-size:11.5px; }
+}
+.device-fallback-status { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; width:min(75%,660px); margin-top:8px; padding:8px 10px; border:1px solid var(--border-soft); border-radius:11px; background:var(--bg-panel); color:var(--fg-muted); font-size:12px; }
+.device-fallback-status > span { min-width:0; overflow-wrap:anywhere; }
+.device-fallback-status button { min-height:32px; padding:6px 9px; border:1px solid var(--border-soft); border-radius:8px; background:var(--bg); color:var(--fg); font:inherit; cursor:pointer; }

@@ -1800,7 +1800,150 @@
     ].join('\n');
   }
 
-  function deviceFallbackLabel(n) {
+  function openFallbackCodeViewer(sourceCode, language) {
+    const source = String(sourceCode || '');
+    if (!source.trim()) return;
+    const existing = $('.aich-code-viewer-shell');
+    if (existing) existing.remove();
+    const lang = String(language || 'python').trim().toLowerCase() || 'python';
+    const title = languageLabel(lang);
+    const extByLang = {python:'py',py:'py',run:'py',javascript:'js',js:'js',html:'html',htm:'html',css:'css',svg:'svg',json:'json',markdown:'md',md:'md',sql:'sql',bash:'sh',sh:'sh'};
+    const ext = extByLang[lang] || (lang.match(/^[a-z0-9]{1,8}$/i) ? lang : 'txt');
+    const shell = document.createElement('div');
+    shell.className = 'aich-code-viewer-shell open';
+    shell.setAttribute('role', 'presentation');
+    shell.innerHTML =
+      '<button class="aich-code-viewer-scrim" type="button" data-code-viewer-close aria-label="Закрыть просмотр кода"></button>' +
+      '<section class="aich-code-viewer-panel" role="dialog" aria-modal="true" aria-label="Код · ' + escapeHtml(title) + '" tabindex="-1">' +
+      '<header class="aich-code-viewer-head"><div><strong>Код</strong><span class="aich-code-viewer-language">' + escapeHtml(title) + '</span></div>' +
+      '<div class="aich-code-viewer-actions"><button type="button" data-code-viewer-copy>' + icon('copy') + 'Скопировать</button>' +
+      '<button type="button" data-code-viewer-download>' + icon('download') + 'Скачать</button>' +
+      '<button type="button" data-code-viewer-close class="aich-code-viewer-close" aria-label="Закрыть" title="Закрыть">' + icon('x') + '</button></div></header>' +
+      '<pre class="aich-code-viewer-source"><code></code></pre></section>';
+    const codeNode = $('.aich-code-viewer-source code', shell);
+    if (codeNode) codeNode.textContent = source;
+    const close = () => {
+      shell.remove();
+      document.removeEventListener('keydown', onKeyDown);
+    };
+    const onKeyDown = event => { if (event.key === 'Escape' && document.body.contains(shell)) close(); };
+    $('[data-code-viewer-close]', shell).forEach(button => button.addEventListener('click', close));
+    const copyButton = $('[data-code-viewer-copy]', shell);
+    if (copyButton) copyButton.addEventListener('click', async () => {
+      const ok = await copyText(source);
+      toast(ok ? 'Код скопирован' : 'Не удалось скопировать код', ok ? '' : 'error');
+    });
+    const downloadButton = $('[data-code-viewer-download]', shell);
+    if (downloadButton) downloadButton.addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([source], {type:'text/plain;charset=utf-8'}));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'ai-ch-code.' + ext;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 1500);
+    });
+    document.body.appendChild(shell);
+    document.addEventListener('keydown', onKeyDown);
+    requestAnimationFrame(() => $('.aich-code-viewer-panel', shell)?.focus());
+  }
+
+  function deviceFallbackLabel(n, run) {
+    const source = run && run.kind === 'fileplan' ? String(run.device_plan || '') : String(run && run.code || '');
+    let title = '', format = '';
+    if (run && run.kind === 'fileplan') {
+      try {
+        const plan = JSON.parse(source);
+        title = String(plan.title || plan.filename || '').trim();
+        format = String(plan.format || '').trim().toLowerCase().replace(/^\./, '');
+      } catch (e) {}
+    }
+    const authoredAction = source.match(/^\s*#\s*AI_CH_ACTION:\s*(.+)$/im);
+    if (authoredAction && authoredAction[1].trim()) return authoredAction[1].trim().slice(0, 90);
+    const bases = {pptx:'Создать презентацию',ppt:'Создать презентацию',docx:'Создать документ',doc:'Создать документ',xlsx:'Создать таблицу',xls:'Создать таблицу',pdf:'Создать PDF',svg:'Создать SVG-инфографику',png:'Создать изображение',csv:'Создать таблицу CSV',json:'Создать файл JSON',html:'Создать HTML-файл',md:'Создать Markdown-файл',txt:'Создать текстовый файл'};
+    if (bases[format]) return (bases[format] + (title ? ' · ' + title : '')).slice(0, 90);
+    const parent = n && n.parent_message_id ? findNode(state.tree, n.parent_message_id) : null;
+    const query = String((parent && parent.content) || (n && n.user_text) || '').toLowerCase();
+    if (/(презентац|слайд|pptx|powerpoint|power point)/u.test(query)) return 'Создать презентацию';
+    if (/(docx|word|документ|отч[её]т|резюме)/u.test(query)) return 'Создать документ';
+    if (/(xlsx|excel|таблиц[ауы]|электронн[а-я ]+таблиц)/u.test(query)) return 'Создать таблицу';
+    if (/(изображени|картинк|инфограф|png|svg|постер)/u.test(query)) return 'Создать изображение';
+    if (/(pdf)/u.test(query)) return 'Создать PDF';
+    return 'Создать файл';
+  }
+
+  function deviceRunnerStatusLabel(n) {
+    if (!n) return 'Ожидаю статус выполнения…';
+    const status = String(n.deviceRunnerStatus || '').trim();
+    const known = {completed:'Создание файла завершено.',failed:'Выполнение завершено без успешного результата.','file-created-server':'Файл создан и сохранён в чате.','file-created-local-only':'Файл создан на устройстве; синхронизация не завершена.'};
+    if (known[status]) return known[status];
+    return status || (n.deviceRunnerFinishedAt ? 'Выполнение завершено.' : 'Создаю файл на устройстве…');
+  }
+
+  function updateDeviceRunnerStatusPanel(messageId, n, fallbackMessage) {
+    const shell = $('#device-code-shell');
+    if (!shell || !shell.classList.contains('open') || !shell.classList.contains('background-status-mode') ||
+        String(deviceCodeMessageId || '') !== String(messageId || '')) return;
+    const label = n ? deviceRunnerStatusLabel(n) : String(fallbackMessage || 'Ожидаю статус выполнения…');
+    const status = $('#device-code-status');
+    if (status) status.textContent = label;
+    const details = $('#device-code-background-status');
+    if (details) {
+      details.hidden = false;
+      details.textContent = [label, n && n.deviceRunnerError ? String(n.deviceRunnerError).slice(0, 3000) : ''].filter(Boolean).join('\n\n');
+    }
+  }
+
+  function openDeviceRunnerStatus(messageId) {
+    const n = findNode(state.tree, messageId);
+    const shell = $('#device-code-shell');
+    const frame = $('#device-code-frame');
+    if (!n || !shell) return;
+    deviceCodeMessageId = String(n.id);
+    if (frame) frame.srcdoc = '';
+    const status = $('#device-code-status');
+    if (status) status.textContent = deviceRunnerStatusLabel(n);
+    const details = $('#device-code-background-status');
+    if (details) {
+      details.hidden = false;
+      details.textContent = [deviceRunnerStatusLabel(n), n.deviceRunnerError ? String(n.deviceRunnerError).slice(0, 3000) : ''].filter(Boolean).join('\n\n');
+    }
+    const files = $('#device-code-files');
+    if (files) files.hidden = true;
+    const errors = $('#device-code-errors');
+    if (errors) errors.hidden = true;
+    shell.classList.add('background-status-mode', 'open');
+    shell.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('device-code-open');
+    requestAnimationFrame(() => shell.querySelector('.device-code-panel')?.focus());
+  }
+
+  function startFallbackFileGenerationInBackground(n) {
+    if (!n || n.deviceRunnerStarted) return false;
+    const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
+    const run = runs.slice().reverse().find(item => item && !item.running);
+    if (!run) return false;
+    const hasFiles = Array.isArray(run.files) && run.files.length > 0;
+    let code = '';
+    if (run.kind === 'fileplan' && typeof run.device_plan === 'string' && run.device_plan.trim() && !hasFiles) {
+      code = deviceCodeForFilePlan(run.device_plan);
+    } else if (!hasFiles && (run.ok === false || run.timed_out) &&
+        /(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*(?:\r?\n)?\s*$/im.test(String(run.code || ''))) {
+      code = String(run.code || '');
+    }
+    if (!code.trim()) return false;
+    n.deviceRunnerStarted = true;
+    n.deviceRunnerStatus = 'Запускаю создание файла на устройстве…';
+    n.deviceRunnerError = null;
+    n.showActivities = true;
+    appendActivity(n, {kind:'status', text:'Автоматически запускаю резервное создание файла на устройстве'});
+    openDeviceCodeRunner({lang:'run', code}, n.id, {background:true});
+    return true;
+  }
+
+  function isDeviceFallbackRun(run) {
     const parent = n && n.parent_message_id ? findNode(state.tree, n.parent_message_id) : null;
     const query = String((parent && parent.content) || (n && n.user_text) || '').toLowerCase();
     if (/(презентац|слайд|pptx|powerpoint|power point)/u.test(query)) return 'Создать презентацию';
@@ -1826,10 +1969,14 @@
     if (!Array.isArray(runs) || !runs.length || Number(n && n.deviceRunnerFiles) > 0) return '';
     const run = runs.slice().reverse().find(isDeviceFallbackRun);
     if (!run) return '';
+    const statusRow = n && n.deviceRunnerStarted
+      ? '<div class="device-fallback-status"><span role="status" aria-live="polite">' + escapeHtml(deviceRunnerStatusLabel(n)) +
+        '</span><button type="button" data-open-device-status="' + escapeHtml(n.id) + '">Статус в песочнице</button></div>'
+      : '';
     return '<div class="device-fallback-row"><button type="button" class="device-fallback-button" data-run-device="' +
-      escapeHtml(n.id) + '">' + icon('play') + '<span>' + escapeHtml(deviceFallbackLabel(n)) +
+      escapeHtml(n.id) + '">' + icon('play') + '<span>' + escapeHtml(deviceFallbackLabel(n, run)) +
       '</span></button><button type="button" class="device-fallback-code-toggle" data-fallback-code-toggle="' +
-      escapeHtml(n.id) + '" aria-expanded="false">Показать код</button><pre class="device-fallback-code" data-device-fallback-code-view hidden></pre></div>';
+      escapeHtml(n.id) + '" aria-expanded="false">Показать код</button>' + statusRow + '</div>';
   }
 
   function activityHtml(n, generating) {
@@ -1974,7 +2121,7 @@
       const parts = [];
       if (n.status === 'cancelled') parts.push('<span class="status">остановлено</span>');
       if (generating) {
-        parts.push('<button data-mact="stop" data-id="' + n.id + '">' + icon('stop') + 'Остановить</button>');
+        if (n.showActivities) parts.push('<button data-mact="stop" data-id="' + escapeHtml(n.id) + '">' + icon('stop') + 'Остановить</button>');
       } else {
         if (n.content) {
           parts.push('<button class="message-action-labeled" data-mact="copy" data-id="' + escapeHtml(n.id) +
@@ -3060,6 +3207,9 @@
       });
     } else {
       deviceCodeMessageId = normalizedMessageId;
+      if (shell) shell.classList.remove('background-status-mode');
+      const backgroundStatus = $('#device-code-background-status');
+      if (backgroundStatus) { backgroundStatus.hidden = true; backgroundStatus.textContent = ''; }
       deviceCodeFileUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* no-op */ } });
       deviceCodeFileUrls.length = 0; deviceCodeLastError = ''; deviceCodeErrorUrl = null;
       if (fileBox) { fileBox.replaceChildren(); fileBox.hidden = true; }
@@ -3155,6 +3305,9 @@
     }
     if (frame) frame.srcdoc = '';
     deviceCodeMessageId = null;
+    if (shell) shell.classList.remove('background-status-mode');
+    const backgroundStatus = $('#device-code-background-status');
+    if (backgroundStatus) { backgroundStatus.hidden = true; backgroundStatus.textContent = ''; }
     if (fileBox) { fileBox.replaceChildren(); fileBox.hidden = true; }
     const errorBox = $('#device-code-errors'); if (errorBox) { errorBox.replaceChildren(); errorBox.hidden = true; }
     deviceCodeLastError = ''; deviceCodeErrorUrl = null;
@@ -3184,7 +3337,13 @@
       const messageNode = messageId ? findNode(state.tree, messageId) : null;
       if (data.type === 'device-code-status') {
         if (isBackground) {
-          if (messageNode) messageNode.deviceRunnerStatus = String(data.message || '').slice(0, 500);
+          if (messageNode) {
+            messageNode.deviceRunnerStatus = String(data.message || '').slice(0, 500);
+            updateDeviceRunnerStatusPanel(messageId, messageNode, data.message);
+            if (state.currentChatId && findNode(state.tree, messageId)) renderMessageInPlace(messageId);
+          } else {
+            updateDeviceRunnerStatusPanel(messageId, null, data.message);
+          }
         } else if (status && typeof data.message === 'string') status.textContent = data.message.slice(0, 500);
         return;
       }
@@ -3217,12 +3376,23 @@
             ? 'Создание завершено частично. Пропущено: ' + skippedFiles.join('; ')
             : (data.success ? 'Выполнение на устройстве завершено.' : 'Локальный запуск завершился без результата.');
         }
+        if (messageNode) {
+          updateDeviceRunnerStatusPanel(messageId, messageNode);
+          if (state.currentChatId && findNode(state.tree, messageId)) renderMessageInPlace(messageId);
+        }
         return;
       }
       if (data.type === 'device-code-error') {
         const message = String(data.message || 'Неизвестная ошибка выполнения').slice(0, 50000);
         if (isBackground) {
-          if (messageNode) messageNode.deviceRunnerError = message;
+          if (messageNode) {
+            messageNode.deviceRunnerError = message;
+            messageNode.deviceRunnerStatus = 'Ошибка при создании файла на устройстве.';
+            updateDeviceRunnerStatusPanel(messageId, messageNode);
+            if (state.currentChatId && findNode(state.tree, messageId)) renderMessageInPlace(messageId);
+          } else {
+            updateDeviceRunnerStatusPanel(messageId, null, message);
+          }
           return;
         }
         const errorBox = $('#device-code-errors');
@@ -3283,6 +3453,8 @@
             messageNode.deviceRunnerFiles = (Number(messageNode.deviceRunnerFiles) || 0) + 1;
             messageNode.deviceRunnerStatus = deviceFilePersistenceErrors.has(messageId)
               ? 'file-created-local-only' : 'file-created-server';
+            updateDeviceRunnerStatusPanel(messageId, messageNode);
+            if (state.currentChatId && findNode(state.tree, messageId)) renderMessageInPlace(messageId);
           }
           return;
         }
@@ -3655,26 +3827,29 @@
       openDeviceCodeRunner({ lang: 'run', code: code }, n.id);
     }));
 
-    $$('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.fallbackCodeToggle);
-      const row = button.closest('.device-fallback-row');
-      const source = row && row.querySelector('[data-device-fallback-code-view]');
-      if (!n || !source) return;
-      if (!source.hidden) {
-        source.hidden = true;
-        button.setAttribute('aria-expanded', 'false');
-        button.textContent = 'Показать код';
-        return;
-      }
+      if (!n) return;
       const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
       const run = runs.slice().reverse().find(isDeviceFallbackRun);
       if (!run) return;
       const code = run.kind === 'fileplan' ? deviceCodeForFilePlan(run.device_plan) : String(run.code || '');
       if (!code.trim()) return;
-      source.textContent = code;
-      source.hidden = false;
-      button.setAttribute('aria-expanded', 'true');
-      button.textContent = 'Скрыть код';
+      openFallbackCodeViewer(code, 'python');
+    }));
+
+    $('[data-open-device-status]', scope).forEach(button => button.addEventListener('click', () => {
+      openDeviceRunnerStatus(button.dataset.openDeviceStatus);
+    }));
+
+    $('[data-web-images-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+      const section = button.closest('.aich-web-images');
+      if (!section) return;
+      const expanded = section.classList.toggle('is-collapsed') === false;
+      button.setAttribute('aria-expanded', String(expanded));
+      button.innerHTML = icon(expanded ? 'chevron-up' : 'chevron-down') +
+        '<span>' + (expanded ? 'Скрыть изображения из интернета' : 'Показать изображения из интернета') + '</span>' +
+        icon(expanded ? 'chevron-up' : 'chevron-down');
     }));
 
     $$('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
@@ -4138,6 +4313,12 @@
               appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
             }
           }
+          if (n && startFallbackFileGenerationInBackground(n)) {
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(n.id);
+              bindStreamRefs();
+            }
+          }
           loadProject(false);
         } else if (ev === 'step') {
           state.streamBuf = '';
@@ -4164,8 +4345,8 @@
           }
           if (n && state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(n.id, null, { focusMessageId: n.id });
-            if (n.execution_target === 'device' || (n.execution_target === 'both' && !n.deviceRunnerStarted)) {
-              const messageEl = $$('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
+            if (!n.deviceRunnerStarted && (n.execution_target === 'device' || (n.execution_target === 'both' && !n.deviceRunnerStarted))) {
+              const messageEl = $('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
               const codeStore = window.__codeStore || {};
               const runButtons = messageEl ? $('[data-run-device]', messageEl) : [];
               const runButton = runButtons.find(button => codeStore[button.dataset.runDevice]);

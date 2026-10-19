@@ -5078,6 +5078,386 @@
     document.body.classList.remove('files-workspace-open');
   }
 
+  let workspaceProjectsData = [];
+  let projectWorkspaceActiveId = null;
+  let projectWorkspaceEditor = null;
+
+  async function loadUserProjects() {
+    workspaceProjectsData = await api.get('/api/projects');
+    workspaceProjectsData = Array.isArray(workspaceProjectsData) ? workspaceProjectsData : [];
+    return workspaceProjectsData;
+  }
+
+  async function openProjectsWorkspace() {
+    try {
+      await loadUserProjects();
+      const shell = $('#projects-workspace-shell');
+      shell.classList.remove('hidden');
+      shell.classList.add('open');
+      shell.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('files-workspace-open');
+      renderProjectsWorkspace();
+      requestAnimationFrame(() => $('.projects-workspace', shell)?.focus());
+    } catch (error) {
+      toast('Не удалось загрузить проекты: ' + error.message, 'error');
+    }
+  }
+
+  function closeProjectsWorkspace() {
+    const shell = $('#projects-workspace-shell');
+    if (!shell) return;
+    shell.classList.remove('open');
+    shell.classList.add('hidden');
+    shell.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('files-workspace-open');
+  }
+
+  function renderProjectsWorkspace() {
+    const box = $('#workspace-projects-list');
+    if (!box) return;
+    if (projectWorkspaceEditor) {
+      const edit = projectWorkspaceEditor;
+      box.innerHTML = '<div class="workspace-editor-card"><button type="button" class="chip-btn" data-project-action="cancel-edit">' +
+        icon('chevron-down') + ' Назад</button><form id="workspace-project-form" class="workspace-project-form">' +
+        '<h3>' + (edit.id ? 'Настроить проект' : 'Новый проект') + '</h3>' +
+        '<label for="workspace-project-name">Название</label><input id="workspace-project-name" maxlength="120" required value="' +
+        escapeHtml(edit.title || '') + '" placeholder="Например, подготовка к ЕГЭ" />' +
+        '<label for="workspace-project-description">Описание и заметки</label><textarea id="workspace-project-description" maxlength="5000" rows="5" placeholder="Цели, ссылки, требования и другая информация">' +
+        escapeHtml(edit.description || '') + '</textarea>' +
+        '<div class="workspace-editor-actions"><button type="button" class="ghost" data-project-action="cancel-edit">Отмена</button>' +
+        '<button type="button" class="solid" data-project-action="save">Сохранить проект</button></div></form></div>';
+      return;
+    }
+    const active = projectWorkspaceActiveId
+      ? workspaceProjectsData.find(item => String(item.id) === String(projectWorkspaceActiveId))
+      : null;
+    if (active) {
+      const chats = (Array.isArray(state.chats) ? state.chats : []).filter(chat =>
+        chat && String(chat.project_id || '') === String(active.id));
+      box.innerHTML = '<div class="workspace-project-detail">' +
+        '<button type="button" class="chip-btn" data-project-action="back">' + icon('chevron-down') + ' Все проекты</button>' +
+        '<section class="workspace-project-hero"><div class="workspace-project-icon">' + icon('folder') + '</div>' +
+        '<div class="workspace-project-copy"><h3>' + escapeHtml(active.title || 'Без названия') + '</h3>' +
+        '<p>' + escapeHtml(active.description || 'Пока нет описания. Добавьте цели и заметки проекта.') + '</p></div>' +
+        '<div class="workspace-project-actions"><button type="button" class="chip-btn" data-project-action="edit" data-project-id="' + escapeHtml(active.id) + '">' + icon('pencil') + ' Изменить</button>' +
+        '<button type="button" class="chip-btn" data-project-action="delete" data-project-id="' + escapeHtml(active.id) + '">' + icon('trash') + ' Удалить</button></div></section>' +
+        '<section class="workspace-project-chats"><div class="workspace-project-section-head"><h3>Чаты проекта</h3>' +
+        '<span class="skills-count">' + chats.length + '</span></div>' +
+        (chats.length ? '<div class="workspace-project-chat-list">' + chats.map(chat =>
+          '<button type="button" class="workspace-project-chat" data-open-project-chat="' + escapeHtml(chat.id) + '">' +
+          '<span class="workspace-project-chat-icon">' + icon('message-circle') + '</span><span>' +
+          escapeHtml(chat.title || 'Новый чат') + '</span><span class="workspace-project-chat-arrow">' + icon('chevron-down') + '</span></button>'
+        ).join('') + '</div>' : '<div class="files-workspace-empty project-no-chats"><span class="files-empty-art">' + icon('message-circle') +
+          '</span><strong>В проекте пока нет чатов</strong><p>Добавьте открытый чат через меню «Поделиться».</p></div>') +
+        '<button type="button" class="chip-btn workspace-project-add-current" data-project-action="add-current-chat" ' +
+        (!state.currentChatId || String((state.chats || []).find(chat => chat.id === state.currentChatId)?.project_id || '') === String(active.id) ? 'disabled' : '') +
+        '>' + icon('plus') + (state.currentChatId ? 'Добавить открытый чат в проект' : 'Сначала откройте чат') + '</button>' +
+        '</section></div>';
+      return;
+    }
+    if (!workspaceProjectsData.length) {
+      box.innerHTML = '<div class="files-workspace-empty"><span class="files-empty-art">' + icon('folder') +
+        '</span><strong>Пока нет проектов</strong><p>Создайте проект, чтобы объединить связанные чаты и сохранить описание.</p>' +
+        '<button type="button" class="chip-btn" data-project-action="create">' + icon('plus') + ' Создать проект</button></div>';
+      return;
+    }
+    box.innerHTML = '<div class="workspace-project-grid">' + workspaceProjectsData.map(project =>
+      '<article class="workspace-project-card"><button type="button" class="workspace-project-open" data-project-action="open" data-project-id="' +
+      escapeHtml(project.id) + '"><span class="workspace-project-card-icon">' + icon('folder') + '</span><strong>' +
+      escapeHtml(project.title || 'Без названия') + '</strong><p>' + escapeHtml(project.description || 'Без описания') +
+      '</p><span class="workspace-project-card-count">' + Number(project.chat_count || 0) +
+      (Number(project.chat_count || 0) === 1 ? ' чат' : ' чатов') + '</span></button>' +
+      '<div class="workspace-project-card-actions"><button type="button" class="chip-btn" data-project-action="edit" data-project-id="' +
+      escapeHtml(project.id) + '">' + icon('pencil') + ' Изменить</button><button type="button" class="icon-btn" data-project-action="delete" data-project-id="' +
+      escapeHtml(project.id) + '" title="Удалить проект">' + icon('trash') + '</button></div></article>'
+    ).join('') + '</div><button type="button" class="chip-btn workspace-project-create-inline" data-project-action="create">' +
+    icon('plus') + ' Создать проект</button>';
+  }
+
+  async function saveProjectEditor() {
+    const title = String($('#workspace-project-name')?.value || '').trim();
+    const description = String($('#workspace-project-description')?.value || '').trim();
+    if (!title) { toast('Укажите название проекта', 'error'); return; }
+    const payload = { title, description };
+    const editor = projectWorkspaceEditor;
+    try {
+      const saved = editor && editor.id
+        ? await api.patch('/api/projects/' + encodeURIComponent(editor.id), payload)
+        : await api.post('/api/projects', payload);
+      await Promise.all([loadUserProjects(), loadChats()]);
+      projectWorkspaceEditor = null;
+      projectWorkspaceActiveId = saved.id;
+      renderProjectsWorkspace();
+      toast(editor && editor.id ? 'Проект сохранён' : 'Проект создан');
+    } catch (error) {
+      toast('Не удалось сохранить проект: ' + error.message, 'error');
+    }
+  }
+
+  function bindProjectsWorkspace() {
+    $('#projects-quick-btn')?.addEventListener('click', openProjectsWorkspace);
+    queryAll('[data-projects-workspace-close]').forEach(button => button.addEventListener('click', closeProjectsWorkspace));
+    $('#workspace-project-create')?.addEventListener('click', () => {
+      projectWorkspaceActiveId = null;
+      projectWorkspaceEditor = { id: '', title: '', description: '' };
+      renderProjectsWorkspace();
+      $('#workspace-project-name')?.focus();
+    });
+    $('#workspace-projects-list')?.addEventListener('click', async event => {
+      const chatButton = event.target.closest('[data-open-project-chat]');
+      if (chatButton) {
+        const id = String(chatButton.dataset.openProjectChat || '');
+        closeProjectsWorkspace();
+        await openChat(id);
+        return;
+      }
+      const button = event.target.closest('[data-project-action]');
+      if (!button) return;
+      const action = button.dataset.projectAction;
+      const id = String(button.dataset.projectId || '');
+      const project = workspaceProjectsData.find(item => String(item.id) === id);
+      if (action === 'create') {
+        projectWorkspaceActiveId = null;
+        projectWorkspaceEditor = { id: '', title: '', description: '' };
+        renderProjectsWorkspace();
+        $('#workspace-project-name')?.focus();
+      } else if (action === 'cancel-edit') {
+        projectWorkspaceEditor = null;
+        renderProjectsWorkspace();
+      } else if (action === 'open') {
+        projectWorkspaceActiveId = id;
+        projectWorkspaceEditor = null;
+        renderProjectsWorkspace();
+      } else if (action === 'edit' && project) {
+        projectWorkspaceActiveId = id;
+        projectWorkspaceEditor = { id: project.id, title: project.title || '', description: project.description || '' };
+        renderProjectsWorkspace();
+        $('#workspace-project-name')?.focus();
+      } else if (action === 'save') {
+        await saveProjectEditor();
+      } else if (action === 'back') {
+        projectWorkspaceActiveId = null;
+        projectWorkspaceEditor = null;
+        renderProjectsWorkspace();
+      } else if (action === 'delete' && project) {
+        if (!confirm('Удалить проект «' + project.title + '»? Его чаты останутся в списке чатов.')) return;
+        try {
+          await api.del('/api/projects/' + encodeURIComponent(project.id));
+          await Promise.all([loadUserProjects(), loadChats()]);
+          if (String(projectWorkspaceActiveId || '') === String(project.id)) projectWorkspaceActiveId = null;
+          toast('Проект удалён; чаты сохранены');
+          renderProjectsWorkspace();
+        } catch (error) { toast('Не удалось удалить проект: ' + error.message, 'error'); }
+      } else if (action === 'add-current-chat' && project && state.currentChatId) {
+        try {
+          const updated = await api.patch('/api/chats/' + encodeURIComponent(state.currentChatId), { project_id: project.id });
+          const index = (state.chats || []).findIndex(chat => chat.id === updated.id);
+          if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
+          await loadChats();
+          toast('Чат добавлен в проект «' + project.title + '»');
+          renderProjectsWorkspace();
+        } catch (error) { toast('Не удалось добавить чат: ' + error.message, 'error'); }
+      }
+    });
+  }
+
+  let scheduledWorkspaceItems = [];
+  let scheduledWorkspaceMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let scheduledWorkspaceSelectedDate = scheduleDateKey(new Date());
+
+  function scheduleDateKey(date) {
+    const value = date instanceof Date ? date : new Date(date);
+    if (!Number.isFinite(value.getTime())) return '';
+    return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0') + '-' + String(value.getDate()).padStart(2, '0');
+  }
+
+  function scheduleLocalDateTime(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return shifted.toISOString().slice(0, 16);
+  }
+
+  function scheduleTimeLabel(value) {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime())
+      ? date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+      : '';
+  }
+
+  async function loadScheduledItems() {
+    scheduledWorkspaceItems = await api.get('/api/scheduled');
+    scheduledWorkspaceItems = Array.isArray(scheduledWorkspaceItems) ? scheduledWorkspaceItems : [];
+    return scheduledWorkspaceItems;
+  }
+
+  async function openScheduledWorkspace() {
+    try {
+      await loadScheduledItems();
+      const shell = $('#scheduled-workspace-shell');
+      shell.classList.remove('hidden');
+      shell.classList.add('open');
+      shell.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('files-workspace-open');
+      renderScheduledWorkspace();
+      requestAnimationFrame(() => $('.scheduled-workspace', shell)?.focus());
+    } catch (error) {
+      toast('Не удалось открыть календарь: ' + error.message, 'error');
+    }
+  }
+
+  function closeScheduledWorkspace() {
+    const shell = $('#scheduled-workspace-shell');
+    if (!shell) return;
+    shell.classList.remove('open');
+    shell.classList.add('hidden');
+    shell.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('files-workspace-open');
+  }
+
+  function renderScheduledWorkspace() {
+    const grid = $('#schedule-calendar-grid');
+    const monthTitle = $('#schedule-month-title');
+    const dayLabel = $('#schedule-day-label');
+    const dayEvents = $('#schedule-day-events');
+    if (!grid || !monthTitle || !dayLabel || !dayEvents) return;
+    const year = scheduledWorkspaceMonth.getFullYear();
+    const month = scheduledWorkspaceMonth.getMonth();
+    monthTitle.textContent = scheduledWorkspaceMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    const first = new Date(year, month, 1);
+    const mondayOffset = (first.getDay() + 6) % 7;
+    const start = new Date(year, month, 1 - mondayOffset);
+    const counts = new Map();
+    scheduledWorkspaceItems.forEach(item => {
+      const key = scheduleDateKey(new Date(item.due_at));
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const today = scheduleDateKey(new Date());
+    const cells = [];
+    for (let index = 0; index < 42; index++) {
+      const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+      const key = scheduleDateKey(day);
+      const count = counts.get(key) || 0;
+      cells.push('<button type="button" class="schedule-day-cell' +
+        (day.getMonth() !== month ? ' is-outside' : '') +
+        (key === today ? ' is-today' : '') +
+        (key === scheduledWorkspaceSelectedDate ? ' is-selected' : '') +
+        (count ? ' has-events' : '') + '" data-schedule-date="' + key + '">' +
+        '<span class="schedule-day-number">' + day.getDate() + '</span>' +
+        (count ? '<span class="schedule-day-count">' + count + '</span>' : '') + '</button>');
+    }
+    grid.innerHTML = cells.join('');
+    let selectedDate = new Date(scheduledWorkspaceSelectedDate + 'T12:00:00');
+    if (!Number.isFinite(selectedDate.getTime())) selectedDate = new Date();
+    dayLabel.textContent = selectedDate.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+    const items = scheduledWorkspaceItems.filter(item => scheduleDateKey(new Date(item.due_at)) === scheduledWorkspaceSelectedDate)
+      .sort((a, b) => (Date.parse(a.due_at) || 0) - (Date.parse(b.due_at) || 0));
+    if (!items.length) {
+      dayEvents.innerHTML = '<div class="schedule-day-empty"><span>' + icon('calendar') + '</span><strong>Нет записей на этот день</strong><p>Добавьте событие вручную или попросите AI CH внести его в календарь.</p>' +
+        '<button type="button" class="chip-btn" data-schedule-action="new">' + icon('plus') + ' Добавить событие</button></div>';
+      return;
+    }
+    dayEvents.innerHTML = items.map(item => {
+      const time = scheduleTimeLabel(item.due_at);
+      return '<article class="schedule-event-card"><div class="schedule-event-time">' + icon('clock') + '<span>' + escapeHtml(time) + '</span>' +
+        '<span class="schedule-event-source ' + (item.created_by === 'ai' ? 'ai' : 'user') + '">' + (item.created_by === 'ai' ? 'AI CH' : 'Вы') + '</span></div>' +
+        '<strong>' + escapeHtml(item.title || 'Без названия') + '</strong>' +
+        (item.description ? '<p>' + escapeHtml(item.description) + '</p>' : '') +
+        '<div class="schedule-event-actions"><button type="button" class="chip-btn" data-schedule-action="edit" data-schedule-id="' + escapeHtml(item.id) + '">' +
+        icon('pencil') + 'Изменить</button><button type="button" class="icon-btn" data-schedule-action="delete" data-schedule-id="' + escapeHtml(item.id) + '" title="Удалить событие">' +
+        icon('trash') + '</button></div></article>';
+    }).join('');
+  }
+
+  function openScheduledEditor(itemId) {
+    const item = (scheduledWorkspaceItems || []).find(row => String(row.id) === String(itemId));
+    const defaultTime = new Date(Date.now() + 60 * 60 * 1000);
+    const formDate = item ? scheduleLocalDateTime(item.due_at) : scheduleLocalDateTime(defaultTime);
+    const title = item ? item.title || '' : '';
+    const description = item ? item.description || '' : '';
+    openModal({
+      title: item ? 'Изменить событие' : 'Новое событие',
+      body: '<div class="schedule-editor-form"><label for="schedule-editor-title">Название</label>' +
+        '<input id="schedule-editor-title" maxlength="200" required value="' + escapeHtml(title) + '" placeholder="Например, повторить информатику" />' +
+        '<label for="schedule-editor-due">Дата и время</label><input id="schedule-editor-due" type="datetime-local" required value="' + escapeHtml(formDate) + '" />' +
+        '<label for="schedule-editor-description">Описание</label><textarea id="schedule-editor-description" rows="4" maxlength="5000" placeholder="Дополнительные детали">' +
+        escapeHtml(description) + '</textarea></div>',
+      okText: item ? 'Сохранить' : 'Добавить',
+      onOk: async root => {
+        const titleValue = String($('#schedule-editor-title', root)?.value || '').trim();
+        const dueValue = String($('#schedule-editor-due', root)?.value || '');
+        const descriptionValue = String($('#schedule-editor-description', root)?.value || '').trim();
+        if (!titleValue || !dueValue || !Number.isFinite(new Date(dueValue).getTime())) {
+          toast('Укажите название и корректные дату и время', 'error');
+          return false;
+        }
+        const payload = { title: titleValue, description: descriptionValue, due_at: new Date(dueValue).toISOString() };
+        try {
+          if (item) await api.patch('/api/scheduled/' + encodeURIComponent(item.id), payload);
+          else await api.post('/api/scheduled', payload);
+          await loadScheduledItems();
+          renderScheduledWorkspace();
+          toast(item ? 'Запись обновлена' : 'Запись добавлена');
+          return true;
+        } catch (error) {
+          toast('Не удалось сохранить запись: ' + error.message, 'error');
+          return false;
+        }
+      },
+    });
+  }
+
+  function bindScheduledWorkspace() {
+    $('#scheduled-quick-btn')?.addEventListener('click', openScheduledWorkspace);
+    queryAll('[data-scheduled-workspace-close]').forEach(button => button.addEventListener('click', closeScheduledWorkspace));
+    $('#scheduled-create-btn')?.addEventListener('click', () => openScheduledEditor(''));
+    $('#schedule-add-day')?.addEventListener('click', () => openScheduledEditor(''));
+    $('#schedule-prev-month')?.addEventListener('click', () => {
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceMonth.getFullYear(), scheduledWorkspaceMonth.getMonth() - 1, 1);
+      renderScheduledWorkspace();
+    });
+    $('#schedule-next-month')?.addEventListener('click', () => {
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceMonth.getFullYear(), scheduledWorkspaceMonth.getMonth() + 1, 1);
+      renderScheduledWorkspace();
+    });
+    $('#schedule-today-btn')?.addEventListener('click', () => {
+      scheduledWorkspaceMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      scheduledWorkspaceSelectedDate = scheduleDateKey(new Date());
+      renderScheduledWorkspace();
+    });
+    $('#schedule-calendar-grid')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-schedule-date]');
+      if (!button) return;
+      scheduledWorkspaceSelectedDate = button.dataset.scheduleDate;
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceSelectedDate + 'T12:00:00');
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceMonth.getFullYear(), scheduledWorkspaceMonth.getMonth(), 1);
+      renderScheduledWorkspace();
+    });
+    $('#schedule-day-events')?.addEventListener('click', async event => {
+      const button = event.target.closest('[data-schedule-action]');
+      if (!button) return;
+      const action = button.dataset.scheduleAction;
+      const id = String(button.dataset.scheduleId || '');
+      const item = scheduledWorkspaceItems.find(row => String(row.id) === id);
+      if (action === 'new') return openScheduledEditor('');
+      if (action === 'edit' && item) return openScheduledEditor(item.id);
+      if (action === 'delete' && item && confirm('Удалить запись «' + item.title + '»?')) {
+        try {
+          await api.del('/api/scheduled/' + encodeURIComponent(item.id));
+          await loadScheduledItems();
+          renderScheduledWorkspace();
+          toast('Запись удалена');
+        } catch (error) { toast('Не удалось удалить запись: ' + error.message, 'error'); }
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        if ($('#projects-workspace-shell')?.classList.contains('open')) closeProjectsWorkspace();
+        if ($('#scheduled-workspace-shell')?.classList.contains('open')) closeScheduledWorkspace();
+      }
+    });
+  }
+
   function bindFilesWorkspace() {
     $('#files-quick-btn')?.addEventListener('click', openFilesWorkspace);
     queryAll('[data-files-workspace-close]').forEach(button => button.addEventListener('click', closeFilesWorkspace));
@@ -7060,7 +7440,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindFilesWorkspace(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindFilesWorkspace(); bindProjectsWorkspace(); bindScheduledWorkspace(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

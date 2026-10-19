@@ -161,6 +161,26 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("&& !hasLocalFallback", app_js)
         self.assertIn("app.js?v=73&rev=76", index_html)
 
+    def test_fallback_viewer_background_runner_image_toggle_and_carousel(self):
+        root = Path(__file__).resolve().parents[1]
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+        app_css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+        prompt_text = (root / "app" / "ai" / "prompts.py").read_text(encoding="utf-8")
+        self.assertIn("function openFallbackCodeViewer(sourceCode, language)", app_js)
+        self.assertIn("data-code-viewer-copy", app_js)
+        self.assertIn("data-code-viewer-download", app_js)
+        self.assertIn("startFallbackFileGenerationInBackground(n)", app_js)
+        self.assertIn("AI_CH_AUTO_RUN_FILES", app_js)
+        self.assertIn("data-open-device-status", app_js)
+        self.assertIn('class="aich-web-images is-collapsed"', app_js)
+        self.assertIn("data-web-images-toggle", app_js)
+        self.assertIn("aich-ui-actions-carousel", app_js)
+        self.assertIn(".aich-code-viewer-shell", app_css)
+        self.assertIn("flex-direction:column", app_css)
+        self.assertIn('id="device-code-background-status"', index_html)
+        self.assertIn('"layout":"carousel"', prompt_text)
+
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
         self.assertIn("ровно одна генерация модели", prompts.CODE_SYSTEM)

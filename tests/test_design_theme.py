@@ -248,6 +248,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("function bindScheduledWorkspace()", app_js)
         self.assertIn("[Контекст проекта этого чата]", router)
         self.assertIn("[Календарь пользователя — ближайшие записи]", router)
+        self.assertIn("await Promise.all([loadWorkspaceProjectChats(), loadChats()])", app_js)
 
     def test_full_screen_file_library_upload_does_not_attach_to_next_chat(self):
         root = Path(__file__).resolve().parents[1]
@@ -266,6 +267,7 @@ class DesignThemeTests(unittest.TestCase):
         index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
         app_css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
         self.assertIn("width: 85vw;", app_css)
+        self.assertIn("z-index: 1800;", app_css)
         self.assertIn("max-height: calc(85dvh - 145px)", app_css)
         self.assertNotIn('<span class="sidebar-usage-label">Лимиты</span>', index_html)
 
@@ -319,6 +321,8 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("профессиональному шаблону", router)
         self.assertIn("минимум на половине слайдов", router)
         self.assertIn("PNG-иллюстрации", router)
+        self.assertNotIn("создай настоящий скачиваемый файл через ```fileplan", prompts.DOC_SKILL)
+        self.assertNotIn("Готовые PPTX, DOCX, XLSX, PDF, SVG, PNG, CSV, JSON, MD и TXT создавай через ```fileplan", prompts.RUN_SKILL)
         self.assertIn("data-fallback-code-toggle", app_js)
         self.assertIn("seenOutputNames", app_js)
         self.assertIn("Подготавливаю файл", app_js)

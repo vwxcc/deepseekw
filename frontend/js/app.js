@@ -1339,7 +1339,7 @@
     allButton.onclick = () => {
       const body = '<div class="pinned-modal-list">' + pinned.map(chat =>
         '<button type="button" class="pinned-modal-row" data-pinned-open="' + escapeHtml(chat.id) + '">' +
-        '<span>' + icon('pin') + '</span><span><strong>' + escapeHtml(chat.title || 'Новый чат') +
+        '<span>' + icon('bookmark') + '</span><span><strong>' + escapeHtml(chat.title || 'Новый чат') +
         '</strong><small>' + escapeHtml(chat.project_id ? ((workspaceProjectsData || []).find(p => p.id === chat.project_id)?.title || 'Проект') : 'Личный чат') +
         '</small></span>' + icon('chevron-down') + '</button>'
       ).join('') + '</div>';

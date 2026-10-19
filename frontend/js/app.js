@@ -622,12 +622,23 @@
     window.__codeStore[id] = { lang: lang || '', code: code };
     const key = String(lang || '').trim().toLowerCase().split(/\s+/)[0];
     const isHtml = ['html', 'htm'].indexOf(key) >= 0;
+    const isSvg = key === 'svg' && /<svg(?:\s|>)/i.test(String(code || ''));
+    const svgDocument = isSvg
+      ? '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<style>html,body{margin:0;min-height:100%;background:#fff}body{padding:12px;box-sizing:border-box;display:grid;place-items:center}svg{display:block;max-width:100%;max-height:calc(100vh - 24px);height:auto}</style>' +
+        '</head><body>' + String(code || '') + '</body></html>'
+      : '';
     const preview = isHtml
       ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
         '<span>Живое превью</span></div>' +
         '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
         escapeHtml(code) + '"></iframe></div>'
-      : '';
+      : isSvg
+        ? '<div class="html-preview svg-preview"><div class="hp-bar">' + icon('image') +
+          '<span>Предпросмотр SVG</span></div>' +
+          '<iframe sandbox="" loading="lazy" title="Предпросмотр SVG" srcdoc="' +
+          escapeHtml(svgDocument) + '"></iframe></div>'
+        : '';
     const runnableLanguage = key;
     const localRunnable = ['html', 'htm', 'svg', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3', 'py3', 'run']
       .includes(runnableLanguage);
@@ -1471,9 +1482,11 @@
     if (!Array.isArray(atts) || !atts.length) return '';
     return '<div class="msg-atts">' + atts.map(a => {
       const url = '/api/files/' + a.file_id + '/download';
-      if (a.kind === 'image') {
-        return '<a class="msg-att img" href="' + url + '" target="_blank" rel="noopener" title="' +
-          escapeHtml(a.name) + '"><img src="' + url + '?inline=1" alt="' + escapeHtml(a.name) + '" loading="lazy" /></a>';
+      const name = String(a.name || a.original_name || '');
+      const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);
+      if (a.kind === 'image' || isSvg) {
+        return '<a class="msg-att img' + (isSvg ? ' svg' : '') + '" href="' + url + '" target="_blank" rel="noopener" title="' +
+          escapeHtml(name) + '"><img src="' + url + '?inline=1" alt="' + escapeHtml(name) + '" loading="lazy" /></a>';
       }
       return '<a class="msg-att" href="' + url + '" target="_blank" rel="noopener" title="' +
         escapeHtml(a.name) + '">' +

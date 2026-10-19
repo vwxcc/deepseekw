@@ -148,8 +148,11 @@ def _tool_feedback(run: dict) -> str:
             "Файлы, уже прикреплённые пользователю: "
             + ", ".join(str(f.get("name") or "файл") for f in run["files"] if isinstance(f, dict))
         )
+    run_succeeded = bool(run.get("ok")) and not bool(run.get("timed_out"))
+    if is_fileplan and not run.get("files"):
+        run_succeeded = False
     parts.append(
-        "Сборка/выполнение завершено успешно." if run.get("ok") and not run.get("timed_out")
+        "Сборка/выполнение завершено успешно." if run_succeeded
         else "Внутренний запуск не завершился успешно; используй диагностику только для восстановления и попробуй другой поддерживаемый способ."
     )
     parts.append(
@@ -157,7 +160,7 @@ def _tool_feedback(run: dict) -> str:
         "не цитируй stderr/traceback и не называй внутренние пути. Продолжи задачу доступным альтернативным способом. "
         "Не утверждай, что файл готов, если список files пуст."
     )
-    if is_fileplan and (not run.get("ok") or run.get("timed_out")):
+    if is_fileplan and not run_succeeded:
         parts.append(
             "КРИТИЧНО ДЛЯ ФИНАЛЬНОГО ОТВЕТА: ошибка предназначена только для внутреннего исправления. "
             "Не говори о песочнице/сборке/импортах, не пересказывай ошибку и не печатай содержимое презентации по слайдам. "
@@ -1081,11 +1084,22 @@ class AIRouter:
                     answer = strip_sandbox_paths(answer)
 
                     # A failed fileplan must not become a textual transcript of the file.
+                    user_request = str(job.user_text or "")
+                    requested_artifact = bool(re.search(
+                        r"(?:\\b(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи)\\b.{0,100}\\b(?:файл\\w*|презентац\\w*|слайд\\w*|таблиц\\w*|документ\\w*|отч[её]т\\w*|резюме|инфографик\\w*|pptx|docx|xlsx|pdf|powerpoint|excel)\\b|\\b(?:презентацию|таблицу|документ|отчёт|отчет|резюме|инфографику)\\b)",
+                        user_request, flags=re.I,
+                    ))
                     failed_fileplans = [
                         run for run in all_runs
-                        if run.get("kind") == "fileplan" and (not run.get("ok") or run.get("timed_out"))
+                        if run.get("kind") == "fileplan" and (
+                            not run.get("ok") or run.get("timed_out") or not run.get("files")
+                        )
                     ]
-                    if failed_fileplans:
+                    failed_artifact_runs = [
+                        run for run in all_runs
+                        if requested_artifact and (not run.get("ok") or run.get("timed_out"))
+                    ]
+                    if failed_fileplans or failed_artifact_runs:
                         attached_files = [
                             file
                             for run in all_runs
@@ -1113,6 +1127,15 @@ class AIRouter:
                                     "word": "docx", "document": "docx", "excel": "xlsx", "spreadsheet": "xlsx",
                                 }
                                 plan_format = format_aliases.get(plan_format, plan_format)
+                                if not plan_format:
+                                    if re.search(r"презентац|слайд|pptx|power\\s*point", user_request, flags=re.I):
+                                        plan_format = "pptx"
+                                    elif re.search(r"docx|word|документ|отч[её]т|резюме", user_request, flags=re.I):
+                                        plan_format = "docx"
+                                    elif re.search(r"xlsx|excel|таблиц", user_request, flags=re.I):
+                                        plan_format = "xlsx"
+                                    elif re.search(r"pdf", user_request, flags=re.I):
+                                        plan_format = "pdf"
                                 button_labels = {
                                     "pptx": "Создать презентацию", "docx": "Создать документ",
                                     "xlsx": "Создать таблицу", "csv": "Создать таблицу",

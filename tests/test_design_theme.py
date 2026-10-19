@@ -114,7 +114,7 @@ class DesignThemeTests(unittest.TestCase):
 
         self.assertIn("width: min(80%, 704px); height: min(67.2vh, 624px);", css)
         self.assertIn("width: 80%; height: min(73.6vh, 720px); border-radius: 19px;", css)
-        self.assertIn("app.css?v=57&rev=60", index_html)
+        self.assertIn("app.css?v=58&rev=61", index_html)
 
     def test_file_generation_is_template_based_and_sandbox_errors_are_brief(self):
         self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий файл", prompts.CORE_RULES)
@@ -137,7 +137,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn(r"const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);", app_js)
         self.assertIn(".svg-preview iframe", app_css)
         self.assertIn("app.js?v=79&rev=82", index_html)
-        self.assertIn("app.css?v=57&rev=60", index_html)
+        self.assertIn("app.css?v=58&rev=61", index_html)
 
     def test_failed_file_generation_offers_short_device_fallback(self):
         self.assertIn("не пиши «не получилось в песочнице»", prompts.CORE_RULES)

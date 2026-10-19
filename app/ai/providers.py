@@ -229,8 +229,9 @@ async def complete_chat_with_usage(
     timeout: float,
     disable_thinking: bool = True,
     effort: str | None = None,
+    allow_reasoning_fallback: bool = True,
 ) -> tuple[str, dict | None]:
-    """Complete a chat and return the provider usage record for accurate billing."""
+    """Complete a chat and return provider usage; optionally reject reasoning-only text."""
     url = _endpoint(base_url)
     payload = _build_payload(
         messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
@@ -248,7 +249,12 @@ async def complete_chat_with_usage(
             choices = data.get("choices") or []
             if not choices:
                 raise ProviderError("Провайдер вернул пустой ответ")
-            text = _extract_text(choices[0].get("message") or {}).strip()
+            message = choices[0].get("message") or {}
+            if allow_reasoning_fallback:
+                text = _extract_text(message).strip()
+            else:
+                content = message.get("content")
+                text = content.strip() if isinstance(content, str) else ""
             raw_usage = data.get("usage")
             usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
             # Preserve truncation metadata for the caller without changing billing fields.

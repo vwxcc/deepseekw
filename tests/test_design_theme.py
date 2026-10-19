@@ -118,7 +118,7 @@ class DesignThemeTests(unittest.TestCase):
 
     def test_file_generation_is_template_based_and_sandbox_errors_are_brief(self):
         self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий файл", prompts.CORE_RULES)
-        self.assertIn("максимум одним коротким предложением", prompts.CORE_RULES)
+        self.assertIn("не выводи пользователю сообщение об ошибке", prompts.CORE_RULES)
 
         task_rules = prompts.skills_for("Сделай красивую таблицу")
         self.assertIn("Создание файлов AI-Ch", task_rules)
@@ -139,9 +139,9 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("app.css?v=53&rev=56", index_html)
 
     def test_failed_file_generation_offers_short_device_fallback(self):
-        self.assertIn("Нажми „Выполнить на устройстве“ под кодом", prompts.CORE_RULES)
-        self.assertIn("Следом приложи ОДИН законченный блок", prompts.CORE_RULES)
-        self.assertIn("не описывай состояние WASM/песочницы", prompts.CORE_RULES)
+        self.assertIn("не пиши «не получилось в песочнице»", prompts.CORE_RULES)
+        self.assertIn("один законченный блок", prompts.CORE_RULES)
+        self.assertIn("не заменяй файл содержимым его слайдов/страниц", prompts.CORE_RULES)
         self.assertIn("собирай OOXML через стандартные zipfile, struct и XML", prompts.DOC_SKILL)
 
     def test_pyodide_loads_many_packages_without_duplicate_load_failures(self):
@@ -167,7 +167,7 @@ class DesignThemeTests(unittest.TestCase):
     def test_failed_fileplan_is_not_explained_as_a_sandbox_error(self):
         self.assertIn("не пиши «не получилось в песочнице»", prompts.CORE_RULES)
         self.assertIn("не заменяй файл содержимым его слайдов/страниц", prompts.CORE_RULES)
-        self.assertIn("не выводи слайды/страницы обычным текстом вместо файла", prompts.DOC_SKILL)
+        self.assertIn("не выводи содержание презентации по слайдам/документа по страницам", prompts.DOC_SKILL)
 
     def test_generated_file_aliases_are_deduplicated(self):
         from app.ai.router import _deduplicate_generated_file_items, _normalise_generated_filename

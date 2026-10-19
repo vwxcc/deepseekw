@@ -8,7 +8,7 @@
   const actionCarouselTimers = new WeakMap();
 
   function bindActionCarouselAutoplay(root = document) {
-    $('.aich-ui-actions-carousel', root).forEach(carousel => {
+    queryAll('.aich-ui-actions-carousel', root).forEach(carousel => {
       if (actionCarouselTimers.has(carousel)) return;
       const advance = () => {
         if (!carousel.isConnected) {

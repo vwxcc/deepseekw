@@ -4786,8 +4786,8 @@
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
-    $('#attach-btn').addEventListener('click', () => $('#file-input').click());
-    let workspaceUploadIntent = false;
+    $('#attach-btn').addEventListener('click', () => { workspaceUploadIntent = false; $('#file-input').click(); });
+    $('#file-input').addEventListener('cancel', () => { workspaceUploadIntent = false; });
     $('#file-input').addEventListener('change', async (e) => {
       const files = Array.from(e.target.files || []);
       const options = { libraryOnly: workspaceUploadIntent };
@@ -5045,6 +5045,7 @@
   }
 
   // ---------- files ----------
+  let workspaceUploadIntent = false;
   const workspaceFileFilters = { query: '', source: 'all', kind: 'all', sort: 'date-desc' };
 
   async function loadFiles() {
@@ -5661,7 +5662,7 @@
     $('#mem-quick-btn').addEventListener('click', () => openMemory());
     $('#skills-quick-btn').addEventListener('click', () => openSkills());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
-    $('#upload-btn').addEventListener('click', () => $('#file-input').click());
+    $('#upload-btn').addEventListener('click', () => { workspaceUploadIntent = false; $('#file-input').click(); });
     $('#file-search').addEventListener('input', (e) => {
       state.fileQuery = e.target.value.trim();
       renderFiles();

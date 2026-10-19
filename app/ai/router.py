@@ -1270,7 +1270,9 @@ class AIRouter:
         else:
             max_steps = max(1, int(base_steps))
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
-        round_limit = 1 if code_mode or artifact_work_request or not settings.run_sandbox_enabled else 2
+        round_limit = 1 if code_mode else 2
+        if artifact_work_request or not settings.run_sandbox_enabled:
+            round_limit = 1
 
         tried: set[str] = set()
         last_error = "Генерация не удалась"
@@ -1280,7 +1282,9 @@ class AIRouter:
             rounds += 1
             retryable_error = True
             # Code Agent must not trigger a second generation through provider fallback.
-            entry_attempt_limit = 1 if code_mode or artifact_work_request or not settings.run_sandbox_enabled else len(entries)
+            entry_attempt_limit = 1 if code_mode else len(entries)
+            if artifact_work_request or not settings.run_sandbox_enabled:
+                entry_attempt_limit = 1
             while len(tried) < entry_attempt_limit:
                 entry = await self._acquire_primary(job, entries, tried)
                 if entry is None:

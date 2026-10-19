@@ -108,6 +108,26 @@ def _normalise_generated_filename(value: Any) -> str:
     return (stem or "generated-file") + suffix
 
 
+def _deduplicate_generated_file_items(items: list[dict]) -> list[dict]:
+    """Collapse alternate spellings such as report.pptx and ppt_report.pptx."""
+    def priority(item: dict) -> tuple[int, int, str]:
+        raw = Path(str(item.get("name") or "")).name
+        malformed_extension = bool(re.search(r"\.(?:ppt|doc|xls)_$", raw, flags=re.I))
+        stem = Path(raw).stem
+        has_technical_prefix = bool(re.match(
+            r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\s._-]+)+",
+            stem, flags=re.I,
+        ))
+        return (2 * int(malformed_extension) + int(has_technical_prefix), len(raw), raw.casefold())
+
+    selected: dict[str, dict] = {}
+    for item in sorted((x for x in items if isinstance(x, dict)), key=priority):
+        key = _normalise_generated_filename(item.get("name")).casefold()
+        if key not in selected:
+            selected[key] = item
+    return list(selected.values())
+
+
 def _tool_feedback(run: dict) -> str:
     """Return execution feedback without confusing file plans with executable model code."""
     is_fileplan = run.get("kind") == "fileplan"
@@ -137,6 +157,12 @@ def _tool_feedback(run: dict) -> str:
         "не цитируй stderr/traceback и не называй внутренние пути. Продолжи задачу доступным альтернативным способом. "
         "Не утверждай, что файл готов, если список files пуст."
     )
+    if is_fileplan and (not run.get("ok") or run.get("timed_out")):
+        parts.append(
+            "КРИТИЧНО ДЛЯ ФИНАЛЬНОГО ОТВЕТА: ошибка предназначена только для внутреннего исправления. "
+            "Не говори о песочнице/сборке/импортах, не пересказывай ошибку и не печатай содержимое презентации по слайдам. "
+            "Если файл не создан, предложи коротко нажать кнопку локального создания и предоставь исполняемый код."
+        )
     parts.append("Если задача решена, дай финальный ответ пользователю без служебного блока.")
     return "\n".join(parts)
 
@@ -665,8 +691,10 @@ class AIRouter:
     async def _attach_run_files(self, job: Job, result: dict) -> list[dict]:
         """Persist files produced by sandboxed code and attach them to the message."""
         items = result.get("files") or []
-        if not items or not job.chat_id or not job.message_id:
+        # Partial files from crashed/timed-out runs should never be attached.
+        if not result.get("ok") or result.get("timed_out") or not items or not job.chat_id or not job.message_id:
             return []
+        items = _deduplicate_generated_file_items(items)
         out: list[dict] = []
         async with SessionLocal() as db:
             chat = await db.get(Chat, job.chat_id)
@@ -674,6 +702,15 @@ class AIRouter:
                 return []
             base = settings.upload_path / chat.user_id
             base.mkdir(parents=True, exist_ok=True)
+            existing_result = await db.execute(
+                select(File.original_name)
+                .join(Attachment, Attachment.file_id == File.id)
+                .where(Attachment.message_id == job.message_id)
+            )
+            seen_names = {
+                _normalise_generated_filename(name).casefold()
+                for name in existing_result.scalars().all()
+            }
             for item in items:
                 try:
                     data = Path(item["abs"]).read_bytes()
@@ -681,6 +718,9 @@ class AIRouter:
                     continue
                 fid = str(uuid.uuid4())
                 original_name = _normalise_generated_filename(item.get("name"))
+                name_key = original_name.casefold()
+                if name_key in seen_names:
+                    continue
                 ext = Path(original_name).suffix
                 dest = base / f"{fid}{ext}"
                 try:
@@ -702,6 +742,7 @@ class AIRouter:
                     )
                 )
                 db.add(Attachment(message_id=job.message_id, file_id=fid))
+                seen_names.add(name_key)
                 out.append(
                     {
                         "id": fid,
@@ -1038,6 +1079,54 @@ class AIRouter:
                     if extract_agent_blocks(answer):
                         answer = strip_agent_blocks(answer)
                     answer = strip_sandbox_paths(answer)
+
+                    # A failed fileplan must not become a textual transcript of the file.
+                    failed_fileplans = [
+                        run for run in all_runs
+                        if run.get("kind") == "fileplan" and (not run.get("ok") or run.get("timed_out"))
+                    ]
+                    if failed_fileplans:
+                        attached_files = [
+                            file
+                            for run in all_runs
+                            for file in (run.get("files") or [])
+                            if isinstance(file, dict) and file.get("file_id")
+                        ]
+                        if attached_files:
+                            answer = "Готово — файл создан и прикреплён к сообщению."
+                        else:
+                            fallback_run = next(
+                                (run for run in reversed(all_runs)
+                                 if run.get("device_plan")
+                                 or (run.get("kind") != "fileplan" and str(run.get("code") or "").strip())),
+                                None,
+                            )
+                            if fallback_run:
+                                raw_plan = str(fallback_run.get("device_plan") or "")
+                                try:
+                                    parsed_plan = json.loads(raw_plan)
+                                    plan_format = str(parsed_plan.get("format") or "").strip().lower() if isinstance(parsed_plan, dict) else ""
+                                except (TypeError, ValueError, json.JSONDecodeError):
+                                    plan_format = ""
+                                format_aliases = {
+                                    "presentation": "pptx", "slides": "pptx", "powerpoint": "pptx",
+                                    "word": "docx", "document": "docx", "excel": "xlsx", "spreadsheet": "xlsx",
+                                }
+                                plan_format = format_aliases.get(plan_format, plan_format)
+                                button_labels = {
+                                    "pptx": "Создать презентацию", "docx": "Создать документ",
+                                    "xlsx": "Создать таблицу", "csv": "Создать таблицу",
+                                    "pdf": "Создать PDF", "png": "Создать изображение",
+                                    "svg": "Создать изображение",
+                                }
+                                button_label = button_labels.get(plan_format, "Выполнить на устройстве")
+                                answer = (
+                                    f"Нажми кнопку «{button_label}» ниже, чтобы получить файл. "
+                                    "Резервный код можно открыть кнопкой «Показать код»."
+                                )
+                            else:
+                                answer = "Не буду выводить содержимое файла текстом вместо файла."
+
                     if not answer.strip() and code_mode and all_runs:
                         # A one-pass agent may return only a run block. Report the
                         # real result without requesting an extra model-generated summary.

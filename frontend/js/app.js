@@ -1944,17 +1944,6 @@
   }
 
   function isDeviceFallbackRun(run) {
-    const parent = n && n.parent_message_id ? findNode(state.tree, n.parent_message_id) : null;
-    const query = String((parent && parent.content) || (n && n.user_text) || '').toLowerCase();
-    if (/(презентац|слайд|pptx|powerpoint|power point)/u.test(query)) return 'Создать презентацию';
-    if (/(docx|word|документ|отч[её]т|резюме)/u.test(query)) return 'Создать документ';
-    if (/(xlsx|excel|таблиц[ауы]|электронн[а-я ]+таблиц)/u.test(query)) return 'Создать таблицу';
-    if (/(изображени|картинк|инфограф|png|svg|постер)/u.test(query)) return 'Создать изображение';
-    if (/(pdf)/u.test(query)) return 'Создать PDF';
-    return 'Выполнить код (2)';
-  }
-
-  function isDeviceFallbackRun(run) {
     if (!run || typeof run !== 'object' || run.running) return false;
     const failed = run.ok === false || !!run.timed_out;
     if (run.kind === 'fileplan') {

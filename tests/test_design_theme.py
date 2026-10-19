@@ -90,7 +90,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("span.className = 'aich-themed-emoji'", app_js)
         self.assertNotIn("textarea,button,svg,.katex", app_js)
         self.assertIn('id="i-mountain"', index_html)
-        self.assertIn("app.js?v=86&rev=89", index_html)
+        self.assertIn("app.js?v=87&rev=90", index_html)
 
     def test_brand_name_uses_ai_ch_without_version_suffix(self):
         root = Path(__file__).resolve().parents[1]
@@ -105,7 +105,7 @@ class DesignThemeTests(unittest.TestCase):
                 content = path.read_text(encoding="utf-8")
                 self.assertNotRegex(content, r"(?i)\bAI[\s-]*CH\s*1\.0\b")
         index = (root / "frontend" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("app.js?v=86&rev=89", index)
+        self.assertIn("app.js?v=87&rev=90", index)
 
     def test_sandbox_panel_is_reduced_by_20_percent_on_desktop_and_mobile(self):
         root = Path(__file__).resolve().parents[1]
@@ -138,7 +138,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn('iframe sandbox="" loading="lazy" title="Предпросмотр SVG"', app_js)
         self.assertIn(r"const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);", app_js)
         self.assertIn(".svg-preview iframe", app_css)
-        self.assertIn("app.js?v=86&rev=89", index_html)
+        self.assertIn("app.js?v=87&rev=90", index_html)
         self.assertIn("app.css?v=60&rev=63", index_html)
 
     def test_failed_file_generation_offers_short_device_fallback(self):
@@ -161,7 +161,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Pillow", app_js)
         self.assertIn("const hasLocalFallback = isDeviceFallbackRun(data);", app_js)
         self.assertIn("&& !hasLocalFallback", app_js)
-        self.assertIn("app.js?v=86&rev=89", index_html)
+        self.assertIn("app.js?v=87&rev=90", index_html)
 
     def test_fallback_viewer_background_runner_image_toggle_and_carousel(self):
         root = Path(__file__).resolve().parents[1]
@@ -331,11 +331,12 @@ class DesignThemeTests(unittest.TestCase):
         self.assertNotIn("Запускаю код в изолированной песочнице на сервере", app_js)
         self.assertIn("data.kind !== 'fileplan' && data.stderr", app_js)
         self.assertIn("extractAutoDeviceFileRun(completeAnswer)", app_js)
+        self.assertIn("Статус выполнения", app_js)
         self.assertIn("bindActionCarouselAutoplay", app_js)
         self.assertNotIn("runButtons.find(button => codeStore[button.dataset.runDevice])", app_js)
         self.assertNotIn('device-fallback-button" data-run-device=', app_js)
         self.assertIn("min-height: 48px", css)
-        self.assertIn("app.js?v=86&rev=89", index_html)
+        self.assertIn("app.js?v=87&rev=90", index_html)
 
 
 if __name__ == "__main__":

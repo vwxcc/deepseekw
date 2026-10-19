@@ -912,6 +912,71 @@ class AIRouter:
         fallback = fence.replace("# AI_CH_SERVER_RUN_FILES", "# AI_CH_AUTO_RUN_FILES")
         return str(answer).replace(fence, fallback).strip(), [run]
 
+    async def _run_final_code_mode(self, job: Job, answer: str, timeout: int) -> tuple[str, list[dict]]:
+        """Execute at most one Code-mode run block after the complete model answer."""
+        match = re.search(
+            r"(?P<fence>\x60\x60\x60run\b[^\n]*\n(?P<code>[\s\S]*?)\x60\x60\x60)",
+            str(answer or ""), re.I,
+        )
+        if not match:
+            return answer, []
+        code = re.sub(
+            r"(?im)^[ \t]*# AI_CH_AUTO_RUN_FILES[ \t]*$", "",
+            str(match.group("code") or ""),
+        ).strip()
+        if not code:
+            return str(answer).replace(match.group("fence"), "").strip(), []
+        fence = match.group("fence")
+        tick = chr(96) * 3
+
+        # With sandbox disabled, or when a device target was explicitly chosen,
+        # let the browser run the marked block after the terminal completion event.
+        if not settings.run_sandbox_enabled or job.execution_target == "device":
+            device_fence = tick + "python\n" + code + "\n# AI_CH_AUTO_RUN_FILES\n" + tick
+            return str(answer).replace(fence, device_fence).strip(), []
+
+        visible = str(answer).replace(fence, "").strip()
+        try:
+            await job.output.put(("tool_start", json.dumps({
+                "code": code, "kind": "run"
+            }, ensure_ascii=False)))
+            result = await run_python(code, timeout=timeout, project=job.project)
+        except Exception as error:
+            log.warning("Post-answer Code-mode execution failed: %s", type(error).__name__)
+            result = {
+                "ok": False, "timed_out": False, "stdout": "",
+                "stderr": "Серверный запуск недоступен", "files": [], "workdir": None,
+            }
+        attached = await self._attach_run_files(job, result)
+        success = bool(result.get("ok")) and not bool(result.get("timed_out"))
+        run = {
+            "code": code,
+            "kind": "run",
+            "ok": success,
+            "stdout": str(result.get("stdout") or "")[:12000],
+            "stderr": str(result.get("stderr") or "")[:12000],
+            "timed_out": bool(result.get("timed_out")),
+            "files": attached,
+        }
+        await job.output.put(("tool", json.dumps(run, ensure_ascii=False)))
+        cleanup(result.get("workdir"))
+        if not success:
+            # Keep one model answer, hide the code block and retry it on the device.
+            device_fence = tick + "python\n" + code + "\n# AI_CH_AUTO_RUN_FILES\n" + tick
+            return str(answer).replace(fence, device_fence).strip(), [run]
+
+        result_parts: list[str] = []
+        stdout = str(result.get("stdout") or "").strip()
+        if stdout:
+            result_parts.append("Результат выполнения:\n" + stdout[:4000])
+        if attached:
+            result_parts.append(
+                "Созданные файлы: " + ", ".join(str(item.get("name") or "файл") for item in attached[:10])
+            )
+        if not result_parts:
+            result_parts.append("Код выполнен успешно.")
+        return (visible + "\n\n" + "\n\n".join(result_parts)).strip(), [run]
+
     # --- web search (runs inside the worker, never blocks the UI) ----------
 
     async def _smart_search(
@@ -1398,6 +1463,12 @@ class AIRouter:
                         if step + 1 < max_steps:
                             await job.output.put(("step", json.dumps({"n": step + 1})))
 
+                    if code_mode and not artifact_work_request:
+                        answer, post_code_runs = await self._run_final_code_mode(
+                            job, answer, run_timeout
+                        )
+                        if post_code_runs:
+                            all_runs.extend(post_code_runs)
                     if extract_agent_blocks(answer):
                         answer = strip_agent_blocks(answer)
                     answer = strip_sandbox_paths(answer)

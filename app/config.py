@@ -111,17 +111,17 @@ class Settings(BaseSettings):
     qwen_price_out: float | None = Field(default=25.0, ge=0)
     qwen_price_cache: float | None = Field(default=None, ge=0)
 
-    # --- Dedicated model used only when Think is enabled in the composer ---
-    think_provider: str = "openai"
-    think_api_key: str = ""
-    think_base_url: str = ""
-    think_model_id: str = ""
-    think_model: str = ""
-    think_temperature: float | None = Field(default=None, ge=0, le=2)
-    think_max_tokens: int | None = Field(default=None, ge=1)
-    think_price_in: float | None = Field(default=None, ge=0)
-    think_price_out: float | None = Field(default=None, ge=0)
-    think_price_cache: float | None = Field(default=None, ge=0)
+    # --- Automatic fast Qwen lane (parallel with the primary model) ---
+    # This is independent of the primary MAIN provider stored in Model Sets.
+    # The lane is enabled only when BASE_URL, API_KEY, and MODEL_ID are all configured.
+    fast_qwen_base_url: str = ""
+    fast_qwen_api_key: str = ""
+    fast_qwen_model_id: str = ""
+    fast_qwen_max_tokens: int = Field(default=8000, ge=1, le=8000)
+    fast_qwen_timeout: int = Field(default=60, ge=5, le=300)
+    fast_qwen_price_in: float = Field(default=0.0, ge=0)
+    fast_qwen_price_out: float = Field(default=0.0, ge=0)
+    fast_qwen_price_cache: float = Field(default=0.0, ge=0)
 
     # --- Admin bootstrap (optional) ---
     admin_email: str = ""

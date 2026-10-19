@@ -88,7 +88,7 @@ _ARTIFACT_ACTION_RE = re.compile(
 )
 _ARTIFACT_DIRECT_RE = re.compile(
     rf"^\s*(?:(?:мне\s+)?(?:нужен|нужна|нужно|хочу|надо|please|i\s+need|i\s+want)\s+)?"
-    rf"{_ARTIFACT_NOUNS}\s*(?::|—|-|\s+(?:по|на\s+тему|о|об|про|для|с|из|about|for|on|with)\b)",
+    rf"{_ARTIFACT_NOUNS}(?:\s*(?::|—|-|$)|\s+(?:по|на\s+тему|о|об|про|для|с|из|excel|word|powerpoint|about|for|on|with)\b)",
     re.I,
 )
 

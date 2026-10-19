@@ -469,23 +469,27 @@ def _render_svg(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
         else:
             card_h = min(170, 92 + min(3, len(items)) * 22)
         parts.append(f'<rect x="{x}" y="{y}" width="{card_w}" height="{card_h}" rx="16" fill="{surface}" stroke="{html.escape(p["muted"])}" stroke-opacity=".22"/>')
+        parts.append(f'<rect x="{x}" y="{y+14}" width="5" height="{card_h-28}" rx="2.5" fill="{accent}"/>')
+        parts.append(f'<circle cx="{x+card_w-25}" cy="{y+24}" r="5" fill="{primary}" fill-opacity=".9"/>')
         icon_kind = {"table": "table", "quote": "sparkle", "metrics": "chart",
                      "metric": "chart", "two_col": "globe", "section": "book",
                      "bullets": "book"}.get(kind, "file")
         parts.append(theme.svg_icon(icon_kind, style=style, size=38, x=x+14, y=y+7))
         parts.append(f'<text x="{x+64}" y="{y+34}" font-family="{font_family},Inter,Manrope,sans-serif" font-size="21" font-weight="650" fill="{primary}">{heading}</text>')
         if kind == "table":
-            columns = head or (rows[0] if rows else [])
+            columns = (head or (rows[0] if rows else []))[:8]
             row_values = rows if head else rows[1:]
-            cell_w = card_w / max(1, len(columns))
+            cell_w = (card_w - 52) / max(1, len(columns))
             if columns:
                 parts.append(f'<rect x="{x+18}" y="{y+48}" width="{card_w-36}" height="27" rx="5" fill="{primary}" fill-opacity=".12"/>')
-                for ci, cell in enumerate(columns[:8]):
-                    parts.append(f'<text x="{x+26+ci*cell_w}" y="{y+68}" font-family="{font_family},Inter,Manrope,sans-serif" font-size="13" fill="{fg}">{html.escape(str(cell))}</text>')
+                for ci, cell in enumerate(columns):
+                    cell_text = html.escape(textwrap.shorten(str(cell), width=28, placeholder="…"))
+                    parts.append(f'<text x="{x+26+ci*cell_w}" y="{y+68}" textLength="{max(12, int(cell_w-18))}" lengthAdjust="spacingAndGlyphs" font-family="{font_family},Inter,Manrope,sans-serif" font-size="13" fill="{fg}">{cell_text}</text>')
             for ri, row in enumerate(row_values[:5]):
                 if y+96+ri*22 < y+card_h-8:
-                    for ci, cell in enumerate(row[:8]):
-                        parts.append(f'<text x="{x+26+ci*cell_w}" y="{y+94+ri*22}" font-family="Inter,Manrope,sans-serif" font-size="12" fill="{muted}">{html.escape(str(cell))}</text>')
+                    for ci, cell in enumerate(row[:len(columns)]):
+                        cell_text = html.escape(textwrap.shorten(str(cell), width=24, placeholder="…"))
+                        parts.append(f'<text x="{x+26+ci*cell_w}" y="{y+94+ri*22}" textLength="{max(12, int(cell_w-18))}" lengthAdjust="spacingAndGlyphs" font-family="Inter,Manrope,sans-serif" font-size="12" fill="{muted}">{cell_text}</text>')
         else:
             lines = [text] if text else [str(v) for v in items[:3]]
             for li, line in enumerate(lines[:3]):
@@ -576,10 +580,21 @@ def _render_png(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
     margin, gap = width // 22, 18
     draw.rectangle((0, 0, width, 16), fill=p["primary"])
     draw.rounded_rectangle((margin, 58, margin + 12, 160), radius=6, fill=p["accent"])
-    draw.text((margin + 34, 60), str(plan.get("title") or "Инфографика"), font=title_font, fill=p["text"])
+    title_width = max(220, width - margin * 2 - 230)
+    title_lines = _wrap_pixels(draw, str(plan.get("title") or "Инфографика"), title_font, title_width, limit=2)
+    title_line_height = max(32, int(getattr(title_font, "size", 32)) + 5)
+    for title_index, title_line in enumerate(title_lines):
+        draw.text((margin + 34, 58 + title_index * title_line_height), title_line, font=title_font, fill=p["text"])
+    hero_x = width - margin - 176
+    draw.rounded_rectangle((hero_x, 48, width - margin, 174), radius=22, fill=p["surface"], outline=p["muted"], width=2)
+    draw.ellipse((hero_x + 25, 72, hero_x + 69, 116), fill=p["primary"])
+    draw.ellipse((hero_x + 81, 104, hero_x + 115, 138), fill=p["accent"])
+    draw.line((hero_x + 48, 126, hero_x + 96, 91, hero_x + 142, 119), fill=p["muted"], width=4, joint="curve")
+    subtitle_y = 58 + len(title_lines) * title_line_height + 7
     if plan.get("subtitle"):
-        draw.text((margin + 34, 128), str(plan["subtitle"]), font=subtitle_font, fill=p["muted"])
-    y = 205
+        subtitle_text = _wrap_pixels(draw, str(plan["subtitle"]), subtitle_font, title_width, limit=1)[0]
+        draw.text((margin + 34, subtitle_y), subtitle_text, font=subtitle_font, fill=p["muted"])
+    y = max(205, subtitle_y + (getattr(subtitle_font, "size", 16) + 20 if plan.get("subtitle") else 0))
     card_w = width - margin * 2
     for index, block in enumerate(blocks[:16]):
         kind = str(block.get("kind") or "text").lower()
@@ -602,7 +617,10 @@ def _render_png(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
         text = str(block.get("text") or "")
         card_h = min(230, 94 + min(5, len(rows)) * 24) if kind == "table" else 142
         draw.rounded_rectangle((margin, y, width - margin, y + card_h), radius=15, fill=p["surface"], outline=p["muted"], width=1)
-        draw.text((margin + 23, y + 16), title[:95], font=heading_font, fill=p["primary"])
+        draw.rounded_rectangle((margin, y, margin + 7, y + card_h), radius=3, fill=p["primary"] if index % 2 == 0 else p["accent"])
+        draw.ellipse((width - margin - 40, y + 14, width - margin - 16, y + 38), fill=p["accent"])
+        safe_title = _wrap_pixels(draw, title, heading_font, card_w - 82, limit=1)[0]
+        draw.text((margin + 23, y + 16), safe_title, font=heading_font, fill=p["primary"])
         if kind == "table":
             columns = head or (rows[0] if rows else [])
             data_rows = rows if head else rows[1:]
@@ -610,10 +628,12 @@ def _render_png(path: Path, plan: dict[str, Any], p: dict[str, str]) -> str:
             cell_w = (card_w - 44) // count
             draw.rounded_rectangle((margin + 18, y + 53, width - margin - 18, y + 81), radius=5, fill=p["bg"])
             for ci, value in enumerate(columns[:count]):
-                draw.text((margin + 24 + ci * cell_w, y + 59), str(value)[:25], font=muted_font, fill=p["text"])
+                safe_value = _wrap_pixels(draw, str(value), muted_font, max(20, cell_w - 12), limit=1)[0]
+                draw.text((margin + 24 + ci * cell_w, y + 59), safe_value, font=muted_font, fill=p["text"])
             for ri, row in enumerate(data_rows[:5]):
                 for ci, value in enumerate(row[:count]):
-                    draw.text((margin + 24 + ci * cell_w, y + 87 + ri * 24), str(value)[:30], font=muted_font, fill=p["muted"])
+                    safe_value = _wrap_pixels(draw, str(value), muted_font, max(20, cell_w - 12), limit=1)[0]
+                    draw.text((margin + 24 + ci * cell_w, y + 87 + ri * 24), safe_value, font=muted_font, fill=p["muted"])
         else:
             lines = _wrap_pixels(draw, text or " · ".join(str(v) for v in items[:4]), body_font, card_w - 48, limit=3)
             for li, line in enumerate(lines):

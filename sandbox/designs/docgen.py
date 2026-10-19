@@ -271,6 +271,10 @@ def _text(slide, text, x, y, w, h, size=18, color="#222", bold=False, align="lef
     from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
     from pptx.util import Inches, Pt
 
+    x = min(max(0.0, float(x)), SLIDE_W - 0.05)
+    y = min(max(0.0, float(y)), SLIDE_H - 0.05)
+    w = max(0.05, min(float(w), SLIDE_W - x))
+    h = max(0.05, min(float(h), SLIDE_H - y))
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     tf = box.text_frame
     tf.word_wrap = True
@@ -427,8 +431,8 @@ def pptx_deck(path: str | Path, spec: dict, style: str | None = None) -> str:
                     ratio = im.width / im.height
                 w = min(SLIDE_W - 2.6, 9.6)
                 h = w / ratio
-                if h > SLIDE_H - 2.5:
-                    h = SLIDE_H - 2.5
+                if h > SLIDE_H - 3.2:
+                    h = SLIDE_H - 3.2
                     w = h * ratio
                 s.shapes.add_picture(img, Inches((SLIDE_W - w) / 2), Inches(1.85),
                                      inches_w(w), inches_h(h))
@@ -443,8 +447,8 @@ def pptx_deck(path: str | Path, spec: dict, style: str | None = None) -> str:
                     ratio = im.width / im.height
                 w = min(SLIDE_W - 3.0, 8.6)
                 h = w / ratio
-                if h > SLIDE_H - 2.6:
-                    h = SLIDE_H - 2.6
+                if h > SLIDE_H - 3.0:
+                    h = SLIDE_H - 3.0
                     w = h * ratio
                 s.shapes.add_picture(img, Inches((SLIDE_W - w) / 2), Inches(1.8),
                                      inches_w(w), inches_h(h))
@@ -456,12 +460,16 @@ def pptx_deck(path: str | Path, spec: dict, style: str | None = None) -> str:
             head = b.get("head") or []
             cols = max([len(head)] + [len(r) for r in rows] or [1])
             n = len(rows) + (1 if head else 0)
+            table_h = min(SLIDE_H - 3.0, max(0.54 * n, 0.58))
             shape = s.shapes.add_table(n, cols, Inches(0.9), Inches(1.8),
-                                       Inches(SLIDE_W - 1.8), Inches(0.42 * n))
+                                       Inches(SLIDE_W - 1.8), Inches(table_h))
             tbl = shape.table
             for ci, htxt in enumerate(head):
                 cell = tbl.cell(0, ci)
                 cell.text = str(htxt)
+                cell.text_frame.word_wrap = True
+                cell.margin_left = cell.margin_right = Inches(0.07)
+                cell.margin_top = cell.margin_bottom = Inches(0.04)
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = _rgb(p["primary"])
                 for para in cell.text_frame.paragraphs:
@@ -474,6 +482,9 @@ def pptx_deck(path: str | Path, spec: dict, style: str | None = None) -> str:
                 for ci in range(cols):
                     cell = tbl.cell(ri, ci)
                     cell.text = str(row[ci]) if ci < len(row) else ""
+                    cell.text_frame.word_wrap = True
+                    cell.margin_left = cell.margin_right = Inches(0.07)
+                    cell.margin_top = cell.margin_bottom = Inches(0.04)
                     cell.fill.solid()
                     cell.fill.fore_color.rgb = _rgb(
                         _mix(p["surface"], p["bg"], 0.15) if ri % 2 else p["bg"])
@@ -737,6 +748,7 @@ def xlsx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
     thin = Side(style="thin", color=hx(_mix(p["muted"], p["bg"], 0.75)).lstrip("#"))
     for sh in sheets:
         ws = wb.create_sheet(title=str(sh.get("name") or "Лист")[:28])
+        ws.sheet_view.showGridLines = False
         head = sh.get("head") or []
         rows = sh.get("rows") or []
         if head:
@@ -762,10 +774,11 @@ def xlsx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
                 cell.font = Font(name=font, size=10.5,
                                  color=hx(p["text"]).lstrip("#"))
                 cell.border = Border(bottom=thin)
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
                 if (ridx - first) % 2:
                     cell.fill = zebra
                 if isinstance(cell.value, (int, float)):
-                    cell.alignment = Alignment(horizontal="right")
+                    cell.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
                     cell.number_format = sh.get("number_format", "#,##0.00")
 
         for c in range(1, ncols + 1):
@@ -774,6 +787,9 @@ def xlsx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
                 v = ws.cell(row=ridx, column=c).value
                 longest = max(longest, len(str(v)) if v is not None else 0)
             ws.column_dimensions[get_column_letter(c)].width = min(46, max(11, longest + 3))
+
+        if head and ws.max_row:
+            ws.auto_filter.ref = f"A1:{get_column_letter(ncols)}{ws.max_row}"
 
         if sh.get("totals") and rows:
             total_row = ws.max_row + 1
@@ -787,6 +803,23 @@ def xlsx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
                     cell.value = f"=SUM({col}{first}:{col}{ws.max_row - 1})"
                     cell.number_format = sh.get("number_format", "#,##0.00")
                     cell.alignment = Alignment(horizontal="right")
+
+        # Auto-size wrapped rows from the rendered column widths without allowing
+        # unusually long content to make the workbook difficult to navigate.
+        for ridx in range(1, ws.max_row + 1):
+            required_lines = 1
+            for c in range(1, ncols + 1):
+                cell = ws.cell(row=ridx, column=c)
+                cell.alignment = Alignment(
+                    horizontal=("right" if isinstance(cell.value, (int, float)) else "left"),
+                    vertical="top", wrap_text=True,
+                )
+                col_width = ws.column_dimensions[get_column_letter(c)].width or 11
+                value = str(cell.value or "")
+                lines = sum(max(1, (len(part) + int(col_width) - 1) // max(1, int(col_width) - 2))
+                            for part in value.split("\n"))
+                required_lines = max(required_lines, lines)
+            ws.row_dimensions[ridx].height = min(96, max(21, required_lines * 15))
 
         ws.freeze_panes = "A2" if head else "A1"
 

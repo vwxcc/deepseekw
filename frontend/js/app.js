@@ -1795,7 +1795,7 @@
         (failed || !(Array.isArray(run.files) && run.files.length));
     }
     const code = typeof run.code === 'string' ? run.code.trim() : '';
-    return failed && !!code && !/^План сборки файла\\b/u.test(code);
+    return failed && !!code && !/^План сборки файла\b/u.test(code);
   }
 
   function deviceFallbackHtml(n, runs) {

@@ -93,6 +93,20 @@ uvicorn app.main:fastapi --host 0.0.0.0 --port 8000
 
 Не добавляйте `.env`, API-ключи, пароли или токены в Git. Используйте значения из актуальной конфигурации приложения и задавайте секреты через защищённые переменные окружения.
 
+### Автоматический выбор ответа между основной моделью и быстрым Qwen
+
+AI CH can query its configured primary MAIN model and a separate fast Qwen model in parallel. The first complete valid answer is selected. If the primary finishes first, the fast answer is discarded. If Qwen finishes first, its answer is used only when it is complete and it does not contain the private decline marker. The fast model is instructed to answer only easy/medium requests and to return `[[AICH_FAST_QWEN_DECLINE]]` when unsure or when an answer may exceed 8,000 output tokens; in that case AI CH waits for the primary answer. The API request itself is capped at 8,000 output tokens.
+
+Configure the fast lane in Render → Environment (or the local `.env`) using three required connection values:
+
+- `FAST_QWEN_BASE_URL` — OpenAI-compatible API base URL, usually ending in `/v1`;
+- `FAST_QWEN_API_KEY` — API key for the Qwen endpoint;
+- `FAST_QWEN_MODEL_ID` — the exact external model ID accepted by that endpoint.
+
+Optional `FAST_QWEN_TIMEOUT` and `FAST_QWEN_PRICE_IN` / `FAST_QWEN_PRICE_OUT` / `FAST_QWEN_PRICE_CACHE` configure timeout and accounting; output token count is always capped at 8,000. These variables do not replace or override the primary model. When any of the three connection values is missing, only the primary model runs.
+
+The old `THINK_*` variables and composer Think toggle are no longer used. If legacy `QWEN_*` variables were previously set in Render to override the primary MAIN model, remove those overrides if the primary should be sourced entirely from the active Model Sets entry.
+
 ### Смена OpenAI-совместимого провайдера основной генерации
 
 В **Render → Environment** основного сервиса `ai-ch` (или в локальном `.env`) можно задать:

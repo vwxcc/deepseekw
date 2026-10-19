@@ -1926,7 +1926,7 @@
 
   function isAutoFileGenerationRun(run) {
     const code = run && typeof run.code === 'string' ? run.code : '';
-    return /(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*(?:\r?\n)?\s*$/im.test(code);
+    return /(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*(?:\r?\n)?\s*$/i.test(code);
   }
 
   function startFallbackFileGenerationInBackground(n) {

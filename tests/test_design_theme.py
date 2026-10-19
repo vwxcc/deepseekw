@@ -201,7 +201,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("openDeviceCodeRunner({ lang: 'run', code: deviceFileRun.code }, n.id, { background: true })", app_js)
         self.assertIn("timer.first = window.setTimeout(() =>", app_js)
         self.assertIn("if (carousel.isConnected) timer.interval = window.setInterval(advance, 2000)", app_js)
-        self.assertIn("queryAll('.aich-ui-actions-carousel', root).forEach", app_js)
+        self.assertIn("$$('.aich-ui-actions-carousel', root).forEach", app_js)
 
     def test_skills_library_hides_system_skill_content_and_persists_user_skills(self):
         root = Path(__file__).resolve().parents[1]
@@ -291,8 +291,8 @@ class DesignThemeTests(unittest.TestCase):
     def test_fallback_event_bindings_use_collection_selectors(self):
         root = Path(__file__).resolve().parents[1]
         app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
-        self.assertNotIn("queryAll('[data-run-device]', scope).forEach", app_js)
-        self.assertIn("queryAll('[data-fallback-code-toggle]', scope).forEach", app_js)
+        self.assertNotIn("$$('[data-run-device]', scope).forEach", app_js)
+        self.assertIn("$$('[data-fallback-code-toggle]', scope).forEach", app_js)
         self.assertNotIn("event.target.closest('[data-run-device]')", app_js)
         self.assertNotIn("startFallbackFileGenerationInBackground(n))", app_js)
 

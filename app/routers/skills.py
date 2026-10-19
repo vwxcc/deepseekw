@@ -19,9 +19,11 @@ SYSTEM_SKILLS = [
     {"id": "essays", "title": "Сочинения и эссе"},
     {"id": "humanize-text", "title": "Естественный стиль текста"},
     {"id": "file-generation", "title": "Создание файлов"},
-    {"id": "code-execution", "title": "Код и вычисления"},
-    {"id": "document-design", "title": "Оформление документов"},
-    {"id": "web-development", "title": "HTML и веб-разработка"},
+    {"id": "file-style", "title": "Оформление файлов"},
+    {"id": "run-verification", "title": "Исполнение и проверка"},
+    {"id": "svg-blueprints", "title": "SVG и технические чертежи"},
+    {"id": "web-pages", "title": "Веб-страницы и HTML"},
+    {"id": "visual-design", "title": "Визуальный стиль"},
 ]
 
 

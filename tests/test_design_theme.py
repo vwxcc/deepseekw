@@ -90,7 +90,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("span.className = 'aich-themed-emoji'", app_js)
         self.assertNotIn("textarea,button,svg,.katex", app_js)
         self.assertIn('id="i-mountain"', index_html)
-        self.assertIn("app.js?v=78&rev=81", index_html)
+        self.assertIn("app.js?v=79&rev=82", index_html)
 
     def test_brand_name_uses_ai_ch_without_version_suffix(self):
         root = Path(__file__).resolve().parents[1]
@@ -105,7 +105,7 @@ class DesignThemeTests(unittest.TestCase):
                 content = path.read_text(encoding="utf-8")
                 self.assertNotRegex(content, r"(?i)\bAI[\s-]*CH\s*1\.0\b")
         index = (root / "frontend" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("app.js?v=78&rev=81", index)
+        self.assertIn("app.js?v=79&rev=82", index)
 
     def test_sandbox_panel_is_reduced_by_20_percent_on_desktop_and_mobile(self):
         root = Path(__file__).resolve().parents[1]
@@ -136,7 +136,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn('iframe sandbox="" loading="lazy" title="Предпросмотр SVG"', app_js)
         self.assertIn(r"const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);", app_js)
         self.assertIn(".svg-preview iframe", app_css)
-        self.assertIn("app.js?v=78&rev=81", index_html)
+        self.assertIn("app.js?v=79&rev=82", index_html)
         self.assertIn("app.css?v=57&rev=60", index_html)
 
     def test_failed_file_generation_offers_short_device_fallback(self):
@@ -159,7 +159,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Pillow", app_js)
         self.assertIn("const hasLocalFallback = isDeviceFallbackRun(data);", app_js)
         self.assertIn("&& !hasLocalFallback", app_js)
-        self.assertIn("app.js?v=78&rev=81", index_html)
+        self.assertIn("app.js?v=79&rev=82", index_html)
 
     def test_fallback_viewer_background_runner_image_toggle_and_carousel(self):
         root = Path(__file__).resolve().parents[1]
@@ -189,7 +189,9 @@ class DesignThemeTests(unittest.TestCase):
         router = (root / "app" / "ai" / "router.py").read_text(encoding="utf-8")
         self.assertIn("run_sandbox_enabled: bool = False", config)
         self.assertIn("RUN_SANDBOX_ENABLED", config)
-        self.assertIn("round_limit = 1 if code_mode or not settings.run_sandbox_enabled else 2", router)
+        self.assertIn("round_limit = 1 if code_mode or artifact_work_request or not settings.run_sandbox_enabled else 2", router)
+        self.assertIn("and not artifact_work_request", router)
+        self.assertIn("await self._run_final_server_artifact(", router)
         self.assertIn('"state": "enabled" if settings.run_sandbox_enabled else "disabled"', main)
         self.assertIn("openDeviceCodeRunner({ lang: 'run', code: deviceFileRun.code }, n.id, { background: true })", app_js)
         self.assertIn("setTimeout(advance, 500)", app_js)
@@ -214,6 +216,50 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn('"system": [{"id": item["id"], "title": item["title"]}', skill_router)
         self.assertNotIn('"content": item["content"]', skill_router)
         self.assertIn("[Пользовательские навыки AI CH]", ai_router)
+
+    def test_projects_and_calendar_are_owner_scoped_and_registered(self):
+        root = Path(__file__).resolve().parents[1]
+        main = (root / "app" / "main.py").read_text(encoding="utf-8")
+        models = (root / "app" / "models.py").read_text(encoding="utf-8")
+        database = (root / "app" / "database.py").read_text(encoding="utf-8")
+        projects = (root / "app" / "routers" / "projects.py").read_text(encoding="utf-8")
+        scheduled = (root / "app" / "routers" / "scheduled.py").read_text(encoding="utf-8")
+        router = (root / "app" / "ai" / "router.py").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("class Project(Base)", models)
+        self.assertIn("class ScheduledItem(Base)", models)
+        self.assertIn('"is_pinned": "BOOLEAN DEFAULT 0"', database)
+        self.assertIn('"project_id": "VARCHAR(36)"', database)
+        self.assertIn("app.include_router(projects_router.router)", main)
+        self.assertIn("app.include_router(scheduled_router.router)", main)
+        self.assertIn("project.user_id != user.id", projects)
+        self.assertIn("item.user_id != user.id", scheduled)
+        self.assertIn('id="projects-quick-btn"', index_html)
+        self.assertIn('id="scheduled-quick-btn"', index_html)
+        self.assertIn("function bindProjectsWorkspace()", app_js)
+        self.assertIn("function bindScheduledWorkspace()", app_js)
+        self.assertIn("[Контекст проекта этого чата]", router)
+        self.assertIn("[Календарь пользователя — ближайшие записи]", router)
+
+    def test_chat_pinning_search_and_file_workspace_controls_are_bound(self):
+        root = Path(__file__).resolve().parents[1]
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+        app_css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
+
+        for action in ("chat-action-new", "chat-action-pin", "chat-action-project", "chat-action-files", "chat-action-find"):
+            with self.subTest(action=action):
+                self.assertIn(action, app_js)
+        self.assertIn("async function toggleChatPin", app_js)
+        self.assertIn("function highlightChatSearch", app_js)
+        self.assertIn("mark.chat-search-match", app_js)
+        self.assertIn('id="pinned-chat-section"', index_html)
+        self.assertIn('id="files-workspace-shell"', index_html)
+        self.assertIn("files-workspace-grid", app_css)
+        self.assertIn("#chat-title.chat-title-search", app_css)
+        self.assertIn("85dvh", app_css)
 
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
@@ -259,7 +305,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertNotIn("runButtons.find(button => codeStore[button.dataset.runDevice])", app_js)
         self.assertNotIn('device-fallback-button" data-run-device=', app_js)
         self.assertIn("min-height: 48px", css)
-        self.assertIn("app.js?v=78&rev=81", index_html)
+        self.assertIn("app.js?v=79&rev=82", index_html)
 
 
 if __name__ == "__main__":

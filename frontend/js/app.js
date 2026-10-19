@@ -4107,7 +4107,7 @@
               setProjectStatus('Проверяю и оформляю результат…');
             }
           } else {
-            if (data.stderr && (!data.ok || data.timed_out)) {
+            if (data.kind !== 'fileplan' && data.stderr && (!data.ok || data.timed_out)) {
               appendLog('! ' + String(data.stderr).trim().slice(0, 2000));
             }
             if (data.files && data.files.length) {

@@ -236,14 +236,14 @@
 
       <div class="side-top">
         <div class="side-row top-account-actions">
+          <button class="chip-btn context usage-mini sidebar-usage" id="context-btn" title="Показать использование и лимиты">
+            <svg class="ic"><use href="#i-gauge"/></svg><span class="sidebar-usage-label">Лимиты</span>
+            <b id="usage-pct">0%</b><span class="usage-mini-bar"><i id="usage-bar"></i></span>
+          </button>
           <button class="side-item wide" id="settings-btn" title="Настройки и профиль">
             <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
           </button>
         </div>
-        <button class="chip-btn context usage-mini sidebar-usage" id="context-btn" title="Лимиты подписки">
-          <svg class="ic"><use href="#i-gauge"/></svg><span class="sidebar-usage-label">Лимиты</span>
-          <b id="usage-pct">0%</b><span class="usage-mini-bar"><i id="usage-bar"></i></span>
-        </button>
         <button class="side-item wide sidebar-limits hidden" id="sidebar-limits-btn" title="Настроить тарифы и лимиты">
           <svg class="ic"><use href="#i-settings"/></svg><span>Настройки лимитов</span>
         </button>
@@ -251,10 +251,13 @@
           <button class="chip-btn context mem-quick sidebar-memory" id="mem-quick-btn" title="Память: факты и предпочтения">
             <svg class="ic"><use href="#i-brain"/></svg><span>Память</span>
           </button>
-          <button class="chip-btn context sidebar-memory sidebar-skill" id="skills-quick-btn" title="Системные и пользовательские навыки">
-            <svg class="ic"><use href="#i-sparkle"/></svg><span>Навыки</span>
+          <button class="chip-btn context sidebar-memory sidebar-file-workspace" id="files-quick-btn" title="Все файлы — от вас и AI CH">
+            <svg class="ic"><use href="#i-file"/></svg><span>Файлы</span>
           </button>
         </div>
+        <button class="chip-btn context sidebar-memory sidebar-skill" id="skills-quick-btn" title="Системные и пользовательские навыки">
+          <svg class="ic"><use href="#i-sparkle"/></svg><span>Навыки</span>
+        </button>
         <div class="side-row primary-actions">
           <button class="new-chat" id="new-chat-btn" title="Новый чат">
             <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
@@ -344,6 +347,32 @@
         <div id="file-list"></div>
       </div>
     </aside>
+  </div>
+
+  <div id="files-workspace-shell" class="files-workspace-shell" aria-hidden="true">
+    <section class="files-workspace" role="dialog" aria-modal="true" aria-labelledby="files-workspace-title" tabindex="-1">
+      <header class="files-workspace-header">
+        <button type="button" class="icon-btn" data-files-workspace-close title="Вернуться в чат" aria-label="Вернуться в чат"><svg class="ic"><use href="#i-chevron-left"/></svg></button>
+        <div class="files-workspace-title">
+          <h2 id="files-workspace-title">Файлы</h2>
+          <p>Все ваши файлы и файлы, созданные AI CH</p>
+        </div>
+        <button type="button" class="chip-btn files-workspace-upload" id="workspace-file-upload"><svg class="ic"><use href="#i-plus"/></svg><span>Загрузить</span></button>
+      </header>
+      <div class="files-workspace-toolbar">
+        <div class="search-box files-workspace-search"><svg class="ic"><use href="#i-search"/></svg><input id="workspace-file-search" type="search" placeholder="Поиск по названию файла" /></div>
+        <select id="workspace-file-source" class="model-select small" aria-label="Кто создал">
+          <option value="all">Все авторы</option><option value="user">Мои файлы</option><option value="ai">Создано ИИ</option>
+        </select>
+        <select id="workspace-file-kind" class="model-select small" aria-label="Тип файла">
+          <option value="all">Все типы</option><option value="image">Изображения</option><option value="doc">Документы</option><option value="table">Таблицы</option><option value="slide">Презентации</option><option value="code">Код</option><option value="other">Прочее</option>
+        </select>
+        <select id="workspace-file-sort" class="model-select small" aria-label="Сортировка">
+          <option value="date-desc">Сначала новые</option><option value="date-asc">Сначала старые</option><option value="name-asc">По названию ↑</option><option value="name-desc">По названию ↓</option><option value="size-desc">По размеру ↓</option><option value="size-asc">По размеру ↑</option><option value="type">По типу</option>
+        </select>
+      </div>
+      <div id="workspace-files-list" class="files-workspace-grid" aria-live="polite"></div>
+    </section>
   </div>
 
   <div id="audio-player-shell" class="audio-player-shell" aria-hidden="true">

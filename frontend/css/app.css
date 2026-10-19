@@ -3536,3 +3536,49 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
   .modal .row { flex: 0 0 auto; flex-wrap: wrap; }
   .modal .row button { max-width: 100%; }
 }
+
+
+/* Focused AI CH refinements: beige sidebar controls and Think. */
+#sidebar .new-chat,
+#sidebar .chip-btn,
+#sidebar .side-item { background: var(--bg); }
+#sidebar .new-chat:hover,
+#sidebar .chip-btn:hover,
+#sidebar .side-item:hover { background: var(--bg-hover); }
+#sidebar .sidebar-skills-connectors { gap: 6px; }
+#sidebar .sidebar-skills-connectors .chip-btn {
+  flex: 1 1 0; min-width: 0; justify-content: center;
+  padding-left: 8px; padding-right: 8px; white-space: nowrap;
+}
+#input { padding-left: 0; }
+.composer-row #input { width: auto; flex: 1 1 0; min-width: 64px; }
+#composer .think-toggle {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; min-height: 34px; padding: 6px 11px;
+  color: var(--fg-muted); background: var(--bg); border: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+#composer .think-toggle .ic { width: 16px; height: 16px; color: var(--fg-soft); }
+#composer .think-toggle.active { color: var(--fg); background: var(--bg-active); border-color: var(--border); }
+#composer .think-toggle.active .ic { color: var(--fg-muted); }
+#composer .think-toggle:focus-visible, .file-code-run:focus-visible { outline: 2px solid var(--fg-muted); outline-offset: 2px; }
+.code-acts button.file-code-run {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: 7px;
+  color: var(--fg); background: var(--bg-user); white-space: nowrap;
+}
+.code-acts button.file-code-run:hover { background: var(--bg-hover); }
+.code-acts button.file-code-run .ic { width: 14px; height: 14px; }
+#modal-root .modal.share-wide { width: min(713px, 92vw); max-width: min(713px, 92vw); }
+.connectors-empty { display: grid; justify-items: center; gap: 10px; padding: 18px 8px 24px; text-align: center; }
+.connectors-empty-icon {
+  display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px;
+  background: var(--bg-user); color: var(--fg-muted);
+}
+.connectors-empty-icon .ic { width: 22px; height: 22px; }
+.connectors-empty strong { font-size: 15px; font-weight: 600; }
+.connectors-empty p { max-width: 420px; margin: 0; color: var(--fg-muted); font-size: 13px; line-height: 1.6; }
+@media (max-width: 620px) {
+  #modal-root .modal.share-wide { width: 85vw; max-width: 85vw; }
+  #composer .think-toggle { padding: 6px 9px; }
+}

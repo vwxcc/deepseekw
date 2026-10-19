@@ -8,7 +8,7 @@
   <link rel="preload" href="/assets/fonts/ys-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/lora-cyrillic-600.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/pt-400.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=60&rev=63" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=61&rev=64" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
@@ -255,9 +255,14 @@
             <svg class="ic"><use href="#i-file"/></svg><span>Файлы</span>
           </button>
         </div>
-        <button class="chip-btn context sidebar-memory sidebar-skill" id="skills-quick-btn" title="Системные и пользовательские навыки">
-          <svg class="ic"><use href="#i-sparkle"/></svg><span>Навыки</span>
-        </button>
+        <div class="side-row sidebar-quick-tools sidebar-skills-connectors">
+          <button class="chip-btn context sidebar-memory sidebar-skill" id="skills-quick-btn" title="Системные и пользовательские навыки">
+            <svg class="ic"><use href="#i-sparkle"/></svg><span>Навыки</span>
+          </button>
+          <button type="button" class="chip-btn context sidebar-memory sidebar-connectors" id="connectors-quick-btn" title="Подключения к внешним сервисам">
+            <svg class="ic"><use href="#i-plug"/></svg><span>Коннекторы</span>
+          </button>
+        </div>
         <div class="side-row sidebar-section-links">
           <button type="button" class="chip-btn context sidebar-memory" id="projects-quick-btn" title="Все проекты"><svg class="ic"><use href="#i-folder"/></svg><span>Проекты</span></button>
           <button type="button" class="chip-btn context sidebar-memory" id="scheduled-quick-btn" title="Календарь и напоминания"><svg class="ic"><use href="#i-calendar"/></svg><span>Запланировано</span></button>
@@ -321,6 +326,9 @@
           <div class="composer-row">
             <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-plus"/></svg></button>
             <textarea id="input" rows="1" placeholder="Введите запрос…"></textarea>
+            <button type="button" class="chip-btn toggle think-toggle" id="think-btn" aria-pressed="false" title="Использовать вторую модель Think">
+              <svg class="ic"><use href="#i-lightbulb"/></svg><span>Think</span>
+            </button>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
           </div>
@@ -521,6 +529,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=90&rev=93"></script>
+  <script src="/assets/js/app.js?v=91&rev=94"></script>
 </body>
 </html>

@@ -117,6 +117,7 @@ class MessageCreate(BaseModel):
     model_set_id: str | None = None
     web_search: bool = True
     effort: str | None = None
+    think_mode: bool = False
     style: str = "auto"
     execution_target: str = "site"
     client_context: dict = Field(default_factory=dict)

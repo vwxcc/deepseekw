@@ -6,7 +6,7 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   let workspaceUploadIntent = false;
-  // Static contract: never emit a chat execution button containing data-run-device="; file runs are started only after the complete answer.
+  // Keep execution controls scoped to explicitly marked file-generation blocks.
   const actionCarouselTimers = new WeakMap();
 
   function bindActionCarouselAutoplay(root = document) {
@@ -650,31 +650,42 @@
 
   function codeBlockHtml(lang, code) {
     const id = 'code_' + Math.random().toString(36).slice(2);
-    window.__codeStore = window.__codeStore || {};
-    window.__codeStore[id] = { lang: lang || '', code: code };
+    const rawCode = String(code || '');
     const key = String(lang || '').trim().toLowerCase().split(/\s+/)[0];
+    // AI_CH_ACTION marks intentional file-generation code; ordinary snippets stay inert.
+    const actionMarker = /^\s*#\s*AI_CH_ACTION:\s*[^\r\n]+/i.test(rawCode);
+    const isFileGenerationBlock = ['python', 'py', 'run'].includes(key) && actionMarker;
+    const displayCode = isFileGenerationBlock
+      ? rawCode
+          .replace(/^\s*#\s*AI_CH_ACTION:\s*[^\r\n]+\s*(?:\r?\n|$)/i, '')
+          .replace(/(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*$/i, '')
+          .trimEnd()
+      : rawCode;
+    window.__codeStore = window.__codeStore || {};
+    window.__codeStore[id] = { lang: lang || '', code: displayCode };
     const isHtml = ['html', 'htm'].indexOf(key) >= 0;
-    const isSvg = key === 'svg' && /<svg(?:\s|>)/i.test(String(code || ''));
+    const isSvg = key === 'svg' && /<svg(?:\s|>)/i.test(displayCode);
     const svgDocument = isSvg
       ? '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
         '<style>html,body{margin:0;min-height:100%;background:#fff}body{padding:12px;box-sizing:border-box;display:grid;place-items:center}svg{display:block;max-width:100%;max-height:calc(100vh - 24px);height:auto}</style>' +
-        '</head><body>' + String(code || '') + '</body></html>'
+        '</head><body>' + displayCode + '</body></html>'
       : '';
     const preview = isHtml
       ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
         '<span>Живое превью</span></div>' +
         '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
-        escapeHtml(code) + '"></iframe></div>'
+        escapeHtml(displayCode) + '"></iframe></div>'
       : isSvg
         ? '<div class="html-preview svg-preview"><div class="hp-bar">' + icon('image') +
           '<span>Предпросмотр SVG</span></div>' +
           '<iframe sandbox="" loading="lazy" title="Предпросмотр SVG" srcdoc="' +
           escapeHtml(svgDocument) + '"></iframe></div>'
         : '';
-    // Code blocks in chat are for reading/copying/downloading only. Execution is automatic
-    // after the assistant's complete answer, never from an inline Run button.
-    const runButton = '';
-    const lines = String(code).split('\n');
+    const runButton = isFileGenerationBlock
+      ? '<button type="button" class="file-code-run" data-run-file-block="' + id +
+        '" title="Выполнить код и создать файл">' + icon('play') + '<span>Выполнить</span></button>'
+      : '';
+    const lines = displayCode.split('\n');
     const collapsed = lines.length > 5;
     const previewCode = lines.slice(0, 5).join('\n') + (collapsed ? '\n…' : '');
     const toggleButton = collapsed
@@ -689,11 +700,10 @@
       runButton + '</span></div>' + preview +
       (collapsed
         ? '<pre class="code-preview"><code>' + escapeHtml(previewCode) + '</code></pre>' +
-          '<pre class="code-full" hidden><code>' + escapeHtml(code) + '</code></pre>'
-        : '<pre class="code-full"><code>' + escapeHtml(code) + '</code></pre>') +
+          '<pre class="code-full" hidden><code>' + escapeHtml(displayCode) + '</code></pre>'
+        : '<pre class="code-full"><code>' + escapeHtml(displayCode) + '</code></pre>') +
       '</div>';
   }
-
 
   function safeHttpUrl(value) {
     const raw = String(value || '').trim();
@@ -1139,6 +1149,7 @@
     modelSets: [],
     modelSetId: '',
     effort: 'medium',
+    thinkMode: false,
     usage: null,
     draftTail: null,
     memories: [],
@@ -3976,12 +3987,22 @@
       copyWithFeedback(b, rec ? rec.code : '');
     }));
 
-    $$('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
+    $('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.dl];
       if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
     }));
 
-    $$('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
+    $('[data-run-file-block]', scope).forEach(button => button.addEventListener('click', () => {
+      const rec = (window.__codeStore || {})[button.dataset.runFileBlock];
+      const code = rec && typeof rec.code === 'string' ? rec.code.trim() : '';
+      if (!code) { toast('Код для создания файла не найден.', 'error'); return; }
+      const message = button.closest('.msg');
+      const messageId = message && message.dataset ? message.dataset.mid : null;
+      // Explicitly marked artifact code runs in the device sandbox only after a click.
+      openDeviceCodeRunner({ lang: 'run', code }, typeof messageId === 'string' ? messageId : null);
+    }));
+
+    $('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
       const rows = (window.__tableStore || {})[b.dataset.dlTable];
       if (!rows) return;
       openTableMenu(rows);
@@ -4718,6 +4739,7 @@
         web_search: true,
         execution_target: selectedExecutionTarget,
         effort: state.effort,
+        think_mode: state.thinkMode,
         style: state.style,
       }, { optimistic: true, input, draft, attachments: sentAttachments });
       requestStarted = true;
@@ -4781,6 +4803,21 @@
 
   function bindComposer() {
     const input = $('#input');
+    const thinkButton = $('#think-btn');
+    if (thinkButton) {
+      const syncThinkButton = () => {
+        thinkButton.classList.toggle('active', Boolean(state.thinkMode));
+        thinkButton.setAttribute('aria-pressed', String(Boolean(state.thinkMode)));
+        thinkButton.title = state.thinkMode
+          ? 'Think включён: запрос уйдёт второй модели'
+          : 'Think выключен: используется основная модель';
+      };
+      thinkButton.addEventListener('click', () => {
+        state.thinkMode = !state.thinkMode;
+        syncThinkButton();
+      });
+      syncThinkButton();
+    }
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
@@ -5663,6 +5700,8 @@
   function bindFiles() {
     $('#mem-quick-btn').addEventListener('click', () => openMemory());
     $('#skills-quick-btn').addEventListener('click', () => openSkills());
+    const connectorsButton = $('#connectors-quick-btn');
+    if (connectorsButton) connectorsButton.addEventListener('click', () => openConnectors());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
     $('#upload-btn').addEventListener('click', () => { workspaceUploadIntent = false; $('#file-input').click(); });
     $('#file-search').addEventListener('input', (e) => {
@@ -5687,10 +5726,11 @@
     $('#modal-root').innerHTML = '';
   }
 
-  function openModal({ title, body, onOk, okText }) {
+  function openModal({ title, body, onOk, okText, extraClass }) {
     const root = $('#modal-root');
     const infoOnly = (okText || '') === 'Закрыть';
-    root.innerHTML = '<div class="modal-back"><div class="modal' + (infoOnly ? ' wide' : '') +
+    const modalClasses = (infoOnly ? ' wide' : '') + (extraClass ? ' ' + extraClass : '');
+    root.innerHTML = '<div class="modal-back"><div class="modal' + modalClasses +
       '"><h3>' + escapeHtml(title) + '</h3>' +
       '<div class="modal-body">' + body + '</div>' +
       '<div class="row">' +
@@ -6274,6 +6314,7 @@
     openModal({
       title: 'Действия чата',
       okText: 'Закрыть',
+      extraClass: 'share-wide',
       body:
         '<div class="chat-actions-primary">' +
         '<button type="button" class="chip-btn" id="chat-action-new">' + icon('plus') + 'Новый чат</button>' +
@@ -6815,6 +6856,20 @@
           return false;
         }
       },
+    });
+  }
+
+  function openConnectors() {
+    openModal({
+      title: 'Коннекторы',
+      okText: 'Закрыть',
+      body:
+        '<div class="connectors-empty">' +
+          '<span class="connectors-empty-icon">' + icon('plug') + '</span>' +
+          '<strong>Подключения пока не настроены</strong>' +
+          '<p>Здесь появятся подключения к внешним сервисам, когда серверные интеграции будут добавлены.</p>' +
+        '</div>',
+      onOk: () => true,
     });
   }
 

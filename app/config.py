@@ -111,6 +111,18 @@ class Settings(BaseSettings):
     qwen_price_out: float | None = Field(default=25.0, ge=0)
     qwen_price_cache: float | None = Field(default=None, ge=0)
 
+    # --- Dedicated model used only when Think is enabled in the composer ---
+    think_provider: str = "openai"
+    think_api_key: str = ""
+    think_base_url: str = ""
+    think_model_id: str = ""
+    think_model: str = ""
+    think_temperature: float | None = Field(default=None, ge=0, le=2)
+    think_max_tokens: int | None = Field(default=None, ge=1)
+    think_price_in: float | None = Field(default=None, ge=0)
+    think_price_out: float | None = Field(default=None, ge=0)
+    think_price_cache: float | None = Field(default=None, ge=0)
+
     # --- Admin bootstrap (optional) ---
     admin_email: str = ""
     admin_password: str = ""

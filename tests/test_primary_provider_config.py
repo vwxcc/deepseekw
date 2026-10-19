@@ -35,6 +35,30 @@ class PrimaryProviderEnvironmentTests(unittest.TestCase):
             ),
         )
 
+    def test_think_connection_uses_only_think_environment_fields(self) -> None:
+        configured = SimpleNamespace(
+            think_provider=" openai-compatible ",
+            think_base_url=" https://think.example/v1/ ",
+            think_api_key=" think-secret ",
+            think_model_id=" vendor/think-model ",
+            think_model="ignored-legacy-model",
+        )
+        with patch.object(provider_config, "settings", configured):
+            result = provider_config.get_think_provider_overrides()
+        self.assertEqual(result, (
+            "openai-compatible", "https://think.example/v1",
+            "think-secret", "vendor/think-model",
+        ))
+
+    def test_missing_think_values_do_not_inherit_primary_credentials(self) -> None:
+        configured = SimpleNamespace(
+            think_provider="openai", think_base_url="", think_api_key="",
+            think_model_id="", think_model="",
+        )
+        with patch.object(provider_config, "settings", configured):
+            result = provider_config.get_think_provider_overrides()
+        self.assertEqual(result, ("openai", "", "", ""))
+
     def test_legacy_qwen_model_remains_supported(self) -> None:
         configured = SimpleNamespace(
             model_fields_set={"qwen_model"},

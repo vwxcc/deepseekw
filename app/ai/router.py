@@ -46,7 +46,7 @@ from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, image_search, read_search_results, read_web_page, web_search
 from . import model_sets as ms
 from . import prompts
-from .provider_config import apply_primary_provider_overrides
+from .provider_config import apply_primary_provider_overrides, get_think_provider_overrides
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -309,6 +309,7 @@ class Job:
     user_text: str = ""
     model_set_id: str | None = None
     effort: str | None = None
+    think_mode: bool = False
     user_id: str | None = None
     mode: str = "chat"
     execution_target: str = "site"
@@ -488,15 +489,12 @@ class AIRouter:
     # --- single primary model ---------------------------------------------
 
     async def _resolve_entries(
-        self, route_type: RouteType, model_set_id: str | None = None
+        self,
+        route_type: RouteType,
+        model_set_id: str | None = None,
+        think_mode: bool = False,
     ) -> tuple[str, str, list[EntryConfig]]:
-        """Resolve every AI task to the same single primary model.
-
-        Per-action model sets, client-supplied set IDs, router sets, and fallback
-        entries are intentionally ignored. The primary is the first active
-        non-router MAIN set (stable alphabetical order) and its first active entry.
-        A failed or busy primary is never silently replaced by another model.
-        """
+        """Resolve the primary model or its separate Think override."""
         del route_type, model_set_id
         async with SessionLocal() as db:
             result = await db.execute(
@@ -529,36 +527,65 @@ class AIRouter:
                     e.provider, e.base_url, e.api_key, e.model
                 )
             )
-            configs = [
-                EntryConfig(
-                    id=e.id,
-                    model_set_id=e.model_set_id,
-                    provider=primary_provider,
-                    base_url=primary_base_url,
-                    api_key=primary_api_key,
-                    model=primary_model,
-                    temperature=e.temperature,
-                    max_tokens=e.max_tokens,
-                    timeout=e.timeout,
-                    max_parallel=int(getattr(e, "max_parallel", 2) or 2),
-                    price_in=float(
-                        settings.qwen_price_in
-                        if settings.qwen_price_in is not None
-                        else (getattr(e, "price_in", 0.0) or 0.0)
-                    ),
-                    price_out=float(
-                        settings.qwen_price_out
-                        if settings.qwen_price_out is not None
-                        else (getattr(e, "price_out", 0.0) or 0.0)
-                    ),
-                    price_cache=float(
-                        settings.qwen_price_cache
-                        if settings.qwen_price_cache is not None
-                        else (getattr(e, "price_cache", 0.0) or 0.0)
-                    ),
+            temperature = e.temperature
+            max_tokens = e.max_tokens
+            price_in = (
+                settings.qwen_price_in if settings.qwen_price_in is not None
+                else (getattr(e, "price_in", 0.0) or 0.0)
+            )
+            price_out = (
+                settings.qwen_price_out if settings.qwen_price_out is not None
+                else (getattr(e, "price_out", 0.0) or 0.0)
+            )
+            price_cache = (
+                settings.qwen_price_cache if settings.qwen_price_cache is not None
+                else (getattr(e, "price_cache", 0.0) or 0.0)
+            )
+            entry_id, resolved_name = e.id, mset.name
+            if think_mode:
+                primary_provider, primary_base_url, primary_api_key, primary_model = (
+                    get_think_provider_overrides()
                 )
-            ]
-            return mset.id, mset.name, configs
+                missing = [
+                    label for label, value in (
+                        ("THINK_BASE_URL", primary_base_url),
+                        ("THINK_API_KEY", primary_api_key),
+                        ("THINK_MODEL_ID (или THINK_MODEL)", primary_model),
+                    ) if not value
+                ]
+                if missing:
+                    raise ProviderError(
+                        "Think не настроен в Render: заполните " + ", ".join(missing)
+                        + ". Основная модель не будет подменена автоматически."
+                    )
+                temperature = (
+                    settings.think_temperature if settings.think_temperature is not None
+                    else e.temperature
+                )
+                max_tokens = (
+                    settings.think_max_tokens if settings.think_max_tokens is not None
+                    else e.max_tokens
+                )
+                price_in = settings.think_price_in if settings.think_price_in is not None else (getattr(e, "price_in", 0.0) or 0.0)
+                price_out = settings.think_price_out if settings.think_price_out is not None else (getattr(e, "price_out", 0.0) or 0.0)
+                price_cache = settings.think_price_cache if settings.think_price_cache is not None else (getattr(e, "price_cache", 0.0) or 0.0)
+                entry_id, resolved_name = f"{e.id}:think", f"{mset.name} · Think"
+            configs = [EntryConfig(
+                id=entry_id,
+                model_set_id=e.model_set_id,
+                provider=primary_provider,
+                base_url=primary_base_url,
+                api_key=primary_api_key,
+                model=primary_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=e.timeout,
+                max_parallel=int(getattr(e, "max_parallel", 2) or 2),
+                price_in=float(price_in),
+                price_out=float(price_out),
+                price_cache=float(price_cache),
+            )]
+            return mset.id, resolved_name, configs
 
     async def _acquire_primary(
         self, job: Job, entries: list[EntryConfig], skip: set[str]
@@ -1336,7 +1363,7 @@ class AIRouter:
 
         try:
             mset_id, mset_name, entries = await self._resolve_entries(
-                job.route_type, job.model_set_id
+                job.route_type, job.model_set_id, think_mode=job.think_mode
             )
         except ProviderError as e:
             await self._finish(job.message_id, MessageStatus.failed, error=str(e))

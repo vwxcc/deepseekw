@@ -73,7 +73,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertNotIn("Pillow", prompts.MAIN_SYSTEM)
         self.assertEqual(prompts.skills_for("Привет"), "")
         task_rules = prompts.skills_for("Сделай презентацию pptx")
-        self.assertIn("Создание файлов AI-Ch", task_rules)
+        self.assertIn("Создание файлов AI CH — полный ответ и готовый файл", task_rules)
         self.assertIn("Исполнение", task_rules)
 
     def test_assistant_emojis_use_monochrome_chatstudio_line_icons(self):

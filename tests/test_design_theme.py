@@ -192,6 +192,8 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Подготавливаю файл", app_js)
         self.assertNotIn("Запускаю код в изолированной песочнице на сервере", app_js)
         self.assertIn("data.kind !== 'fileplan' && data.stderr", app_js)
+        self.assertIn("runButtons.find(button => codeStore[button.dataset.runDevice])", app_js)
+        self.assertIn("n.execution_target === 'device' && !hasFileFallback", app_js)
         self.assertIn("min-height: 48px", css)
         self.assertIn("app.js?v=70&rev=73", index_html)
 

@@ -600,8 +600,8 @@ class AIRouter:
 
     async def _fast_qwen_once(
         self, entry: EntryConfig, messages: list[dict]
-    ) -> tuple[str, dict | None] | None:
-        """Ask the fast model for a complete short answer, or ignore its decline marker."""
+    ) -> tuple[str, dict | None, bool]:
+        """Return text, usage and acceptance; declined/truncated calls may still cost tokens."""
         prompt_messages = [dict(item) for item in messages if isinstance(item, dict)]
         if prompt_messages and prompt_messages[0].get("role") == "system":
             original = str(prompt_messages[0].get("content") or "")
@@ -614,22 +614,22 @@ class AIRouter:
             api_key=entry.api_key,
             model=entry.model,
             temperature=entry.temperature,
-            max_tokens=min(8000, entry.max_tokens),
+            max_tokens=min(8000, max(1, entry.max_tokens)),
             timeout=entry.timeout,
             disable_thinking=True,
         )
         answer = str(answer or "").strip()
         if not answer or FAST_QWEN_DECLINE_MARKER.casefold() in answer.casefold():
-            return None
+            return answer, usage, False
         if isinstance(usage, dict):
             if usage.get("_finish_reason") == "length":
-                return None
+                return answer, usage, False
             try:
                 if int(usage.get("completion_tokens") or 0) >= min(8000, entry.max_tokens) - 2:
-                    return None
+                    return answer, usage, False
             except (TypeError, ValueError):
                 pass
-        return answer, usage
+        return answer, usage, True
 
     async def _race_primary_and_fast(
         self, job: Job, primary: EntryConfig, fast: EntryConfig, messages: list[dict]
@@ -654,6 +654,7 @@ class AIRouter:
         pending: set[asyncio.Task] = {primary_task, fast_task}
         winner: tuple[tuple[str, str, dict | None], EntryConfig] | None = None
         errors: list[str] = []
+        completed_usage: dict[str, dict | None] = {}
 
         try:
             while pending and not job.cancel.is_set():
@@ -670,8 +671,8 @@ class AIRouter:
                         continue
                     except Exception as exc:
                         errors.append(f"{type(exc).__name__}: {exc}")
-                # If both complete between polls, the completion timestamp — not
-                # arbitrary set iteration order — decides which valid answer won.
+                # Record usage for every fully completed call, including a losing
+                # model or a Qwen response rejected by the prompt/length guard.
                 outcomes.sort(key=lambda item: (item[1], 0 if item[0] == "primary" else 1))
                 for lane, _, value, error in outcomes:
                     if error is not None:
@@ -682,45 +683,46 @@ class AIRouter:
                             errors.append("primary: генерация прервана")
                             continue
                         full, thinking, usage = value
+                        completed_usage["primary"] = usage
                         visible = str(full or thinking or "").strip()
-                        if not visible:
+                        if winner is None and visible:
+                            winner = ((str(full or ""), str(thinking or ""), usage), primary)
+                        elif not visible:
                             errors.append("primary: пустой ответ")
-                            continue
-                        winner = ((str(full or ""), str(thinking or ""), usage), primary)
-                        break
-                    if value is None:
-                        # The fast model either explicitly declined or returned no text.
                         continue
-                    answer, usage = value
-                    # Never let the quick lane produce downloadable artifacts or replace
-                    # a dedicated Code-mode response, even if it ignores the prompt.
+
+                    if value is None:
+                        # The request failed before the provider returned a response.
+                        continue
+                    answer, usage, accepted = value
+                    completed_usage["fast"] = usage
+                    if winner is not None or not accepted:
+                        continue
+                    # Do not let the fast lane produce downloadable artifacts or
+                    # replace a dedicated Code-mode response, even if it ignores the prompt.
                     if job.mode == "code" or is_artifact_request(job.user_text):
                         continue
-                    if str(answer or "").strip():
-                        # Match the primary stream's handling of private UI markers:
-                        # preserve their visible text payloads but never leak the markers.
-                        activity_parser = ActivityMarkupParser()
-                        activity_items = activity_parser.feed(str(answer))
-                        activity_items.extend(activity_parser.finish())
-                        visible_parts: list[str] = []
-                        for item in activity_items:
-                            kind = item.get("kind")
-                            if kind == "text":
-                                visible_parts.append(str(item.get("text") or ""))
-                            elif kind == "status":
-                                await job.output.put(("ui_status", str(item.get("text") or "")))
-                            elif kind == "action":
-                                await job.output.put((
-                                    "ui_action",
-                                    json.dumps(
-                                        {"icon": item.get("icon") or "sparkle", "text": item.get("text") or ""},
-                                        ensure_ascii=False,
-                                    ),
-                                ))
-                        visible_answer = "".join(visible_parts).strip()
-                        if visible_answer:
-                            winner = ((visible_answer, "", usage), fast)
-                            break
+                    activity_parser = ActivityMarkupParser()
+                    activity_items = activity_parser.feed(str(answer))
+                    activity_items.extend(activity_parser.finish())
+                    visible_parts: list[str] = []
+                    for item in activity_items:
+                        kind = item.get("kind")
+                        if kind == "text":
+                            visible_parts.append(str(item.get("text") or ""))
+                        elif kind == "status":
+                            await job.output.put(("ui_status", str(item.get("text") or "")))
+                        elif kind == "action":
+                            await job.output.put((
+                                "ui_action",
+                                json.dumps(
+                                    {"icon": item.get("icon") or "sparkle", "text": item.get("text") or ""},
+                                    ensure_ascii=False,
+                                ),
+                            ))
+                    visible_answer = "".join(visible_parts).strip()
+                    if visible_answer:
+                        winner = ((visible_answer, "", usage), fast)
                 if winner:
                     break
         finally:
@@ -728,6 +730,18 @@ class AIRouter:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(primary_task, fast_task, return_exceptions=True)
+
+        # Bill every fully completed losing request. The winner is billed later
+        # with the final message; cancelled/incomplete requests have no confirmed usage.
+        winning_lane = "fast" if winner and winner[1].id == fast.id else "primary"
+        for lane, usage in completed_usage.items():
+            if lane == winning_lane and winner is not None:
+                continue
+            if not usage:
+                continue
+            entry = fast if lane == "fast" else primary
+            action = "fast_qwen_race_lost" if lane == "fast" else "main_race_lost"
+            await self._bill(job, entry, usage, action)
 
         if job.cancel.is_set():
             await self._finish(

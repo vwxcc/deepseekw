@@ -621,6 +621,14 @@ class AIRouter:
         answer = str(answer or "").strip()
         if not answer or FAST_QWEN_DECLINE_MARKER.casefold() in answer.casefold():
             return None
+        if isinstance(usage, dict):
+            if usage.get("_finish_reason") == "length":
+                return None
+            try:
+                if int(usage.get("completion_tokens") or 0) >= min(8000, entry.max_tokens) - 2:
+                    return None
+            except (TypeError, ValueError):
+                pass
         return answer, usage
 
     async def _race_primary_and_fast(
@@ -684,6 +692,10 @@ class AIRouter:
                         # The fast model either explicitly declined or returned no text.
                         continue
                     answer, usage = value
+                    # Never let the quick lane produce downloadable artifacts or replace
+                    # a dedicated Code-mode response, even if it ignores the prompt.
+                    if job.mode == "code" or is_artifact_request(job.user_text):
+                        continue
                     if str(answer or "").strip():
                         winner = ((str(answer), "", usage), fast)
                         break

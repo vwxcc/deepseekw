@@ -20,7 +20,7 @@
           return;
         }
         if (carousel.matches(':hover') || carousel.contains(document.activeElement)) return;
-        const cards = $('.aich-ui-action', carousel);
+        const cards = $$('.aich-ui-action', carousel);
         if (cards.length < 2 || carousel.scrollWidth <= carousel.clientWidth + 4) return;
         const style = getComputedStyle(carousel);
         const gap = parseFloat(style.columnGap || style.gap || '0') || 0;

@@ -272,6 +272,8 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("z-index: 1800;", app_css)
         self.assertIn("max-height: calc(85dvh - 145px)", app_css)
         self.assertNotIn('<span class="sidebar-usage-label">Лимиты</span>', index_html)
+        self.assertIn("--sidebar-w: 391px;", app_css)
+        self.assertIn("--sidebar-w: min(87vw, 391px)", app_css)
 
         for action in ("chat-action-new", "chat-action-pin", "chat-action-project", "chat-action-files", "chat-action-find"):
             with self.subTest(action=action):

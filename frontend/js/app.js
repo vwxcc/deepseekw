@@ -3618,7 +3618,7 @@
       renderMessageInPlace(n.id);
     }));
 
-    $('[data-run-device]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-run-device]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.runDevice);
       if (!n) return;
       const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
@@ -3631,7 +3631,7 @@
       openDeviceCodeRunner({ lang: 'run', code: code }, n.id);
     }));
 
-    $('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.fallbackCodeToggle);
       const row = button.closest('.device-fallback-row');
       const source = row && row.querySelector('[data-device-fallback-code-view]');

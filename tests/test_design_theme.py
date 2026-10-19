@@ -90,7 +90,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("span.className = 'aich-themed-emoji'", app_js)
         self.assertNotIn("textarea,button,svg,.katex", app_js)
         self.assertIn('id="i-mountain"', index_html)
-        self.assertIn("app.js?v=68&rev=71", index_html)
+        self.assertIn("app.js?v=69&rev=72", index_html)
 
     def test_brand_name_uses_ai_ch_without_version_suffix(self):
         root = Path(__file__).resolve().parents[1]
@@ -105,7 +105,7 @@ class DesignThemeTests(unittest.TestCase):
                 content = path.read_text(encoding="utf-8")
                 self.assertNotRegex(content, r"(?i)\bAI[\s-]*CH\s*1\.0\b")
         index = (root / "frontend" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("app.js?v=68&rev=71", index)
+        self.assertIn("app.js?v=69&rev=72", index)
 
     def test_sandbox_panel_is_reduced_by_20_percent_on_desktop_and_mobile(self):
         root = Path(__file__).resolve().parents[1]
@@ -135,7 +135,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn('iframe sandbox="" loading="lazy" title="Предпросмотр SVG"', app_js)
         self.assertIn(r"const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);", app_js)
         self.assertIn(".svg-preview iframe", app_css)
-        self.assertIn("app.js?v=68&rev=71", index_html)
+        self.assertIn("app.js?v=69&rev=72", index_html)
         self.assertIn("app.css?v=53&rev=56", index_html)
 
     def test_failed_file_generation_offers_short_device_fallback(self):
@@ -158,7 +158,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Pillow", app_js)
         self.assertIn("const hasLocalFallback = isDeviceFallbackRun(data);", app_js)
         self.assertIn("&& !hasLocalFallback", app_js)
-        self.assertIn("app.js?v=68&rev=71", index_html)
+        self.assertIn("app.js?v=69&rev=72", index_html)
 
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
@@ -188,8 +188,10 @@ class DesignThemeTests(unittest.TestCase):
         index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
         self.assertIn("data-fallback-code-toggle", app_js)
         self.assertIn("seenOutputNames", app_js)
+        self.assertIn("Подготавливаю файл", app_js)
+        self.assertNotIn("Запускаю код в изолированной песочнице на сервере", app_js)
         self.assertIn("min-height: 48px", css)
-        self.assertIn("app.js?v=68&rev=71", index_html)
+        self.assertIn("app.js?v=69&rev=72", index_html)
 
 
 if __name__ == "__main__":

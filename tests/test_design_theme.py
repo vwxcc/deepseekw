@@ -286,8 +286,16 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("85dvh", app_css)
 
     def test_code_agent_single_generation_guard_is_preserved(self):
+        router = (Path(__file__).resolve().parents[1] / "app" / "ai" / "router.py").read_text(encoding="utf-8")
+        app_js = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
         self.assertIn("ровно одна генерация модели", prompts.CODE_SYSTEM)
+        self.assertIn("agent_on = False", router)
+        self.assertIn("async def _run_final_code_mode", router)
+        self.assertIn("if code_mode and not artifact_work_request:", router)
+        self.assertIn("answer, post_code_runs = await self._run_final_code_mode(", router)
+        self.assertIn("# AI_CH_AUTO_RUN_FILES", router)
+        self.assertNotIn('device-fallback-button" data-run-device=', app_js)
 
     def test_failed_fileplan_is_not_explained_as_a_sandbox_error(self):
         self.assertIn("не пиши «не получилось в песочнице»", prompts.CORE_RULES)

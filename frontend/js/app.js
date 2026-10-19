@@ -5335,7 +5335,7 @@
           const updated = await api.patch('/api/chats/' + encodeURIComponent(state.currentChatId), { project_id: project.id });
           const index = (state.chats || []).findIndex(chat => chat.id === updated.id);
           if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
-          await loadChats();
+          await Promise.all([loadWorkspaceProjectChats(), loadChats()]);
           toast('Чат добавлен в проект «' + project.title + '»');
           renderProjectsWorkspace();
         } catch (error) { toast('Не удалось добавить чат: ' + error.message, 'error'); }

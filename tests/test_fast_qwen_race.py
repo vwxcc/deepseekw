@@ -108,6 +108,32 @@ class AutomaticModelRaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result[1], self.primary)
         self.router._bill.assert_not_awaited()
 
+    async def test_primary_winner_keeps_its_interactive_ui_events(self) -> None:
+        async def primary(*args, **kwargs):
+            await asyncio.sleep(0.01)
+            kwargs["deferred_events"].append(
+                ("ui_action", '{"icon": "check-circle", "text": "Проверить ответ"}')
+            )
+            return ("Primary answer.", "", {"completion_tokens": 20})
+
+        async def fast(*args, **kwargs):
+            await asyncio.sleep(0.2)
+            return ("Quick answer.", {"completion_tokens": 5}, True)
+
+        with (
+            patch.object(self.router, "_stream_once", new=primary),
+            patch.object(self.router, "_fast_qwen_once", new=fast),
+        ):
+            result = await self.router._race_primary_and_fast(
+                self.job, self.primary, self.fast, [{"role": "user", "content": "Hi"}]
+            )
+
+        self.assertIs(result[1], self.primary)
+        self.assertEqual(
+            await self.job.output.get(),
+            ("ui_action", '{"icon": "check-circle", "text": "Проверить ответ"}'),
+        )
+
     async def test_fast_qwen_wins_when_it_finishes_first(self) -> None:
         async def primary(*args, **kwargs):
             await asyncio.sleep(0.2)

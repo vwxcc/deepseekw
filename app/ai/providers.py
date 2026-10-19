@@ -250,11 +250,11 @@ async def complete_chat_with_usage(
                 raise ProviderError("Провайдер вернул пустой ответ")
             text = _extract_text(choices[0].get("message") or {}).strip()
             raw_usage = data.get("usage")
-            usage = dict(raw_usage) if isinstance(raw_usage, dict) else None
+            usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
             # Preserve truncation metadata for the caller without changing billing fields.
-            if usage is not None and choices[0].get("finish_reason") == "length":
+            if choices[0].get("finish_reason") == "length":
                 usage["_finish_reason"] = "length"
-            return text, usage
+            return text, usage or None
 
     try:
         return await _once(payload)

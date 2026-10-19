@@ -189,6 +189,19 @@ class MemoryIn(BaseModel):
     kind: str = "fact"
 
 
+class UserSkillIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    content: str = Field(min_length=1, max_length=5000)
+
+
+class UserSkillOut(ORMModel):
+    id: str
+    title: str
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+
 # --- Models & status (public to signed-in users) ---
 class ModelStatOut(BaseModel):
     id: str

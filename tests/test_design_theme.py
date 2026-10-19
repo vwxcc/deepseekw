@@ -125,6 +125,19 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий скачиваемый файл", task_rules)
         self.assertIn("template_id и style только из реального каталога", task_rules)
 
+    def test_svg_previews_work_for_code_blocks_and_attachments(self):
+        root = Path(__file__).resolve().parents[1]
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+        app_css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("Предпросмотр SVG", app_js)
+        self.assertIn('iframe sandbox="" loading="lazy" title="Предпросмотр SVG"', app_js)
+        self.assertIn(r"const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);", app_js)
+        self.assertIn(".svg-preview iframe", app_css)
+        self.assertIn("app.js?v=64&rev=67", index_html)
+        self.assertIn("app.css?v=52&rev=55", index_html)
+
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
         self.assertIn("ровно одна генерация модели", prompts.CODE_SYSTEM)

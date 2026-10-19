@@ -49,15 +49,14 @@ async def list_files(
         .join(Message, Attachment.message_id == Message.id)
         .join(File, Attachment.file_id == File.id)
         .where(File.user_id == user.id)
+        .order_by(Message.created_at.asc(), Message.id.asc())
     )
     sources: dict[str, str] = {}
     for file_id, role in attachments.all():
+        # Attribute the file to its first attaching message. Reusing an AI-created
+        # file later must not overwrite its original creator in the library.
         role_value = str(getattr(role, "value", role) or "").casefold()
-        if role_value == "assistant":
-            sources.setdefault(file_id, "ai")
-        else:
-            # Any user upload takes precedence if the same file is attached more than once.
-            sources[file_id] = "user"
+        sources.setdefault(file_id, "ai" if role_value == "assistant" else "user")
     out = []
     for item in stored:
         row = FileOut.model_validate(item).model_dump(mode="json")

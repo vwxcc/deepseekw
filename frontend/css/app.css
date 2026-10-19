@@ -3037,3 +3037,78 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   .sub-keep-chatting-copy strong { font-size: 12px; }
   .sub-keep-chatting-copy span { font-size: 10.5px; }
 }
+
+
+/* AI CH local file fallback: prominent action in the app's neutral palette. */
+.device-fallback-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  max-width: min(100%, 620px);
+  margin-top: 14px !important;
+  padding-top: 1px;
+}
+.device-fallback-button {
+  flex: 1 1 300px;
+  width: 100%;
+  max-width: 500px;
+  min-height: 48px;
+  padding: 12px 20px !important;
+  border: 1px solid var(--fg) !important;
+  border-radius: 14px !important;
+  background: var(--fg) !important;
+  color: var(--bg-panel) !important;
+  box-shadow: 0 4px 14px rgba(36, 35, 31, .12);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.device-fallback-button:hover {
+  background: var(--fg-soft) !important;
+  border-color: var(--fg-soft) !important;
+  color: var(--bg-panel) !important;
+  box-shadow: 0 6px 18px rgba(36, 35, 31, .16);
+  transform: translateY(-1px);
+}
+.device-fallback-button:active { transform: translateY(0); }
+.device-fallback-button .ic { width: 18px; height: 18px; flex: 0 0 auto; }
+.device-fallback-code-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-user);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.device-fallback-code-toggle:hover { border-color: var(--fg-soft); background: var(--bg-hover); }
+.device-fallback-code {
+  flex: 1 0 100%;
+  width: 100%;
+  max-height: 280px;
+  margin: 2px 0 0;
+  padding: 13px 15px;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--bg-code);
+  color: var(--fg);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+  tab-size: 4;
+}
+@media (max-width: 600px) {
+  .device-fallback-row { width: 100%; gap: 8px; }
+  .device-fallback-button { flex: 1 0 100%; max-width: none; min-height: 50px; font-size: 15.5px; }
+  .device-fallback-code-toggle { min-height: 42px; }
+  .device-fallback-code { max-height: 34vh; font-size: 11px; }
+}

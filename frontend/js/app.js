@@ -1301,7 +1301,7 @@
         '</span>' : '') +
       '<span class="acts">' +
         (showPin ? '<button data-act="pin" title="' + (pinned ? 'Открепить чат' : 'Закрепить чат') + '" aria-label="' +
-          (pinned ? 'Открепить чат' : 'Закрепить чат') + '">' + icon(pinned ? 'pin-off' : 'pin') + '</button>' : '') +
+          (pinned ? 'Открепить чат' : 'Закрепить чат') + '">' + icon('bookmark') + '</button>' : '') +
         '<button data-act="rename" title="Переименовать" aria-label="Переименовать">' + icon('pencil') + '</button>' +
         '<button data-act="delete" title="Удалить" aria-label="Удалить">' + icon('trash') + '</button>' +
       '</span></div>';
@@ -1354,8 +1354,16 @@
   }
 
   async function toggleChatPin(chatId, forcedValue) {
-    const chat = (state.chats || []).find(item => item && String(item.id) === String(chatId));
-    if (!chat) { toast('Чат не найден в текущем списке', 'error'); return false; }
+    let chat = (state.chats || []).find(item => item && String(item.id) === String(chatId));
+    if (!chat) {
+      try {
+        chat = await api.get('/api/chats/' + encodeURIComponent(chatId));
+        upsertChat(chat);
+      } catch (error) {
+        toast('Не удалось загрузить чат: ' + error.message, 'error');
+        return false;
+      }
+    }
     const pinned = forcedValue === undefined ? !chat.is_pinned : !!forcedValue;
     try {
       const updated = await api.patch('/api/chats/' + encodeURIComponent(chatId), { is_pinned: pinned });
@@ -5118,8 +5126,7 @@
     if (!shell) return;
     toggleFiles(false);
     try {
-      if (!Array.isArray(state.files)) await loadFiles();
-      else renderFilesWorkspace();
+      await loadFiles();
       shell.classList.remove('hidden');
       shell.classList.add('open');
       shell.setAttribute('aria-hidden', 'false');
@@ -5206,9 +5213,9 @@
         '<span class="skills-count">' + chats.length + '</span></div>' +
         (chats.length ? '<div class="workspace-project-chat-list">' + chats.map(chat =>
           '<button type="button" class="workspace-project-chat" data-open-project-chat="' + escapeHtml(chat.id) + '">' +
-          '<span class="workspace-project-chat-icon">' + icon('message-circle') + '</span><span>' +
+          '<span class="workspace-project-chat-icon">' + icon('chat') + '</span><span>' +
           escapeHtml(chat.title || 'Новый чат') + '</span><span class="workspace-project-chat-arrow">' + icon('chevron-down') + '</span></button>'
-        ).join('') + '</div>' : '<div class="files-workspace-empty project-no-chats"><span class="files-empty-art">' + icon('message-circle') +
+        ).join('') + '</div>' : '<div class="files-workspace-empty project-no-chats"><span class="files-empty-art">' + icon('chat') +
           '</span><strong>В проекте пока нет чатов</strong><p>Добавьте открытый чат через меню «Поделиться».</p></div>') +
         '<button type="button" class="chip-btn workspace-project-add-current" data-project-action="add-current-chat" ' +
         (!state.currentChatId || String((state.chats || []).find(chat => chat.id === state.currentChatId)?.project_id || '') === String(active.id) ? 'disabled' : '') +
@@ -5619,6 +5626,7 @@
       const out = await api.postForm('/api/files', fd);
       state.files = out.concat(state.files);
       renderFiles();
+      renderFilesWorkspace();
       out.forEach(f => state.pendingAttachments.push(f));
       renderAttachments();
     } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }

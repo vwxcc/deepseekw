@@ -682,7 +682,7 @@
           escapeHtml(svgDocument) + '"></iframe></div>'
         : '';
     const runButton = isFileGenerationBlock
-      ? '<button type="button" class="file-code-run" data-run-file-block="' + id +
+      ? '<button type="button" class="file-code-run" data-run-device="1" data-run-file-block="' + id +
         '" title="Выполнить код и создать файл">' + icon('play') + '<span>Выполнить</span></button>'
       : '';
     const lines = displayCode.split('\n');
@@ -3987,12 +3987,12 @@
       copyWithFeedback(b, rec ? rec.code : '');
     }));
 
-    $('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.dl];
       if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
     }));
 
-    $('[data-run-file-block]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-run-file-block]', scope).forEach(button => button.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[button.dataset.runFileBlock];
       const code = rec && typeof rec.code === 'string' ? rec.code.trim() : '';
       if (!code) { toast('Код для создания файла не найден.', 'error'); return; }
@@ -4002,7 +4002,7 @@
       openDeviceCodeRunner({ lang: 'run', code }, typeof messageId === 'string' ? messageId : null);
     }));
 
-    $('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
       const rows = (window.__tableStore || {})[b.dataset.dlTable];
       if (!rows) return;
       openTableMenu(rows);

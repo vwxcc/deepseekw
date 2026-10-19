@@ -4048,7 +4048,7 @@
             const item = { code: data.code || '', kind: blockKind, running: true, ok: true, files: [] };
             if (planSource) item.device_plan = planSource;
             n.tool_runs = (n.tool_runs || []).concat([item]);
-            appendActivity(n, { kind: 'status', text: 'Запускаю код в изолированной песочнице на сервере' });
+            appendActivity(n, { kind: 'status', text: blockKind === 'fileplan' ? 'Подготавливаю файл' : 'Выполняю код для задачи' });
             if (n.execution_target === 'both' && !n.deviceRunnerStarted && deviceCode.trim()) {
               n.deviceRunnerStarted = true;
               appendActivity(n, { kind: 'status', text: 'Параллельно запускаю код на устройстве' });
@@ -4060,7 +4060,7 @@
             bindStreamRefs();
           }
           if (isCurrentCodeAgent()) setProjectStatus('Готовлю файлы проекта…');
-          else appendLog('▶ Подготавливаю результат…');
+          else appendLog(blockKind === 'fileplan' ? '▶ Создаю файл…' : '▶ Выполняю код…');
         } else if (ev === 'tool') {
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;

@@ -158,7 +158,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Pillow", app_js)
         self.assertIn("const hasLocalFallback = isDeviceFallbackRun(data);", app_js)
         self.assertIn("&& !hasLocalFallback", app_js)
-        self.assertIn("app.js?v=66&rev=69", index_html)
+        self.assertIn("app.js?v=67&rev=70", index_html)
 
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)

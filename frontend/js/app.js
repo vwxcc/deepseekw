@@ -2085,7 +2085,7 @@
     if (!run) return '';
     const statusRow = n && n.deviceRunnerStarted
       ? '<div class="device-fallback-status"><span role="status" aria-live="polite">' + escapeHtml(deviceRunnerStatusLabel(n)) +
-        '</span><button type="button" data-open-device-status="' + escapeHtml(n.id) + '">Статус в песочнице</button></div>'
+        '</span><button type="button" data-open-device-status="' + escapeHtml(n.id) + '">Статус выполнения</button></div>'
       : '';
     return '<div class="device-fallback-row"><span class="device-fallback-label" role="status">' +
       escapeHtml(deviceFallbackLabel(n, run)) + '</span><button type="button" class="device-fallback-code-toggle" data-fallback-code-toggle="' +

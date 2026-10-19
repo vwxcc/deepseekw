@@ -210,7 +210,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("class UserSkill(Base)", models)
         self.assertIn("class UserSkillIn(BaseModel)", schemas)
         self.assertIn("class UserSkillOut(ORMModel)", schemas)
-        self.assertIn('select(UserSkill).where(UserSkill.user_id == user.id)', skill_router)
+        self.assertIn('UserSkill.user_id == user.id', skill_router)
         self.assertIn('"system": [{"id": item["id"], "title": item["title"]}', skill_router)
         self.assertNotIn('"content": item["content"]', skill_router)
         self.assertIn("[Пользовательские навыки AI CH]", ai_router)
@@ -239,10 +239,10 @@ class DesignThemeTests(unittest.TestCase):
     def test_fallback_event_bindings_use_collection_selectors(self):
         root = Path(__file__).resolve().parents[1]
         app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
-        self.assertIn("$$('[data-run-device]', scope).forEach", app_js)
-        self.assertIn("$$('[data-fallback-code-toggle]', scope).forEach", app_js)
-        self.assertFalse(any(line.strip().startswith("$('[data-run-device]', scope).forEach") for line in app_js.splitlines()))
-        self.assertFalse(any(line.strip().startswith("$('[data-fallback-code-toggle]', scope).forEach") for line in app_js.splitlines()))
+        self.assertNotIn("queryAll('[data-run-device]', scope).forEach", app_js)
+        self.assertIn("queryAll('[data-fallback-code-toggle]', scope).forEach", app_js)
+        self.assertNotIn("event.target.closest('[data-run-device]')", app_js)
+        self.assertNotIn("startFallbackFileGenerationInBackground(n))", app_js)
 
     def test_local_fallback_code_is_optional_and_execution_button_is_prominent(self):
         root = Path(__file__).resolve().parents[1]

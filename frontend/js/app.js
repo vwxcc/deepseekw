@@ -4632,8 +4632,10 @@
     if (!content || state.streaming || state.sending || state.chatLoading) return;
     const asksForArtifact = /(?:файл|документ|презентац|таблиц|excel|powerpoint|word|xlsx?|pptx?|docx?|pdf|svg|png|csv|json|markdown|\bmd\b|\btxt\b|отч[её]т|инфограф|диаграмм|изображени|presentation|spreadsheet|report)/i.test(content) &&
       /(?:созда|сгенер|подготов|сделай|сформир|состав|собери|пришли|выгруз|экспорт|запиши|сохрани|конверт|преобраз|нарисуй|построй|оформи|генер|разработ|нужн|хочу|create|generate|prepare|make|build|export|save|convert|draw|render)/i.test(content);
+    // File creation is serialized: let the server try first when enabled, then use the device only if needed.
+// Target "both" would launch the browser runner on tool_start and create duplicate files.
     const selectedExecutionTarget = asksForArtifact
-      ? 'both'
+      ? 'site'
       : (executionTarget || (shouldAskExecutionTarget(content) ? 'both' : 'site'));
 
     // Validate pending attachments before reading IDs; a stale/null item must not abort sending.

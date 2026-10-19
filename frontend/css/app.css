@@ -3594,6 +3594,7 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
 #sidebar .new-chat,
 #sidebar .chip-btn,
 #sidebar .side-item { background: var(--bg-side); }
+#sidebar .side-row.top-account-actions #sidebar-limits-btn { background: var(--bg-side); }
 #sidebar .new-chat:hover,
 #sidebar .chip-btn:hover,
 #sidebar .side-item:hover { background: var(--bg-hover); }

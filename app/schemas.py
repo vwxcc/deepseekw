@@ -298,6 +298,7 @@ class FileOut(ORMModel):
     size: int
     kind: str
     created_at: datetime
+    source: str = "user"
 
 
 # --- Model sets (admin) ---

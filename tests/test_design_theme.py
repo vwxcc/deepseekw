@@ -184,13 +184,16 @@ class DesignThemeTests(unittest.TestCase):
     def test_sandbox_is_opt_in_and_device_file_code_runs_only_after_complete_answer(self):
         root = Path(__file__).resolve().parents[1]
         config = (root / "app" / "config.py").read_text(encoding="utf-8")
+        env_example = (root / ".env.example").read_text(encoding="utf-8")
         main = (root / "app" / "main.py").read_text(encoding="utf-8")
         app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
         router = (root / "app" / "ai" / "router.py").read_text(encoding="utf-8")
         self.assertIn("run_sandbox_enabled: bool = False", config)
         self.assertIn("RUN_SANDBOX_ENABLED", config)
+        self.assertIn("RUN_SANDBOX_ENABLED=0", env_example)
         self.assertIn("round_limit = 1 if code_mode or artifact_work_request or not settings.run_sandbox_enabled else 2", router)
-        self.assertIn("and not artifact_work_request", router)
+        self.assertIn("agent_on = False", router)
+        self.assertIn("Never execute autonomous/agent code while an answer is streaming", router)
         self.assertIn("await self._run_final_server_artifact(", router)
         self.assertIn('"state": "enabled" if settings.run_sandbox_enabled else "disabled"', main)
         self.assertIn("openDeviceCodeRunner({ lang: 'run', code: deviceFileRun.code }, n.id, { background: true })", app_js)

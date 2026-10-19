@@ -1924,6 +1924,11 @@
     requestAnimationFrame(() => shell.querySelector('.device-code-panel')?.focus());
   }
 
+  function isAutoFileGenerationRun(run) {
+    const code = run && typeof run.code === 'string' ? run.code : '';
+    return /(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*(?:\r?\n)?\s*$/im.test(code);
+  }
+
   function startFallbackFileGenerationInBackground(n) {
     if (!n || n.deviceRunnerStarted) return false;
     const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
@@ -1933,8 +1938,8 @@
     let code = '';
     if (run.kind === 'fileplan' && typeof run.device_plan === 'string' && run.device_plan.trim() && !hasFiles) {
       code = deviceCodeForFilePlan(run.device_plan);
-    } else if (!hasFiles && (run.ok === false || run.timed_out) &&
-        /(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*(?:\r?\n)?\s*$/im.test(String(run.code || ''))) {
+    } else if (!hasFiles && isAutoFileGenerationRun(run)) {
+      // A finished marked code run must auto-generate too; don't wait for a failed run.
       code = String(run.code || '');
     }
     if (!code.trim()) return false;
@@ -1955,7 +1960,7 @@
         (failed || !(Array.isArray(run.files) && run.files.length));
     }
     const code = typeof run.code === 'string' ? run.code.trim() : '';
-    return failed && !!code && !/^План сборки файла\b/u.test(code);
+    return !!code && (isAutoFileGenerationRun(run) || (failed && !/^План сборки файла\b/u.test(code)));
   }
 
   function deviceFallbackHtml(n, runs) {

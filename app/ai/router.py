@@ -706,14 +706,15 @@ class AIRouter:
                     activity_items = activity_parser.feed(str(answer))
                     activity_items.extend(activity_parser.finish())
                     visible_parts: list[str] = []
+                    deferred_events: list[tuple[str, str]] = []
                     for item in activity_items:
                         kind = item.get("kind")
                         if kind == "text":
                             visible_parts.append(str(item.get("text") or ""))
                         elif kind == "status":
-                            await job.output.put(("ui_status", str(item.get("text") or "")))
+                            deferred_events.append(("ui_status", str(item.get("text") or "")))
                         elif kind == "action":
-                            await job.output.put((
+                            deferred_events.append((
                                 "ui_action",
                                 json.dumps(
                                     {"icon": item.get("icon") or "sparkle", "text": item.get("text") or ""},
@@ -723,6 +724,8 @@ class AIRouter:
                     visible_answer = "".join(visible_parts).strip()
                     if visible_answer:
                         winner = ((visible_answer, "", usage), fast)
+                        for event in deferred_events:
+                            await job.output.put(event)
                 if winner:
                     break
         finally:

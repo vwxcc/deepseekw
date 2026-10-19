@@ -1086,7 +1086,7 @@ class AIRouter:
                     # A failed fileplan must not become a textual transcript of the file.
                     user_request = str(job.user_text or "")
                     requested_artifact = bool(re.search(
-                        r"(?:\\b(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи)\\b.{0,100}\\b(?:файл\\w*|презентац\\w*|слайд\\w*|таблиц\\w*|документ\\w*|отч[её]т\\w*|резюме|инфографик\\w*|pptx|docx|xlsx|pdf|powerpoint|excel)\\b|\\b(?:презентацию|таблицу|документ|отчёт|отчет|резюме|инфографику)\\b)",
+                        r"(?:\b(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи)\b.{0,100}\b(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|резюме|инфографик\w*|pptx|docx|xlsx|pdf|powerpoint|excel)\b|\b(?:презентацию|таблицу|документ|отчёт|отчет|резюме|инфографику)\b)",
                         user_request, flags=re.I,
                     ))
                     failed_fileplans = [
@@ -1128,7 +1128,7 @@ class AIRouter:
                                 }
                                 plan_format = format_aliases.get(plan_format, plan_format)
                                 if not plan_format:
-                                    if re.search(r"презентац|слайд|pptx|power\\s*point", user_request, flags=re.I):
+                                    if re.search(r"презентац|слайд|pptx|power\s*point", user_request, flags=re.I):
                                         plan_format = "pptx"
                                     elif re.search(r"docx|word|документ|отч[её]т|резюме", user_request, flags=re.I):
                                         plan_format = "docx"

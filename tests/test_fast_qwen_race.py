@@ -104,7 +104,7 @@ class AutomaticModelRaceTests(unittest.IsolatedAsyncioTestCase):
                 self.job, self.primary, self.fast, [{"role": "user", "content": "Hi"}]
             )
 
-        self.assertEqual(result[0][0], ("Primary answer.", "", {"completion_tokens": 20}))
+        self.assertEqual(result[0], ("Primary answer.", "", {"completion_tokens": 20}))
         self.assertIs(result[1], self.primary)
         self.router._bill.assert_not_awaited()
 
@@ -151,7 +151,7 @@ class AutomaticModelRaceTests(unittest.IsolatedAsyncioTestCase):
                 self.job, self.primary, self.fast, [{"role": "user", "content": "Hi"}]
             )
 
-        self.assertEqual(result[0][0], ("Quick answer.", "", {"completion_tokens": 5}))
+        self.assertEqual(result[0], ("Quick answer.", "", {"completion_tokens": 5}))
         self.assertIs(result[1], self.fast)
         self.router._bill.assert_not_awaited()
 
@@ -173,7 +173,7 @@ class AutomaticModelRaceTests(unittest.IsolatedAsyncioTestCase):
                 self.job, self.primary, self.fast, [{"role": "user", "content": "Hi"}]
             )
 
-        self.assertEqual(result[0][0][0], "Primary answer.")
+        self.assertEqual(result[0][0], "Primary answer.")
         self.assertIs(result[1], self.primary)
         self.router._bill.assert_awaited_once_with(
             self.job, self.fast, fast_usage, "fast_qwen_race_lost"
@@ -198,7 +198,7 @@ class AutomaticModelRaceTests(unittest.IsolatedAsyncioTestCase):
                 self.job, self.primary, self.fast, [{"role": "user", "content": self.job.user_text}]
             )
 
-        self.assertEqual(result[0][0][0], "Primary artifact answer.")
+        self.assertEqual(result[0][0], "Primary artifact answer.")
         self.assertIs(result[1], self.primary)
         self.router._bill.assert_awaited_once_with(
             self.job, self.fast, fast_usage, "fast_qwen_race_lost"

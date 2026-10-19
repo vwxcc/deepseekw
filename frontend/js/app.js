@@ -1288,42 +1288,102 @@
     });
   }
 
+  function chatListItemHtml(chat, options) {
+    const pinned = !!chat.is_pinned;
+    const showPin = !(options && options.hidePin);
+    return '<div class="chat-item' + (chat.id === state.currentChatId ? ' active' : '') + '" data-id="' + escapeHtml(chat.id) + '">' +
+      '<span class="title">' + escapeHtml(chat.title || 'Новый чат') + '</span>' +
+      ((chat.mode === 'code' || chat.mode === 'council' || (chat.bundle_id && chat.mode !== 'council')) ?
+        '<span class="chat-meta">' +
+          (chat.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
+          (chat.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
+          (chat.bundle_id && chat.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
+        '</span>' : '') +
+      '<span class="acts">' +
+        (showPin ? '<button data-act="pin" title="' + (pinned ? 'Открепить чат' : 'Закрепить чат') + '" aria-label="' +
+          (pinned ? 'Открепить чат' : 'Закрепить чат') + '">' + icon(pinned ? 'pin-off' : 'pin') + '</button>' : '') +
+        '<button data-act="rename" title="Переименовать" aria-label="Переименовать">' + icon('pencil') + '</button>' +
+        '<button data-act="delete" title="Удалить" aria-label="Удалить">' + icon('trash') + '</button>' +
+      '</span></div>';
+  }
+
+  function bindChatListContainer(container) {
+    if (!container) return;
+    container.onclick = event => {
+      const row = event.target.closest('.chat-item');
+      if (!row || !container.contains(row)) return;
+      const id = String(row.dataset.id || '');
+      const button = event.target.closest('[data-act]');
+      if (button) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (button.dataset.act === 'rename') return openRename(id);
+        if (button.dataset.act === 'delete') return removeChat(id);
+        if (button.dataset.act === 'pin') return toggleChatPin(id);
+      }
+      openChat(id);
+    };
+  }
+
+  function renderPinnedChats() {
+    const section = $('#pinned-chat-section');
+    const list = $('#pinned-chat-list');
+    const allButton = $('#pinned-all-btn');
+    if (!section || !list || !allButton) return;
+    const pinned = (Array.isArray(state.chats) ? state.chats : [])
+      .filter(chat => chat && chat.is_pinned)
+      .sort((a, b) => (Date.parse(b.updated_at || '') || 0) - (Date.parse(a.updated_at || '') || 0));
+    section.classList.toggle('hidden', pinned.length === 0);
+    list.innerHTML = pinned.length ? chatListItemHtml(pinned[0]) : '';
+    allButton.classList.toggle('hidden', pinned.length <= 1);
+    allButton.onclick = () => {
+      const body = '<div class="pinned-modal-list">' + pinned.map(chat =>
+        '<button type="button" class="pinned-modal-row" data-pinned-open="' + escapeHtml(chat.id) + '">' +
+        '<span>' + icon('pin') + '</span><span><strong>' + escapeHtml(chat.title || 'Новый чат') +
+        '</strong><small>' + escapeHtml(chat.project_id ? ((workspaceProjectsData || []).find(p => p.id === chat.project_id)?.title || 'Проект') : 'Личный чат') +
+        '</small></span>' + icon('chevron-down') + '</button>'
+      ).join('') + '</div>';
+      openModal({ title: 'Все закреплённые чаты', okText: 'Закрыть', body, onOk: () => true });
+      queryAll('[data-pinned-open]').forEach(button => button.addEventListener('click', async () => {
+        const id = button.dataset.pinnedOpen;
+        closeModal();
+        await openChat(id);
+      }));
+    };
+    bindChatListContainer(list);
+  }
+
+  async function toggleChatPin(chatId, forcedValue) {
+    const chat = (state.chats || []).find(item => item && String(item.id) === String(chatId));
+    if (!chat) { toast('Чат не найден в текущем списке', 'error'); return false; }
+    const pinned = forcedValue === undefined ? !chat.is_pinned : !!forcedValue;
+    try {
+      const updated = await api.patch('/api/chats/' + encodeURIComponent(chatId), { is_pinned: pinned });
+      const index = state.chats.findIndex(item => item && String(item.id) === String(chatId));
+      if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
+      state.chatListVersion += 1;
+      renderChatList();
+      toast(pinned ? 'Чат закреплён' : 'Чат откреплён');
+      return true;
+    } catch (error) {
+      toast('Не удалось изменить закрепление: ' + error.message, 'error');
+      return false;
+    }
+  }
+
   function renderChatList() {
     const box = $('#chat-list');
-    // Defensive normalization: an incomplete response must never crash the sidebar.
+    // An incomplete or stale response must never crash sidebar rendering.
     state.chats = (Array.isArray(state.chats) ? state.chats : [])
-      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
+      .filter(chat => chat && typeof chat === 'object' && typeof chat.id === 'string' && chat.id);
+    renderPinnedChats();
     if (!state.chats.length) {
       box.innerHTML = '<div class="side-empty">' + (state.query ? 'Ничего не найдено' : 'Пока нет чатов') + '</div>';
+      bindChatListContainer(box);
       return;
     }
-    box.innerHTML = state.chats.map(c =>
-      '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
-        '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
-        ((c.mode === 'code' || c.mode === 'council' || (c.bundle_id && c.mode !== 'council')) ?
-          '<span class="chat-meta">' +
-            (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
-            (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
-            (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
-          '</span>' : '') +
-        '<span class="acts">' +
-          '<button data-act="rename" title="Переименовать">' + icon('pencil') + '</button>' +
-          '<button data-act="delete" title="Удалить">' + icon('trash') + '</button>' +
-        '</span>' +
-      '</div>').join('');
-
-    queryAll('.chat-item', box).forEach(el => {
-      el.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-act]');
-        const id = el.dataset.id;
-        if (btn) {
-          e.stopPropagation();
-          if (btn.dataset.act === 'rename') return openRename(id);
-          if (btn.dataset.act === 'delete') return removeChat(id);
-        }
-        openChat(id);
-      });
-    });
+    box.innerHTML = state.chats.map(chat => chatListItemHtml(chat)).join('');
+    bindChatListContainer(box);
   }
 
   async function newChat(mode) {

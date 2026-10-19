@@ -4003,7 +4003,7 @@
         toast('Код для HTML-превью не найден.', 'error');
         return;
       }
-      frame.srcdoc = rec.code;
+      frame.srcdoc = rec.code + '\n<!-- AI_CH_PREVIEW_RELOAD:' + Date.now() + ' -->';
       button.blur();
     }));
 

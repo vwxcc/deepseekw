@@ -1173,6 +1173,7 @@ class AIRouter:
         if artifact_request:
             # Every artifact request is a single complete model response; execution happens only afterwards.
             if device_only:
+                setattr(job, "sandbox_available", False)
                 system_prompt += (
                     "\n\nРЕЖИМ СОЗДАНИЯ ФАЙЛА ПОСЛЕ ПОЛНОГО ОТВЕТА: серверная песочница выключена "
                     "или явно выбран запуск на устройстве. Не используй fileplan, агентные блоки и не "
@@ -1194,6 +1195,7 @@ class AIRouter:
                     healthy = probe.is_success and bool((probe.json() or {}).get("ok"))
                 except Exception:
                     healthy = False
+                setattr(job, "sandbox_available", healthy)
                 if healthy:
                     system_prompt += (
                         "\n\nСЕРВЕРНАЯ ПЕСОЧНИЦА ДОСТУПНА. Сначала верни весь законченный ответ одним вызовом; "
@@ -1461,12 +1463,31 @@ class AIRouter:
                             if files:
                                 summaries.append("Созданные файлы: " + ", ".join(files[:30]))
                         answer = "\n\n".join(summaries).strip()
+                    post_answer_runs: list[dict] = []
                     if requested_artifact and settings.run_sandbox_enabled and job.execution_target != "device":
                         answer, post_answer_runs = await self._run_final_server_artifact(
                             job, answer, run_timeout
                         )
                         if post_answer_runs:
                             all_runs.extend(post_answer_runs)
+                    if requested_artifact:
+                        if not settings.run_sandbox_enabled or job.execution_target == "device":
+                            sandbox_status = (
+                                "Статус песочницы: серверное исполнение выключено "
+                                "(RUN_SANDBOX_ENABLED=0); после полного ответа будет предпринята попытка "
+                                "создания файла на устройстве."
+                            )
+                        elif post_answer_runs:
+                            if any(bool(run.get("ok")) for run in post_answer_runs):
+                                sandbox_status = "Статус песочницы: серверная песочница работает; файл обработан после полного ответа."
+                            else:
+                                sandbox_status = "Статус песочницы: серверный запуск не удался; после ответа будет предпринята попытка на устройстве."
+                        elif getattr(job, "sandbox_available", False):
+                            sandbox_status = "Статус песочницы: серверная песочница доступна; файл будет запускаться только после полного ответа."
+                        else:
+                            sandbox_status = "Статус песочницы: серверная песочница недоступна; после ответа будет предпринята попытка на устройстве."
+                        if not re.search(r"Статус песочницы:", answer, flags=re.I):
+                            answer = (answer.rstrip() + "\n\n" + sandbox_status).strip()
                     if not answer.strip():
                         raise ProviderError("Пустой ответ модели")
 

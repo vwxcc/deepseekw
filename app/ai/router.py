@@ -109,7 +109,9 @@ def _normalise_generated_filename(value: Any) -> str:
     stem = re.sub(r"\s+", "-", stem)
     stem = re.sub(r"-{2,}", "-", stem).strip(" .-_")[:140].strip(" .-_")
     suffix = suffix[:16]
-    return (stem or "generated-file") + suffix
+    if not stem:
+        return ""
+    return stem + suffix
 
 
 def _deduplicate_generated_file_items(items: list[dict]) -> list[dict]:

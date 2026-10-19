@@ -1827,7 +1827,7 @@
       document.removeEventListener('keydown', onKeyDown);
     };
     const onKeyDown = event => { if (event.key === 'Escape' && document.body.contains(shell)) close(); };
-    $('[data-code-viewer-close]', shell).forEach(button => button.addEventListener('click', close));
+    $$('[data-code-viewer-close]', shell).forEach(button => button.addEventListener('click', close));
     const copyButton = $('[data-code-viewer-copy]', shell);
     if (copyButton) copyButton.addEventListener('click', async () => {
       const ok = await copyText(source);

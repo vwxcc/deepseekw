@@ -1375,10 +1375,8 @@ class AIRouter:
 
                     # A failed fileplan must not become a textual transcript of the file.
                     user_request = str(job.user_text or "")
-                    requested_artifact = bool(re.search(
-                        r"(?:\b(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи)\b.{0,100}\b(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|резюме|инфографик\w*|pptx|docx|xlsx|pdf|powerpoint|excel)\b|\b(?:презентацию|таблицу|документ|отчёт|отчет|резюме|инфографику)\b)",
-                        user_request, flags=re.I,
-                    ))
+                    # Keep intent detection identical to the single-response/prompt gate above.
+                    requested_artifact = artifact_work_request
                     failed_fileplans = [
                         run for run in all_runs
                         if run.get("kind") == "fileplan" and (

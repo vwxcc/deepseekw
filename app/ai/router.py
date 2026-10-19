@@ -1560,7 +1560,19 @@ class AIRouter:
                             answer = blocked
                             usage = None
                             break
-                        got = await self._stream_once(job, entry, messages)
+                        response_entry = entry
+                        fast_entry = self._fast_qwen_entry(entry)
+                        if fast_entry is not None:
+                            raced = await self._race_primary_and_fast(job, entry, fast_entry, messages)
+                            if raced is None:
+                                return
+                            got, response_entry = raced
+                            # Both answers were buffered until a full answer won.
+                            # Only now expose the selected answer to the client.
+                            if str(got[0] or "").strip():
+                                await job.output.put(("delta", got[0]))
+                        else:
+                            got = await self._stream_once(job, entry, messages)
                         if got is None:
                             return
                         full, thinking, usage = got
@@ -1773,7 +1785,12 @@ class AIRouter:
                             ))
                         )
 
-                    await self._bill(job, entry, usage, "main")
+                    await self._bill(
+                        job,
+                        response_entry,
+                        usage,
+                        "fast_qwen" if response_entry.id == "fast-qwen-automatic" else "main",
+                    )
                     answer = await _process_schedule_markers(job.user_id, answer)
                     await self._finish(
                         job.message_id,

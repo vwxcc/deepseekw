@@ -107,6 +107,24 @@ class DesignThemeTests(unittest.TestCase):
         index = (root / "frontend" / "index.html").read_text(encoding="utf-8")
         self.assertIn("app.js?v=63&rev=66", index)
 
+    def test_sandbox_panel_is_reduced_by_20_percent_on_desktop_and_mobile(self):
+        root = Path(__file__).resolve().parents[1]
+        css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
+        index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("width: min(80%, 704px); height: min(67.2vh, 624px);", css)
+        self.assertIn("width: 80%; height: min(73.6vh, 720px); border-radius: 19px;", css)
+        self.assertIn("app.css?v=51&rev=54", index_html)
+
+    def test_file_generation_is_template_based_and_sandbox_errors_are_brief(self):
+        self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий файл", prompts.CORE_RULES)
+        self.assertIn("максимум одним коротким предложением", prompts.CORE_RULES)
+
+        task_rules = prompts.skills_for("Сделай красивую таблицу")
+        self.assertIn("Создание файлов AI-Ch", task_rules)
+        self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий скачиваемый файл", task_rules)
+        self.assertIn("template_id и style только из реального каталога", task_rules)
+
     def test_code_agent_single_generation_guard_is_preserved(self):
         self.assertIn("одним блоком run", prompts.CODE_SYSTEM)
         self.assertIn("ровно одна генерация модели", prompts.CODE_SYSTEM)

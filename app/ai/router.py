@@ -1350,7 +1350,7 @@ class AIRouter:
         artifact_work_request = is_artifact_request(job.user_text)
 
         # Never execute autonomous/agent code while an answer is streaming.
-        # File-generation code has its own single-response, post-completion runner below.
+        # File creation and explicit Code-mode blocks use single-response post-completion runners.
         agent_on = False
         code_mode = job.mode == "code"
         plan_steps = job.max_steps

@@ -3802,13 +3802,6 @@
           }
           return;
         }
-        const deviceRun = event.target.closest('[data-run-device]');
-        if (deviceRun && messageActions.contains(deviceRun)) {
-          const item = (window.__codeStore || {})[deviceRun.dataset.runDevice];
-          const messageEl = deviceRun.closest('.msg');
-          if (item) openDeviceCodeRunner(item, messageEl ? messageEl.dataset.mid : null);
-          return;
-        }
         const btn = event.target.closest('[data-mact]');
         if (!btn || !messageActions.contains(btn) || btn.disabled) return;
         const id = btn.dataset.id, act = btn.dataset.mact;
@@ -3862,19 +3855,6 @@
       if (!n) return;
       n.showActivities = !n.showActivities;
       renderMessageInPlace(n.id);
-    }));
-
-    queryAll('[data-run-device]', scope).forEach(button => button.addEventListener('click', () => {
-      const n = findNode(state.tree, button.dataset.runDevice);
-      if (!n) return;
-      const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
-      const run = runs.slice().reverse().find(isDeviceFallbackRun);
-      if (!run) { toast('Для этого сообщения нет кода, который можно повторно запустить.', 'error'); return; }
-      const code = run.kind === 'fileplan'
-        ? deviceCodeForFilePlan(run.device_plan)
-        : String(run.code || '');
-      if (!code.trim()) { toast('Не удалось подготовить локальный код для этой задачи.', 'error'); return; }
-      openDeviceCodeRunner({ lang: 'run', code: code }, n.id);
     }));
 
     queryAll('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
@@ -4362,12 +4342,6 @@
             }
             if (data.files && data.files.length) {
               appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
-            }
-          }
-          if (n && startFallbackFileGenerationInBackground(n)) {
-            if (state.currentChatId === streamContext.chatId) {
-              renderMessageInPlace(n.id);
-              bindStreamRefs();
             }
           }
           loadProject(false);

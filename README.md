@@ -95,17 +95,17 @@ uvicorn app.main:fastapi --host 0.0.0.0 --port 8000
 
 ### Автоматический выбор ответа между основной моделью и быстрым Qwen
 
-AI CH can query its configured primary MAIN model and a separate fast Qwen model in parallel. The first complete valid answer is selected. If the primary finishes first, the fast answer is discarded. If Qwen finishes first, its answer is used only when it is complete and it does not contain the private decline marker. The fast model is instructed to answer only easy/medium requests and to return `[[AICH_FAST_QWEN_DECLINE]]` when unsure or when an answer may exceed 8,000 output tokens; in that case AI CH waits for the primary answer. The API request itself is capped at 8,000 output tokens.
+AI CH параллельно отправляет запрос основной модели MAIN и отдельной быстрой модели Qwen. Побеждает первая модель, завершившая полноценный ответ. Если основной ответ завершён раньше, ответ Qwen отбрасывается. Если первой ответила Qwen, её результат принимается только при условии, что он полный и не содержит служебного маркера отказа. Быстрая модель должна отвечать только на лёгкие и средние запросы и возвращать `[[AICH_FAST_QWEN_DECLINE]]`, когда не уверена или ответ может превысить 8 000 выходных токенов. В таком случае AI CH ждёт ответ основной модели. Сам API-запрос Qwen также ограничен 8 000 выходными токенами; ответ, оборванный по лимиту, не используется.
 
-Configure the fast lane in Render → Environment (or the local `.env`) using three required connection values:
+В Render → Environment (или в локальном `.env`) настройте три обязательные переменные быстрой модели:
 
-- `FAST_QWEN_BASE_URL` — OpenAI-compatible API base URL, usually ending in `/v1`;
-- `FAST_QWEN_API_KEY` — API key for the Qwen endpoint;
-- `FAST_QWEN_MODEL_ID` — the exact external model ID accepted by that endpoint.
+- `FAST_QWEN_BASE_URL` — базовый URL OpenAI-совместимого API, обычно оканчивается на `/v1`;
+- `FAST_QWEN_API_KEY` — API-ключ этого Qwen endpoint;
+- `FAST_QWEN_MODEL_ID` — точный внешний ID модели, который принимает этот endpoint.
 
-Optional `FAST_QWEN_TIMEOUT` and `FAST_QWEN_PRICE_IN` / `FAST_QWEN_PRICE_OUT` / `FAST_QWEN_PRICE_CACHE` configure timeout and accounting; output token count is always capped at 8,000. These variables do not replace or override the primary model. When any of the three connection values is missing, only the primary model runs.
+Необязательные `FAST_QWEN_TIMEOUT` и `FAST_QWEN_PRICE_IN` / `FAST_QWEN_PRICE_OUT` / `FAST_QWEN_PRICE_CACHE` управляют таймаутом и учётом расходов. По умолчанию цена быстрой модели равна нулю; если провайдер списывает деньги, укажите реальные тарифы. Когда любой из трёх параметров подключения отсутствует, приложение использует только основную модель.
 
-The old `THINK_*` variables and composer Think toggle are no longer used. If legacy `QWEN_*` variables were previously set in Render to override the primary MAIN model, remove those overrides if the primary should be sourced entirely from the active Model Sets entry.
+Старая кнопка Think и переменные `THINK_*` больше не используются. Если в Render были заданы старые `QWEN_*` переменные, переопределяющие основную модель MAIN, удалите эти переменные, чтобы основной провайдер определялся активной записью Model Sets.
 
 ### Смена OpenAI-совместимого провайдера основной генерации
 

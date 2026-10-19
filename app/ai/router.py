@@ -71,8 +71,9 @@ USER_TIMEZONE = ZoneInfo("Europe/Berlin")
 
 _ARTIFACT_NOUNS = (
     r"(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|резюме|"
-    r"инфографик\w*|изображени\w*|иллюстрац\w*|pptx?|docx?|xlsx?|pdf|svg|png|csv|json|md|txt|"
-    r"power\s*point|excel|spreadsheet|presentation|document|infographic|image|slides?)"
+    r"инфографик\w*|изображени\w*|иллюстрац\w*|картин\w*|логотип\w*|схем\w*|диаграмм\w*|"
+    r"черт[её]ж\w*|плакат\w*|pptx?|docx?|xlsx?|pdf|svg|png|csv|json|md|txt|"
+    r"power\s*point|excel|spreadsheet|presentation|document|infographic|image|logo|diagram|chart|drawing|poster|slides?)"
 )
 _ARTIFACT_ACTIONS = (
     r"(?:созда\w*|сдела\w*|подготов\w*|сгенерир\w*|сформир\w*|экспортир\w*|выгруз\w*|"

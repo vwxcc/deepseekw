@@ -1470,6 +1470,7 @@
       if (requestToken !== state.chatOpenToken) return false;
       if (!Array.isArray(loadedTree)) throw new Error('Сервер вернул некорректную историю чата');
 
+      if (state.currentChatId !== id) closeChatSearch();
       state.currentChatId = id;
       state.choices = {};
       state.tree = loadedTree.filter(node => node && typeof node === 'object' && !Array.isArray(node));
@@ -5915,7 +5916,10 @@
       clearTimeout(t);
       t = setTimeout(() => { state.query = e.target.value.trim(); loadChats(); }, 250);
     });
-    $('#chat-title').addEventListener('click', renameCurrentChat);
+    $('#chat-title').addEventListener('click', event => {
+      if (event.target.closest('.chat-title-search-input, .chat-search-close')) return;
+      renameCurrentChat();
+    });
     $('#messages').addEventListener('scroll', () => {
       const box = $('#messages');
       state.stickBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 70;
@@ -6017,6 +6021,204 @@
     toast('Подготовлен файл чата для скачивания.');
   }
 
+  function closeChatSearch() {
+    clearChatSearchHighlights();
+    const title = $('#chat-title');
+    if (!title) return;
+    title.classList.remove('chat-title-search');
+    title.textContent = state.chatSearchPreviousTitle || (
+      (state.chats || []).find(chat => chat && chat.id === state.currentChatId)?.title || 'AI CH'
+    );
+    state.chatSearchPreviousTitle = '';
+    state.chatSearchMatchIndex = 0;
+  }
+
+  function startChatSearch() {
+    const title = $('#chat-title');
+    if (!title || !state.currentChatId) {
+      toast('Сначала откройте чат', 'error');
+      return;
+    }
+    if (title.classList.contains('chat-title-search')) {
+      $('.chat-title-search-input', title)?.focus();
+      return;
+    }
+    state.chatSearchPreviousTitle = title.textContent || 'AI CH';
+    title.classList.add('chat-title-search');
+    title.innerHTML = '<span class="chat-search-leading" aria-hidden="true">' + icon('search') + '</span>' +
+      '<input type="search" class="chat-title-search-input" aria-label="Найти в чате" placeholder="Найти в чате" autocomplete="off" />' +
+      '<button type="button" class="chat-search-close" aria-label="Закрыть поиск" title="Закрыть поиск">' + icon('x') + '</button>';
+    const input = $('.chat-title-search-input', title);
+    const close = $('.chat-search-close', title);
+    let debounce = null;
+    input.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        state.chatSearchMatchIndex = 0;
+        highlightChatSearch(input.value, false);
+      }, 60);
+    });
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeChatSearch();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        highlightChatSearch(input.value, true);
+      }
+    });
+    close.addEventListener('click', event => {
+      event.stopPropagation();
+      closeChatSearch();
+    });
+    input.focus();
+  }
+
+  function clearChatSearchHighlights() {
+    const messages = $('#messages');
+    if (!messages) return;
+    queryAll('mark.chat-search-match', messages).forEach(mark => {
+      mark.replaceWith(document.createTextNode(mark.textContent || ''));
+    });
+    queryAll('.msg .content.md', messages).forEach(content => content.normalize());
+  }
+
+  function highlightChatSearch(query, moveToNext) {
+    clearChatSearchHighlights();
+    const term = String(query || '').trim();
+    if (!term) { state.chatSearchMatchIndex = 0; return; }
+    const escaped = term.split('').map(char =>
+      '\\^$.*+?()[]{}|'.includes(char) ? '\\' + char : char
+    ).join('');
+    let regex;
+    try { regex = new RegExp(escaped, 'gi'); } catch (_) { return; }
+    const messages = $('#messages');
+    const roots = queryAll('.msg .content.md', messages);
+    roots.forEach(root => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(textNode) {
+          const parent = textNode.parentElement;
+          if (!parent || parent.closest('pre,code,script,style,textarea,button,mark,svg,.katex')) return NodeFilter.FILTER_REJECT;
+          return (textNode.nodeValue || '').toLocaleLowerCase().includes(term.toLocaleLowerCase())
+            ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        },
+      });
+      const nodes = [];
+      let textNode;
+      while ((textNode = walker.nextNode())) nodes.push(textNode);
+      nodes.forEach(node => {
+        const value = node.nodeValue || '';
+        regex.lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let cursor = 0;
+        let match;
+        while ((match = regex.exec(value))) {
+          if (match.index > cursor) fragment.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+          const mark = document.createElement('mark');
+          mark.className = 'chat-search-match';
+          mark.textContent = match[0];
+          fragment.appendChild(mark);
+          cursor = match.index + match[0].length;
+          if (!match[0].length) regex.lastIndex++;
+        }
+        if (!cursor) return;
+        if (cursor < value.length) fragment.appendChild(document.createTextNode(value.slice(cursor)));
+        node.replaceWith(fragment);
+      });
+    });
+    const marks = queryAll('mark.chat-search-match', messages);
+    if (!marks.length) {
+      state.chatSearchMatchIndex = 0;
+      return;
+    }
+    if (moveToNext) state.chatSearchMatchIndex = (state.chatSearchMatchIndex + 1) % marks.length;
+    else state.chatSearchMatchIndex = 0;
+    marks.forEach((mark, index) => mark.classList.toggle('is-current', index === state.chatSearchMatchIndex));
+    marks[state.chatSearchMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function openChatProjectPicker(chatId) {
+    let projects = [];
+    try { projects = await api.get('/api/projects'); }
+    catch (error) { toast('Не удалось загрузить проекты: ' + error.message, 'error'); return; }
+    if (!Array.isArray(projects) || !projects.length) {
+      openModal({
+        title: 'Добавить чат в проект',
+        body: '<p>Сначала создайте проект — после этого его можно будет выбрать для текущего чата.</p>' +
+          '<button type="button" class="chip-btn" id="chat-project-create-first">' + icon('plus') + ' Создать проект</button>',
+        okText: 'Закрыть',
+        onOk: () => true,
+      });
+      $('#chat-project-create-first')?.addEventListener('click', () => {
+        closeModal();
+        openProjectsWorkspace().then(() => {
+          projectWorkspaceEditor = { id: '', title: '', description: '' };
+          renderProjectsWorkspace();
+          $('#workspace-project-name')?.focus();
+        });
+      });
+      return;
+    }
+    const activeChat = (state.chats || []).find(chat => chat && String(chat.id) === String(chatId));
+    openModal({
+      title: 'Добавить чат в проект',
+      body: '<p>Выберите проект для текущего чата.</p><label for="chat-project-choice">Проект</label>' +
+        '<select id="chat-project-choice" class="model-select">' + projects.map(project =>
+          '<option value="' + escapeHtml(project.id) + '"' +
+          (activeChat && String(activeChat.project_id || '') === String(project.id) ? ' selected' : '') + '>' +
+          escapeHtml(project.title || 'Без названия') + '</option>'
+        ).join('') + '</select>',
+      onOk: async root => {
+        const projectId = String($('#chat-project-choice', root)?.value || '');
+        if (!projectId) return false;
+        try {
+          const updated = await api.patch('/api/chats/' + encodeURIComponent(chatId), { project_id: projectId });
+          const index = state.chats.findIndex(item => item && item.id === updated.id);
+          if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
+          state.chatListVersion += 1;
+          renderChatList();
+          const project = projects.find(item => String(item.id) === projectId);
+          toast('Чат добавлен в проект «' + (project && project.title || 'Проект') + '»');
+          return true;
+        } catch (error) {
+          toast('Не удалось добавить чат: ' + error.message, 'error');
+          return false;
+        }
+      },
+    });
+  }
+
+  async function openCurrentChatFilesModal() {
+    const nodes = allMessages(state.tree).map(entry => entry && entry.node).filter(Boolean);
+    const byId = new Map();
+    nodes.forEach(node => (Array.isArray(node.attachments) ? node.attachments : []).forEach(file => {
+      if (!file) return;
+      const id = String(file.file_id || file.id || '');
+      if (!id) return;
+      const previous = byId.get(id) || {};
+      byId.set(id, {
+        ...previous, ...file, file_id: id,
+        source: node.role === 'assistant' ? 'ai' : (previous.source || 'user'),
+        name: file.name || file.original_name || previous.name || 'Файл',
+      });
+    }));
+    const files = Array.from(byId.values());
+    openModal({
+      title: 'Файлы в этом чате',
+      okText: 'Закрыть',
+      body: files.length ? '<div class="chat-attached-files-list">' + files.map(file =>
+        '<a class="chat-attached-file" href="/api/files/' + encodeURIComponent(file.file_id) + '/download" target="_blank" rel="noopener noreferrer">' +
+        '<span class="chat-attached-file-icon">' + icon(file.source === 'ai' ? 'file' : 'paperclip') + '</span>' +
+        '<span class="chat-attached-file-copy"><strong>' + escapeHtml(file.name) + '</strong><small>' +
+        (file.source === 'ai' ? 'Создано AI CH' : 'Загружено вами') +
+        (Number.isFinite(Number(file.size)) ? ' · ' + formatSize(Number(file.size)) : '') +
+        '</small></span>' + icon('download') + '</a>'
+      ).join('') + '</div>' : '<div class="files-workspace-empty chat-no-files"><span class="files-empty-art">' +
+        icon('folder') + '</span><strong>В этом чате пока нет файлов</strong><p>Загруженные и созданные файлы появятся здесь после прикрепления к сообщению.</p></div>',
+      onOk: () => true,
+    });
+  }
+
   async function openShare() {
     if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
     let st;
@@ -6041,9 +6243,17 @@
         icon('copy') + 'Копировать' + '</button>' + readableButton + audioButton + '</div>';
     }).join('');
     openModal({
-      title: 'Поделиться чатом',
+      title: 'Действия чата',
       okText: 'Закрыть',
-      body: (st.is_public
+      body:
+        '<div class="chat-actions-primary">' +
+        '<button type="button" class="chip-btn" id="chat-action-new">' + icon('plus') + 'Новый чат</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-pin">' + icon('map-pin') + (state.chats.find(chat => chat && chat.id === state.currentChatId)?.is_pinned ? 'Открепить' : 'Закрепить') + '</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-project">' + icon('folder') + 'Добавить в проект</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-files">' + icon('file') + 'Загруженные файлы</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-find">' + icon('search') + 'Найти в чате</button>' +
+        '</div><hr style="border:0;border-top:1px solid var(--border-soft);margin:14px 0" />' +
+        (st.is_public
         ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
           '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
           '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
@@ -6063,6 +6273,28 @@
       onOk: () => true,
     });
 
+    $('#chat-action-new')?.addEventListener('click', async () => {
+      closeModal();
+      await newChat('chat');
+    });
+    $('#chat-action-pin')?.addEventListener('click', async () => {
+      const chatId = state.currentChatId;
+      closeModal();
+      if (chatId) await toggleChatPin(chatId);
+    });
+    $('#chat-action-project')?.addEventListener('click', () => {
+      const chatId = state.currentChatId;
+      closeModal();
+      if (chatId) openChatProjectPicker(chatId);
+    });
+    $('#chat-action-files')?.addEventListener('click', () => {
+      closeModal();
+      openCurrentChatFilesModal();
+    });
+    $('#chat-action-find')?.addEventListener('click', () => {
+      closeModal();
+      startChatSearch();
+    });
     const start = $('#start-share');
     if (start) start.addEventListener('click', async () => {
       try { await api.post('/api/chats/' + state.currentChatId + '/share'); }

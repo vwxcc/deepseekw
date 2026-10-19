@@ -216,3 +216,47 @@ async def complete_chat(
             payload["chat_template_kwargs"] = {"enable_thinking": True}
             return await _once(payload)
         raise
+
+
+async def complete_chat_with_usage(
+    *,
+    messages: list[dict],
+    base_url: str,
+    api_key: str,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+    disable_thinking: bool = True,
+    effort: str | None = None,
+) -> tuple[str, dict | None]:
+    """Complete a chat and return the provider usage record for accurate billing."""
+    url = _endpoint(base_url)
+    payload = _build_payload(
+        messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
+        stream=False, disable_thinking=disable_thinking, effort=effort,
+    )
+
+    async def _once(pl: dict) -> tuple[str, dict | None]:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=pl, headers=_headers(api_key))
+            if resp.status_code >= 400:
+                raise ProviderError(
+                    _format_http_error(resp.status_code, resp.text, str(pl.get("model") or ""))
+                )
+            data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise ProviderError("Провайдер вернул пустой ответ")
+            text = _extract_text(choices[0].get("message") or {}).strip()
+            usage = data.get("usage")
+            return text, usage if isinstance(usage, dict) else None
+
+    try:
+        return await _once(payload)
+    except ProviderError as e:
+        if "reasoning_effort" in payload and "400" in str(e):
+            payload.pop("reasoning_effort", None)
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            return await _once(payload)
+        raise

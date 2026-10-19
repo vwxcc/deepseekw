@@ -3853,7 +3853,7 @@
       if (!section) return;
       const expanded = section.classList.toggle('is-collapsed') === false;
       button.setAttribute('aria-expanded', String(expanded));
-      button.innerHTML = icon(expanded ? 'chevron-up' : 'chevron-down') +
+      button.innerHTML = icon('image') +
         '<span>' + (expanded ? 'Скрыть изображения из интернета' : 'Показать изображения из интернета') + '</span>' +
         icon(expanded ? 'chevron-up' : 'chevron-down');
     }));

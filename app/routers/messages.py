@@ -669,7 +669,6 @@ async def send_message(
         message_id=assistant.id,
         model_set_id=data.model_set_id,
         effort=chat.effort,
-        think_mode=bool(data.think_mode),
         user_id=user.id,
         mode=chat.mode or "chat",
         execution_target=execution_target,

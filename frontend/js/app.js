@@ -5,6 +5,7 @@
   // ---------- utils ----------
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  // Static contract: never emit a chat execution button containing data-run-device="; file runs are started only after the complete answer.
   const actionCarouselTimers = new WeakMap();
 
   function bindActionCarouselAutoplay(root = document) {

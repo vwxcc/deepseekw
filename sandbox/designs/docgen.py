@@ -569,6 +569,47 @@ def _docx_no_borders(table):
     pr.append(borders)
 
 
+def _docx_cell_margins(cell, top=95, start=130, bottom=95, end=130):
+    """Set readable, consistent Word table padding using OOXML twips."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    margins = tc_pr.find(qn("w:tcMar"))
+    if margins is None:
+        margins = OxmlElement("w:tcMar")
+        tc_pr.append(margins)
+    for edge, value in (("top", top), ("start", start), ("bottom", bottom), ("end", end)):
+        node = margins.find(qn("w:" + edge))
+        if node is None:
+            node = OxmlElement("w:" + edge)
+            margins.append(node)
+        node.set(qn("w:w"), str(int(value)))
+        node.set(qn("w:type"), "dxa")
+
+
+def _docx_keep_row_together(row):
+    """Avoid splitting a table row across pages."""
+    from docx.oxml import OxmlElement
+
+    props = row._tr.get_or_add_trPr()
+    if props.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}cantSplit") is None:
+        props.append(OxmlElement("w:cantSplit"))
+
+
+def _docx_repeat_table_header(row):
+    """Repeat the first table row when a Word table spans pages."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    props = row._tr.get_or_add_trPr()
+    header = props.find(qn("w:tblHeader"))
+    if header is None:
+        header = OxmlElement("w:tblHeader")
+        props.append(header)
+    header.set(qn("w:val"), "true")
+
+
 def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
     """Build a formatted Word document with a cover page, headings, tables and page numbers."""
     from docx import Document
@@ -583,8 +624,9 @@ def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
     doc = Document()
     theme.docx_style(doc, style)
     for section in doc.sections:
-        section.top_margin = section.bottom_margin = Pt(72)
-        section.left_margin = section.right_margin = Pt(72)
+        section.top_margin = section.bottom_margin = Pt(68)
+        section.left_margin = section.right_margin = Pt(68)
+        section.header_distance = section.footer_distance = Pt(30)
 
     def para(text="", size=11, color=None, bold=False, italic=False, align=None,
              space_after=7, spacing=1.28):
@@ -593,6 +635,7 @@ def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
             par.alignment = align
         par.paragraph_format.space_after = Pt(space_after)
         par.paragraph_format.line_spacing = spacing
+        par.paragraph_format.widow_control = True
         run = par.add_run(text)
         run.font.size = Pt(size)
         run.font.bold = bold
@@ -614,6 +657,7 @@ def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
         bar = doc.add_table(rows=1, cols=1)
         cover = bar.cell(0, 0)
         cover.text = ""
+        _docx_cell_margins(cover, top=80, bottom=80, start=80, end=80)
         _docx_shade(cover, p["primary"])
         cover.paragraphs[0].add_run(" ").font.size = Pt(8)
         para("", space_after=14)
@@ -634,11 +678,17 @@ def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
         if kind == "h1":
             h = doc.add_heading(str(b.get("text", "")), level=1)
             h.paragraph_format.space_before = Pt(16)
+            h.paragraph_format.keep_with_next = True
+            h.paragraph_format.keep_together = True
         elif kind == "h2":
             h = doc.add_heading(str(b.get("text", "")), level=2)
             h.paragraph_format.space_before = Pt(12)
+            h.paragraph_format.keep_with_next = True
+            h.paragraph_format.keep_together = True
         elif kind == "h3":
-            doc.add_heading(str(b.get("text", "")), level=3)
+            h = doc.add_heading(str(b.get("text", "")), level=3)
+            h.paragraph_format.keep_with_next = True
+            h.paragraph_format.keep_together = True
         elif kind == "bullets":
             for it in b.get("items") or []:
                 par = doc.add_paragraph(style="List Bullet")
@@ -656,6 +706,8 @@ def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
         elif kind == "callout":
             t = doc.add_table(rows=1, cols=1)
             cell = t.cell(0, 0)
+            _docx_cell_margins(cell, top=130, bottom=130, start=190, end=190)
+            _docx_keep_row_together(t.rows[0])
             _docx_shade(cell, _mix(p["accent"], "#FFFFFF", 0.84))
             cell.text = ""
             cp = cell.paragraphs[0]
@@ -669,20 +721,39 @@ def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
         elif kind == "table":
             head = b.get("head") or []
             rows = b.get("rows") or []
-            cols = max([len(head)] + [len(r) for r in rows] or [1])
+            if not head and not rows:
+                para("Таблица без данных пропущена.", size=9.5, color=p["muted"], italic=True)
+                continue
+            cols = max(1, max([len(head)] + [len(r) for r in rows], default=1))
             t = doc.add_table(rows=len(rows) + (1 if head else 0), cols=cols)
             t.style = "Table Grid"
+            t.autofit = False
+            from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+            t.alignment = WD_TABLE_ALIGNMENT.CENTER
+            usable_width = int(doc.sections[0].page_width - doc.sections[0].left_margin - doc.sections[0].right_margin)
+            column_width = int(usable_width / cols)
+            for col in t.columns:
+                col.width = column_width
+            for table_row in t.rows:
+                _docx_keep_row_together(table_row)
+                for cell in table_row.cells:
+                    cell.width = column_width
+                    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                    _docx_cell_margins(cell)
             off = 0
             if head:
                 for i, htxt in enumerate(head):
                     cell = t.cell(0, i)
                     cell.text = ""
+                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    cell.paragraphs[0].paragraph_format.space_after = Pt(2)
                     run = cell.paragraphs[0].add_run(str(htxt))
                     run.font.bold = True
                     run.font.size = Pt(10.5)
                     run.font.name = font
                     run.font.color.rgb = RGBColor.from_string(_contrast(p["primary"]).lstrip("#"))
                     _docx_shade(cell, p["primary"])
+                _docx_repeat_table_header(t.rows[0])
                 off = 1
             for ri, row in enumerate(rows):
                 for ci in range(cols):
@@ -691,6 +762,8 @@ def docx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
                     run = cell.paragraphs[0].add_run(str(row[ci]) if ci < len(row) else "")
                     run.font.size = Pt(10.5)
                     run.font.name = font
+                    cell.paragraphs[0].paragraph_format.space_after = Pt(2)
+                    cell.paragraphs[0].paragraph_format.line_spacing = 1.08
                     if ri % 2:
                         _docx_shade(cell, _mix(p["surface"], p["bg"], 0.2))
             para("", space_after=6)
@@ -755,7 +828,7 @@ def xlsx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
             ws.append(head)
         for r in rows:
             ws.append(list(r))
-        ncols = max([len(head)] + [len(r) for r in rows] or [1])
+        ncols = max(1, max([len(head)] + [len(r) for r in rows], default=1))
 
         if head:
             for c in range(1, ncols + 1):
@@ -810,10 +883,10 @@ def xlsx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
             required_lines = 1
             for c in range(1, ncols + 1):
                 cell = ws.cell(row=ridx, column=c)
-                cell.alignment = Alignment(
-                    horizontal=("right" if isinstance(cell.value, (int, float)) else "left"),
-                    vertical="top", wrap_text=True,
-                )
+                is_formula = isinstance(cell.value, str) and cell.value.startswith("=")
+                horizontal = ("center" if head and ridx == 1 else
+                              "right" if isinstance(cell.value, (int, float)) or is_formula else "left")
+                cell.alignment = Alignment(horizontal=horizontal, vertical="top", wrap_text=True)
                 col_width = ws.column_dimensions[get_column_letter(c)].width or 11
                 value = str(cell.value or "")
                 lines = sum(max(1, (len(part) + int(col_width) - 1) // max(1, int(col_width) - 2))
@@ -821,6 +894,16 @@ def xlsx_report(path: str | Path, spec: dict, style: str | None = None) -> str:
                 required_lines = max(required_lines, lines)
             ws.row_dimensions[ridx].height = min(96, max(21, required_lines * 15))
 
+        if head:
+            ws.print_title_rows = "1:1"
+        ws.sheet_properties.tabColor = hx(p["primary"]).lstrip("#")
+        ws.page_setup.orientation = "landscape" if ncols >= 5 else "portrait"
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_margins.left = ws.page_margins.right = 0.25
+        ws.page_margins.top = ws.page_margins.bottom = 0.45
+        ws.print_options.horizontalCentered = True
         ws.freeze_panes = "A2" if head else "A1"
 
     out = str(path)

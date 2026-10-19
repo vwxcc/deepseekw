@@ -178,7 +178,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn('class="aich-web-images is-collapsed"', app_js)
         self.assertIn("data-web-images-toggle", app_js)
         self.assertIn("aich-ui-actions-carousel", app_js)
-        self.assertIn("const cards = $('.aich-ui-action', carousel);", app_js)
+        self.assertIn("const cards = $$('.aich-ui-action', carousel);", app_js)
         self.assertNotIn("const cards = $('.aich-ui-action', carousel);", app_js)
         self.assertIn(".aich-code-viewer-shell", app_css)
         self.assertIn("flex-direction:column", app_css)

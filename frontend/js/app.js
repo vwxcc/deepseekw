@@ -4787,9 +4787,12 @@
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());
+    let workspaceUploadIntent = false;
     $('#file-input').addEventListener('change', async (e) => {
       const files = Array.from(e.target.files || []);
-      if (files.length) await uploadFiles(files);
+      const options = { libraryOnly: workspaceUploadIntent };
+      workspaceUploadIntent = false;
+      if (files.length) await uploadFiles(files, options);
       e.target.value = '';
     });
     // The server uses one primary model for all AI tasks.
@@ -5539,7 +5542,10 @@
   function bindFilesWorkspace() {
     $('#files-quick-btn')?.addEventListener('click', openFilesWorkspace);
     $$('[data-files-workspace-close]').forEach(button => button.addEventListener('click', closeFilesWorkspace));
-    $('#workspace-file-upload')?.addEventListener('click', () => $('#file-input')?.click());
+    $('#workspace-file-upload')?.addEventListener('click', () => {
+      workspaceUploadIntent = true;
+      $('#file-input')?.click();
+    });
     $('#workspace-file-search')?.addEventListener('input', event => {
       workspaceFileFilters.query = event.target.value || '';
       renderFilesWorkspace();
@@ -5629,7 +5635,7 @@
     }));
   }
 
-  async function uploadFiles(files) {
+  async function uploadFiles(files, options) {
     const fd = new FormData();
     files.forEach(f => fd.append('files', f));
     try {
@@ -5637,8 +5643,10 @@
       state.files = out.concat(state.files);
       renderFiles();
       renderFilesWorkspace();
-      out.forEach(f => state.pendingAttachments.push(f));
-      renderAttachments();
+      if (!(options && options.libraryOnly)) {
+        out.forEach(f => state.pendingAttachments.push(f));
+        renderAttachments();
+      }
     } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }
   }
 

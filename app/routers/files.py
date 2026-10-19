@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..deps import get_current_user, get_db, require_csrf
-from ..models import File, User
+from ..models import Attachment, File, Message, User
 from ..schemas import FileOut
 from ..services.files import detect_kind, extract_text, sha256_bytes
 from ..services.limits import allow, get_limits
@@ -43,7 +43,26 @@ async def list_files(
     result = await db.execute(
         select(File).where(File.user_id == user.id).order_by(File.created_at.desc())
     )
-    return [FileOut.model_validate(f) for f in result.scalars().all()]
+    stored = result.scalars().all()
+    attachments = await db.execute(
+        select(Attachment.file_id, Message.role)
+        .join(Message, Attachment.message_id == Message.id)
+        .join(File, Attachment.file_id == File.id)
+        .where(File.user_id == user.id)
+    )
+    sources: dict[str, str] = {}
+    for file_id, role in attachments.all():
+        role_value = str(getattr(role, "value", role) or "").casefold()
+        if role_value == "assistant":
+            sources[file_id] = "ai"
+        else:
+            sources.setdefault(file_id, "user")
+    out = []
+    for item in stored:
+        row = FileOut.model_validate(item).model_dump(mode="json")
+        row["source"] = sources.get(item.id, "user")
+        out.append(row)
+    return out
 
 
 @router.post("", response_model=list[FileOut], status_code=status.HTTP_201_CREATED)

@@ -541,7 +541,7 @@ class AIRouter:
                 else (getattr(e, "price_cache", 0.0) or 0.0)
             )
             entry_id, resolved_name = e.id, mset.name
-                        configs = [EntryConfig(
+            configs = [EntryConfig(
                 id=entry_id,
                 model_set_id=e.model_set_id,
                 provider=primary_provider,

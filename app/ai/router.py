@@ -617,6 +617,7 @@ class AIRouter:
             max_tokens=min(8000, max(1, entry.max_tokens)),
             timeout=entry.timeout,
             disable_thinking=True,
+            allow_reasoning_fallback=False,
         )
         answer = str(answer or "").strip()
         if not answer or FAST_QWEN_DECLINE_MARKER.casefold() in answer.casefold():

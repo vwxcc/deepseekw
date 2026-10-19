@@ -4033,11 +4033,16 @@
           if (n) {
             const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
             const idx = runs.findIndex(r => r && r.running);
-            const hasLocalFallback = isDeviceFallbackRun(data);
+            const previousRun = idx >= 0 ? runs[idx] : null;
+            const hasLocalFallback = isDeviceFallbackRun(data) || isDeviceFallbackRun(previousRun);
             const suppressSandboxFailure = (!data.ok || data.timed_out) && !isCurrentCodeAgent() && !hasLocalFallback;
             if (idx >= 0) {
               if (suppressSandboxFailure) runs.splice(idx, 1);
-              else runs[idx] = data;
+              else {
+                const completedRun = Object.assign({}, previousRun || {}, data || {});
+                completedRun.running = false;
+                runs[idx] = completedRun;
+              }
             } else if (!suppressSandboxFailure) {
               runs.push(data);
             }

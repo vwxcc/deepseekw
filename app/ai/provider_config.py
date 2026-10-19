@@ -43,3 +43,18 @@ def apply_primary_provider_overrides(
         model = legacy_model
 
     return provider, base_url, api_key, model
+
+
+def get_think_provider_overrides() -> tuple[str, str, str, str]:
+    """Legacy compatibility helper; automatic response routing no longer calls it.
+
+    THINK_* settings have been removed from application configuration. Unless an
+    embedding/test explicitly supplies these attributes, this returns empty
+    connection values and never inherits the primary model's credentials.
+    """
+    provider = str(getattr(settings, "think_provider", "") or "openai").strip()
+    base_url = str(getattr(settings, "think_base_url", "") or "").strip().rstrip("/")
+    api_key = str(getattr(settings, "think_api_key", "") or "").strip()
+    model_id = str(getattr(settings, "think_model_id", "") or "").strip()
+    legacy_model = str(getattr(settings, "think_model", "") or "").strip()
+    return provider, base_url, api_key, (model_id or legacy_model)

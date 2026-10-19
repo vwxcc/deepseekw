@@ -4142,12 +4142,15 @@
             renderMessageInPlace(n.id, null, { focusMessageId: n.id });
             if (n.execution_target === 'device' || (n.execution_target === 'both' && !n.deviceRunnerStarted)) {
               const messageEl = $$('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
-              const runButton = messageEl && $('[data-run-device]', messageEl);
-              const runnable = runButton && (window.__codeStore || {})[runButton.dataset.runDevice];
+              const codeStore = window.__codeStore || {};
+              const runButtons = messageEl ? $('[data-run-device]', messageEl) : [];
+              const runButton = runButtons.find(button => codeStore[button.dataset.runDevice]);
+              const runnable = runButton ? codeStore[runButton.dataset.runDevice] : null;
+              const hasFileFallback = !!(messageEl && $('[data-fallback-code-toggle]', messageEl));
               if (runnable) {
                 n.deviceRunnerStarted = true;
                 openDeviceCodeRunner(runnable, n.id);
-              } else if (n.execution_target === 'device') {
+              } else if (n.execution_target === 'device' && !hasFileFallback) {
                 toast('Ответ получен, но в нём нет поддерживаемого блока кода для запуска на устройстве.', 'error');
               }
             }

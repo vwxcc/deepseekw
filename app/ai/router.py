@@ -618,6 +618,7 @@ class AIRouter:
             timeout=entry.timeout,
             disable_thinking=True,
             allow_reasoning_fallback=False,
+            error_env_prefix="FAST_QWEN",
         )
         answer = str(answer or "").strip()
         if not answer or FAST_QWEN_DECLINE_MARKER.casefold() in answer.casefold():

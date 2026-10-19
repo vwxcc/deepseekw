@@ -654,21 +654,19 @@
     const key = String(lang || '').trim().toLowerCase().split(/\s+/)[0].replace(/^language-/, '');
     // Hidden protocol markers let the model request a live HTML preview without
     // exposing implementation commands in the visible code.
-    const previewMarker = /<!--\s*AI_CH_PREVIEW_HTML\s*-->/i.test(rawCode) ||
-      /<!--\s*AI_CH_ACTION:\s*preview-html\s*-->/i.test(rawCode);
+    const previewMarker = /^\s*<!--\s*AI_CH_PREVIEW_HTML\s*-->/i.test(rawCode) ||
+      /^\s*<!--\s*AI_CH_ACTION:\s*preview-html\s*-->/i.test(rawCode);
+    const actionMarker = /^\s*#\s*AI_CH_ACTION:\s*[^\r\n]+/i.test(rawCode);
     const cleanedHtml = rawCode
       .replace(/^\s*<!--\s*AI_CH_PREVIEW_HTML\s*-->\s*/i, '')
       .replace(/^\s*<!--\s*AI_CH_ACTION:\s*preview-html\s*-->\s*/i, '');
-    const looksLikeHtmlDocument = /<!doctype\s+html\b|<html(?:\s|>)/i.test(cleanedHtml) ||
-      (/<(?:head|body|main|section|article|div|form|header|footer)(?:\s|>)/i.test(cleanedHtml) &&
-       /<\/(?:html|body|main|section|article|div|form|header|footer)\s*>/i.test(cleanedHtml));
-    // Some models incorrectly label an HTML page as Python. Detect complete
-    // HTML documents and render them as HTML rather than an executable Python block.
+    const looksLikeHtmlDocument = /^\s*(?:<!doctype\s+html\b|<html(?:\s|>)|<(?:head|body|main|section|article|div|form|header|footer)(?:\s|>))/i.test(cleanedHtml);
+    // Some models incorrectly label an HTML page as Python. Detect a document
+    // only when the block starts like HTML; preserve Python file-generation code.
     const isHtml = ['html', 'htm', 'xhtml'].includes(key) || previewMarker ||
-      (looksLikeHtmlDocument && ['python', 'py', 'python3', 'run', 'text', 'plaintext', ''].includes(key));
+      (!actionMarker && looksLikeHtmlDocument && ['python', 'py', 'python3', 'run', 'text', 'plaintext', ''].includes(key));
     const displayLang = isHtml ? 'html' : (lang || '');
     const displaySource = isHtml ? cleanedHtml : rawCode;
-    const actionMarker = /^\s*#\s*AI_CH_ACTION:\s*[^\r\n]+/i.test(displaySource);
     const isFileGenerationBlock = !isHtml && ['python', 'py', 'run'].includes(key) && actionMarker;
     const displayCode = isFileGenerationBlock
       ? displaySource
@@ -688,7 +686,7 @@
       ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
         '<span>Живое превью</span><button type="button" class="preview-run" data-preview-run="' + id +
         '" title="Запустить или обновить HTML-превью">' + icon('play') + '<span>Запустить</span></button></div>' +
-        '<iframe sandbox="allow-scripts allow-forms" loading="lazy" title="Предпросмотр HTML" srcdoc="' +
+        '<iframe sandbox="allow-scripts allow-forms" loading="eager" title="Предпросмотр HTML" srcdoc="' +
         escapeHtml(displayCode) + '"></iframe></div>'
       : isSvg
         ? '<div class="html-preview svg-preview"><div class="hp-bar">' + icon('image') +

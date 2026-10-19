@@ -69,6 +69,37 @@ log = logging.getLogger("chatstudio.ai")
 SCHEDULE_MARKER_RE = re.compile(r"\[\[\s*AICH_SCHEDULE\s*:\s*(\{[\s\S]*?\})\s*\]\]", re.I)
 USER_TIMEZONE = ZoneInfo("Europe/Berlin")
 
+_ARTIFACT_NOUNS = (
+    r"(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|резюме|"
+    r"инфографик\w*|изображени\w*|иллюстрац\w*|pptx?|docx?|xlsx?|pdf|svg|png|csv|json|md|txt|"
+    r"power\s*point|excel|spreadsheet|presentation|document|infographic|image|slides?)"
+)
+_ARTIFACT_ACTIONS = (
+    r"(?:созда\w*|сдела\w*|подготов\w*|сгенерир\w*|сформир\w*|экспортир\w*|выгруз\w*|"
+    r"оформ\w*|нарису\w*|постро\w*|состав\w*|собер\w*|заполн\w*|сверста\w*|"
+    r"преобразу\w*|конвертир\w*|generate|create|prepare|make|build|export|draw|design|compile|produce|format|convert|write)"
+)
+_ARTIFACT_HELP_QUERY = re.compile(
+    r"^\s*(?:как|что\s+такое|объясни|расскажи|покажи\s+как|how\s+to|what\s+is|explain|show\s+me\s+how)\b",
+    re.I,
+)
+_ARTIFACT_ACTION_RE = re.compile(
+    rf"\b{_ARTIFACT_ACTIONS}\b.{{0,180}}\b{_ARTIFACT_NOUNS}\b", re.I | re.S
+)
+_ARTIFACT_DIRECT_RE = re.compile(
+    rf"^\s*(?:(?:мне\s+)?(?:нужен|нужна|нужно|хочу|надо|please|i\s+need|i\s+want)\s+)?"
+    rf"{_ARTIFACT_NOUNS}\s*(?::|—|-|\s+(?:по|на\s+тему|о|об|про|для|с|из|about|for|on|with)\b)",
+    re.I,
+)
+
+
+def is_artifact_request(user_text: str | None) -> bool:
+    """Detect finished-file requests consistently for prompt selection and execution."""
+    text = str(user_text or "").strip()
+    if not text or _ARTIFACT_HELP_QUERY.search(text):
+        return False
+    return bool(_ARTIFACT_ACTION_RE.search(text) or _ARTIFACT_DIRECT_RE.search(text))
+
 
 async def _process_schedule_markers(user_id: str | None, answer: str) -> str:
     """Persist explicit assistant-created calendar entries and remove their private markers."""
@@ -1130,10 +1161,8 @@ class AIRouter:
                 "Не выдумывай время: если его недостаточно или дата неоднозначна, задай уточняющий вопрос и НЕ добавляй маркер. "
                 "Маркер скрывается интерфейсом после сохранения; не объясняй его пользователю."
             )
-        artifact_request = bool(re.search(
-            r"(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи|нарисуй|построй|create|generate|prepare|make|build|export|draw)\b.{0,140}\b(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|инфографик\w*|pptx|docx|xlsx|pdf|svg|png|powerpoint|excel|presentation|spreadsheet)",
-            job.user_text or "", flags=re.I,
-        ))
+        artifact_request = is_artifact_request(job.user_text)
+
         device_only = not settings.run_sandbox_enabled or job.execution_target == "device"
         if job.user_id:
             async with SessionLocal() as project_db:
@@ -1252,10 +1281,8 @@ class AIRouter:
             job.message_id, MessageStatus.processing, mset_id, mset_name
         )
 
-        artifact_work_request = bool(re.search(
-            r"(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи|нарисуй|построй|create|generate|prepare|make|build|export|draw)\b.{0,140}\b(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|инфографик\w*|pptx|docx|xlsx|pdf|svg|png|powerpoint|excel|presentation|spreadsheet)",
-            job.user_text or "", flags=re.I,
-        ))
+        artifact_work_request = is_artifact_request(job.user_text)
+
         # Never execute autonomous/agent code while an answer is streaming.
         # File-generation code has its own single-response, post-completion runner below.
         agent_on = False

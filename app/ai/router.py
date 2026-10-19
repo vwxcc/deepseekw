@@ -1581,8 +1581,9 @@ class AIRouter:
                             got, response_entry = raced
                             # Both answers were buffered until a full answer won.
                             # Only now expose the selected answer to the client.
-                            if str(got[0] or "").strip():
-                                await job.output.put(("delta", got[0]))
+                            selected_text = str(got[0] or got[1] or "")
+                            if selected_text.strip():
+                                await job.output.put(("delta", selected_text))
                         else:
                             got = await self._stream_once(job, entry, messages)
                         if got is None:

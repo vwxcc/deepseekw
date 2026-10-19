@@ -4,11 +4,11 @@
 
   // ---------- utils ----------
   const $ = (sel, root = document) => root.querySelector(sel);
-  const queryAll = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const actionCarouselTimers = new WeakMap();
 
   function bindActionCarouselAutoplay(root = document) {
-    queryAll('.aich-ui-actions-carousel', root).forEach(carousel => {
+    $$('.aich-ui-actions-carousel', root).forEach(carousel => {
       if (actionCarouselTimers.has(carousel)) return;
       const advance = () => {
         if (!carousel.isConnected) {
@@ -1214,7 +1214,7 @@
 
   function bindAuth() {
     const loginForm = $('#login-form'), regForm = $('#register-form');
-    queryAll('[data-mode]').forEach(a => a.addEventListener('click', () => {
+    $$('[data-mode]').forEach(a => a.addEventListener('click', () => {
       const mode = a.dataset.mode;
       loginForm.classList.toggle('hidden', mode !== 'login');
       regForm.classList.toggle('hidden', mode !== 'register');
@@ -1346,7 +1346,7 @@
         '</small></span>' + icon('chevron-down') + '</button>'
       ).join('') + '</div>';
       openModal({ title: 'Все закреплённые чаты', okText: 'Закрыть', body, onOk: () => true });
-      queryAll('[data-pinned-open]').forEach(button => button.addEventListener('click', async () => {
+      $$('[data-pinned-open]').forEach(button => button.addEventListener('click', async () => {
         const id = button.dataset.pinnedOpen;
         closeModal();
         await openChat(id);
@@ -1466,8 +1466,8 @@
     if (typeof id !== 'string' || !id.trim()) return false;
     const requestToken = ++state.chatOpenToken;
     state.chatLoading = true;
-    queryAll('.chat-item').forEach(item => item.removeAttribute('aria-busy'));
-    const clickedItem = queryAll('.chat-item').find(item => item.dataset.id === id);
+    $$('.chat-item').forEach(item => item.removeAttribute('aria-busy'));
+    const clickedItem = $$('.chat-item').find(item => item.dataset.id === id);
     if (clickedItem) clickedItem.setAttribute('aria-busy', 'true');
     const sendButton = $('#send-btn');
     if (sendButton) {
@@ -1511,7 +1511,7 @@
     } finally {
       if (requestToken === state.chatOpenToken) {
         state.chatLoading = false;
-        queryAll('.chat-item').forEach(item => item.removeAttribute('aria-busy'));
+        $$('.chat-item').forEach(item => item.removeAttribute('aria-busy'));
         const button = $('#send-btn');
         if (button) {
           button.disabled = !!(state.streaming || state.sending);
@@ -1922,7 +1922,7 @@
       document.removeEventListener('keydown', onKeyDown);
     };
     const onKeyDown = event => { if (event.key === 'Escape' && document.body.contains(shell)) close(); };
-    queryAll('[data-code-viewer-close]', shell).forEach(button => button.addEventListener('click', close));
+    $$('[data-code-viewer-close]', shell).forEach(button => button.addEventListener('click', close));
     const copyButton = $('[data-code-viewer-copy]', shell);
     if (copyButton) copyButton.addEventListener('click', async () => {
       const ok = await copyText(source);
@@ -2341,7 +2341,7 @@
   }
 
   function updateReadableTextUi(messageId) {
-    const status = queryAll('[data-readable-status]').find(el => el.dataset.readableStatus === String(messageId));
+    const status = $$('[data-readable-status]').find(el => el.dataset.readableStatus === String(messageId));
     const record = state.readableText[messageId];
     if (status) {
       const label = $('.readable-text-status', status);
@@ -2446,13 +2446,13 @@
   }
 
   function updateAudioControl(messageId) {
-    const wrapper = queryAll('[data-audio-control]').find(el => el.dataset.audioControl === String(messageId));
+    const wrapper = $$('[data-audio-control]').find(el => el.dataset.audioControl === String(messageId));
     const entry = findNode(state.tree, messageId);
     if (wrapper && entry) wrapper.outerHTML = audioControlHtml(entry);
   }
 
   function updateDeviceAudioControl(messageId) {
-    const wrapper = queryAll('[data-device-audio-control]').find(el => el.dataset.deviceAudioControl === String(messageId));
+    const wrapper = $$('[data-device-audio-control]').find(el => el.dataset.deviceAudioControl === String(messageId));
     const entry = findNode(state.tree, messageId);
     if (wrapper && entry) wrapper.outerHTML = deviceAudioControlHtml(entry);
   }
@@ -3221,12 +3221,12 @@
   }
 
   function bindDeviceSpeechPlayer() {
-    queryAll('[data-device-audio-close]').forEach(btn => btn.addEventListener('click', closeDeviceSpeechPlayer));
+    $$('[data-device-audio-close]').forEach(btn => btn.addEventListener('click', closeDeviceSpeechPlayer));
     $('#device-audio-play-toggle')?.addEventListener('click', () => {
       if (deviceSpeechState.playing) pauseDeviceSpeech();
       else resumeDeviceSpeech();
     });
-    queryAll('[data-device-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-device-audio-action]').forEach(btn => btn.addEventListener('click', () => {
       moveDeviceSpeech(btn.dataset.deviceAudioAction === 'back' ? -1 : 1);
     }));
     $('#device-audio-rate')?.addEventListener('change', (event) => {
@@ -3251,7 +3251,7 @@
     $('#audio-player-generate-btn')?.addEventListener('click', () => {
       if (state.audioMessageId) generateAnswerAudio(state.audioMessageId);
     });
-    queryAll('[data-player-mode]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-player-mode]').forEach(btn => btn.addEventListener('click', () => {
       const mode = btn.dataset.playerMode;
       const aiShell = $('#audio-player-shell');
       const deviceShell = $('#device-audio-player-shell');
@@ -3266,7 +3266,7 @@
         openAudioPlayer(id, !!state.audioReady[id]);
       }
     }));
-    queryAll('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
+    $$('[data-audio-close]').forEach(btn => btn.addEventListener('click', closeAudioPlayer));
     $('#audio-play-toggle')?.addEventListener('click', () => {
       if (audio.paused) audio.play().catch(() => toast('Не удалось запустить аудио.', 'error'));
       else audio.pause();
@@ -3277,7 +3277,7 @@
       audio.currentTime = Math.max(0, Math.min(duration, current + offset));
       updateAudioPlayerControls();
     };
-    queryAll('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-audio-action]').forEach(btn => btn.addEventListener('click', () => {
       if (btn.dataset.audioAction === 'back') seekAudio(-10);
       else if (btn.dataset.audioAction === 'forward') seekAudio(10);
     }));
@@ -3428,7 +3428,7 @@
   }
 
   function bindDeviceCodeRunner() {
-    queryAll('[data-device-code-close]').forEach(button => button.addEventListener('click', closeDeviceCodeRunner));
+    $$('[data-device-code-close]').forEach(button => button.addEventListener('click', closeDeviceCodeRunner));
     window.addEventListener('message', async event => {
       const frame = $('#device-code-frame');
       if (!event.data || typeof event.data !== 'object') return;
@@ -3745,7 +3745,7 @@
     hydrateReadableTextStatuses(entries);
 
     if (opts.focusMessageId) {
-      const target = queryAll('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
+      const target = $$('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
       const content = target ? $('.content.md', target) : null;
       if (content) content.classList.add('answer-arrive');
       requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
@@ -3760,7 +3760,7 @@
     const entries = allMessages(state.tree);
     const entryIndex = entries.findIndex(entry => String(entry.node.id) === String(messageId));
     const previousId = previousMessageId == null ? String(messageId) : String(previousMessageId);
-    const oldMessage = queryAll('.msg', box).find(element => element.dataset.mid === previousId);
+    const oldMessage = $$('.msg', box).find(element => element.dataset.mid === previousId);
     if (entryIndex < 0 || !oldMessage) {
       renderMessages();
       return false;
@@ -3796,7 +3796,7 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
-    queryAll('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;
@@ -3805,7 +3805,7 @@
       const label = $('[data-tool-toggle-label]', btn);
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
-    queryAll( '.ask-card', scope).forEach(card => {
+    $$( '.ask-card', scope).forEach(card => {
       const questions = $('.ask-question', card);
       const send = () => {
         const answers = questions.map(question => {
@@ -3817,20 +3817,20 @@
         $('#input').value = answers.map(answer => answer.question + ': ' + answer.value).join('\n');
         autoGrow(); sendCurrent();
       };
-      queryAll( '.ask-option', card).forEach(option => option.addEventListener('click', () => {
+      $$( '.ask-option', card).forEach(option => option.addEventListener('click', () => {
         const question = option.closest('.ask-question');
         if (!question) return;
-        queryAll( '.ask-option', question).forEach(other => {
+        $$( '.ask-option', question).forEach(other => {
           const selected = other === option; other.classList.toggle('is-selected', selected); other.setAttribute('aria-pressed', String(selected));
         });
         const input = $('.ask-input', question);
         if (input) { input.value = option.dataset.askOption || ''; input.focus(); }
       }));
-      queryAll( '.ask-input', card).forEach(input => {
+      $$( '.ask-input', card).forEach(input => {
         input.addEventListener('input', () => {
           if (!input.value.trim()) return;
           const question = input.closest('.ask-question');
-          if (question) queryAll( '.ask-option', question).forEach(option => { option.classList.remove('is-selected'); option.setAttribute('aria-pressed', 'false'); });
+          if (question) $$( '.ask-option', question).forEach(option => { option.classList.remove('is-selected'); option.setAttribute('aria-pressed', 'false'); });
         });
         input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } });
       });
@@ -3838,9 +3838,9 @@
       if (btn) btn.addEventListener('click', send);
     });
 
-    queryAll('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
+    $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
-    queryAll('.think-head', scope).forEach(h => h.addEventListener('click', () => {
+    $$('.think-head', scope).forEach(h => h.addEventListener('click', () => {
       const box = h.closest('.think-box');
       if (!box) return;
       box.classList.toggle('collapsed');
@@ -3918,17 +3918,17 @@
       });
     }
 
-    queryAll('[data-activity-full]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-activity-full]', scope).forEach(button => button.addEventListener('click', () => {
       openActivityStream(button.dataset.activityFull);
     }));
-    queryAll('[data-activity-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-activity-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.activityToggle);
       if (!n) return;
       n.showActivities = !n.showActivities;
       renderMessageInPlace(n.id);
     }));
 
-    queryAll('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.fallbackCodeToggle);
       if (!n) return;
       const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
@@ -3939,11 +3939,11 @@
       openFallbackCodeViewer(code, 'python');
     }));
 
-    queryAll('[data-open-device-status]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-open-device-status]', scope).forEach(button => button.addEventListener('click', () => {
       openDeviceRunnerStatus(button.dataset.openDeviceStatus);
     }));
 
-    queryAll('[data-web-images-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-web-images-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const section = button.closest('.aich-web-images');
       if (!section) return;
       const expanded = section.classList.toggle('is-collapsed') === false;
@@ -3953,7 +3953,7 @@
         icon(expanded ? 'chevron-up' : 'chevron-down');
     }));
 
-    queryAll('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const block = button.closest('.code-block');
       if (!block) return;
       const preview = $('.code-preview', block);
@@ -3969,17 +3969,17 @@
         '<span>' + (expanded ? 'Свернуть' : 'Развернуть') + '</span>';
     }));
 
-    queryAll('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
     }));
 
-    queryAll('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.dl];
       if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
     }));
 
-    queryAll('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
       const rows = (window.__tableStore || {})[b.dataset.dlTable];
       if (!rows) return;
       openTableMenu(rows);
@@ -3996,7 +3996,7 @@
   function scrollToMessageStart(messageId) {
     const box = $('#messages');
     if (!box || messageId == null) return;
-    const target = queryAll('.msg', box).find(el => el.dataset.mid === String(messageId));
+    const target = $$('.msg', box).find(el => el.dataset.mid === String(messageId));
     if (!target) return;
     const boxTop = box.getBoundingClientRect().top;
     const targetTop = target.getBoundingClientRect().top;
@@ -4126,7 +4126,7 @@
         renderActivityPopup(liveNode);
       }
       const elapsedEl = elapsedNode
-        ? queryAll('[data-activity-elapsed]').find(el => String(el.dataset.activityElapsed) === String(elapsedNode.id))
+        ? $$('[data-activity-elapsed]').find(el => String(el.dataset.activityElapsed) === String(elapsedNode.id))
         : null;
       if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
           !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {
@@ -4769,7 +4769,7 @@
     box.innerHTML = state.pendingAttachments.map(f =>
       '<span class="attach-chip">' + icon('paperclip') + escapeHtml(f.original_name) +
       '<button data-rm="' + f.id + '" title="Убрать">' + icon('x') + '</button></span>').join('');
-    queryAll('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
+    $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
       state.pendingAttachments = state.pendingAttachments.filter(x => x.id !== b.dataset.rm);
       renderAttachments();
     }));
@@ -4963,11 +4963,11 @@
         : '<p>Пока нет публичных ссылок. Откройте чат и нажмите иконку «Поделиться».</p>',
       onOk: () => true,
     });
-    queryAll('[data-copy-link]').forEach(b => b.addEventListener('click', async () => {
+    $$('[data-copy-link]').forEach(b => b.addEventListener('click', async () => {
       const ok = await copyText(location.origin + '/?share=' + b.dataset.copyLink);
       toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
     }));
-    queryAll('[data-open-link]').forEach(b => b.addEventListener('click', () =>
+    $$('[data-open-link]').forEach(b => b.addEventListener('click', () =>
       window.open('/?share=' + b.dataset.openLink, '_blank')));
   }
 
@@ -5021,7 +5021,7 @@
         : '<p>Чатов нет.</p>',
       onOk: () => true,
     });
-    queryAll('[data-open-chat]').forEach(b => b.addEventListener('click', async () => {
+    $$('[data-open-chat]').forEach(b => b.addEventListener('click', async () => {
       try {
         const sh = await api.post('/api/admin/chats/' + b.dataset.openChat + '/share');
         window.open('/?share=' + sh.share_token, '_blank');
@@ -5266,7 +5266,7 @@
 
   function bindProjectsWorkspace() {
     $('#projects-quick-btn')?.addEventListener('click', openProjectsWorkspace);
-    queryAll('[data-projects-workspace-close]').forEach(button => button.addEventListener('click', closeProjectsWorkspace));
+    $$('[data-projects-workspace-close]').forEach(button => button.addEventListener('click', closeProjectsWorkspace));
     $('#workspace-project-create')?.addEventListener('click', () => {
       projectWorkspaceActiveId = null;
       projectWorkspaceEditor = { id: '', title: '', description: '' };
@@ -5479,7 +5479,7 @@
 
   function bindScheduledWorkspace() {
     $('#scheduled-quick-btn')?.addEventListener('click', openScheduledWorkspace);
-    queryAll('[data-scheduled-workspace-close]').forEach(button => button.addEventListener('click', closeScheduledWorkspace));
+    $$('[data-scheduled-workspace-close]').forEach(button => button.addEventListener('click', closeScheduledWorkspace));
     $('#scheduled-create-btn')?.addEventListener('click', () => openScheduledEditor(''));
     $('#schedule-add-day')?.addEventListener('click', () => openScheduledEditor(''));
     $('#schedule-prev-month')?.addEventListener('click', () => {
@@ -5530,7 +5530,7 @@
 
   function bindFilesWorkspace() {
     $('#files-quick-btn')?.addEventListener('click', openFilesWorkspace);
-    queryAll('[data-files-workspace-close]').forEach(button => button.addEventListener('click', closeFilesWorkspace));
+    $$('[data-files-workspace-close]').forEach(button => button.addEventListener('click', closeFilesWorkspace));
     $('#workspace-file-upload')?.addEventListener('click', () => $('#file-input')?.click());
     $('#workspace-file-search')?.addEventListener('input', event => {
       workspaceFileFilters.query = event.target.value || '';
@@ -5606,12 +5606,12 @@
         '<button data-attach="' + f.id + '" title="Прикрепить">' + icon('plus') + '</button>' +
         '<button data-del="' + f.id + '" title="Удалить">' + icon('trash') + '</button>' +
       '</div>').join('');
-    queryAll('[data-del]', box).forEach(b => b.addEventListener('click', async () => {
+    $$('[data-del]', box).forEach(b => b.addEventListener('click', async () => {
       await api.del('/api/files/' + b.dataset.del);
       state.files = state.files.filter(x => x.id !== b.dataset.del);
       renderFiles();
     }));
-    queryAll('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
+    $$('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
       const f = state.files.find(x => x.id === b.dataset.attach);
       if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
         state.pendingAttachments.push(f);
@@ -5713,7 +5713,7 @@
         (pout ? '<div class="calc-line"><span>1000 таких ответов</span><b>≈ $' +
           (full * 1000).toFixed(2) + '</b></div>' : '');
     };
-    queryAll('input', root).forEach(i => {
+    $$('input', root).forEach(i => {
       i.addEventListener('input', upd);
       i.addEventListener('change', upd);
     });
@@ -5779,25 +5779,25 @@
 
       $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
       $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
-      queryAll('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => {
         if (!confirm('Удалить набор и все его модели?')) return;
         await api.del('/api/admin/model-sets/' + b.dataset.delSet); rerender();
       }));
-      queryAll('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => {
         await api.patch('/api/admin/model-sets/' + b.dataset.toggle,
           { is_active: b.dataset.active !== '1' }); rerender();
       }));
-      queryAll('[data-del-entry]', root).forEach(b => {
+      $$('[data-del-entry]', root).forEach(b => {
         const [sid, eid] = b.dataset.delEntry.split('|');
         b.addEventListener('click', async () => {
           await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
         });
       });
-      queryAll('[data-edit-entry]', root).forEach(b => {
+      $$('[data-edit-entry]', root).forEach(b => {
         const [sid, eid] = b.dataset.editEntry.split('|');
         b.addEventListener('click', () => editEntryForm(root, sid, eid, rerender));
       });
-      queryAll('[data-add-entry]', root).forEach(b =>
+      $$('[data-add-entry]', root).forEach(b =>
         b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
     }
 
@@ -6087,10 +6087,10 @@
   function clearChatSearchHighlights() {
     const messages = $('#messages');
     if (!messages) return;
-    queryAll('mark.chat-search-match', messages).forEach(mark => {
+    $$('mark.chat-search-match', messages).forEach(mark => {
       mark.replaceWith(document.createTextNode(mark.textContent || ''));
     });
-    queryAll('.msg .content.md', messages).forEach(content => content.normalize());
+    $$('.msg .content.md', messages).forEach(content => content.normalize());
   }
 
   function highlightChatSearch(query, moveToNext) {
@@ -6103,7 +6103,7 @@
     let regex;
     try { regex = new RegExp(escaped, 'gi'); } catch (_) { return; }
     const messages = $('#messages');
-    const roots = queryAll('.msg .content.md', messages);
+    const roots = $$('.msg .content.md', messages);
     roots.forEach(root => {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode(textNode) {
@@ -6136,7 +6136,7 @@
         node.replaceWith(fragment);
       });
     });
-    const marks = queryAll('mark.chat-search-match', messages);
+    const marks = $$('mark.chat-search-match', messages);
     if (!marks.length) {
       state.chatSearchMatchIndex = 0;
       return;
@@ -6330,14 +6330,14 @@
         toast('Не удалось создать ветку: ' + (error.message || error), 'error');
       }
     });
-    queryAll('[data-share-copy-answer]').forEach(button => button.addEventListener('click', async () => {
+    $$('[data-share-copy-answer]').forEach(button => button.addEventListener('click', async () => {
       const node = findNode(state.tree, button.dataset.shareCopyAnswer);
       if (!node) return;
       const rendered = $('.msg[data-mid="' + node.id + '"] .content.md');
       const ok = await copyText((rendered ? rendered.innerText : String(node.content || '')).trim());
       toast(ok ? 'Ответ скопирован' : 'Не удалось скопировать ответ', ok ? '' : 'error');
     }));
-    queryAll('[data-share-copy-readable]').forEach(button => button.addEventListener('click', async () => {
+    $$('[data-share-copy-readable]').forEach(button => button.addEventListener('click', async () => {
       const readable = state.readableText[button.dataset.shareCopyReadable];
       if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
         toast('Читабельный текст ещё не готов', 'error'); return;
@@ -6707,7 +6707,7 @@
         it.hint + '</span></button>').join('') + '</div>',
       onOk: () => true,
     });
-    queryAll('[data-fmt]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-fmt]').forEach(b => b.addEventListener('click', () => {
       const f = b.dataset.fmt;
       const text = p.text || '';
       try {
@@ -6734,7 +6734,7 @@
         '</div>',
       onOk: () => true,
     });
-    queryAll('[data-tf]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-tf]').forEach(b => b.addEventListener('click', () => {
       const f = b.dataset.tf;
       try {
         if (f === 'xlsx') downloadBlob('table.xlsx', rowsToXlsx(rows));
@@ -6783,7 +6783,7 @@
       onOk: async (root) => {
         const q = ($('#council-q', root) || {}).value ? $('#council-q', root).value.trim() : '';
         if (!q) { toast('Введите вопрос', 'error'); return false; }
-        const ids = queryAll('[data-ms]', root).filter(c => c.checked).map(c => c.dataset.ms);
+        const ids = $$('[data-ms]', root).filter(c => c.checked).map(c => c.dataset.ms);
         if (ids.length < 1) { toast('Выберите хотя бы одного участника', 'error'); return false; }
         try {
           const res = await api.post('/api/council', { question: q, personas: ids });
@@ -6953,7 +6953,7 @@
       onOk: () => true,
     });
 
-    queryAll('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
+    $$('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
       try {
         await api.del('/api/memory/' + b.dataset.delMem);
         $('#modal-root').innerHTML = '';
@@ -7056,7 +7056,7 @@
         '</div>').join('') + '</div>',
       onOk: () => true,
     });
-    queryAll('[data-att]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-att]').forEach(b => b.addEventListener('click', () => {
       const f = state.files.find(x => x.id === b.dataset.att);
       if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
         state.pendingAttachments.push(f);
@@ -7143,7 +7143,7 @@
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
         const grouped = {};
-        queryAll('[data-plan]', root).forEach(inp => {
+        $$('[data-plan]', root).forEach(inp => {
           const plan = inp.dataset.plan;
           const key = inp.dataset.key;
           const raw = inp.value.trim();
@@ -7156,7 +7156,7 @@
           await api.put('/api/limits/' + plan, grouped[plan]);
         }
         for (const plan of (data.plans || [])) {
-          const ids = queryAll('[data-mplan="' + plan + '"]', root)
+          const ids = $$('[data-mplan="' + plan + '"]', root)
             .filter(c => c.checked).map(c => c.dataset.mid);
           const all = (data.models || []).map(m => m.id);
           await api.put('/api/limits/' + plan + '/models',
@@ -7168,7 +7168,7 @@
     });
     $('.modal', $('#modal-root'))?.classList.add('limits-modal');
     loadLimitUsers();
-    queryAll('[data-reset-plan]', $('#modal-root')).forEach(b => b.addEventListener('click', async () => {
+    $$('[data-reset-plan]', $('#modal-root')).forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Сбросить лимиты тарифа ' + b.dataset.resetPlan.toUpperCase() +
                    ' к значениям по умолчанию?')) return;
       try {
@@ -7199,7 +7199,7 @@
       (u.plan === 'pro' ? 'Снять Pro' : 'Выдать Pro') + '</button>' +
       '<button class="chip-btn" data-ureset="' + u.id + '" title="Обнулить расход в текущем окне">Сбросить расход</button>' +
       '</div></div>').join('') + '</div>';
-    queryAll('[data-uplan]', box).forEach(b => b.addEventListener('click', async () => {
+    $$('[data-uplan]', box).forEach(b => b.addEventListener('click', async () => {
       const cur = rows.find(x => x.id === b.dataset.uplan);
       const next = cur && cur.plan === 'pro' ? 'free' : 'pro';
       try {
@@ -7208,7 +7208,7 @@
         await loadLimitUsers();
       } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
     }));
-    queryAll('[data-ureset]', box).forEach(b => b.addEventListener('click', async () => {
+    $$('[data-ureset]', box).forEach(b => b.addEventListener('click', async () => {
       const cur = rows.find(x => x.id === b.dataset.ureset);
       if (!cur || !confirm('Сбросить потраченный бюджет окна для ' + (cur.email || cur.name) + '? История расходов сохранится.')) return;
       try {
@@ -7402,7 +7402,7 @@
 
 
   function bindTiles() {
-    queryAll('[data-tile]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-tile]').forEach(b => b.addEventListener('click', () => {
       const t = ACTION_TILES.find(x => x.id === b.dataset.tile);
       if (!t) return;
       if (t.locked) {

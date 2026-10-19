@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     fast_qwen_base_url: str = ""
     fast_qwen_api_key: str = ""
     fast_qwen_model_id: str = ""
-    fast_qwen_max_tokens: int = Field(default=8000, ge=1, le=8000)
+    fast_qwen_max_tokens: int = Field(default=8000, ge=1)
     fast_qwen_timeout: int = Field(default=60, ge=5, le=300)
     fast_qwen_price_in: float = Field(default=0.0, ge=0)
     fast_qwen_price_out: float = Field(default=0.0, ge=0)

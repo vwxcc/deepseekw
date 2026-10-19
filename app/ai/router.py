@@ -96,7 +96,10 @@ def _normalise_generated_filename(value: Any) -> str:
     raw = Path(str(value or "")).name
     raw = re.sub(r"\s*\.(ppt|doc|xls)_$", lambda m: "." + m.group(1) + "x", raw, flags=re.I)
     suffix = Path(raw).suffix
-    stem = raw[:-len(suffix)] if suffix else raw
+    # Generated artifacts need a real extension; names such as ppt_ are invalid.
+    if not suffix:
+        return ""
+    stem = raw[:-len(suffix)]
     stem = re.sub(
         r"^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\s._-]*)+",
         "", stem, flags=re.I,
@@ -122,7 +125,10 @@ def _deduplicate_generated_file_items(items: list[dict]) -> list[dict]:
 
     selected: dict[str, dict] = {}
     for item in sorted((x for x in items if isinstance(x, dict)), key=priority):
-        key = _normalise_generated_filename(item.get("name")).casefold()
+        normalized = _normalise_generated_filename(item.get("name"))
+        if not normalized or not Path(normalized).suffix:
+            continue
+        key = normalized.casefold()
         if key not in selected:
             selected[key] = item
     return list(selected.values())
@@ -721,6 +727,8 @@ class AIRouter:
                     continue
                 fid = str(uuid.uuid4())
                 original_name = _normalise_generated_filename(item.get("name"))
+                if not original_name or not Path(original_name).suffix:
+                    continue
                 name_key = original_name.casefold()
                 if name_key in seen_names:
                     continue
@@ -935,6 +943,44 @@ class AIRouter:
         skill_context = prompts.skills_for(job.user_text)
         if skill_context:
             system_prompt = f"{system_prompt}\n\n{skill_context}"
+        artifact_request = bool(re.search(
+            r"(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи|нарисуй|построй|create|generate|prepare|make|build|export|draw)\b.{0,140}\b(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|инфографик\w*|pptx|docx|xlsx|pdf|svg|png|powerpoint|excel|presentation|spreadsheet)",
+            job.user_text or "", flags=re.I,
+        ))
+        device_only = not settings.run_sandbox_enabled or job.execution_target == "device"
+        if artifact_request and device_only:
+            system_prompt += (
+                "\n\nРЕЖИМ СОЗДАНИЯ ФАЙЛА НА УСТРОЙСТВЕ: серверное исполнение сейчас выключено "
+                "или выбран запуск на устройстве. Не используй специальный file-plan блок и не запускай "
+                "агентный цикл. Сразу дай полный итоговый ответ одним вызовом. Если нужен скачиваемый файл, "
+                "в конце добавь ОДИН полный fenced Python-блок с кодом, который действительно создаёт файл "
+                "в текущей рабочей папке. Первая строка кода — комментарий # AI_CH_ACTION: Создаю готовый файл; "
+                "последняя строка — # AI_CH_AUTO_RUN_FILES. Код должен быть самодостаточным, без сети, input() "
+                "и секретов/переменных окружения. Для Office при отсутствии библиотек используй сборку OOXML "
+                "через zipfile/XML; изображения презентации должны быть встроены в файл, а не оставлены ссылками. "
+                "Используй описательное имя с правильным расширением; не создавай имена вроде ppt_, doc_, xls_, "
+                "ppt_report.pptx или файлы без расширения. Не показывай план, текст слайдов вместо файла или "
+                "служебный код в обычной части ответа: интерфейс извлечёт этот блок и запустит его только после "
+                "завершения ответа. Не обещай файл до подтверждения запуска. При запросе на создание/исполнение "
+                "файла сообщи одной короткой фразой, что серверная песочница выключена и подготовка будет "
+                "предпринята на устройстве после полного ответа."
+            )
+        elif artifact_request:
+            # Probe the configured isolated service once per artifact request.
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=1.5) as client:
+                    probe = await client.get(settings.sandbox_url.rstrip("/") + "/health")
+                healthy = probe.is_success and bool((probe.json() or {}).get("ok"))
+            except Exception:
+                healthy = False
+            system_prompt += (
+                "\n\nСтатус серверной песочницы проверен перед ответом: "
+                + ("РАБОТАЕТ." if healthy else "НЕДОСТУПНА.")
+                + " Не утверждай обратное. Если она недоступна, не делай вид, что серверный файл создан; "
+                "верни полный ответ и подготовь один самодостаточный fenced Python-блок с маркером "
+                "# AI_CH_AUTO_RUN_FILES для запуска на устройстве после полного ответа."
+            )
         sources: list[dict] = []
         if job.web_search and job.search_query:
             await job.output.put(("stage", json.dumps({"stage": "search"})))
@@ -971,7 +1017,7 @@ class AIRouter:
             job.message_id, MessageStatus.processing, mset_id, mset_name
         )
 
-        agent_on = bool(settings.agent_enabled) and job.execution_target != "device"
+        agent_on = bool(settings.agent_enabled) and bool(settings.run_sandbox_enabled) and job.execution_target != "device"
         code_mode = job.mode == "code"
         plan_steps = job.max_steps
         base_steps = plan_steps or (
@@ -983,7 +1029,7 @@ class AIRouter:
         else:
             max_steps = max(1, int(base_steps))
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
-        round_limit = 1 if code_mode else 2
+        round_limit = 1 if code_mode or not settings.run_sandbox_enabled else 2
 
         tried: set[str] = set()
         last_error = "Генерация не удалась"
@@ -993,7 +1039,7 @@ class AIRouter:
             rounds += 1
             retryable_error = True
             # Code Agent must not trigger a second generation through provider fallback.
-            entry_attempt_limit = 1 if code_mode else len(entries)
+            entry_attempt_limit = 1 if code_mode or not settings.run_sandbox_enabled else len(entries)
             while len(tried) < entry_attempt_limit:
                 entry = await self._acquire_primary(job, entries, tried)
                 if entry is None:

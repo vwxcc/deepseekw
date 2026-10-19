@@ -122,9 +122,11 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("Эти сведения служебные", prompts.RUN_SKILL)
 
         task_rules = prompts.skills_for("Сделай красивую таблицу")
-        self.assertIn("Создание файлов AI-Ch", task_rules)
+        self.assertIn("Специализированный навык: file-generation", task_rules)
         self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий скачиваемый файл", task_rules)
-        self.assertIn("template_id и style только из реального каталога", task_rules)
+        self.assertIn("профессиональный дизайн-шаблон", task_rules)
+        self.assertIn("минимум на половине слайдов", task_rules)
+        self.assertNotIn("выводи один закрытый блок ```fileplan", task_rules)
 
     def test_svg_previews_work_for_code_blocks_and_attachments(self):
         root = Path(__file__).resolve().parents[1]

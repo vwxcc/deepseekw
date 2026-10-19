@@ -92,6 +92,21 @@ class Session(Base):
     user: Mapped["User"] = relationship(back_populates="sessions")
 
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class Chat(Base):
     __tablename__ = "chats"
 
@@ -107,6 +122,10 @@ class Chat(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     share_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_upto: Mapped[str | None] = mapped_column(String(36), nullable=True)
     effort: Mapped[str] = mapped_column(String(16), default="recommended")
@@ -345,6 +364,23 @@ class UserSkill(Base):
     )
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     content: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ScheduledItem(Base):
+    __tablename__ = "scheduled_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(16), default="user")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

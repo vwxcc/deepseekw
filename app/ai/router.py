@@ -697,8 +697,30 @@ class AIRouter:
                     if job.mode == "code" or is_artifact_request(job.user_text):
                         continue
                     if str(answer or "").strip():
-                        winner = ((str(answer), "", usage), fast)
-                        break
+                        # Match the primary stream's handling of private UI markers:
+                        # preserve their visible text payloads but never leak the markers.
+                        activity_parser = ActivityMarkupParser()
+                        activity_items = activity_parser.feed(str(answer))
+                        activity_items.extend(activity_parser.finish())
+                        visible_parts: list[str] = []
+                        for item in activity_items:
+                            kind = item.get("kind")
+                            if kind == "text":
+                                visible_parts.append(str(item.get("text") or ""))
+                            elif kind == "status":
+                                await job.output.put(("ui_status", str(item.get("text") or "")))
+                            elif kind == "action":
+                                await job.output.put((
+                                    "ui_action",
+                                    json.dumps(
+                                        {"icon": item.get("icon") or "sparkle", "text": item.get("text") or ""},
+                                        ensure_ascii=False,
+                                    ),
+                                ))
+                        visible_answer = "".join(visible_parts).strip()
+                        if visible_answer:
+                            winner = ((visible_answer, "", usage), fast)
+                            break
                 if winner:
                     break
         finally:

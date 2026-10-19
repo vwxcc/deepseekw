@@ -258,6 +258,10 @@
         <button class="chip-btn context sidebar-memory sidebar-skill" id="skills-quick-btn" title="Системные и пользовательские навыки">
           <svg class="ic"><use href="#i-sparkle"/></svg><span>Навыки</span>
         </button>
+        <div class="side-row sidebar-section-links">
+          <button type="button" class="chip-btn context sidebar-memory" id="projects-quick-btn" title="Все проекты"><svg class="ic"><use href="#i-folder"/></svg><span>Проекты</span></button>
+          <button type="button" class="chip-btn context sidebar-memory" id="scheduled-quick-btn" title="Календарь и напоминания"><svg class="ic"><use href="#i-calendar"/></svg><span>Запланировано</span></button>
+        </div>
         <div class="side-row primary-actions">
           <button class="new-chat" id="new-chat-btn" title="Новый чат">
             <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
@@ -273,6 +277,11 @@
       </div>
 
       <div class="side-scroll">
+        <section id="pinned-chat-section" class="pinned-chat-section hidden">
+          <div class="side-section">Закреплённые</div>
+          <div id="pinned-chat-list"></div>
+          <button type="button" id="pinned-all-btn" class="pinned-all-btn hidden">Все закреплённые</button>
+        </section>
         <div class="side-section">Чаты</div>
         <div id="chat-list"></div>
       </div>
@@ -347,6 +356,44 @@
         <div id="file-list"></div>
       </div>
     </aside>
+  </div>
+
+  <div id="projects-workspace-shell" class="files-workspace-shell" aria-hidden="true">
+    <section class="files-workspace projects-workspace" role="dialog" aria-modal="true" aria-labelledby="projects-workspace-title" tabindex="-1">
+      <header class="files-workspace-header">
+        <button type="button" class="icon-btn" data-projects-workspace-close title="Вернуться в чат" aria-label="Вернуться в чат"><svg class="ic"><use href="#i-x"/></svg></button>
+        <div class="files-workspace-title"><h2 id="projects-workspace-title">Проекты</h2><p>Собирайте связанные чаты и заметки в одном месте</p></div>
+        <button type="button" class="chip-btn files-workspace-upload" id="workspace-project-create"><svg class="ic"><use href="#i-plus"/></svg><span>Новый проект</span></button>
+      </header>
+      <div id="workspace-projects-list" class="projects-workspace-body" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <div id="scheduled-workspace-shell" class="files-workspace-shell" aria-hidden="true">
+    <section class="files-workspace scheduled-workspace" role="dialog" aria-modal="true" aria-labelledby="scheduled-workspace-title" tabindex="-1">
+      <header class="files-workspace-header">
+        <button type="button" class="icon-btn" data-scheduled-workspace-close title="Вернуться в чат" aria-label="Вернуться в чат"><svg class="ic"><use href="#i-x"/></svg></button>
+        <div class="files-workspace-title"><h2 id="scheduled-workspace-title">Запланировано</h2><p>Календарь, задачи и напоминания · Europe/Berlin</p></div>
+        <button type="button" class="chip-btn files-workspace-upload" id="scheduled-create-btn"><svg class="ic"><use href="#i-plus"/></svg><span>Новое событие</span></button>
+      </header>
+      <div class="scheduled-workspace-body">
+        <section class="schedule-calendar-panel">
+          <div class="schedule-calendar-nav">
+            <button type="button" class="icon-btn" id="schedule-prev-month" aria-label="Предыдущий месяц"><svg class="ic"><use href="#i-chevron-down"/></svg></button>
+            <h3 id="schedule-month-title">Месяц</h3>
+            <button type="button" class="icon-btn schedule-next-month" id="schedule-next-month" aria-label="Следующий месяц"><svg class="ic"><use href="#i-chevron-down"/></svg></button>
+            <button type="button" class="chip-btn" id="schedule-today-btn">Сегодня</button>
+          </div>
+          <div class="schedule-calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+          <div id="schedule-calendar-grid" class="schedule-calendar-grid"></div>
+        </section>
+        <aside class="schedule-day-panel">
+          <div class="schedule-day-head"><span id="schedule-day-label">Выберите день</span><button type="button" class="icon-btn" id="schedule-add-day" title="Добавить запись"><svg class="ic"><use href="#i-plus"/></svg></button></div>
+          <div id="schedule-day-events" class="schedule-day-events"></div>
+          <section class="schedule-ai-note"><span class="schedule-ai-icon"><svg class="ic"><use href="#i-sparkle"/></svg></span><div><strong>Связь с AI CH</strong><p>Ближайшие записи передаются ИИ как контекст. Попросите добавить событие в календарь, чтобы сохранить его после ответа.</p></div></section>
+        </aside>
+      </div>
+    </section>
   </div>
 
   <div id="files-workspace-shell" class="files-workspace-shell" aria-hidden="true">

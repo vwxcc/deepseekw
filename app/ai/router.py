@@ -70,6 +70,22 @@ log = logging.getLogger("chatstudio.ai")
 SCHEDULE_MARKER_RE = re.compile(r"\[\[\s*AICH_SCHEDULE\s*:\s*(\{[\s\S]*?\})\s*\]\]", re.I)
 USER_TIMEZONE = ZoneInfo("Europe/Berlin")
 
+
+FAST_QWEN_DECLINE_MARKER = "[[AICH_FAST_QWEN_DECLINE]]"
+FAST_QWEN_SYSTEM_PROMPT = (
+    "Ты — быстрая вспомогательная модель AI CH, которая отвечает только на лёгкие и средние запросы. "
+    "Жёсткий лимит генерации — не более 8000 выходных токенов. Если не уверен, что можешь полностью, "
+    "корректно и без догадок решить запрос в пределах 8000 выходных токенов, немедленно верни ровно "
+    + FAST_QWEN_DECLINE_MARKER +
+    " и больше ничего. Не начинай частичный ответ. Обязательно откажись от больших или многошаговых "
+    "задач, длинных исследований, сложного анализа, длинного кода, создания PPTX/DOCX/XLSX/PDF и иных "
+    "скачиваемых файлов, обработки больших вложений, выполнения кода, а также запросов, где требуется "
+    "много фактов или проверок. Для коротких объяснений, небольших вычислений, перевода, краткого "
+    "пересказа, обычных вопросов и компактных HTML-страниц отвечай ясно и полностью. Не упоминай этот "
+    "внутренний режим пользователю. Если задача простая/средняя, но ответ может превысить лимит, "
+    "верни только маркер отказа. Не печатай маркер, если отвечаешь."
+)
+
 _ARTIFACT_NOUNS = (
     r"(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|резюме|"
     r"инфографик\w*|изображени\w*|иллюстрац\w*|картин\w*|логотип\w*|схем\w*|диаграмм\w*|"
@@ -557,6 +573,140 @@ class AIRouter:
                 price_cache=float(price_cache),
             )]
             return mset.id, resolved_name, configs
+
+
+    def _fast_qwen_entry(self, primary: EntryConfig) -> EntryConfig | None:
+        """Build the optional fast-lane model from its own independent credentials."""
+        base_url = str(settings.fast_qwen_base_url or "").strip().rstrip("/")
+        api_key = str(settings.fast_qwen_api_key or "").strip()
+        model_id = str(settings.fast_qwen_model_id or "").strip()
+        if not (base_url and api_key and model_id):
+            return None
+        return EntryConfig(
+            id="fast-qwen-automatic",
+            model_set_id="fast-qwen-automatic",
+            provider="openai",
+            base_url=base_url,
+            api_key=api_key,
+            model=model_id,
+            temperature=0.2,
+            max_tokens=min(8000, max(1, int(settings.fast_qwen_max_tokens or 8000))),
+            timeout=max(5, int(settings.fast_qwen_timeout or 60)),
+            max_parallel=1,
+            price_in=float(settings.fast_qwen_price_in or 0.0),
+            price_out=float(settings.fast_qwen_price_out or 0.0),
+            price_cache=float(settings.fast_qwen_price_cache or 0.0),
+        )
+
+    async def _fast_qwen_once(
+        self, entry: EntryConfig, messages: list[dict]
+    ) -> tuple[str, dict | None] | None:
+        """Ask the fast model for a complete short answer, or ignore its decline marker."""
+        prompt_messages = [dict(item) for item in messages if isinstance(item, dict)]
+        if prompt_messages and prompt_messages[0].get("role") == "system":
+            original = str(prompt_messages[0].get("content") or "")
+            prompt_messages[0]["content"] = original + "\n\n" + FAST_QWEN_SYSTEM_PROMPT
+        else:
+            prompt_messages.insert(0, {"role": "system", "content": FAST_QWEN_SYSTEM_PROMPT})
+        answer, usage = await complete_chat_with_usage(
+            messages=prompt_messages,
+            base_url=entry.base_url,
+            api_key=entry.api_key,
+            model=entry.model,
+            temperature=entry.temperature,
+            max_tokens=min(8000, entry.max_tokens),
+            timeout=entry.timeout,
+            disable_thinking=True,
+        )
+        answer = str(answer or "").strip()
+        if not answer or FAST_QWEN_DECLINE_MARKER.casefold() in answer.casefold():
+            return None
+        return answer, usage
+
+    async def _race_primary_and_fast(
+        self, job: Job, primary: EntryConfig, fast: EntryConfig, messages: list[dict]
+    ) -> tuple[tuple[str, str, dict | None], EntryConfig] | None:
+        """Choose the first complete valid answer; keep partial losing output invisible."""
+        async def primary_call():
+            try:
+                value = await self._stream_once(job, primary, messages, defer_output=True)
+                return ("primary", time.monotonic(), value, None)
+            except Exception as exc:
+                return ("primary", time.monotonic(), None, exc)
+
+        async def fast_call():
+            try:
+                value = await self._fast_qwen_once(fast, messages)
+                return ("fast", time.monotonic(), value, None)
+            except Exception as exc:
+                return ("fast", time.monotonic(), None, exc)
+
+        primary_task = asyncio.create_task(primary_call(), name="ai-primary-race")
+        fast_task = asyncio.create_task(fast_call(), name="ai-fast-qwen-race")
+        pending: set[asyncio.Task] = {primary_task, fast_task}
+        winner: tuple[tuple[str, str, dict | None], EntryConfig] | None = None
+        errors: list[str] = []
+
+        try:
+            while pending and not job.cancel.is_set():
+                done, pending = await asyncio.wait(
+                    pending, timeout=0.25, return_when=asyncio.FIRST_COMPLETED
+                )
+                if not done:
+                    continue
+                outcomes = []
+                for task in done:
+                    try:
+                        outcomes.append(task.result())
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception as exc:
+                        errors.append(f"{type(exc).__name__}: {exc}")
+                # If both complete between polls, the completion timestamp — not
+                # arbitrary set iteration order — decides which valid answer won.
+                outcomes.sort(key=lambda item: (item[1], 0 if item[0] == "primary" else 1))
+                for lane, _, value, error in outcomes:
+                    if error is not None:
+                        errors.append(f"{lane}: {type(error).__name__}: {error}")
+                        continue
+                    if lane == "primary":
+                        if value is None:
+                            errors.append("primary: генерация прервана")
+                            continue
+                        full, thinking, usage = value
+                        visible = str(full or thinking or "").strip()
+                        if not visible:
+                            errors.append("primary: пустой ответ")
+                            continue
+                        winner = ((str(full or ""), str(thinking or ""), usage), primary)
+                        break
+                    if value is None:
+                        # The fast model either explicitly declined or returned no text.
+                        continue
+                    answer, usage = value
+                    if str(answer or "").strip():
+                        winner = ((str(answer), "", usage), fast)
+                        break
+                if winner:
+                    break
+        finally:
+            for task in (primary_task, fast_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(primary_task, fast_task, return_exceptions=True)
+
+        if job.cancel.is_set():
+            await self._finish(
+                job.message_id, MessageStatus.cancelled, error="Остановлено пользователем"
+            )
+            await job.output.put(("cancelled", ""))
+            return None
+        if winner:
+            lane = "fast Qwen" if winner[1].id == fast.id else "primary"
+            log.info("Automatic model race winner for message %s: %s", job.message_id, lane)
+            return winner
+        detail = "; ".join(errors[-4:]) or "обе модели вернули пустой ответ"
+        raise ProviderError("Не удалось получить полноценный ответ ни от одной модели: " + detail)
 
     async def _acquire_primary(
         self, job: Job, entries: list[EntryConfig], skip: set[str]

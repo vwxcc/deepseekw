@@ -1256,12 +1256,9 @@ class AIRouter:
             r"(?:создай|сделай|подготовь|сгенерируй|сформируй|экспортируй|выгрузи|оформи|нарисуй|построй|create|generate|prepare|make|build|export|draw)\b.{0,140}\b(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|инфографик\w*|pptx|docx|xlsx|pdf|svg|png|powerpoint|excel|presentation|spreadsheet)",
             job.user_text or "", flags=re.I,
         ))
-        agent_on = (
-            bool(settings.agent_enabled)
-            and bool(settings.run_sandbox_enabled)
-            and job.execution_target != "device"
-            and not artifact_work_request
-        )
+        # Never execute autonomous/agent code while an answer is streaming.
+        # File-generation code has its own single-response, post-completion runner below.
+        agent_on = False
         code_mode = job.mode == "code"
         plan_steps = job.max_steps
         base_steps = plan_steps or (
@@ -1469,11 +1466,16 @@ class AIRouter:
                         if post_answer_runs:
                             all_runs.extend(post_answer_runs)
                     if requested_artifact:
-                        if not settings.run_sandbox_enabled or job.execution_target == "device":
+                        if not settings.run_sandbox_enabled:
                             sandbox_status = (
                                 "Статус песочницы: серверное исполнение выключено "
                                 "(RUN_SANDBOX_ENABLED=0); после полного ответа будет предпринята попытка "
                                 "создания файла на устройстве."
+                            )
+                        elif job.execution_target == "device":
+                            sandbox_status = (
+                                "Статус песочницы: для этой задачи выбран запуск на устройстве; "
+                                "серверный код не запускается."
                             )
                         elif post_answer_runs:
                             if any(bool(run.get("ok")) for run in post_answer_runs):

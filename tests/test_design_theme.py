@@ -119,6 +119,7 @@ class DesignThemeTests(unittest.TestCase):
     def test_file_generation_is_template_based_and_sandbox_errors_are_brief(self):
         self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий файл", prompts.CORE_RULES)
         self.assertIn("не выводи пользователю сообщение об ошибке", prompts.CORE_RULES)
+        self.assertIn("Эти сведения служебные", prompts.RUN_SKILL)
 
         task_rules = prompts.skills_for("Сделай красивую таблицу")
         self.assertIn("Создание файлов AI-Ch", task_rules)

@@ -108,7 +108,15 @@ app.include_router(github.router)
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "app": settings.app_name, "version": settings.app_version}
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "version": settings.app_version,
+        "sandbox": {
+            "enabled": bool(settings.run_sandbox_enabled),
+            "state": "enabled" if settings.run_sandbox_enabled else "disabled",
+        },
+    }
 
 
 # --- Frontend static serving ---

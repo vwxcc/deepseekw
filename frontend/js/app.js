@@ -3993,7 +3993,7 @@
         '<span>' + (expanded ? 'Свернуть' : 'Развернуть') + '</span>';
     }));
 
-    $('[data-preview-run]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-preview-run]', scope).forEach(button => button.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[button.dataset.previewRun];
       const preview = button.closest('.html-preview');
       const frame = preview ? $('iframe', preview) : null;

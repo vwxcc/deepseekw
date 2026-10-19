@@ -54,9 +54,10 @@ async def list_files(
     for file_id, role in attachments.all():
         role_value = str(getattr(role, "value", role) or "").casefold()
         if role_value == "assistant":
-            sources[file_id] = "ai"
+            sources.setdefault(file_id, "ai")
         else:
-            sources.setdefault(file_id, "user")
+            # Any user upload takes precedence if the same file is attached more than once.
+            sources[file_id] = "user"
     out = []
     for item in stored:
         row = FileOut.model_validate(item).model_dump(mode="json")

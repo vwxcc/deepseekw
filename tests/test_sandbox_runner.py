@@ -11,6 +11,10 @@ from sandbox import server
 
 
 class SandboxRunnerTests(unittest.TestCase):
+    @unittest.skipUnless(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        "Requires root privileges to validate runner chown/setuid isolation.",
+    )
     def test_executes_under_restricted_identity_and_transfers_artifacts(self) -> None:
         with tempfile.TemporaryDirectory(prefix="ai-ch-sandbox-test-") as tmp:
             # The runner child drops privileges, so its ancestor directory

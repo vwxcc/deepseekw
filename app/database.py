@@ -65,6 +65,8 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "source_chat_title": "VARCHAR(255)",
         "compress_count": "INTEGER DEFAULT 0",
         "compress_date": "VARCHAR(10)",
+        "is_pinned": "BOOLEAN DEFAULT 0",
+        "project_id": "VARCHAR(36)",
     },
     "messages": {
         "tokens_cached": "INTEGER DEFAULT 0",

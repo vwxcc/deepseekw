@@ -5,6 +5,38 @@
   // ---------- utils ----------
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  let workspaceUploadIntent = false;
+  // Static contract: never emit a chat execution button containing data-run-device="; file runs are started only after the complete answer.
+  const actionCarouselTimers = new WeakMap();
+
+  function bindActionCarouselAutoplay(root = document) {
+    $$('.aich-ui-actions-carousel', root).forEach(carousel => {
+      if (actionCarouselTimers.has(carousel)) return;
+      const advance = () => {
+        if (!carousel.isConnected) {
+          const timer = actionCarouselTimers.get(carousel);
+          if (timer) { clearTimeout(timer.first); clearInterval(timer.interval); }
+          actionCarouselTimers.delete(carousel);
+          return;
+        }
+        if (carousel.matches(':hover') || carousel.contains(document.activeElement)) return;
+        const cards = $$('.aich-ui-action', carousel);
+        if (cards.length < 2 || carousel.scrollWidth <= carousel.clientWidth + 4) return;
+        const style = getComputedStyle(carousel);
+        const gap = parseFloat(style.columnGap || style.gap || '0') || 0;
+        const step = Math.max(1, cards[0].getBoundingClientRect().width + gap);
+        const max = Math.max(0, carousel.scrollWidth - carousel.clientWidth);
+        const next = carousel.scrollLeft + step;
+        carousel.scrollTo({ left: next >= max - 4 ? 0 : next, behavior: 'smooth' });
+      };
+      const timer = { first: null, interval: null };
+      timer.first = window.setTimeout(() => {
+        advance();
+        if (carousel.isConnected) timer.interval = window.setInterval(advance, 2000);
+      }, 500);
+      actionCarouselTimers.set(carousel, timer);
+    });
+  }
 
   function getCookie(name) {
     const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
@@ -639,13 +671,9 @@
           '<iframe sandbox="" loading="lazy" title="Предпросмотр SVG" srcdoc="' +
           escapeHtml(svgDocument) + '"></iframe></div>'
         : '';
-    const runnableLanguage = key;
-    const localRunnable = ['html', 'htm', 'svg', 'js', 'javascript', 'mjs', 'css', 'py', 'python', 'python3', 'py3', 'run']
-      .includes(runnableLanguage);
-    const runButton = localRunnable
-      ? '<button data-run-device="' + id + '" title="Запустить код в песочнице на устройстве">' +
-          icon('terminal') + 'Run</button>'
-      : '';
+    // Code blocks in chat are for reading/copying/downloading only. Execution is automatic
+    // after the assistant's complete answer, never from an inline Run button.
+    const runButton = '';
     const lines = String(code).split('\n');
     const collapsed = lines.length > 5;
     const previewCode = lines.slice(0, 5).join('\n') + (collapsed ? '\n…' : '');
@@ -1154,7 +1182,7 @@
   let deviceCodeLastError = '';
   let deviceCodeErrorUrl = null;
   const backgroundDeviceRunners = new Map();
-  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const runMessageId = __MESSAGE_ID__;\n  const backgroundMode = __BACKGROUND__;\n  const append = value => { const line = String(value); out.textContent += line + \"\\n\"; try { parent.postMessage({type:\"device-code-log\", message:line.slice(0,5000), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {} };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".ppt\",\".doc\",\".xls\",\".ppt_\",\".doc_\",\".xls_\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp', '/work'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function sourceImports() {\n    const found = new Set();\n    for (const line of source.split(/\\r?\\n/)) {\n      const value = line.trim();\n      if (!value || value.startsWith(\"#\")) continue;\n      const imported = value.match(/^import\\s+(.+?)(?:\\s+#.*)?$/);\n      if (imported) {\n        for (const item of imported[1].split(\",\")) {\n          const name = item.trim().split(/\\s+as\\s+/)[0].split(\".\")[0];\n          if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n        }\n        continue;\n      }\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      if (fromImport) {\n        const name = fromImport[1].split(\".\")[0];\n        if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n      }\n    }\n    return [...found];\n  }\n  const nativePackages = {\n    \"PIL\":\"Pillow\",\"numpy\":\"numpy\",\"pandas\":\"pandas\",\"matplotlib\":\"matplotlib\",\"scipy\":\"scipy\",\n    \"sympy\":\"sympy\",\"networkx\":\"networkx\",\"yaml\":\"PyYAML\",\"bs4\":\"beautifulsoup4\",\n    \"dateutil\":\"python-dateutil\",\"lxml\":\"lxml\",\"cv2\":\"opencv-python\",\"sklearn\":\"scikit-learn\",\n    \"skimage\":\"scikit-image\",\"regex\":\"regex\",\"pydantic\":\"pydantic\",\"jsonschema\":\"jsonschema\",\n    \"pygments\":\"Pygments\",\"requests\":\"requests\",\"tqdm\":\"tqdm\",\"pytz\":\"pytz\",\n    \"altair\":\"altair\",\"bokeh\":\"bokeh\",\"statsmodels\":\"statsmodels\",\"pyarrow\":\"pyarrow\",\n    \"polars\":\"polars\",\"xarray\":\"xarray\",\"pytest\":\"pytest\",\"svgwrite\":\"svgwrite\",\n    \"sqlalchemy\":\"sqlalchemy\",\"igraph\":\"igraph\",\"nltk\":\"nltk\",\"imageio\":\"imageio\",\n    \"h5py\":\"h5py\",\"orjson\":\"orjson\",\"packaging\":\"packaging\",\"httpx\":\"httpx\",\n    \"aiohttp\":\"aiohttp\",\"jedi\":\"jedi\",\"IPython\":\"ipython\",\"lightgbm\":\"lightgbm\",\n    \"gmpy2\":\"gmpy2\",\"pyclipper\":\"pyclipper\",\"shapely\":\"shapely\",\"geopandas\":\"geopandas\",\n    \"soundfile\":\"soundfile\",\"sentencepiece\":\"sentencepiece\",\"pyodide_http\":\"pyodide-http\",\n    \"bottleneck\":\"Bottleneck\",\"igraph\":\"igraph\",\"ruamel\":\"ruamel.yaml\",\n    \"cryptography\":\"cryptography\",\"nacl\":\"pynacl\",\"Crypto\":\"pycryptodome\",\n    \"ujson\":\"ujson\",\"xxhash\":\"xxhash\",\"wcwidth\":\"wcwidth\",\"PIL.Image\":\"Pillow\",\n    \"rich\":\"rich\",\"xgboost\":\"xgboost\",\"xlrd\":\"xlrd\",\"wordcloud\":\"wordcloud\",\n    \"brotli\":\"brotli\",\"protobuf\":\"protobuf\",\"fontTools\":\"fonttools\",\"tiktoken\":\"tiktoken\",\n    \"tzdata\":\"tzdata\",\"simplejson\":\"simplejson\",\"pymongo\":\"pymongo\",\"pyclipper\":\"pyclipper\"\n  };\n  const pipPackages = {\n    \"docx\":\"python-docx\",\"pptx\":\"python-pptx\",\"openpyxl\":\"openpyxl\",\"pypdf\":\"pypdf\",\n    \"PyPDF2\":\"PyPDF2\",\"xlsxwriter\":\"XlsxWriter\",\"markdown\":\"Markdown\",\"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\"docxtpl\":\"docxtpl\",\"jinja2\":\"Jinja2\",\"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\"tabulate\":\"tabulate\",\"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\"cssselect2\":\"cssselect2\",\"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\"barcode\":\"python-barcode\",\"toml\":\"toml\",\n    \"tomli\":\"tomli\",\"tomli_w\":\"tomli-w\",\"xmltodict\":\"xmltodict\",\n    \"markdown_it\":\"markdown-it-py\",\"mistune\":\"mistune\",\"seaborn\":\"seaborn\",\n    \"more_itertools\":\"more-itertools\",\"colorama\":\"colorama\",\"reportlab\":\"reportlab\",\n    \"dateparser\":\"dateparser\",\"pendulum\":\"pendulum\",\"humanize\":\"humanize\",\n    \"faker\":\"Faker\",\"marshmallow\":\"marshmallow\",\"cattrs\":\"cattrs\",\"dacite\":\"dacite\",\n    \"json5\":\"json5\",\"jsonlines\":\"jsonlines\",\"rapidfuzz\":\"rapidfuzz\",\n    \"fuzzywuzzy\":\"fuzzywuzzy\",\"jellyfish\":\"jellyfish\",\"phonenumbers\":\"phonenumbers\",\n    \"slugify\":\"python-slugify\",\"unidecode\":\"Unidecode\",\"transliterate\":\"transliterate\",\n    \"pint\":\"Pint\",\"babel\":\"Babel\",\"holidays\":\"holidays\",\"attrs\":\"attrs\",\n    \"cachetools\":\"cachetools\",\"click\":\"click\",\"typer\":\"typer\",\"rich\":\"rich\",\n    \"loguru\":\"loguru\",\"structlog\":\"structlog\",\"colorlog\":\"colorlog\",\n    \"dotenv\":\"python-dotenv\",\"yaml\":\"PyYAML\",\"bs4\":\"beautifulsoup4\",\n    \"dateutil\":\"python-dateutil\",\"PIL\":\"Pillow\",\"lxml\":\"lxml\",\n    \"fitz\":\"PyMuPDF\",\"pymupdf\":\"PyMuPDF\",\"docxcompose\":\"docxcompose\",\n    \"pptxgenjs\":\"pptxgenjs\",\"pptx_tools\":\"pptx-tools\",\"numpy_financial\":\"numpy-financial\",\n    \"sympy_plot_backends\":\"sympy-plot-backends\",\"pandas_datareader\":\"pandas-datareader\",\n    \"duckdb\":\"duckdb\",\"duckdb_engine\":\"duckdb-engine\",\"sqlglot\":\"sqlglot\",\n    \"pysam\":\"pysam\",\"biopython\":\"biopython\",\"Bio\":\"biopython\",\n    \"xgboost\":\"xgboost\",\"lightgbm\":\"lightgbm\",\"torch\":\"torch\",\n    \"tensorflow\":\"tensorflow\",\"transformers\":\"transformers\",\"tokenizers\":\"tokenizers\",\n    \"spacy\":\"spacy\",\"gensim\":\"gensim\",\"wordcloud\":\"wordcloud\",\n    \"plotly\":\"plotly\",\"dash\":\"dash\",\"streamlit\":\"streamlit\",\n    \"pydantic_settings\":\"pydantic-settings\",\"sqlmodel\":\"sqlmodel\",\n    \"alembic\":\"alembic\",\"redis\":\"redis\",\"fakeredis\":\"fakeredis\",\n    \"websockets\":\"websockets\",\"requests_mock\":\"requests-mock\",\"responses\":\"responses\",\n    \"pytest_asyncio\":\"pytest-asyncio\",\"hypothesis\":\"hypothesis\",\n    \"pytest_cov\":\"pytest-cov\",\"coverage\":\"coverage\",\"tox\":\"tox\",\n    \"yamlinclude\":\"yaml-include\",\"tomlkit\":\"tomlkit\",\"ruamel\":\"ruamel.yaml\",\n    \"xmltodict\":\"xmltodict\",\"lxml_html_clean\":\"lxml_html_clean\",\n    \"jsonpath_ng\":\"jsonpath-ng\",\"jmespath\":\"jmespath\",\"orjson\":\"orjson\",\n    \"pygments\":\"Pygments\",\"networkx\":\"networkx\",\"pytz\":\"pytz\",\n    \"timezonefinder\":\"timezonefinder\",\"geopy\":\"geopy\",\"folium\":\"folium\",\n    \"rasterio\":\"rasterio\",\"cartopy\":\"Cartopy\",\"fiona\":\"fiona\",\n    \"geopandas\":\"geopandas\",\"shapely\":\"shapely\",\"scipy\":\"scipy\",\n    \"scikit_learn\":\"scikit-learn\",\"sklearn\":\"scikit-learn\",\n    \"opencv\":\"opencv-python\",\"cv2\":\"opencv-python\",\"pyarrow\":\"pyarrow\",\n    \"polars\":\"polars\",\"xarray\":\"xarray\",\"statsmodels\":\"statsmodels\",\n    \"sympy\":\"sympy\",\"networkx\":\"networkx\",\"pydantic\":\"pydantic\",\n    \"jsonschema\":\"jsonschema\",\"requests\":\"requests\",\"httpx\":\"httpx\",\n    \"aiohttp\":\"aiohttp\",\"tqdm\":\"tqdm\",\"regex\":\"regex\",\"pytest\":\"pytest\"\n  };\n  let py;\n  let before = {};\n  try {\n    out.textContent = \"Загружаю Python WebAssembly…\";\n    notify(\"Загружаю Python на устройстве…\");\n    py = await loadPyodide({indexURL:\"https://cdn.jsdelivr.net/pyodide/v314.0.7/full/\"});\n    py.setStdout({batched:append});\n    py.setStderr({batched:value => append(\"STDERR: \" + value)});\n    await py.runPythonAsync(\"import os\" + String.fromCharCode(10) + \"os.makedirs('/work/out', exist_ok=True); os.chdir('/home/pyodide')\");\n    before = JSON.parse(await py.runPythonAsync(snapshotCode));\n    const imports = sourceImports();\n    out.textContent = \"Автоматически загружаю библиотеки по import…\";\n    notify(\"Проверяю импорты. Подходящие пакеты загружаются по необходимости…\");\n    try {\n      if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n    } catch (e) {\n      append(\"Предупреждение авто-загрузки модулей: \" + String(e && e.message || e));\n    }\n    const normalizePackageName = value =>\n      String(value || \"\").trim().toLowerCase().replace(/[-_.]+/g, \"-\");\n    const isPackageLoaded = name => {\n      const wanted = normalizePackageName(name);\n      return Object.keys(py.loadedPackages || {}).some(loaded => normalizePackageName(loaded) === wanted);\n    };\n    const nativeRequested = [...new Set(imports.filter(name => nativePackages[name]).map(name => nativePackages[name]))];\n    const nativeFailed = new Set();\n    for (const packageName of nativeRequested) {\n      if (isPackageLoaded(packageName)) continue;\n      try {\n        notify(\"Подготавливаю встроенный модуль \" + packageName + \"…\");\n        await py.loadPackage(packageName);\n      } catch (e) {\n        if (isPackageLoaded(packageName)) continue;\n        nativeFailed.add(packageName);\n        append(\"⚠ Встроенный модуль недоступен: \" + packageName + \" — \" + String(e && e.message || e));\n      }\n    }\n    const dependencies = [];\n    if (imports.some(name => [\"docx\",\"pptx\",\"docxtpl\",\"docxcompose\"].includes(name))) dependencies.push(\"lxml\");\n    if (imports.some(name => [\"docx\",\"pptx\",\"docxtpl\",\"docxcompose\",\"qrcode\",\"fpdf\",\"PIL\",\"Pillow\"].includes(name))) dependencies.push(\"Pillow\");\n    for (const packageName of [...new Set(dependencies)]) {\n      if (isPackageLoaded(packageName)) continue;\n      try {\n        await py.loadPackage(packageName);\n      } catch (e) {\n        if (!isPackageLoaded(packageName)) {\n          nativeFailed.add(packageName);\n          append(\"⚠ Зависимость документа недоступна: \" + packageName);\n        }\n      }\n    }\n    let stdlib = new Set();\n    try {\n      const list = await py.runPythonAsync(\"import sys, json\" + String.fromCharCode(10) + \"json.dumps(sorted(sys.stdlib_module_names))\");\n      stdlib = new Set(JSON.parse(list));\n    } catch (_) {\n      stdlib = new Set([\"abc\",\"argparse\",\"array\",\"ast\",\"asyncio\",\"base64\",\"binascii\",\"bisect\",\"builtins\",\"calendar\",\"cmath\",\"collections\",\"concurrent\",\"configparser\",\"contextlib\",\"copy\",\"csv\",\"ctypes\",\"dataclasses\",\"datetime\",\"decimal\",\"difflib\",\"email\",\"enum\",\"fnmatch\",\"fractions\",\"functools\",\"glob\",\"gzip\",\"hashlib\",\"heapq\",\"html\",\"http\",\"importlib\",\"inspect\",\"io\",\"itertools\",\"json\",\"logging\",\"math\",\"operator\",\"os\",\"pathlib\",\"pickle\",\"platform\",\"pprint\",\"queue\",\"random\",\"re\",\"secrets\",\"shlex\",\"shutil\",\"signal\",\"socket\",\"sqlite3\",\"statistics\",\"string\",\"struct\",\"subprocess\",\"tempfile\",\"textwrap\",\"threading\",\"time\",\"timeit\",\"traceback\",\"types\",\"typing\",\"unicodedata\",\"unittest\",\"urllib\",\"uuid\",\"warnings\",\"weakref\",\"xml\",\"zipfile\",\"zlib\"]);\n    }\n    const wanted = new Set();\n    for (const name of imports) {\n      if (stdlib.has(name) || nativePackages[name]) continue;\n      wanted.add(pipPackages[name] || name);\n    }\n    nativeFailed.forEach(name => wanted.add(name));\n    if (imports.includes(\"openpyxl\")) wanted.add(\"et_xmlfile\");\n    if (imports.includes(\"docxtpl\")) wanted.add(\"Jinja2\");\n    if (wanted.size) {\n      try {\n        if (!isPackageLoaded(\"micropip\")) await py.loadPackage(\"micropip\");\n        const micropip = py.pyimport(\"micropip\");\n        for (const packageName of [...wanted]) {\n          if (isPackageLoaded(packageName)) continue;\n          notify(\"Загружаю библиотеку \" + packageName + \"…\");\n          try {\n            await micropip.install(packageName);\n            append(\"✓ Загружена библиотека: \" + packageName);\n          } catch (e) {\n            append(\"⚠ Не удалось установить \" + packageName + \": \" + String(e && e.message || e) +\n              \". Для некоторых бинарных модулей нужна специальная сборка Pyodide.\");\n          }\n        }\n        micropip.destroy();\n      } catch (e) {\n        append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n      }\n    }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Запускаю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n      try { parent.postMessage({type:\"device-code-error\", message:String(e && (e.stack || e.message) || e), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n    }\n    let exported = 0;\n    const skippedFiles = [];\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const candidates = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      });\n      const canonicalOutputName = value => {\n        let raw = String(value || \"\").replace(/\\\\/g, \"/\").split(\"/\").pop().trim();\n        raw = raw.replace(/\\s*\\.(ppt|doc|xls)_$/i, (_, ext) => \".\" + ({ppt:\"pptx\",doc:\"docx\",xls:\"xlsx\"}[ext.toLowerCase()]));\n        const match = raw.match(/(\\.[A-Za-z0-9]{1,8})$/);\n        const extension = match ? match[1].toLowerCase() : \"\";\n        let stem = match ? raw.slice(0, -match[1].length) : raw;\n        stem = stem.replace(/^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\\s._-]*)+/i, \"\");\n        stem = stem.replace(/[\\\\/:*?\"<>|\\x00-\\x1f]+/g, \"-\").replace(/\\s+/g, \"-\").replace(/-+/g, \"-\").replace(/[.\\s_-]+$/g, \"\").slice(0, 140);\n        return ((stem || \"output\") + extension).toLowerCase();\n      };\n      const outputPriority = path => {\n        const name = path.split(\"/\").pop();\n        const malformed = /\\.(?:ppt|doc|xls)_$/i.test(name) ? 2 : 0;\n        const stem = name.replace(/\\.[^.]+$/, \"\");\n        const prefixed = /^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\\s._-]+)+/i.test(stem) ? 1 : 0;\n        return malformed + prefixed;\n      };\n      const seenOutputNames = new Set();\n      const paths = candidates\n        .sort((a, b) => outputPriority(a) - outputPriority(b) || a.localeCompare(b))\n        .filter(path => {\n          const key = canonicalOutputName(path.split(\"/\").pop());\n          if (seenOutputNames.has(key)) return false;\n          seenOutputNames.add(key);\n          return true;\n        })\n        .sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\",csv:\"text/csv\",tsv:\"text/tab-separated-values\",txt:\"text/plain\",\n          json:\"application/json\",jsonl:\"application/jsonl\",html:\"text/html\",htm:\"text/html\",\n          svg:\"image/svg+xml\",png:\"image/png\",jpg:\"image/jpeg\",jpeg:\"image/jpeg\",webp:\"image/webp\",\n          gif:\"image/gif\",zip:\"application/zip\",md:\"text/markdown\",xml:\"application/xml\",rtf:\"application/rtf\",\n          epub:\"application/epub+zip\",tex:\"application/x-tex\",bib:\"text/plain\",ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\",yml:\"text/yaml\",npy:\"application/octet-stream\",npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\",pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = path.split(\"/\").pop();\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size) {\n          const warning = \"Файл пустой: \" + name;\n          append(\"⚠ \" + warning);\n          skippedFiles.push(warning);\n          continue;\n        }\n        if (size > 25 * 1024 * 1024 || totalBytes + size > 50 * 1024 * 1024) {\n          const warning = size > 25 * 1024 * 1024\n            ? name + \" (больше 25 МБ)\"\n            : name + \" (превышен общий лимит 50 МБ)\";\n          append(\"⚠ Файл пропущен: \" + warning);\n          skippedFiles.push(warning);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes, messageId:runMessageId, background:backgroundMode}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    const skippedSummary = skippedFiles.length\n      ? \" Пропущено: \" + skippedFiles.slice(0, 5).join(\"; \") + (skippedFiles.length > 5 ? \"; и ещё \" + (skippedFiles.length - 5) : \"\")\n      : \"\";\n    if (exported || skippedFiles.length) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки появятся в сообщении.\" + skippedSummary);\n      notify(\"Python выполнен. Файлов создано: \" + exported + \".\" + skippedSummary);\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен.\");\n    }\n    try { parent.postMessage({type:\"device-code-complete\", success:!runError && !skippedFiles.length, files:exported, skipped:skippedFiles.slice(0, 10), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и доступные модули.\";\n    notify(\"Не удалось запустить Python: \" + String(e && e.message || e));\n    try { parent.postMessage({type:\"device-code-error\", message:String(e && (e.stack || e.message) || e), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n    try { parent.postMessage({type:\"device-code-complete\", success:false, files:0, messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n  }\n})();";
+  const DEVICE_PYTHON_RUNNER_TEMPLATE = "(async function() {\n  const out = document.getElementById(\"output\");\n  const source = new TextDecoder().decode(Uint8Array.from(atob(\"__BASE64__\"), c => c.charCodeAt(0)));\n  const runMessageId = __MESSAGE_ID__;\n  const backgroundMode = __BACKGROUND__;\n  const append = value => { const line = String(value); out.textContent += line + \"\\n\"; try { parent.postMessage({type:\"device-code-log\", message:line.slice(0,5000), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {} };\n  const notify = message => { try { parent.postMessage({type:\"device-code-status\", message:String(message), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {} };\n  const supportedFiles = [\".docx\",\".pptx\",\".xlsx\",\".ppt\",\".doc\",\".xls\",\".ppt_\",\".doc_\",\".xls_\",\".ods\",\".odt\",\".odp\",\".pdf\",\".csv\",\".tsv\",\".txt\",\".json\",\".jsonl\",\".html\",\".htm\",\".svg\",\".png\",\".jpg\",\".jpeg\",\".webp\",\".gif\",\".zip\",\".md\",\".xml\",\".rtf\",\".epub\",\".tex\",\".bib\",\".ipynb\",\".yaml\",\".yml\",\".npy\",\".npz\",\".pickle\",\".pkl\"];\n  const snapshotCode = [\n    \"import os, json\",\n    \"def _aich_snapshot_files():\",\n    \"    files = {}\",\n    \"    allowed = set(\" + JSON.stringify(supportedFiles) + \")\",\n    \"    roots = {os.getcwd(), '/tmp', '/work'}\",\n    \"    def walk(root, depth):\",\n    \"        if depth > 3: return\",\n    \"        try: names = os.listdir(root)\",\n    \"        except Exception: return\",\n    \"        for name in names:\",\n    \"            if name.startswith('.') or name in {'__pycache__', 'site-packages', 'node_modules'}: continue\",\n    \"            path = os.path.join(root, name)\",\n    \"            try:\",\n    \"                if os.path.isdir(path): walk(path, depth + 1)\",\n    \"                elif os.path.isfile(path) and os.path.splitext(name)[1].lower() in allowed:\",\n    \"                    st = os.stat(path); files[path] = [st.st_size, st.st_mtime]\",\n    \"            except Exception: pass\",\n    \"    for root in roots: walk(root, 0)\",\n    \"    return json.dumps(files)\",\n    \"_aich_snapshot_files()\"\n  ].join(\"\\n\");\n  function sourceImports() {\n    const found = new Set();\n    for (const line of source.split(/\\r?\\n/)) {\n      const value = line.trim();\n      if (!value || value.startsWith(\"#\")) continue;\n      const imported = value.match(/^import\\s+(.+?)(?:\\s+#.*)?$/);\n      if (imported) {\n        for (const item of imported[1].split(\",\")) {\n          const name = item.trim().split(/\\s+as\\s+/)[0].split(\".\")[0];\n          if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n        }\n        continue;\n      }\n      const fromImport = value.match(/^from\\s+([\\w.]+)\\s+import\\b/);\n      if (fromImport) {\n        const name = fromImport[1].split(\".\")[0];\n        if (/^[A-Za-z_]\\w*$/.test(name)) found.add(name);\n      }\n    }\n    return [...found];\n  }\n  const nativePackages = {\n    \"PIL\":\"Pillow\",\"numpy\":\"numpy\",\"pandas\":\"pandas\",\"matplotlib\":\"matplotlib\",\"scipy\":\"scipy\",\n    \"sympy\":\"sympy\",\"networkx\":\"networkx\",\"yaml\":\"PyYAML\",\"bs4\":\"beautifulsoup4\",\n    \"dateutil\":\"python-dateutil\",\"lxml\":\"lxml\",\"cv2\":\"opencv-python\",\"sklearn\":\"scikit-learn\",\n    \"skimage\":\"scikit-image\",\"regex\":\"regex\",\"pydantic\":\"pydantic\",\"jsonschema\":\"jsonschema\",\n    \"pygments\":\"Pygments\",\"requests\":\"requests\",\"tqdm\":\"tqdm\",\"pytz\":\"pytz\",\n    \"altair\":\"altair\",\"bokeh\":\"bokeh\",\"statsmodels\":\"statsmodels\",\"pyarrow\":\"pyarrow\",\n    \"polars\":\"polars\",\"xarray\":\"xarray\",\"pytest\":\"pytest\",\"svgwrite\":\"svgwrite\",\n    \"sqlalchemy\":\"sqlalchemy\",\"igraph\":\"igraph\",\"nltk\":\"nltk\",\"imageio\":\"imageio\",\n    \"h5py\":\"h5py\",\"orjson\":\"orjson\",\"packaging\":\"packaging\",\"httpx\":\"httpx\",\n    \"aiohttp\":\"aiohttp\",\"jedi\":\"jedi\",\"IPython\":\"ipython\",\"lightgbm\":\"lightgbm\",\n    \"gmpy2\":\"gmpy2\",\"pyclipper\":\"pyclipper\",\"shapely\":\"shapely\",\"geopandas\":\"geopandas\",\n    \"soundfile\":\"soundfile\",\"sentencepiece\":\"sentencepiece\",\"pyodide_http\":\"pyodide-http\",\n    \"bottleneck\":\"Bottleneck\",\"igraph\":\"igraph\",\"ruamel\":\"ruamel.yaml\",\n    \"cryptography\":\"cryptography\",\"nacl\":\"pynacl\",\"Crypto\":\"pycryptodome\",\n    \"ujson\":\"ujson\",\"xxhash\":\"xxhash\",\"wcwidth\":\"wcwidth\",\"PIL.Image\":\"Pillow\",\n    \"rich\":\"rich\",\"xgboost\":\"xgboost\",\"xlrd\":\"xlrd\",\"wordcloud\":\"wordcloud\",\n    \"brotli\":\"brotli\",\"protobuf\":\"protobuf\",\"fontTools\":\"fonttools\",\"tiktoken\":\"tiktoken\",\n    \"tzdata\":\"tzdata\",\"simplejson\":\"simplejson\",\"pymongo\":\"pymongo\",\"pyclipper\":\"pyclipper\"\n  };\n  const pipPackages = {\n    \"docx\":\"python-docx\",\"pptx\":\"python-pptx\",\"openpyxl\":\"openpyxl\",\"pypdf\":\"pypdf\",\n    \"PyPDF2\":\"PyPDF2\",\"xlsxwriter\":\"XlsxWriter\",\"markdown\":\"Markdown\",\"odf\":\"odfpy\",\n    \"fpdf\":\"fpdf2\",\"docxtpl\":\"docxtpl\",\"jinja2\":\"Jinja2\",\"svgwrite\":\"svgwrite\",\n    \"markdown2\":\"markdown2\",\"tabulate\":\"tabulate\",\"qrcode\":\"qrcode\",\n    \"tinycss2\":\"tinycss2\",\"cssselect2\":\"cssselect2\",\"et_xmlfile\":\"et_xmlfile\",\n    \"docx2txt\":\"docx2txt\",\"barcode\":\"python-barcode\",\"toml\":\"toml\",\n    \"tomli\":\"tomli\",\"tomli_w\":\"tomli-w\",\"xmltodict\":\"xmltodict\",\n    \"markdown_it\":\"markdown-it-py\",\"mistune\":\"mistune\",\"seaborn\":\"seaborn\",\n    \"more_itertools\":\"more-itertools\",\"colorama\":\"colorama\",\"reportlab\":\"reportlab\",\n    \"dateparser\":\"dateparser\",\"pendulum\":\"pendulum\",\"humanize\":\"humanize\",\n    \"faker\":\"Faker\",\"marshmallow\":\"marshmallow\",\"cattrs\":\"cattrs\",\"dacite\":\"dacite\",\n    \"json5\":\"json5\",\"jsonlines\":\"jsonlines\",\"rapidfuzz\":\"rapidfuzz\",\n    \"fuzzywuzzy\":\"fuzzywuzzy\",\"jellyfish\":\"jellyfish\",\"phonenumbers\":\"phonenumbers\",\n    \"slugify\":\"python-slugify\",\"unidecode\":\"Unidecode\",\"transliterate\":\"transliterate\",\n    \"pint\":\"Pint\",\"babel\":\"Babel\",\"holidays\":\"holidays\",\"attrs\":\"attrs\",\n    \"cachetools\":\"cachetools\",\"click\":\"click\",\"typer\":\"typer\",\"rich\":\"rich\",\n    \"loguru\":\"loguru\",\"structlog\":\"structlog\",\"colorlog\":\"colorlog\",\n    \"dotenv\":\"python-dotenv\",\"yaml\":\"PyYAML\",\"bs4\":\"beautifulsoup4\",\n    \"dateutil\":\"python-dateutil\",\"PIL\":\"Pillow\",\"lxml\":\"lxml\",\n    \"fitz\":\"PyMuPDF\",\"pymupdf\":\"PyMuPDF\",\"docxcompose\":\"docxcompose\",\n    \"pptxgenjs\":\"pptxgenjs\",\"pptx_tools\":\"pptx-tools\",\"numpy_financial\":\"numpy-financial\",\n    \"sympy_plot_backends\":\"sympy-plot-backends\",\"pandas_datareader\":\"pandas-datareader\",\n    \"duckdb\":\"duckdb\",\"duckdb_engine\":\"duckdb-engine\",\"sqlglot\":\"sqlglot\",\n    \"pysam\":\"pysam\",\"biopython\":\"biopython\",\"Bio\":\"biopython\",\n    \"xgboost\":\"xgboost\",\"lightgbm\":\"lightgbm\",\"torch\":\"torch\",\n    \"tensorflow\":\"tensorflow\",\"transformers\":\"transformers\",\"tokenizers\":\"tokenizers\",\n    \"spacy\":\"spacy\",\"gensim\":\"gensim\",\"wordcloud\":\"wordcloud\",\n    \"plotly\":\"plotly\",\"dash\":\"dash\",\"streamlit\":\"streamlit\",\n    \"pydantic_settings\":\"pydantic-settings\",\"sqlmodel\":\"sqlmodel\",\n    \"alembic\":\"alembic\",\"redis\":\"redis\",\"fakeredis\":\"fakeredis\",\n    \"websockets\":\"websockets\",\"requests_mock\":\"requests-mock\",\"responses\":\"responses\",\n    \"pytest_asyncio\":\"pytest-asyncio\",\"hypothesis\":\"hypothesis\",\n    \"pytest_cov\":\"pytest-cov\",\"coverage\":\"coverage\",\"tox\":\"tox\",\n    \"yamlinclude\":\"yaml-include\",\"tomlkit\":\"tomlkit\",\"ruamel\":\"ruamel.yaml\",\n    \"xmltodict\":\"xmltodict\",\"lxml_html_clean\":\"lxml_html_clean\",\n    \"jsonpath_ng\":\"jsonpath-ng\",\"jmespath\":\"jmespath\",\"orjson\":\"orjson\",\n    \"pygments\":\"Pygments\",\"networkx\":\"networkx\",\"pytz\":\"pytz\",\n    \"timezonefinder\":\"timezonefinder\",\"geopy\":\"geopy\",\"folium\":\"folium\",\n    \"rasterio\":\"rasterio\",\"cartopy\":\"Cartopy\",\"fiona\":\"fiona\",\n    \"geopandas\":\"geopandas\",\"shapely\":\"shapely\",\"scipy\":\"scipy\",\n    \"scikit_learn\":\"scikit-learn\",\"sklearn\":\"scikit-learn\",\n    \"opencv\":\"opencv-python\",\"cv2\":\"opencv-python\",\"pyarrow\":\"pyarrow\",\n    \"polars\":\"polars\",\"xarray\":\"xarray\",\"statsmodels\":\"statsmodels\",\n    \"sympy\":\"sympy\",\"networkx\":\"networkx\",\"pydantic\":\"pydantic\",\n    \"jsonschema\":\"jsonschema\",\"requests\":\"requests\",\"httpx\":\"httpx\",\n    \"aiohttp\":\"aiohttp\",\"tqdm\":\"tqdm\",\"regex\":\"regex\",\"pytest\":\"pytest\"\n  };\n  let py;\n  let before = {};\n  try {\n    out.textContent = \"Загружаю Python WebAssembly…\";\n    notify(\"Загружаю Python на устройстве…\");\n    py = await loadPyodide({indexURL:\"https://cdn.jsdelivr.net/pyodide/v314.0.7/full/\"});\n    py.setStdout({batched:append});\n    py.setStderr({batched:value => append(\"STDERR: \" + value)});\n    await py.runPythonAsync(\"import os\" + String.fromCharCode(10) + \"os.makedirs('/work/out', exist_ok=True); os.chdir('/home/pyodide')\");\n    before = JSON.parse(await py.runPythonAsync(snapshotCode));\n    const imports = sourceImports();\n    out.textContent = \"Автоматически загружаю библиотеки по import…\";\n    notify(\"Проверяю импорты. Подходящие пакеты загружаются по необходимости…\");\n    try {\n      if (typeof py.loadPackagesFromImports === \"function\") await py.loadPackagesFromImports(source);\n    } catch (e) {\n      append(\"Предупреждение авто-загрузки модулей: \" + String(e && e.message || e));\n    }\n    const normalizePackageName = value =>\n      String(value || \"\").trim().toLowerCase().replace(/[-_.]+/g, \"-\");\n    const isPackageLoaded = name => {\n      const wanted = normalizePackageName(name);\n      return Object.keys(py.loadedPackages || {}).some(loaded => normalizePackageName(loaded) === wanted);\n    };\n    const nativeRequested = [...new Set(imports.filter(name => nativePackages[name]).map(name => nativePackages[name]))];\n    const nativeFailed = new Set();\n    for (const packageName of nativeRequested) {\n      if (isPackageLoaded(packageName)) continue;\n      try {\n        notify(\"Подготавливаю встроенный модуль \" + packageName + \"…\");\n        await py.loadPackage(packageName);\n      } catch (e) {\n        if (isPackageLoaded(packageName)) continue;\n        nativeFailed.add(packageName);\n        append(\"⚠ Встроенный модуль недоступен: \" + packageName + \" — \" + String(e && e.message || e));\n      }\n    }\n    const dependencies = [];\n    if (imports.some(name => [\"docx\",\"pptx\",\"docxtpl\",\"docxcompose\"].includes(name))) dependencies.push(\"lxml\");\n    if (imports.some(name => [\"docx\",\"pptx\",\"docxtpl\",\"docxcompose\",\"qrcode\",\"fpdf\",\"PIL\",\"Pillow\"].includes(name))) dependencies.push(\"Pillow\");\n    for (const packageName of [...new Set(dependencies)]) {\n      if (isPackageLoaded(packageName)) continue;\n      try {\n        await py.loadPackage(packageName);\n      } catch (e) {\n        if (!isPackageLoaded(packageName)) {\n          nativeFailed.add(packageName);\n          append(\"⚠ Зависимость документа недоступна: \" + packageName);\n        }\n      }\n    }\n    let stdlib = new Set();\n    try {\n      const list = await py.runPythonAsync(\"import sys, json\" + String.fromCharCode(10) + \"json.dumps(sorted(sys.stdlib_module_names))\");\n      stdlib = new Set(JSON.parse(list));\n    } catch (_) {\n      stdlib = new Set([\"abc\",\"argparse\",\"array\",\"ast\",\"asyncio\",\"base64\",\"binascii\",\"bisect\",\"builtins\",\"calendar\",\"cmath\",\"collections\",\"concurrent\",\"configparser\",\"contextlib\",\"copy\",\"csv\",\"ctypes\",\"dataclasses\",\"datetime\",\"decimal\",\"difflib\",\"email\",\"enum\",\"fnmatch\",\"fractions\",\"functools\",\"glob\",\"gzip\",\"hashlib\",\"heapq\",\"html\",\"http\",\"importlib\",\"inspect\",\"io\",\"itertools\",\"json\",\"logging\",\"math\",\"operator\",\"os\",\"pathlib\",\"pickle\",\"platform\",\"pprint\",\"queue\",\"random\",\"re\",\"secrets\",\"shlex\",\"shutil\",\"signal\",\"socket\",\"sqlite3\",\"statistics\",\"string\",\"struct\",\"subprocess\",\"tempfile\",\"textwrap\",\"threading\",\"time\",\"timeit\",\"traceback\",\"types\",\"typing\",\"unicodedata\",\"unittest\",\"urllib\",\"uuid\",\"warnings\",\"weakref\",\"xml\",\"zipfile\",\"zlib\"]);\n    }\n    const wanted = new Set();\n    for (const name of imports) {\n      if (stdlib.has(name) || nativePackages[name]) continue;\n      wanted.add(pipPackages[name] || name);\n    }\n    nativeFailed.forEach(name => wanted.add(name));\n    if (imports.includes(\"openpyxl\")) wanted.add(\"et_xmlfile\");\n    if (imports.includes(\"docxtpl\")) wanted.add(\"Jinja2\");\n    if (wanted.size) {\n      try {\n        if (!isPackageLoaded(\"micropip\")) await py.loadPackage(\"micropip\");\n        const micropip = py.pyimport(\"micropip\");\n        for (const packageName of [...wanted]) {\n          if (isPackageLoaded(packageName)) continue;\n          notify(\"Загружаю библиотеку \" + packageName + \"…\");\n          try {\n            await micropip.install(packageName);\n            append(\"✓ Загружена библиотека: \" + packageName);\n          } catch (e) {\n            append(\"⚠ Не удалось установить \" + packageName + \": \" + String(e && e.message || e) +\n              \". Для некоторых бинарных модулей нужна специальная сборка Pyodide.\");\n          }\n        }\n        micropip.destroy();\n      } catch (e) {\n        append(\"⚠ Менеджер дополнительных пакетов недоступен: \" + String(e && e.message || e));\n      }\n    }\n    append(\"\\n--- Выполнение кода ---\");\n    notify(\"Запускаю Python-код на устройстве…\");\n    let runError = null;\n    try {\n      await py.runPythonAsync(source);\n    } catch (e) {\n      runError = e;\n      append(\"Ошибка выполнения: \" + String(e && e.message || e));\n      try { parent.postMessage({type:\"device-code-error\", message:String(e && (e.stack || e.message) || e), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n    }\n    let exported = 0;\n    const skippedFiles = [];\n    try {\n      const after = JSON.parse(await py.runPythonAsync(snapshotCode));\n      const candidates = Object.keys(after).filter(path => {\n        const now = after[path], was = before[path];\n        return !was || now[0] !== was[0] || now[1] !== was[1];\n      });\n      const canonicalOutputName = value => {\n        let raw = String(value || \"\").replace(/\\\\/g, \"/\").split(\"/\").pop().trim();\n        raw = raw.replace(/\\s*\\.(ppt|doc|xls)_$/i, (_, ext) => \".\" + ({ppt:\"pptx\",doc:\"docx\",xls:\"xlsx\"}[ext.toLowerCase()]));\n        const match = raw.match(/(\\.[A-Za-z0-9]{1,8})$/);\n        const extension = match ? match[1].toLowerCase() : \"\";\n        let stem = match ? raw.slice(0, -match[1].length) : raw;\n        stem = stem.replace(/^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\\s._-]*)+/i, \"\");\n        stem = stem.replace(/[\\\\/:*?\"<>|\\x00-\\x1f]+/g, \"-\").replace(/\\s+/g, \"-\").replace(/-+/g, \"-\").replace(/[.\\s_-]+$/g, \"\").slice(0, 140);\n        if (!extension || !stem) return \"\";\n        return (stem + extension).toLowerCase();\n      };\n      const outputPriority = path => {\n        const name = path.split(\"/\").pop();\n        const malformed = /\\.(?:ppt|doc|xls)_$/i.test(name) ? 2 : 0;\n        const stem = name.replace(/\\.[^.]+$/, \"\");\n        const prefixed = /^(?:(?:pptx?|docx?|word|xlsx?|excel|pdf|svg|png|csv|json|markdown|md|text|txt)[\\s._-]+)+/i.test(stem) ? 1 : 0;\n        return malformed + prefixed;\n      };\n      const seenOutputNames = new Set();\n      const paths = candidates\n        .sort((a, b) => outputPriority(a) - outputPriority(b) || a.localeCompare(b))\n        .filter(path => {\n          const key = canonicalOutputName(path.split(\"/\").pop());\n          if (!key || !/\\.[a-z0-9]{1,8}$/i.test(key)) return false;\n          if (seenOutputNames.has(key)) return false;\n          seenOutputNames.add(key);\n          return true;\n        })\n        .sort();\n      let totalBytes = 0;\n      const mimeFor = name => {\n        const ext = name.toLowerCase().split(\".\").pop();\n        return ({\n          docx:\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\n          pptx:\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\n          xlsx:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\n          pdf:\"application/pdf\",csv:\"text/csv\",tsv:\"text/tab-separated-values\",txt:\"text/plain\",\n          json:\"application/json\",jsonl:\"application/jsonl\",html:\"text/html\",htm:\"text/html\",\n          svg:\"image/svg+xml\",png:\"image/png\",jpg:\"image/jpeg\",jpeg:\"image/jpeg\",webp:\"image/webp\",\n          gif:\"image/gif\",zip:\"application/zip\",md:\"text/markdown\",xml:\"application/xml\",rtf:\"application/rtf\",\n          epub:\"application/epub+zip\",tex:\"application/x-tex\",bib:\"text/plain\",ipynb:\"application/x-ipynb+json\",\n          yaml:\"text/yaml\",yml:\"text/yaml\",npy:\"application/octet-stream\",npz:\"application/octet-stream\",\n          pickle:\"application/octet-stream\",pkl:\"application/octet-stream\"\n        })[ext] || \"application/octet-stream\";\n      };\n      for (const path of paths) {\n        const name = canonicalOutputName(path.split(\"/\").pop());\n        if (name.startsWith(\".\") || name.endsWith(\".pyc\")) continue;\n        const size = after[path][0];\n        if (!size) {\n          const warning = \"Файл пустой: \" + name;\n          append(\"⚠ \" + warning);\n          skippedFiles.push(warning);\n          continue;\n        }\n        if (size > 25 * 1024 * 1024 || totalBytes + size > 50 * 1024 * 1024) {\n          const warning = size > 25 * 1024 * 1024\n            ? name + \" (больше 25 МБ)\"\n            : name + \" (превышен общий лимит 50 МБ)\";\n          append(\"⚠ Файл пропущен: \" + warning);\n          skippedFiles.push(warning);\n          continue;\n        }\n        const bytes = py.FS.readFile(path);\n        parent.postMessage({type:\"device-code-file\", name:name, mime:mimeFor(name), bytes:bytes, messageId:runMessageId, background:backgroundMode}, \"*\");\n        totalBytes += size;\n        exported += 1;\n      }\n    } catch (e) {\n      append(\"Не удалось подготовить созданные файлы: \" + String(e && e.message || e));\n    }\n    const skippedSummary = skippedFiles.length\n      ? \" Пропущено: \" + skippedFiles.slice(0, 5).join(\"; \") + (skippedFiles.length > 5 ? \"; и ещё \" + (skippedFiles.length - 5) : \"\")\n      : \"\";\n    if (exported || skippedFiles.length) {\n      append(\"Файлов подготовлено: \" + exported + \". Ссылки появятся в сообщении.\" + skippedSummary);\n      notify(\"Python выполнен. Файлов создано: \" + exported + \".\" + skippedSummary);\n    } else if (!runError) {\n      append(\"Код завершён. Новых файлов для скачивания не создано.\");\n      notify(\"Python-код выполнен.\");\n    }\n    try { parent.postMessage({type:\"device-code-complete\", success:!runError && !skippedFiles.length, files:exported, skipped:skippedFiles.slice(0, 10), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n  } catch (e) {\n    out.textContent += \"\\nОшибка запуска Python: \" + String(e && e.message || e) +\n      \"\\nДля первого запуска нужен интернет, чтобы загрузить среду и доступные модули.\";\n    notify(\"Не удалось запустить Python: \" + String(e && e.message || e));\n    try { parent.postMessage({type:\"device-code-error\", message:String(e && (e.stack || e.message) || e), messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n    try { parent.postMessage({type:\"device-code-complete\", success:false, files:0, messageId:runMessageId, background:backgroundMode}, \"*\"); } catch (_) {}\n  }\n})();";
 
 
   const EFFORTS = ['low', 'medium', 'high', 'extra', 'max'];
@@ -1264,42 +1292,110 @@
     });
   }
 
+  function chatListItemHtml(chat, options) {
+    const pinned = !!chat.is_pinned;
+    const showPin = !(options && options.hidePin);
+    return '<div class="chat-item' + (chat.id === state.currentChatId ? ' active' : '') + '" data-id="' + escapeHtml(chat.id) + '">' +
+      '<span class="title">' + escapeHtml(chat.title || 'Новый чат') + '</span>' +
+      ((chat.mode === 'code' || chat.mode === 'council' || (chat.bundle_id && chat.mode !== 'council')) ?
+        '<span class="chat-meta">' +
+          (chat.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
+          (chat.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
+          (chat.bundle_id && chat.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
+        '</span>' : '') +
+      '<span class="acts">' +
+        (showPin ? '<button data-act="pin" title="' + (pinned ? 'Открепить чат' : 'Закрепить чат') + '" aria-label="' +
+          (pinned ? 'Открепить чат' : 'Закрепить чат') + '">' + icon('bookmark') + '</button>' : '') +
+        '<button data-act="rename" title="Переименовать" aria-label="Переименовать">' + icon('pencil') + '</button>' +
+        '<button data-act="delete" title="Удалить" aria-label="Удалить">' + icon('trash') + '</button>' +
+      '</span></div>';
+  }
+
+  function bindChatListContainer(container) {
+    if (!container) return;
+    container.onclick = event => {
+      const row = event.target.closest('.chat-item');
+      if (!row || !container.contains(row)) return;
+      const id = String(row.dataset.id || '');
+      const button = event.target.closest('[data-act]');
+      if (button) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (button.dataset.act === 'rename') return openRename(id);
+        if (button.dataset.act === 'delete') return removeChat(id);
+        if (button.dataset.act === 'pin') return toggleChatPin(id);
+      }
+      openChat(id);
+    };
+  }
+
+  function renderPinnedChats() {
+    const section = $('#pinned-chat-section');
+    const list = $('#pinned-chat-list');
+    const allButton = $('#pinned-all-btn');
+    if (!section || !list || !allButton) return;
+    const pinned = (Array.isArray(state.chats) ? state.chats : [])
+      .filter(chat => chat && chat.is_pinned)
+      .sort((a, b) => (Date.parse(b.updated_at || '') || 0) - (Date.parse(a.updated_at || '') || 0));
+    section.classList.toggle('hidden', pinned.length === 0);
+    list.innerHTML = pinned.length ? chatListItemHtml(pinned[0]) : '';
+    allButton.classList.toggle('hidden', pinned.length <= 1);
+    allButton.onclick = () => {
+      const body = '<div class="pinned-modal-list">' + pinned.map(chat =>
+        '<button type="button" class="pinned-modal-row" data-pinned-open="' + escapeHtml(chat.id) + '">' +
+        '<span>' + icon('bookmark') + '</span><span><strong>' + escapeHtml(chat.title || 'Новый чат') +
+        '</strong><small>' + escapeHtml(chat.project_id ? ((workspaceProjectsData || []).find(p => p.id === chat.project_id)?.title || 'Проект') : 'Личный чат') +
+        '</small></span>' + icon('chevron-down') + '</button>'
+      ).join('') + '</div>';
+      openModal({ title: 'Все закреплённые чаты', okText: 'Закрыть', body, onOk: () => true });
+      $$('[data-pinned-open]').forEach(button => button.addEventListener('click', async () => {
+        const id = button.dataset.pinnedOpen;
+        closeModal();
+        await openChat(id);
+      }));
+    };
+    bindChatListContainer(list);
+  }
+
+  async function toggleChatPin(chatId, forcedValue) {
+    let chat = (state.chats || []).find(item => item && String(item.id) === String(chatId));
+    if (!chat) {
+      try {
+        chat = await api.get('/api/chats/' + encodeURIComponent(chatId));
+        upsertChat(chat);
+      } catch (error) {
+        toast('Не удалось загрузить чат: ' + error.message, 'error');
+        return false;
+      }
+    }
+    const pinned = forcedValue === undefined ? !chat.is_pinned : !!forcedValue;
+    try {
+      const updated = await api.patch('/api/chats/' + encodeURIComponent(chatId), { is_pinned: pinned });
+      const index = state.chats.findIndex(item => item && String(item.id) === String(chatId));
+      if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
+      state.chatListVersion += 1;
+      renderChatList();
+      toast(pinned ? 'Чат закреплён' : 'Чат откреплён');
+      return true;
+    } catch (error) {
+      toast('Не удалось изменить закрепление: ' + error.message, 'error');
+      return false;
+    }
+  }
+
   function renderChatList() {
     const box = $('#chat-list');
-    // Defensive normalization: an incomplete response must never crash the sidebar.
+    // An incomplete or stale response must never crash sidebar rendering.
     state.chats = (Array.isArray(state.chats) ? state.chats : [])
-      .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
+      .filter(chat => chat && typeof chat === 'object' && typeof chat.id === 'string' && chat.id);
+    renderPinnedChats();
     if (!state.chats.length) {
       box.innerHTML = '<div class="side-empty">' + (state.query ? 'Ничего не найдено' : 'Пока нет чатов') + '</div>';
+      bindChatListContainer(box);
       return;
     }
-    box.innerHTML = state.chats.map(c =>
-      '<div class="chat-item' + (c.id === state.currentChatId ? ' active' : '') + '" data-id="' + c.id + '">' +
-        '<span class="title">' + escapeHtml(c.title || 'Новый чат') + '</span>' +
-        ((c.mode === 'code' || c.mode === 'council' || (c.bundle_id && c.mode !== 'council')) ?
-          '<span class="chat-meta">' +
-            (c.mode === 'code' ? '<em class="mode-tag">код</em>' : '') +
-            (c.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
-            (c.bundle_id && c.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
-          '</span>' : '') +
-        '<span class="acts">' +
-          '<button data-act="rename" title="Переименовать">' + icon('pencil') + '</button>' +
-          '<button data-act="delete" title="Удалить">' + icon('trash') + '</button>' +
-        '</span>' +
-      '</div>').join('');
-
-    $$('.chat-item', box).forEach(el => {
-      el.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-act]');
-        const id = el.dataset.id;
-        if (btn) {
-          e.stopPropagation();
-          if (btn.dataset.act === 'rename') return openRename(id);
-          if (btn.dataset.act === 'delete') return removeChat(id);
-        }
-        openChat(id);
-      });
-    });
+    box.innerHTML = state.chats.map(chat => chatListItemHtml(chat)).join('');
+    bindChatListContainer(box);
   }
 
   async function newChat(mode) {
@@ -1386,6 +1482,7 @@
       if (requestToken !== state.chatOpenToken) return false;
       if (!Array.isArray(loadedTree)) throw new Error('Сервер вернул некорректную историю чата');
 
+      if (state.currentChatId !== id) closeChatSearch();
       state.currentChatId = id;
       state.choices = {};
       state.tree = loadedTree.filter(node => node && typeof node === 'object' && !Array.isArray(node));
@@ -1929,6 +2026,25 @@
     return /(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*(?:\r?\n)?\s*$/i.test(code);
   }
 
+  // Only an explicitly marked file-generation block can run automatically,
+  // and it is extracted after the full assistant response has completed.
+  function extractAutoDeviceFileRun(answer) {
+    const source = String(answer || '');
+    const fence = new RegExp('\\x60\\x60\\x60(?:run|python|py)\\b[^\\n]*\\n([\\s\\S]*?)\\x60\\x60\\x60', 'gi');
+    let match;
+    while ((match = fence.exec(source))) {
+      const lines = match[1].split(/\r?\n/);
+      const markerIndex = lines.findIndex(line => /^\s*#\s*AI_CH_AUTO_RUN_FILES\s*$/i.test(line));
+      if (markerIndex < 0) continue;
+      const code = lines.slice(0, markerIndex).join('\n').trim();
+      if (!code) continue;
+      const visible = (source.slice(0, match.index) + source.slice(match.index + match[0].length))
+        .replace(/\n{3,}/g, '\n\n').trim();
+      return { code, visible };
+    }
+    return null;
+  }
+
   function startFallbackFileGenerationInBackground(n) {
     if (!n || n.deviceRunnerStarted) return false;
     const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
@@ -1969,11 +2085,10 @@
     if (!run) return '';
     const statusRow = n && n.deviceRunnerStarted
       ? '<div class="device-fallback-status"><span role="status" aria-live="polite">' + escapeHtml(deviceRunnerStatusLabel(n)) +
-        '</span><button type="button" data-open-device-status="' + escapeHtml(n.id) + '">Статус в песочнице</button></div>'
+        '</span><button type="button" data-open-device-status="' + escapeHtml(n.id) + '">Статус выполнения</button></div>'
       : '';
-    return '<div class="device-fallback-row"><button type="button" class="device-fallback-button" data-run-device="' +
-      escapeHtml(n.id) + '">' + icon('play') + '<span>' + escapeHtml(deviceFallbackLabel(n, run)) +
-      '</span></button><button type="button" class="device-fallback-code-toggle" data-fallback-code-toggle="' +
+    return '<div class="device-fallback-row"><span class="device-fallback-label" role="status">' +
+      escapeHtml(deviceFallbackLabel(n, run)) + '</span><button type="button" class="device-fallback-code-toggle" data-fallback-code-toggle="' +
       escapeHtml(n.id) + '" aria-expanded="false">Показать код</button>' + statusRow + '</div>';
   }
 
@@ -3431,7 +3546,7 @@
         const bytes = new Uint8Array(data.bytes);
         if (!bytes.length) return;
         if (bytes.length > 25 * 1024 * 1024) {
-          const warning = 'Файл «' + String(data.name).slice(0, 120) + '» превышает лимит передачи 25 МБ на устройство.';
+          const warning = 'Файл «' + normaliseOutputFilename(data.name, data.mime) + '» превышает лимит передачи 25 МБ на устройство.';
           if (messageNode) {
             messageNode.deviceRunnerStatus = warning;
             messageNode.deviceRunnerError = warning;
@@ -3627,6 +3742,7 @@
     bindMessageEvents();
     renderMath(box.querySelector('.msg-wrap'));
     renderThemedEmojis(box.querySelector('.msg-wrap'));
+    bindActionCarouselAutoplay(box);
     hydrateAudioStatuses(entries);
     hydrateReadableTextStatuses(entries);
 
@@ -3667,6 +3783,7 @@
     bindMessageEvents(nextMessage);
     renderMath(nextMessage);
     renderThemedEmojis(nextMessage);
+    bindActionCarouselAutoplay(nextMessage);
     if (String(state.activeAssistantId || '') === String(messageId)) bindStreamRefs();
     if (opts.focusMessageId) {
       const content = $('.content.md', nextMessage);
@@ -3758,13 +3875,6 @@
           }
           return;
         }
-        const deviceRun = event.target.closest('[data-run-device]');
-        if (deviceRun && messageActions.contains(deviceRun)) {
-          const item = (window.__codeStore || {})[deviceRun.dataset.runDevice];
-          const messageEl = deviceRun.closest('.msg');
-          if (item) openDeviceCodeRunner(item, messageEl ? messageEl.dataset.mid : null);
-          return;
-        }
         const btn = event.target.closest('[data-mact]');
         if (!btn || !messageActions.contains(btn) || btn.disabled) return;
         const id = btn.dataset.id, act = btn.dataset.mact;
@@ -3818,19 +3928,6 @@
       if (!n) return;
       n.showActivities = !n.showActivities;
       renderMessageInPlace(n.id);
-    }));
-
-    $$('[data-run-device]', scope).forEach(button => button.addEventListener('click', () => {
-      const n = findNode(state.tree, button.dataset.runDevice);
-      if (!n) return;
-      const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
-      const run = runs.slice().reverse().find(isDeviceFallbackRun);
-      if (!run) { toast('Для этого сообщения нет кода, который можно повторно запустить.', 'error'); return; }
-      const code = run.kind === 'fileplan'
-        ? deviceCodeForFilePlan(run.device_plan)
-        : String(run.code || '');
-      if (!code.trim()) { toast('Не удалось подготовить локальный код для этой задачи.', 'error'); return; }
-      openDeviceCodeRunner({ lang: 'run', code: code }, n.id);
     }));
 
     $$('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
@@ -4320,12 +4417,6 @@
               appendLog('✓ файлы: ' + data.files.map(f => f.name).join(', '));
             }
           }
-          if (n && startFallbackFileGenerationInBackground(n)) {
-            if (state.currentChatId === streamContext.chatId) {
-              renderMessageInPlace(n.id);
-              bindStreamRefs();
-            }
-          }
           loadProject(false);
         } else if (ev === 'step') {
           state.streamBuf = '';
@@ -4341,31 +4432,32 @@
         } else if (ev === 'done') {
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
+          const completeAnswer = String((data && data.text) || state.streamBuf || '');
+          const deviceFileRun = extractAutoDeviceFileRun(completeAnswer);
           if (n) {
             n.status = 'completed';
-            n.content = data.text || state.streamBuf;
+            n.content = deviceFileRun ? deviceFileRun.visible : completeAnswer;
             n.draft = ''; n.creating = false;
+            if (deviceFileRun && !n.deviceRunnerStarted) {
+              n.tool_runs = (Array.isArray(n.tool_runs) ? n.tool_runs : []).concat([{
+                code: deviceFileRun.code, kind: 'run', ok: false, timed_out: false, files: [], running: false,
+              }]);
+            }
             n.activityFinishedAt = Date.now();
             n.activityElapsedMs = Math.max(0, n.activityFinishedAt - activityStartTime(n));
             saveActivityItems(n);
             renderActivityPopup(n);
           }
+          if (n && deviceFileRun && !n.deviceRunnerStarted) {
+            n.deviceRunnerStarted = true;
+            n.deviceRunnerStatus = 'Ответ завершён. Подготавливаю файл на устройстве…';
+            n.deviceRunnerError = null;
+            if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
+            toast('Ответ завершён. Подготавливаю файл на устройстве…');
+            openDeviceCodeRunner({ lang: 'run', code: deviceFileRun.code }, n.id, { background: true });
+          }
           if (n && state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(n.id, null, { focusMessageId: n.id });
-            if (!n.deviceRunnerStarted && (n.execution_target === 'device' || (n.execution_target === 'both' && !n.deviceRunnerStarted))) {
-              const messageEl = $('.msg', $('#messages')).find(el => String(el.dataset.mid) === String(n.id));
-              const codeStore = window.__codeStore || {};
-              const runButtons = messageEl ? $('[data-run-device]', messageEl) : [];
-              const runButton = runButtons.find(button => codeStore[button.dataset.runDevice]);
-              const runnable = runButton ? codeStore[runButton.dataset.runDevice] : null;
-              const hasFileFallback = !!(messageEl && $('[data-fallback-code-toggle]', messageEl));
-              if (runnable) {
-                n.deviceRunnerStarted = true;
-                openDeviceCodeRunner(runnable, n.id);
-              } else if (n.execution_target === 'device' && !hasFileFallback) {
-                toast('Ответ получен, но в нём нет поддерживаемого блока кода для запуска на устройстве.', 'error');
-              }
-            }
             const entries = allMessages(state.tree);
             hydrateAudioStatuses(entries);
             hydrateReadableTextStatuses(entries);
@@ -4540,8 +4632,10 @@
     if (!content || state.streaming || state.sending || state.chatLoading) return;
     const asksForArtifact = /(?:файл|документ|презентац|таблиц|excel|powerpoint|word|xlsx?|pptx?|docx?|pdf|svg|png|csv|json|markdown|\bmd\b|\btxt\b|отч[её]т|инфограф|диаграмм|изображени|presentation|spreadsheet|report)/i.test(content) &&
       /(?:созда|сгенер|подготов|сделай|сформир|состав|собери|пришли|выгруз|экспорт|запиши|сохрани|конверт|преобраз|нарисуй|построй|оформи|генер|разработ|нужн|хочу|create|generate|prepare|make|build|export|save|convert|draw|render)/i.test(content);
+    // File creation is serialized: let the server try first when enabled, then use the device only if needed.
+    // Target "both" would launch the browser runner on tool_start and create duplicate files.
     const selectedExecutionTarget = asksForArtifact
-      ? 'both'
+      ? 'site'
       : (executionTarget || (shouldAskExecutionTarget(content) ? 'both' : 'site'));
 
     // Validate pending attachments before reading IDs; a stale/null item must not abort sending.
@@ -4695,10 +4789,13 @@
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
-    $('#attach-btn').addEventListener('click', () => $('#file-input').click());
+    $('#attach-btn').addEventListener('click', () => { workspaceUploadIntent = false; $('#file-input').click(); });
+    $('#file-input').addEventListener('cancel', () => { workspaceUploadIntent = false; });
     $('#file-input').addEventListener('change', async (e) => {
       const files = Array.from(e.target.files || []);
-      if (files.length) await uploadFiles(files);
+      const options = { libraryOnly: workspaceUploadIntent };
+      workspaceUploadIntent = false;
+      if (files.length) await uploadFiles(files, options);
       e.target.value = '';
     });
     // The server uses one primary model for all AI tasks.
@@ -4951,9 +5048,544 @@
   }
 
   // ---------- files ----------
+  const workspaceFileFilters = { query: '', source: 'all', kind: 'all', sort: 'date-desc' };
+
   async function loadFiles() {
     state.files = await api.get('/api/files');
     renderFiles();
+    renderFilesWorkspace();
+  }
+
+  function workspaceFileKind(file) {
+    const name = String(file && file.original_name || '').toLowerCase();
+    const ext = name.includes('.') ? name.split('.').pop() : '';
+    const kind = String(file && file.kind || '').toLowerCase();
+    if (kind === 'image' || ['svg','png','jpg','jpeg','webp','gif','bmp','avif'].includes(ext)) return 'image';
+    if (['ppt','pptx','odp','key'].includes(ext) || ['slide','presentation'].includes(kind)) return 'slide';
+    if (['csv','tsv','xls','xlsx','ods'].includes(ext) || ['sheet','table','csv','xlsx'].includes(kind)) return 'table';
+    if (['py','js','ts','jsx','tsx','html','css','json','sql','sh','bash','ipynb','rs','java','c','cpp','h','go','php','rb'].includes(ext) || ['code','text'].includes(kind)) return 'code';
+    if (['pdf','doc','docx','odt','rtf','txt','md','epub','xml'].includes(ext) || ['pdf','doc','docx','text'].includes(kind)) return 'doc';
+    return 'other';
+  }
+
+  function workspaceFileKindLabel(kind) {
+    return ({ image: 'Изображение', doc: 'Документ', table: 'Таблица', slide: 'Презентация', code: 'Код', other: 'Файл' })[kind] || 'Файл';
+  }
+
+  function renderFilesWorkspace() {
+    const box = $('#workspace-files-list');
+    if (!box) return;
+    const sourceItems = Array.isArray(state.files) ? state.files : [];
+    const filters = workspaceFileFilters;
+    const query = String(filters.query || '').trim().toLocaleLowerCase();
+    let items = sourceItems.filter(file => {
+      if (!file || !file.id) return false;
+      if (query && !String(file.original_name || '').toLocaleLowerCase().includes(query)) return false;
+      const source = file.source === 'ai' ? 'ai' : 'user';
+      if (filters.source !== 'all' && filters.source !== source) return false;
+      if (filters.kind !== 'all' && workspaceFileKind(file) !== filters.kind) return false;
+      return true;
+    });
+    const nameCmp = (a, b) => String(a.original_name || '').localeCompare(String(b.original_name || ''), 'ru', { sensitivity: 'base' });
+    items.sort((a, b) => {
+      if (filters.sort === 'name-asc') return nameCmp(a, b);
+      if (filters.sort === 'name-desc') return nameCmp(b, a);
+      if (filters.sort === 'size-desc') return (Number(b.size) || 0) - (Number(a.size) || 0);
+      if (filters.sort === 'size-asc') return (Number(a.size) || 0) - (Number(b.size) || 0);
+      if (filters.sort === 'type') return workspaceFileKind(a).localeCompare(workspaceFileKind(b)) || nameCmp(a, b);
+      const dateA = Date.parse(a.created_at || '') || 0;
+      const dateB = Date.parse(b.created_at || '') || 0;
+      return filters.sort === 'date-asc' ? dateA - dateB : dateB - dateA;
+    });
+    const summary = $('#workspace-files-summary');
+    if (summary) summary.textContent = items.length + (items.length === 1 ? ' файл' : ' файлов');
+    if (!items.length) {
+      box.innerHTML = '<div class="files-workspace-empty"><span class="files-empty-art">' + icon('folder') +
+        '</span><strong>' + (sourceItems.length ? 'Ничего не найдено' : 'Файлов пока нет') +
+        '</strong><p>' + (sourceItems.length ? 'Измените фильтры или поисковый запрос.' : 'Загружайте файлы или попросите AI CH создать документ.') +
+        '</p></div>';
+      return;
+    }
+    box.innerHTML = items.map(file => {
+      const id = encodeURIComponent(String(file.id));
+      const name = String(file.original_name || 'Файл');
+      const kind = workspaceFileKind(file);
+      const source = file.source === 'ai' ? 'ai' : 'user';
+      const created = file.created_at ? new Date(file.created_at) : null;
+      const date = created && Number.isFinite(created.getTime()) ? created.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+      const isImage = kind === 'image';
+      const image = isImage
+        ? '<img class="workspace-file-image" src="/api/files/' + id + '/download" alt="' + escapeHtml(name) +
+          '" loading="lazy" decoding="async" />'
+        : '<span class="workspace-file-glyph">' + icon(kind === 'slide' ? 'file-text' : kind === 'table' ? 'table' : kind === 'code' ? 'code' : kind === 'doc' ? 'file-text' : 'file') + '</span>';
+      return '<article class="workspace-file-card">' +
+        '<a class="workspace-file-preview' + (isImage ? ' is-image' : '') + '" href="/api/files/' + id + '/download" ' +
+          (isImage ? 'target="_blank" rel="noopener noreferrer" ' : 'download ') + 'aria-label="Открыть ' + escapeHtml(name) + '">' + image + '</a>' +
+        '<div class="workspace-file-info"><div class="workspace-file-labels"><span class="workspace-source-badge ' + source + '">' +
+          (source === 'ai' ? 'AI CH' : 'Вы') + '</span><span class="workspace-file-kind">' + workspaceFileKindLabel(kind) + '</span></div>' +
+        '<strong class="workspace-file-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</strong>' +
+        '<div class="workspace-file-meta"><span>' + escapeHtml(date) + '</span><span>' + formatSize(Number(file.size) || 0) + '</span></div>' +
+        '<div class="workspace-file-actions"><a class="chip-btn workspace-file-download" href="/api/files/' + id + '/download" download="' + escapeHtml(name) + '">' +
+        icon('download') + 'Скачать</a><button type="button" class="icon-btn workspace-file-delete" data-workspace-file-delete="' + escapeHtml(String(file.id)) + '" title="Удалить файл" aria-label="Удалить файл">' + icon('trash') + '</button></div></div></article>';
+    }).join('');
+  }
+
+  async function openFilesWorkspace() {
+    const shell = $('#files-workspace-shell');
+    if (!shell) return;
+    toggleFiles(false);
+    try {
+      await loadFiles();
+      shell.classList.remove('hidden');
+      shell.classList.add('open');
+      shell.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('files-workspace-open');
+      requestAnimationFrame(() => $('.files-workspace', shell)?.focus());
+    } catch (error) {
+      toast('Не удалось открыть файлы: ' + error.message, 'error');
+    }
+  }
+
+  function closeFilesWorkspace() {
+    const shell = $('#files-workspace-shell');
+    if (!shell) return;
+    shell.classList.remove('open');
+    shell.classList.add('hidden');
+    shell.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('files-workspace-open');
+  }
+
+  let workspaceProjectsData = [];
+  let workspaceProjectChats = [];
+  let projectWorkspaceActiveId = null;
+  let projectWorkspaceEditor = null;
+
+  async function loadUserProjects() {
+    workspaceProjectsData = await api.get('/api/projects');
+    workspaceProjectsData = Array.isArray(workspaceProjectsData) ? workspaceProjectsData : [];
+    return workspaceProjectsData;
+  }
+
+  async function loadWorkspaceProjectChats() {
+    const chats = await api.get('/api/chats');
+    workspaceProjectChats = Array.isArray(chats) ? chats.filter(chat => chat && chat.id) : [];
+    return workspaceProjectChats;
+  }
+
+  async function openProjectsWorkspace() {
+    try {
+      await Promise.all([loadUserProjects(), loadWorkspaceProjectChats()]);
+      const shell = $('#projects-workspace-shell');
+      shell.classList.remove('hidden');
+      shell.classList.add('open');
+      shell.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('files-workspace-open');
+      renderProjectsWorkspace();
+      requestAnimationFrame(() => $('.projects-workspace', shell)?.focus());
+    } catch (error) {
+      toast('Не удалось загрузить проекты: ' + error.message, 'error');
+    }
+  }
+
+  function closeProjectsWorkspace() {
+    const shell = $('#projects-workspace-shell');
+    if (!shell) return;
+    shell.classList.remove('open');
+    shell.classList.add('hidden');
+    shell.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('files-workspace-open');
+  }
+
+  function renderProjectsWorkspace() {
+    const box = $('#workspace-projects-list');
+    if (!box) return;
+    if (projectWorkspaceEditor) {
+      const edit = projectWorkspaceEditor;
+      box.innerHTML = '<div class="workspace-editor-card"><button type="button" class="chip-btn" data-project-action="cancel-edit">' +
+        icon('chevron-down') + ' Назад</button><form id="workspace-project-form" class="workspace-project-form">' +
+        '<h3>' + (edit.id ? 'Настроить проект' : 'Новый проект') + '</h3>' +
+        '<label for="workspace-project-name">Название</label><input id="workspace-project-name" maxlength="120" required value="' +
+        escapeHtml(edit.title || '') + '" placeholder="Например, подготовка к ЕГЭ" />' +
+        '<label for="workspace-project-description">Описание и заметки</label><textarea id="workspace-project-description" maxlength="5000" rows="5" placeholder="Цели, ссылки, требования и другая информация">' +
+        escapeHtml(edit.description || '') + '</textarea>' +
+        '<div class="workspace-editor-actions"><button type="button" class="ghost" data-project-action="cancel-edit">Отмена</button>' +
+        '<button type="button" class="solid" data-project-action="save">Сохранить проект</button></div></form></div>';
+      return;
+    }
+    const active = projectWorkspaceActiveId
+      ? workspaceProjectsData.find(item => String(item.id) === String(projectWorkspaceActiveId))
+      : null;
+    if (active) {
+      const chats = workspaceProjectChats.filter(chat =>
+        chat && String(chat.project_id || '') === String(active.id));
+      box.innerHTML = '<div class="workspace-project-detail">' +
+        '<button type="button" class="chip-btn" data-project-action="back">' + icon('chevron-down') + ' Все проекты</button>' +
+        '<section class="workspace-project-hero"><div class="workspace-project-icon">' + icon('folder') + '</div>' +
+        '<div class="workspace-project-copy"><h3>' + escapeHtml(active.title || 'Без названия') + '</h3>' +
+        '<p>' + escapeHtml(active.description || 'Пока нет описания. Добавьте цели и заметки проекта.') + '</p></div>' +
+        '<div class="workspace-project-actions"><button type="button" class="chip-btn" data-project-action="edit" data-project-id="' + escapeHtml(active.id) + '">' + icon('pencil') + ' Изменить</button>' +
+        '<button type="button" class="chip-btn" data-project-action="delete" data-project-id="' + escapeHtml(active.id) + '">' + icon('trash') + ' Удалить</button></div></section>' +
+        '<section class="workspace-project-chats"><div class="workspace-project-section-head"><h3>Чаты проекта</h3>' +
+        '<span class="skills-count">' + chats.length + '</span></div>' +
+        (chats.length ? '<div class="workspace-project-chat-list">' + chats.map(chat =>
+          '<button type="button" class="workspace-project-chat" data-open-project-chat="' + escapeHtml(chat.id) + '">' +
+          '<span class="workspace-project-chat-icon">' + icon('chat') + '</span><span>' +
+          escapeHtml(chat.title || 'Новый чат') + '</span><span class="workspace-project-chat-arrow">' + icon('chevron-down') + '</span></button>'
+        ).join('') + '</div>' : '<div class="files-workspace-empty project-no-chats"><span class="files-empty-art">' + icon('chat') +
+          '</span><strong>В проекте пока нет чатов</strong><p>Добавьте открытый чат через меню «Поделиться».</p></div>') +
+        '<button type="button" class="chip-btn workspace-project-add-current" data-project-action="add-current-chat" ' +
+        (!state.currentChatId || String(workspaceProjectChats.find(chat => chat.id === state.currentChatId)?.project_id || '') === String(active.id) ? 'disabled' : '') +
+        '>' + icon('plus') + (state.currentChatId ? 'Добавить открытый чат в проект' : 'Сначала откройте чат') + '</button>' +
+        '</section></div>';
+      return;
+    }
+    if (!workspaceProjectsData.length) {
+      box.innerHTML = '<div class="files-workspace-empty"><span class="files-empty-art">' + icon('folder') +
+        '</span><strong>Пока нет проектов</strong><p>Создайте проект, чтобы объединить связанные чаты и сохранить описание.</p>' +
+        '<button type="button" class="chip-btn" data-project-action="create">' + icon('plus') + ' Создать проект</button></div>';
+      return;
+    }
+    box.innerHTML = '<div class="workspace-project-grid">' + workspaceProjectsData.map(project =>
+      '<article class="workspace-project-card"><button type="button" class="workspace-project-open" data-project-action="open" data-project-id="' +
+      escapeHtml(project.id) + '"><span class="workspace-project-card-icon">' + icon('folder') + '</span><strong>' +
+      escapeHtml(project.title || 'Без названия') + '</strong><p>' + escapeHtml(project.description || 'Без описания') +
+      '</p><span class="workspace-project-card-count">' + Number(project.chat_count || 0) +
+      (Number(project.chat_count || 0) === 1 ? ' чат' : ' чатов') + '</span></button>' +
+      '<div class="workspace-project-card-actions"><button type="button" class="chip-btn" data-project-action="edit" data-project-id="' +
+      escapeHtml(project.id) + '">' + icon('pencil') + ' Изменить</button><button type="button" class="icon-btn" data-project-action="delete" data-project-id="' +
+      escapeHtml(project.id) + '" title="Удалить проект">' + icon('trash') + '</button></div></article>'
+    ).join('') + '</div><button type="button" class="chip-btn workspace-project-create-inline" data-project-action="create">' +
+    icon('plus') + ' Создать проект</button>';
+  }
+
+  async function saveProjectEditor() {
+    const title = String($('#workspace-project-name')?.value || '').trim();
+    const description = String($('#workspace-project-description')?.value || '').trim();
+    if (!title) { toast('Укажите название проекта', 'error'); return; }
+    const payload = { title, description };
+    const editor = projectWorkspaceEditor;
+    try {
+      const saved = editor && editor.id
+        ? await api.patch('/api/projects/' + encodeURIComponent(editor.id), payload)
+        : await api.post('/api/projects', payload);
+      await Promise.all([loadUserProjects(), loadWorkspaceProjectChats(), loadChats()]);
+      projectWorkspaceEditor = null;
+      projectWorkspaceActiveId = saved.id;
+      renderProjectsWorkspace();
+      toast(editor && editor.id ? 'Проект сохранён' : 'Проект создан');
+    } catch (error) {
+      toast('Не удалось сохранить проект: ' + error.message, 'error');
+    }
+  }
+
+  function bindProjectsWorkspace() {
+    $('#projects-quick-btn')?.addEventListener('click', openProjectsWorkspace);
+    $$('[data-projects-workspace-close]').forEach(button => button.addEventListener('click', closeProjectsWorkspace));
+    $('#workspace-project-create')?.addEventListener('click', () => {
+      projectWorkspaceActiveId = null;
+      projectWorkspaceEditor = { id: '', title: '', description: '' };
+      renderProjectsWorkspace();
+      $('#workspace-project-name')?.focus();
+    });
+    $('#workspace-projects-list')?.addEventListener('click', async event => {
+      const chatButton = event.target.closest('[data-open-project-chat]');
+      if (chatButton) {
+        const id = String(chatButton.dataset.openProjectChat || '');
+        closeProjectsWorkspace();
+        await openChat(id);
+        return;
+      }
+      const button = event.target.closest('[data-project-action]');
+      if (!button) return;
+      const action = button.dataset.projectAction;
+      const id = String(button.dataset.projectId || '');
+      const project = workspaceProjectsData.find(item => String(item.id) === id);
+      if (action === 'create') {
+        projectWorkspaceActiveId = null;
+        projectWorkspaceEditor = { id: '', title: '', description: '' };
+        renderProjectsWorkspace();
+        $('#workspace-project-name')?.focus();
+      } else if (action === 'cancel-edit') {
+        projectWorkspaceEditor = null;
+        renderProjectsWorkspace();
+      } else if (action === 'open') {
+        projectWorkspaceActiveId = id;
+        projectWorkspaceEditor = null;
+        renderProjectsWorkspace();
+      } else if (action === 'edit' && project) {
+        projectWorkspaceActiveId = id;
+        projectWorkspaceEditor = { id: project.id, title: project.title || '', description: project.description || '' };
+        renderProjectsWorkspace();
+        $('#workspace-project-name')?.focus();
+      } else if (action === 'save') {
+        await saveProjectEditor();
+      } else if (action === 'back') {
+        projectWorkspaceActiveId = null;
+        projectWorkspaceEditor = null;
+        renderProjectsWorkspace();
+      } else if (action === 'delete' && project) {
+        if (!confirm('Удалить проект «' + project.title + '»? Его чаты останутся в списке чатов.')) return;
+        try {
+          await api.del('/api/projects/' + encodeURIComponent(project.id));
+          await Promise.all([loadUserProjects(), loadWorkspaceProjectChats(), loadChats()]);
+          if (String(projectWorkspaceActiveId || '') === String(project.id)) projectWorkspaceActiveId = null;
+          toast('Проект удалён; чаты сохранены');
+          renderProjectsWorkspace();
+        } catch (error) { toast('Не удалось удалить проект: ' + error.message, 'error'); }
+      } else if (action === 'add-current-chat' && project && state.currentChatId) {
+        try {
+          const updated = await api.patch('/api/chats/' + encodeURIComponent(state.currentChatId), { project_id: project.id });
+          const index = (state.chats || []).findIndex(chat => chat.id === updated.id);
+          if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
+          await Promise.all([loadWorkspaceProjectChats(), loadChats()]);
+          toast('Чат добавлен в проект «' + project.title + '»');
+          renderProjectsWorkspace();
+        } catch (error) { toast('Не удалось добавить чат: ' + error.message, 'error'); }
+      }
+    });
+  }
+
+  let scheduledWorkspaceItems = [];
+  let scheduledWorkspaceMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let scheduledWorkspaceSelectedDate = scheduleDateKey(new Date());
+
+  function scheduleDateKey(date) {
+    const value = date instanceof Date ? date : new Date(date);
+    if (!Number.isFinite(value.getTime())) return '';
+    return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0') + '-' + String(value.getDate()).padStart(2, '0');
+  }
+
+  function scheduleLocalDateTime(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return shifted.toISOString().slice(0, 16);
+  }
+
+  function scheduleTimeLabel(value) {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime())
+      ? date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+      : '';
+  }
+
+  async function loadScheduledItems() {
+    scheduledWorkspaceItems = await api.get('/api/scheduled');
+    scheduledWorkspaceItems = Array.isArray(scheduledWorkspaceItems) ? scheduledWorkspaceItems : [];
+    return scheduledWorkspaceItems;
+  }
+
+  async function openScheduledWorkspace() {
+    try {
+      await loadScheduledItems();
+      const shell = $('#scheduled-workspace-shell');
+      shell.classList.remove('hidden');
+      shell.classList.add('open');
+      shell.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('files-workspace-open');
+      renderScheduledWorkspace();
+      requestAnimationFrame(() => $('.scheduled-workspace', shell)?.focus());
+    } catch (error) {
+      toast('Не удалось открыть календарь: ' + error.message, 'error');
+    }
+  }
+
+  function closeScheduledWorkspace() {
+    const shell = $('#scheduled-workspace-shell');
+    if (!shell) return;
+    shell.classList.remove('open');
+    shell.classList.add('hidden');
+    shell.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('files-workspace-open');
+  }
+
+  function renderScheduledWorkspace() {
+    const grid = $('#schedule-calendar-grid');
+    const monthTitle = $('#schedule-month-title');
+    const dayLabel = $('#schedule-day-label');
+    const dayEvents = $('#schedule-day-events');
+    if (!grid || !monthTitle || !dayLabel || !dayEvents) return;
+    const year = scheduledWorkspaceMonth.getFullYear();
+    const month = scheduledWorkspaceMonth.getMonth();
+    monthTitle.textContent = scheduledWorkspaceMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    const first = new Date(year, month, 1);
+    const mondayOffset = (first.getDay() + 6) % 7;
+    const start = new Date(year, month, 1 - mondayOffset);
+    const counts = new Map();
+    scheduledWorkspaceItems.forEach(item => {
+      const key = scheduleDateKey(new Date(item.due_at));
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const today = scheduleDateKey(new Date());
+    const cells = [];
+    for (let index = 0; index < 42; index++) {
+      const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+      const key = scheduleDateKey(day);
+      const count = counts.get(key) || 0;
+      cells.push('<button type="button" class="schedule-day-cell' +
+        (day.getMonth() !== month ? ' is-outside' : '') +
+        (key === today ? ' is-today' : '') +
+        (key === scheduledWorkspaceSelectedDate ? ' is-selected' : '') +
+        (count ? ' has-events' : '') + '" data-schedule-date="' + key + '">' +
+        '<span class="schedule-day-number">' + day.getDate() + '</span>' +
+        (count ? '<span class="schedule-day-count">' + count + '</span>' : '') + '</button>');
+    }
+    grid.innerHTML = cells.join('');
+    let selectedDate = new Date(scheduledWorkspaceSelectedDate + 'T12:00:00');
+    if (!Number.isFinite(selectedDate.getTime())) selectedDate = new Date();
+    dayLabel.textContent = selectedDate.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+    const items = scheduledWorkspaceItems.filter(item => scheduleDateKey(new Date(item.due_at)) === scheduledWorkspaceSelectedDate)
+      .sort((a, b) => (Date.parse(a.due_at) || 0) - (Date.parse(b.due_at) || 0));
+    if (!items.length) {
+      dayEvents.innerHTML = '<div class="schedule-day-empty"><span>' + icon('calendar') + '</span><strong>Нет записей на этот день</strong><p>Добавьте событие вручную или попросите AI CH внести его в календарь.</p>' +
+        '<button type="button" class="chip-btn" data-schedule-action="new">' + icon('plus') + ' Добавить событие</button></div>';
+      return;
+    }
+    dayEvents.innerHTML = items.map(item => {
+      const time = scheduleTimeLabel(item.due_at);
+      return '<article class="schedule-event-card"><div class="schedule-event-time">' + icon('clock') + '<span>' + escapeHtml(time) + '</span>' +
+        '<span class="schedule-event-source ' + (item.created_by === 'ai' ? 'ai' : 'user') + '">' + (item.created_by === 'ai' ? 'AI CH' : 'Вы') + '</span></div>' +
+        '<strong>' + escapeHtml(item.title || 'Без названия') + '</strong>' +
+        (item.description ? '<p>' + escapeHtml(item.description) + '</p>' : '') +
+        '<div class="schedule-event-actions"><button type="button" class="chip-btn" data-schedule-action="edit" data-schedule-id="' + escapeHtml(item.id) + '">' +
+        icon('pencil') + 'Изменить</button><button type="button" class="icon-btn" data-schedule-action="delete" data-schedule-id="' + escapeHtml(item.id) + '" title="Удалить событие">' +
+        icon('trash') + '</button></div></article>';
+    }).join('');
+  }
+
+  function openScheduledEditor(itemId) {
+    const item = (scheduledWorkspaceItems || []).find(row => String(row.id) === String(itemId));
+    const defaultTime = new Date(Date.now() + 60 * 60 * 1000);
+    const formDate = item ? scheduleLocalDateTime(item.due_at) : scheduleLocalDateTime(defaultTime);
+    const title = item ? item.title || '' : '';
+    const description = item ? item.description || '' : '';
+    openModal({
+      title: item ? 'Изменить событие' : 'Новое событие',
+      body: '<div class="schedule-editor-form"><label for="schedule-editor-title">Название</label>' +
+        '<input id="schedule-editor-title" maxlength="200" required value="' + escapeHtml(title) + '" placeholder="Например, повторить информатику" />' +
+        '<label for="schedule-editor-due">Дата и время</label><input id="schedule-editor-due" type="datetime-local" required value="' + escapeHtml(formDate) + '" />' +
+        '<label for="schedule-editor-description">Описание</label><textarea id="schedule-editor-description" rows="4" maxlength="5000" placeholder="Дополнительные детали">' +
+        escapeHtml(description) + '</textarea></div>',
+      okText: item ? 'Сохранить' : 'Добавить',
+      onOk: async root => {
+        const titleValue = String($('#schedule-editor-title', root)?.value || '').trim();
+        const dueValue = String($('#schedule-editor-due', root)?.value || '');
+        const descriptionValue = String($('#schedule-editor-description', root)?.value || '').trim();
+        if (!titleValue || !dueValue || !Number.isFinite(new Date(dueValue).getTime())) {
+          toast('Укажите название и корректные дату и время', 'error');
+          return false;
+        }
+        const payload = { title: titleValue, description: descriptionValue, due_at: new Date(dueValue).toISOString() };
+        try {
+          if (item) await api.patch('/api/scheduled/' + encodeURIComponent(item.id), payload);
+          else await api.post('/api/scheduled', payload);
+          await loadScheduledItems();
+          renderScheduledWorkspace();
+          toast(item ? 'Запись обновлена' : 'Запись добавлена');
+          return true;
+        } catch (error) {
+          toast('Не удалось сохранить запись: ' + error.message, 'error');
+          return false;
+        }
+      },
+    });
+  }
+
+  function bindScheduledWorkspace() {
+    $('#scheduled-quick-btn')?.addEventListener('click', openScheduledWorkspace);
+    $$('[data-scheduled-workspace-close]').forEach(button => button.addEventListener('click', closeScheduledWorkspace));
+    $('#scheduled-create-btn')?.addEventListener('click', () => openScheduledEditor(''));
+    $('#schedule-add-day')?.addEventListener('click', () => openScheduledEditor(''));
+    $('#schedule-prev-month')?.addEventListener('click', () => {
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceMonth.getFullYear(), scheduledWorkspaceMonth.getMonth() - 1, 1);
+      renderScheduledWorkspace();
+    });
+    $('#schedule-next-month')?.addEventListener('click', () => {
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceMonth.getFullYear(), scheduledWorkspaceMonth.getMonth() + 1, 1);
+      renderScheduledWorkspace();
+    });
+    $('#schedule-today-btn')?.addEventListener('click', () => {
+      scheduledWorkspaceMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      scheduledWorkspaceSelectedDate = scheduleDateKey(new Date());
+      renderScheduledWorkspace();
+    });
+    $('#schedule-calendar-grid')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-schedule-date]');
+      if (!button) return;
+      scheduledWorkspaceSelectedDate = button.dataset.scheduleDate;
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceSelectedDate + 'T12:00:00');
+      scheduledWorkspaceMonth = new Date(scheduledWorkspaceMonth.getFullYear(), scheduledWorkspaceMonth.getMonth(), 1);
+      renderScheduledWorkspace();
+    });
+    $('#schedule-day-events')?.addEventListener('click', async event => {
+      const button = event.target.closest('[data-schedule-action]');
+      if (!button) return;
+      const action = button.dataset.scheduleAction;
+      const id = String(button.dataset.scheduleId || '');
+      const item = scheduledWorkspaceItems.find(row => String(row.id) === id);
+      if (action === 'new') return openScheduledEditor('');
+      if (action === 'edit' && item) return openScheduledEditor(item.id);
+      if (action === 'delete' && item && confirm('Удалить запись «' + item.title + '»?')) {
+        try {
+          await api.del('/api/scheduled/' + encodeURIComponent(item.id));
+          await loadScheduledItems();
+          renderScheduledWorkspace();
+          toast('Запись удалена');
+        } catch (error) { toast('Не удалось удалить запись: ' + error.message, 'error'); }
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        if ($('#projects-workspace-shell')?.classList.contains('open')) closeProjectsWorkspace();
+        if ($('#scheduled-workspace-shell')?.classList.contains('open')) closeScheduledWorkspace();
+      }
+    });
+  }
+
+  function bindFilesWorkspace() {
+    $('#files-quick-btn')?.addEventListener('click', openFilesWorkspace);
+    $$('[data-files-workspace-close]').forEach(button => button.addEventListener('click', closeFilesWorkspace));
+    $('#workspace-file-upload')?.addEventListener('click', () => {
+      workspaceUploadIntent = true;
+      $('#file-input')?.click();
+    });
+    $('#workspace-file-search')?.addEventListener('input', event => {
+      workspaceFileFilters.query = event.target.value || '';
+      renderFilesWorkspace();
+    });
+    $('#workspace-file-source')?.addEventListener('change', event => {
+      workspaceFileFilters.source = event.target.value || 'all';
+      renderFilesWorkspace();
+    });
+    $('#workspace-file-kind')?.addEventListener('change', event => {
+      workspaceFileFilters.kind = event.target.value || 'all';
+      renderFilesWorkspace();
+    });
+    $('#workspace-file-sort')?.addEventListener('change', event => {
+      workspaceFileFilters.sort = event.target.value || 'date-desc';
+      renderFilesWorkspace();
+    });
+    $('#workspace-files-list')?.addEventListener('click', async event => {
+      const button = event.target.closest('[data-workspace-file-delete]');
+      if (!button) return;
+      const id = String(button.dataset.workspaceFileDelete || '');
+      const file = (state.files || []).find(item => String(item.id) === id);
+      if (!file || !confirm('Удалить файл «' + (file.original_name || 'Файл') + '»?')) return;
+      button.disabled = true;
+      try {
+        await api.del('/api/files/' + encodeURIComponent(id));
+        state.files = (state.files || []).filter(item => String(item.id) !== id);
+        renderFiles();
+        renderFilesWorkspace();
+        toast('Файл удалён');
+      } catch (error) {
+        button.disabled = false;
+        toast('Не удалось удалить файл: ' + error.message, 'error');
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && $('#files-workspace-shell')?.classList.contains('open')) closeFilesWorkspace();
+    });
   }
 
   function kindIcon() {
@@ -5006,15 +5638,18 @@
     }));
   }
 
-  async function uploadFiles(files) {
+  async function uploadFiles(files, options) {
     const fd = new FormData();
     files.forEach(f => fd.append('files', f));
     try {
       const out = await api.postForm('/api/files', fd);
       state.files = out.concat(state.files);
       renderFiles();
-      out.forEach(f => state.pendingAttachments.push(f));
-      renderAttachments();
+      renderFilesWorkspace();
+      if (!(options && options.libraryOnly)) {
+        out.forEach(f => state.pendingAttachments.push(f));
+        renderAttachments();
+      }
     } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }
   }
 
@@ -5027,8 +5662,9 @@
 
   function bindFiles() {
     $('#mem-quick-btn').addEventListener('click', () => openMemory());
+    $('#skills-quick-btn').addEventListener('click', () => openSkills());
     $('#close-files-btn').addEventListener('click', () => toggleFiles(false));
-    $('#upload-btn').addEventListener('click', () => $('#file-input').click());
+    $('#upload-btn').addEventListener('click', () => { workspaceUploadIntent = false; $('#file-input').click(); });
     $('#file-search').addEventListener('input', (e) => {
       state.fileQuery = e.target.value.trim();
       renderFiles();
@@ -5309,7 +5945,10 @@
       clearTimeout(t);
       t = setTimeout(() => { state.query = e.target.value.trim(); loadChats(); }, 250);
     });
-    $('#chat-title').addEventListener('click', renameCurrentChat);
+    $('#chat-title').addEventListener('click', event => {
+      if (event.target.closest('.chat-title-search-input, .chat-search-close')) return;
+      renameCurrentChat();
+    });
     $('#messages').addEventListener('scroll', () => {
       const box = $('#messages');
       state.stickBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 70;
@@ -5411,6 +6050,204 @@
     toast('Подготовлен файл чата для скачивания.');
   }
 
+  function closeChatSearch() {
+    clearChatSearchHighlights();
+    const title = $('#chat-title');
+    if (!title) return;
+    title.classList.remove('chat-title-search');
+    title.textContent = state.chatSearchPreviousTitle || (
+      (state.chats || []).find(chat => chat && chat.id === state.currentChatId)?.title || 'AI CH'
+    );
+    state.chatSearchPreviousTitle = '';
+    state.chatSearchMatchIndex = 0;
+  }
+
+  function startChatSearch() {
+    const title = $('#chat-title');
+    if (!title || !state.currentChatId) {
+      toast('Сначала откройте чат', 'error');
+      return;
+    }
+    if (title.classList.contains('chat-title-search')) {
+      $('.chat-title-search-input', title)?.focus();
+      return;
+    }
+    state.chatSearchPreviousTitle = title.textContent || 'AI CH';
+    title.classList.add('chat-title-search');
+    title.innerHTML = '<span class="chat-search-leading" aria-hidden="true">' + icon('search') + '</span>' +
+      '<input type="search" class="chat-title-search-input" aria-label="Найти в чате" placeholder="Найти в чате" autocomplete="off" />' +
+      '<button type="button" class="chat-search-close" aria-label="Закрыть поиск" title="Закрыть поиск">' + icon('x') + '</button>';
+    const input = $('.chat-title-search-input', title);
+    const close = $('.chat-search-close', title);
+    let debounce = null;
+    input.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        state.chatSearchMatchIndex = 0;
+        highlightChatSearch(input.value, false);
+      }, 60);
+    });
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeChatSearch();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        highlightChatSearch(input.value, true);
+      }
+    });
+    close.addEventListener('click', event => {
+      event.stopPropagation();
+      closeChatSearch();
+    });
+    input.focus();
+  }
+
+  function clearChatSearchHighlights() {
+    const messages = $('#messages');
+    if (!messages) return;
+    $$('mark.chat-search-match', messages).forEach(mark => {
+      mark.replaceWith(document.createTextNode(mark.textContent || ''));
+    });
+    $$('.msg .content.md', messages).forEach(content => content.normalize());
+  }
+
+  function highlightChatSearch(query, moveToNext) {
+    clearChatSearchHighlights();
+    const term = String(query || '').trim();
+    if (!term) { state.chatSearchMatchIndex = 0; return; }
+    const escaped = term.split('').map(char =>
+      '\\^$.*+?()[]{}|'.includes(char) ? '\\' + char : char
+    ).join('');
+    let regex;
+    try { regex = new RegExp(escaped, 'gi'); } catch (_) { return; }
+    const messages = $('#messages');
+    const roots = $$('.msg .content.md', messages);
+    roots.forEach(root => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(textNode) {
+          const parent = textNode.parentElement;
+          if (!parent || parent.closest('pre,code,script,style,textarea,button,mark,svg,.katex')) return NodeFilter.FILTER_REJECT;
+          return (textNode.nodeValue || '').toLocaleLowerCase().includes(term.toLocaleLowerCase())
+            ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        },
+      });
+      const nodes = [];
+      let textNode;
+      while ((textNode = walker.nextNode())) nodes.push(textNode);
+      nodes.forEach(node => {
+        const value = node.nodeValue || '';
+        regex.lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let cursor = 0;
+        let match;
+        while ((match = regex.exec(value))) {
+          if (match.index > cursor) fragment.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+          const mark = document.createElement('mark');
+          mark.className = 'chat-search-match';
+          mark.textContent = match[0];
+          fragment.appendChild(mark);
+          cursor = match.index + match[0].length;
+          if (!match[0].length) regex.lastIndex++;
+        }
+        if (!cursor) return;
+        if (cursor < value.length) fragment.appendChild(document.createTextNode(value.slice(cursor)));
+        node.replaceWith(fragment);
+      });
+    });
+    const marks = $$('mark.chat-search-match', messages);
+    if (!marks.length) {
+      state.chatSearchMatchIndex = 0;
+      return;
+    }
+    if (moveToNext) state.chatSearchMatchIndex = (state.chatSearchMatchIndex + 1) % marks.length;
+    else state.chatSearchMatchIndex = 0;
+    marks.forEach((mark, index) => mark.classList.toggle('is-current', index === state.chatSearchMatchIndex));
+    marks[state.chatSearchMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function openChatProjectPicker(chatId) {
+    let projects = [];
+    try { projects = await api.get('/api/projects'); }
+    catch (error) { toast('Не удалось загрузить проекты: ' + error.message, 'error'); return; }
+    if (!Array.isArray(projects) || !projects.length) {
+      openModal({
+        title: 'Добавить чат в проект',
+        body: '<p>Сначала создайте проект — после этого его можно будет выбрать для текущего чата.</p>' +
+          '<button type="button" class="chip-btn" id="chat-project-create-first">' + icon('plus') + ' Создать проект</button>',
+        okText: 'Закрыть',
+        onOk: () => true,
+      });
+      $('#chat-project-create-first')?.addEventListener('click', () => {
+        closeModal();
+        openProjectsWorkspace().then(() => {
+          projectWorkspaceEditor = { id: '', title: '', description: '' };
+          renderProjectsWorkspace();
+          $('#workspace-project-name')?.focus();
+        });
+      });
+      return;
+    }
+    const activeChat = (state.chats || []).find(chat => chat && String(chat.id) === String(chatId));
+    openModal({
+      title: 'Добавить чат в проект',
+      body: '<p>Выберите проект для текущего чата.</p><label for="chat-project-choice">Проект</label>' +
+        '<select id="chat-project-choice" class="model-select">' + projects.map(project =>
+          '<option value="' + escapeHtml(project.id) + '"' +
+          (activeChat && String(activeChat.project_id || '') === String(project.id) ? ' selected' : '') + '>' +
+          escapeHtml(project.title || 'Без названия') + '</option>'
+        ).join('') + '</select>',
+      onOk: async root => {
+        const projectId = String($('#chat-project-choice', root)?.value || '');
+        if (!projectId) return false;
+        try {
+          const updated = await api.patch('/api/chats/' + encodeURIComponent(chatId), { project_id: projectId });
+          const index = state.chats.findIndex(item => item && item.id === updated.id);
+          if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
+          state.chatListVersion += 1;
+          renderChatList();
+          const project = projects.find(item => String(item.id) === projectId);
+          toast('Чат добавлен в проект «' + (project && project.title || 'Проект') + '»');
+          return true;
+        } catch (error) {
+          toast('Не удалось добавить чат: ' + error.message, 'error');
+          return false;
+        }
+      },
+    });
+  }
+
+  async function openCurrentChatFilesModal() {
+    const nodes = allMessages(state.tree).map(entry => entry && entry.node).filter(Boolean);
+    const byId = new Map();
+    nodes.forEach(node => (Array.isArray(node.attachments) ? node.attachments : []).forEach(file => {
+      if (!file) return;
+      const id = String(file.file_id || file.id || '');
+      if (!id) return;
+      const previous = byId.get(id) || {};
+      byId.set(id, {
+        ...previous, ...file, file_id: id,
+        source: node.role === 'assistant' ? 'ai' : (previous.source || 'user'),
+        name: file.name || file.original_name || previous.name || 'Файл',
+      });
+    }));
+    const files = Array.from(byId.values());
+    openModal({
+      title: 'Файлы в этом чате',
+      okText: 'Закрыть',
+      body: files.length ? '<div class="chat-attached-files-list">' + files.map(file =>
+        '<a class="chat-attached-file" href="/api/files/' + encodeURIComponent(file.file_id) + '/download" target="_blank" rel="noopener noreferrer">' +
+        '<span class="chat-attached-file-icon">' + icon(file.source === 'ai' ? 'file' : 'paperclip') + '</span>' +
+        '<span class="chat-attached-file-copy"><strong>' + escapeHtml(file.name) + '</strong><small>' +
+        (file.source === 'ai' ? 'Создано AI CH' : 'Загружено вами') +
+        (Number.isFinite(Number(file.size)) ? ' · ' + formatSize(Number(file.size)) : '') +
+        '</small></span>' + icon('download') + '</a>'
+      ).join('') + '</div>' : '<div class="files-workspace-empty chat-no-files"><span class="files-empty-art">' +
+        icon('folder') + '</span><strong>В этом чате пока нет файлов</strong><p>Загруженные и созданные файлы появятся здесь после прикрепления к сообщению.</p></div>',
+      onOk: () => true,
+    });
+  }
+
   async function openShare() {
     if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
     let st;
@@ -5435,9 +6272,17 @@
         icon('copy') + 'Копировать' + '</button>' + readableButton + audioButton + '</div>';
     }).join('');
     openModal({
-      title: 'Поделиться чатом',
+      title: 'Действия чата',
       okText: 'Закрыть',
-      body: (st.is_public
+      body:
+        '<div class="chat-actions-primary">' +
+        '<button type="button" class="chip-btn" id="chat-action-new">' + icon('plus') + 'Новый чат</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-pin">' + icon('map-pin') + (state.chats.find(chat => chat && chat.id === state.currentChatId)?.is_pinned ? 'Открепить' : 'Закрепить') + '</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-project">' + icon('folder') + 'Добавить в проект</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-files">' + icon('file') + 'Загруженные файлы</button>' +
+        '<button type="button" class="chip-btn" id="chat-action-find">' + icon('search') + 'Найти в чате</button>' +
+        '</div><hr style="border:0;border-top:1px solid var(--border-soft);margin:14px 0" />' +
+        (st.is_public
         ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
           '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
           '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
@@ -5457,6 +6302,28 @@
       onOk: () => true,
     });
 
+    $('#chat-action-new')?.addEventListener('click', async () => {
+      closeModal();
+      await newChat('chat');
+    });
+    $('#chat-action-pin')?.addEventListener('click', async () => {
+      const chatId = state.currentChatId;
+      closeModal();
+      if (chatId) await toggleChatPin(chatId);
+    });
+    $('#chat-action-project')?.addEventListener('click', () => {
+      const chatId = state.currentChatId;
+      closeModal();
+      if (chatId) openChatProjectPicker(chatId);
+    });
+    $('#chat-action-files')?.addEventListener('click', () => {
+      closeModal();
+      openCurrentChatFilesModal();
+    });
+    $('#chat-action-find')?.addEventListener('click', () => {
+      closeModal();
+      startChatSearch();
+    });
     const start = $('#start-share');
     if (start) start.addEventListener('click', async () => {
       try { await api.post('/api/chats/' + state.currentChatId + '/share'); }
@@ -5949,6 +6816,129 @@
         }
       },
     });
+  }
+
+  async function openSkills() {
+    let payload = { system: [], custom: [] };
+    try {
+      payload = await api.get('/api/skills');
+    } catch (error) {
+      toast('Не удалось загрузить навыки: ' + error.message, 'error');
+      return;
+    }
+
+    let editor = null;
+    openModal({
+      title: 'Навыки',
+      okText: 'Закрыть',
+      body: '<div class="skills-manager"><p class="usage-note">Загружаю навыки…</p></div>',
+      onOk: () => true,
+    });
+    const root = $('#modal-root');
+    const manager = $('.skills-manager', root);
+    if (!manager) return;
+
+    const render = () => {
+      const system = Array.isArray(payload.system) ? payload.system : [];
+      const custom = Array.isArray(payload.custom) ? payload.custom : [];
+      manager.innerHTML =
+        '<section class="skills-section"><div class="skills-section-head"><h4 class="sec">Системные навыки</h4>' +
+        '<span class="skills-count">' + system.length + '</span></div>' +
+        '<p class="usage-note">Содержимое системных навыков скрыто. Здесь доступны только их названия.</p>' +
+        '<div class="skills-system-list">' + system.map(skill =>
+          '<div class="skills-system-item"><span class="skills-system-icon">' + icon('lock') + '</span>' +
+          '<span>' + escapeHtml(skill.title || 'Системный навык') + '</span><span class="skills-system-tag">AI CH</span></div>'
+        ).join('') + '</div></section>' +
+        '<section class="skills-section"><div class="skills-section-head"><h4 class="sec">Мои навыки</h4>' +
+        '<span class="skills-count">' + custom.length + '/30</span></div>' +
+        '<p class="usage-note">Ваши инструкции сохраняются в аккаунте и учитываются в ответах AI CH.</p>' +
+        (custom.length
+          ? '<div class="skills-custom-list">' + custom.map(skill =>
+            '<article class="skills-custom-item"><div class="skills-custom-main"><strong>' +
+            escapeHtml(skill.title || 'Без названия') + '</strong><p>' +
+            escapeHtml(String(skill.content || '').slice(0, 180)) + (String(skill.content || '').length > 180 ? '…' : '') +
+            '</p></div><div class="skills-custom-actions">' +
+            '<button type="button" class="chip-btn" data-skill-action="edit" data-skill-id="' + escapeHtml(skill.id) + '">' + icon('pencil') + 'Изменить</button>' +
+            '<button type="button" class="chip-btn" data-skill-action="delete" data-skill-id="' + escapeHtml(skill.id) + '" aria-label="Удалить навык">' + icon('trash') + '</button>' +
+            '</div></article>'
+          ).join('') + '</div>'
+          : '<div class="skills-empty"><span class="skills-empty-icon">' + icon('book-open') + '</span><strong>Пока нет своих навыков</strong><p>Создайте инструкцию под свой стиль работы.</p></div>') +
+        '<button type="button" class="chip-btn skills-add-button" data-skill-action="new" ' + (custom.length >= 30 ? 'disabled' : '') + '>' +
+        icon('plus') + 'Добавить свой навык</button></section>' +
+        (editor
+          ? '<form class="skills-editor" id="skills-editor"><h4 class="sec">' + (editor.id ? 'Изменить навык' : 'Новый навык') + '</h4>' +
+            '<label for="skill-editor-title">Название</label><input id="skill-editor-title" maxlength="120" required value="' + escapeHtml(editor.title) + '" placeholder="Например, стиль объяснения математики" />' +
+            '<label for="skill-editor-content">Инструкции для AI CH</label><textarea id="skill-editor-content" rows="6" maxlength="5000" required placeholder="Опишите, как ИИ должен выполнять задачи…">' + escapeHtml(editor.content) + '</textarea>' +
+            '<div class="skills-editor-actions"><button type="button" class="ghost" data-skill-action="cancel">Отмена</button>' +
+            '<button type="button" class="solid" data-skill-action="save">' + (editor.id ? 'Сохранить изменения' : 'Создать навык') + '</button></div></form>'
+          : '');
+    };
+    render();
+
+    root.onclick = async event => {
+      if (!manager.isConnected) return;
+      const button = event.target.closest('[data-skill-action]');
+      if (!button || !manager.contains(button)) return;
+      const action = button.dataset.skillAction;
+      const skillId = button.dataset.skillId;
+      if (action === 'new') {
+        editor = { id: '', title: '', content: '' };
+        render();
+        $('#skill-editor-title', manager)?.focus();
+        return;
+      }
+      if (action === 'cancel') {
+        editor = null;
+        render();
+        return;
+      }
+      if (action === 'edit') {
+        const skill = (payload.custom || []).find(item => String(item.id) === String(skillId));
+        if (!skill) return;
+        editor = { id: skill.id, title: skill.title || '', content: skill.content || '' };
+        render();
+        $('#skill-editor-title', manager)?.focus();
+        return;
+      }
+      if (action === 'delete') {
+        const skill = (payload.custom || []).find(item => String(item.id) === String(skillId));
+        if (!skill || !confirm('Удалить навык «' + skill.title + '»?')) return;
+        try {
+          await api.del('/api/skills/' + encodeURIComponent(skill.id));
+          payload = await api.get('/api/skills');
+          toast('Навык удалён');
+          render();
+        } catch (error) {
+          toast('Не удалось удалить навык: ' + error.message, 'error');
+        }
+        return;
+      }
+      if (action === 'save') {
+        const title = String($('#skill-editor-title', manager)?.value || '').trim();
+        const content = String($('#skill-editor-content', manager)?.value || '').trim();
+        if (!title || !content) {
+          toast('Укажите название и инструкции навыка', 'error');
+          return;
+        }
+        const body = { title, content };
+        button.disabled = true;
+        try {
+          if (editor && editor.id) {
+            await api.patch('/api/skills/' + encodeURIComponent(editor.id), body);
+            toast('Навык сохранён');
+          } else {
+            await api.post('/api/skills', body);
+            toast('Навык создан');
+          }
+          payload = await api.get('/api/skills');
+          editor = null;
+          render();
+        } catch (error) {
+          toast('Не удалось сохранить навык: ' + error.message, 'error');
+          button.disabled = false;
+        }
+      }
+    };
   }
 
   async function openMemory(filterMessageId) {
@@ -6771,7 +7761,7 @@
   }
 
   async function init() {
-    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
+    bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindFilesWorkspace(); bindProjectsWorkspace(); bindScheduledWorkspace(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
     try {

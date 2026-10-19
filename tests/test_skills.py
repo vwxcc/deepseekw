@@ -31,7 +31,7 @@ class BundledSkillTests(unittest.TestCase):
         prompt = skills_for("Создай красивую презентацию PPTX о космосе")
         self.assertIn("Специализированный навык: file-generation", prompt)
         self.assertIn("presentation.education", prompt)
-        self.assertIn("```fileplan", prompt)
+        self.assertIn("Не используй ```fileplan", prompt)
 
     def test_agent_blocks_preserve_order_and_strip_from_visible_answer(self) -> None:
         from app.ai.prompts import extract_agent_blocks, strip_agent_blocks

@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     model_context_len: int = 262144
     # --- Agent (sandboxed code execution) ---
     agent_enabled: bool = True
+    # Server-side code execution is opt-in; Render may set RUN_SANDBOX_ENABLED=1.
+    run_sandbox_enabled: bool = False
     agent_max_steps: int = 6
     agent_timeout: int = 40
     # isolated runner (separate container, internal network, no internet)

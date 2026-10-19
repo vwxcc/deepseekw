@@ -57,6 +57,8 @@ class ChatOut(ORMModel):
     bundle_id: str | None = None
     source_chat_id: str | None = None
     source_chat_title: str | None = None
+    is_pinned: bool = False
+    project_id: str | None = None
 
 
 class ChatCreate(BaseModel):
@@ -65,7 +67,9 @@ class ChatCreate(BaseModel):
 
 
 class ChatUpdate(BaseModel):
-    title: str
+    title: str | None = None
+    is_pinned: bool | None = None
+    project_id: str | None = None
 
 
 class ShareOut(BaseModel):
@@ -198,6 +202,44 @@ class UserSkillOut(ORMModel):
     id: str
     title: str
     content: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=5000)
+
+
+class ProjectOut(ORMModel):
+    id: str
+    user_id: str
+    title: str
+    description: str = ""
+    created_at: datetime
+    updated_at: datetime
+    chat_count: int = 0
+
+
+class ScheduledItemIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=5000)
+    due_at: datetime
+
+
+class ScheduledItemUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    due_at: datetime | None = None
+
+
+class ScheduledItemOut(ORMModel):
+    id: str
+    user_id: str
+    title: str
+    description: str = ""
+    due_at: datetime
+    created_by: str = "user"
     created_at: datetime
     updated_at: datetime
 

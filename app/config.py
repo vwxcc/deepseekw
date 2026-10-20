@@ -56,7 +56,12 @@ class Settings(BaseSettings):
     agent_max_steps: int = 6
     agent_timeout: int = 40
     # isolated runner (separate container, internal network, no internet)
-    sandbox_url: str = "http://chatstudio-sandbox:8000"
+    sandbox_url: str = Field(
+        default_factory=lambda: (
+            "" if os.getenv("RENDER_SERVICE_ID") or os.getenv("RENDER_EXTERNAL_URL")
+            else "http://chatstudio-sandbox:8000"
+        )
+    )
     # Set to the same high-entropy key on the app and the separate sandbox service.
     sandbox_api_key: str = ""
     # Unsafe in a public multi-user app; use only for trusted local development.

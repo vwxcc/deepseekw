@@ -6919,7 +6919,7 @@
         const ids = $$('[data-ms]', root).filter(c => c.checked).map(c => c.dataset.ms);
         if (ids.length < 1) { toast('Выберите хотя бы одного участника', 'error'); return false; }
         try {
-          const res = await api.post('/api/council', { question: q, personas: ids });
+          const res = await api.post('/api/council', { question: q, personas: ids, model_set_id: state.modelSetId || null });
           await loadChats();
           await openChat(res.merge_chat_id);
           toast('Совет запущен: ' + ids.length + ' участников');

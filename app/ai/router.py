@@ -529,9 +529,12 @@ class AIRouter:
                     raise ProviderError("Выбранный кластер не найден или выключен")
                 entries = (await ms.get_active_entries(db, mset.id))[:1]
             else:
+                # Implicit/internal jobs must never bypass Pro: without an explicit cluster,
+                # only a free-access cluster may be used.
                 result = await db.execute(select(ModelSet).where(
                     ModelSet.route_type == RouteType.MAIN, ModelSet.is_active.is_(True),
-                    ModelSet.is_router.is_(False)).order_by(ModelSet.name, ModelSet.id))
+                    ModelSet.is_router.is_(False), ModelSet.free_access.is_(True)
+                ).order_by(ModelSet.name, ModelSet.id))
                 mset, entries = None, []
                 for candidate in result.scalars().all():
                     active = await ms.get_active_entries(db, candidate.id)

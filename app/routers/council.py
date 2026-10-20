@@ -9,14 +9,15 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
 from ..ai.router import Job, router as ai_router
 from ..deps import get_current_user, get_db, require_csrf
-from ..models import Chat, Message, MessageStatus, ModelSet, Role, RouteType, User
+from ..models import Chat, Message, MessageStatus, ModelSet, ModelSetEntry, Role, RouteType, User
 from ..schemas import CouncilIn, CouncilModelOut, CouncilOut
+from ..services.limits import normalize_plan
 
 router = APIRouter(prefix="/api/council", tags=["council"])
 
@@ -40,10 +41,22 @@ async def council_sets(
 ):
     result = await db.execute(
         select(ModelSet)
-        .where(ModelSet.route_type == RouteType.MAIN)
+        .where(
+            ModelSet.route_type == RouteType.MAIN,
+            ModelSet.is_active.is_(True),
+            ModelSet.is_router.is_(False),
+        )
         .order_by(ModelSet.name)
     )
-    return [CouncilModelOut(id=s.id, name=s.name) for s in result.scalars().all()]
+    sets = result.scalars().all()
+    out = []
+    for cluster in sets:
+        active = await db.scalar(select(func.count()).select_from(ModelSetEntry).where(
+            ModelSetEntry.model_set_id == cluster.id, ModelSetEntry.is_active.is_(True)))
+        if active:
+            out.append(CouncilModelOut(id=cluster.id, name=cluster.name,
+                hint=("Доступно на Pro" if not cluster.free_access else "")))
+    return out
 
 
 @router.post("", response_model=CouncilOut, status_code=status.HTTP_201_CREATED)
@@ -65,11 +78,46 @@ async def create_council(
         keys = ["pragmatic", "analyst", "critic"]
     keys = keys[:MAX_MEMBERS]
 
+    # Council members and the merge must obey the same selected cluster / Pro gate as chat.
+    is_pro = normalize_plan(user.plan) == "pro" or bool(user.is_admin)
+    selected_cluster_id = str(data.model_set_id or "").strip()
+    if selected_cluster_id:
+        cluster = await db.get(ModelSet, selected_cluster_id)
+        if (cluster is None or not cluster.is_active or cluster.is_router
+                or cluster.route_type != RouteType.MAIN):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Выбранный кластер недоступен")
+        if not cluster.free_access and not is_pro:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта модель доступна только по подписке Pro.")
+        active_entries = await db.scalar(select(func.count()).select_from(ModelSetEntry).where(
+            ModelSetEntry.model_set_id == cluster.id, ModelSetEntry.is_active.is_(True)))
+        if not active_entries:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "В выбранном кластере нет активной модели")
+    else:
+        query = select(ModelSet).where(
+            ModelSet.route_type == RouteType.MAIN,
+            ModelSet.is_active.is_(True),
+            ModelSet.is_router.is_(False),
+        )
+        if not is_pro:
+            query = query.where(ModelSet.free_access.is_(True))
+        choices = (await db.execute(query.order_by(ModelSet.name))).scalars().all()
+        cluster = None
+        for candidate in choices:
+            active_entries = await db.scalar(select(func.count()).select_from(ModelSetEntry).where(
+                ModelSetEntry.model_set_id == candidate.id, ModelSetEntry.is_active.is_(True)))
+            if active_entries:
+                cluster = candidate
+                break
+        if cluster is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Нет доступных моделей для режима «Совет»")
+        selected_cluster_id = cluster.id
+
     short = question.replace("\n", " ")[:44]
     bundle = uuid.uuid4().hex
 
     chat = Chat(
-        user_id=user.id, title=f"Совет: {short}", mode="council", bundle_id=bundle
+        user_id=user.id, title=f"Совет: {short}", mode="council", bundle_id=bundle,
+        model_set_id=selected_cluster_id,
     )
     db.add(chat)
     await db.flush()
@@ -111,6 +159,7 @@ async def create_council(
                 ),
                 message_id=member.id,
                 user_id=user.id,
+                model_set_id=selected_cluster_id,
                 user_text=question,
             )
         )
@@ -140,6 +189,7 @@ async def create_council(
             ),
             message_id=merged.id,
             user_id=user.id,
+            model_set_id=selected_cluster_id,
             user_text=question,
             depends_on=variants,
         )

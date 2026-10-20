@@ -313,6 +313,7 @@ class PostDetailOut(PostOut):
 class CouncilIn(BaseModel):
     question: str
     personas: list[str] = Field(default_factory=list)
+    model_set_id: str | None = None
 
 
 class CouncilOut(BaseModel):

@@ -49,25 +49,7 @@ def _unique_statuses(values: list[Any], limit: int, excluded: set[str] | None = 
     return result
 
 
-def _safe_status(item: Any) -> str:
-    if isinstance(item, dict):
-        emoji = str(item.get("emoji") or "").strip()
-        text = str(item.get("text") or item.get("status") or "").strip()
-        value = f"{emoji} {text}".strip()
-    else:
-        value = str(item or "").strip()
-    value = re.sub(r"\s+", " ", value).strip()
-    if not value:
-        return ""
-    if not re.match(r"^[\U0001F000-\U0001FAFF\u2600-\u27BF]", value):
-        lower = value.lower()
-        emoji = "🔍" if any(w in lower for w in ("поиск", "источник", "интернет")) else (
-            "🧮" if any(w in lower for w in ("вычис", "числ", "математ")) else (
-                "✅" if any(w in lower for w in ("провер", "готов", "заверш")) else "🧠"
-            )
-        )
-        value = f"{emoji} {value}"
-    return value[:180]
+
 
 
 def _content_text(value: Any) -> str:

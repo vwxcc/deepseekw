@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import get_current_admin, get_db, require_csrf
-from ..models import Chat, File, Message, ModelSet, ModelSetEntry, ReadableTextModelConfig, RouteType, StatusModelConfig, User
+from ..models import Chat, File, Message, ModelSet, ModelSetEntry, ReadableTextModelConfig, RouteType, StatusModelConfig, UsageEvent, User
 from ..schemas import (
     AdminChatOut,
     AdminStatsOut,
@@ -65,6 +65,26 @@ def _aux_config_out(config):
     }
 
 
+async def _aux_usage_summary(db: AsyncSession, action: str) -> dict:
+    """Show the independent ledger totals for one auxiliary model."""
+    row = (
+        await db.execute(
+            select(
+                func.count(UsageEvent.id),
+                func.coalesce(func.sum(UsageEvent.tokens_in), 0),
+                func.coalesce(func.sum(UsageEvent.tokens_out), 0),
+                func.coalesce(func.sum(UsageEvent.cost_usd), 0.0),
+            ).where(UsageEvent.action == action)
+        )
+    ).one()
+    return {
+        "calls": int(row[0] or 0),
+        "tokens_in": int(row[1] or 0),
+        "tokens_out": int(row[2] or 0),
+        "cost_usd": round(float(row[3] or 0.0), 8),
+    }
+
+
 async def _save_aux_config(db, model_cls, data):
     base_url, model = data.base_url.strip().rstrip("/"), data.model.strip()
     if data.is_enabled and (not base_url or not model):
@@ -86,22 +106,31 @@ async def _save_aux_config(db, model_cls, data):
 
 @router.get("/status-model")
 async def get_status_model_config(db: AsyncSession = Depends(get_db)):
-    return {**_aux_config_out(await db.get(StatusModelConfig, 1)), "temperature": 1.1}
+    return {
+        **_aux_config_out(await db.get(StatusModelConfig, 1)),
+        "temperature": 1.1,
+        "usage": await _aux_usage_summary(db, "status_generation"),
+    }
 
 
 @router.patch("/status-model")
 async def patch_status_model_config(data: AuxiliaryModelConfigUpdate, _csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)):
-    return {**await _save_aux_config(db, StatusModelConfig, data), "temperature": 1.1}
+    saved = await _save_aux_config(db, StatusModelConfig, data)
+    return {**saved, "temperature": 1.1, "usage": await _aux_usage_summary(db, "status_generation")}
 
 
 @router.get("/readable-text-model")
 async def get_readable_text_model_config(db: AsyncSession = Depends(get_db)):
-    return _aux_config_out(await db.get(ReadableTextModelConfig, 1))
+    return {
+        **_aux_config_out(await db.get(ReadableTextModelConfig, 1)),
+        "usage": await _aux_usage_summary(db, "readable_text"),
+    }
 
 
 @router.patch("/readable-text-model")
 async def patch_readable_text_model_config(data: AuxiliaryModelConfigUpdate, _csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)):
-    return await _save_aux_config(db, ReadableTextModelConfig, data)
+    saved = await _save_aux_config(db, ReadableTextModelConfig, data)
+    return {**saved, "usage": await _aux_usage_summary(db, "readable_text")}
 
 
 @router.get("/model-sets", response_model=list[ModelSetOut])

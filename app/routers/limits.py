@@ -61,6 +61,15 @@ async def my_limits(
         .select_from(Message).join(Chat, Chat.id == Message.chat_id)
         .where(Chat.user_id == user.id, Message.role == Role.assistant)
     )
+    auxiliary_tokens = await db.scalar(
+        select(
+            func.coalesce(func.sum(UsageEvent.tokens_in), 0)
+            + func.coalesce(func.sum(UsageEvent.tokens_out), 0)
+        ).where(
+            UsageEvent.user_id == user.id,
+            UsageEvent.action.in_(("readable_text", "status_generation")),
+        )
+    )
     reqs = await db.scalar(
         select(func.count()).select_from(Message).join(Chat, Chat.id == Message.chat_id)
         .where(Chat.user_id == user.id, Message.role == Role.assistant)
@@ -101,7 +110,8 @@ async def my_limits(
             "storage": int(used or 0),
             "posts": posts or 0,
             "code_agents": agents or 0,
-            "tokens": int(spent or 0),
+            "tokens": int(spent or 0) + int(auxiliary_tokens or 0),
+            "auxiliary_tokens": int(auxiliary_tokens or 0),
             "requests": int(reqs or 0),
         },
     }
@@ -156,6 +166,18 @@ async def users_overview(
         .group_by(Chat.user_id)
         .subquery()
     )
+    auxiliary_usage = (
+        select(
+            UsageEvent.user_id.label("uid"),
+            func.coalesce(func.sum(UsageEvent.tokens_in), 0).label("tin"),
+            func.coalesce(func.sum(UsageEvent.tokens_out), 0).label("tout"),
+            func.coalesce(func.sum(UsageEvent.cost_usd), 0.0).label("cost"),
+            func.count(UsageEvent.id).label("calls"),
+        )
+        .where(UsageEvent.action.in_(("readable_text", "status_generation")))
+        .group_by(UsageEvent.user_id)
+        .subquery()
+    )
     rows = (
         await db.execute(
             select(
@@ -163,12 +185,19 @@ async def users_overview(
                 func.coalesce(usage.c.requests, 0),
                 func.coalesce(usage.c.tin, 0),
                 func.coalesce(usage.c.tout, 0),
-            ).outerjoin(usage, usage.c.uid == User.id).order_by(User.created_at)
+                func.coalesce(auxiliary_usage.c.tin, 0),
+                func.coalesce(auxiliary_usage.c.tout, 0),
+                func.coalesce(auxiliary_usage.c.cost, 0.0),
+                func.coalesce(auxiliary_usage.c.calls, 0),
+            )
+            .outerjoin(usage, usage.c.uid == User.id)
+            .outerjoin(auxiliary_usage, auxiliary_usage.c.uid == User.id)
+            .order_by(User.created_at)
         )
     ).all()
 
     out: list[dict] = []
-    for user, requests, tin, tout in rows:
+    for user, requests, tin, tout, aux_tin, aux_tout, aux_cost, aux_calls in rows:
         effective_plan = normalize_plan(user.plan)
         limits = await get_limits(db, effective_plan)
         window_hours = max(1, int(limits.get("window_hours") or 5))
@@ -192,8 +221,12 @@ async def users_overview(
                 "is_admin": bool(user.is_admin),
                 "avatar": user.avatar or 0,
                 "requests": int(requests or 0),
-                "tokens_in": int(tin or 0),
-                "tokens_out": int(tout or 0),
+                "tokens_in": int(tin or 0) + int(aux_tin or 0),
+                "auxiliary_tokens_in": int(aux_tin or 0),
+                "tokens_out": int(tout or 0) + int(aux_tout or 0),
+                "auxiliary_tokens_out": int(aux_tout or 0),
+                "auxiliary_cost": round(float(aux_cost or 0.0), 8),
+                "auxiliary_calls": int(aux_calls or 0),
                 "storage": int(used or 0),
                 "plan_price": float(limits.get("price") or 0),
                 "cost": round(float(total_cost or 0), 6),

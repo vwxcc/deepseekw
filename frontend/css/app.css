@@ -3684,6 +3684,7 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
 .aux-model-card header b{font-size:14px;color:var(--fg)}
 .aux-model-card header p{margin:4px 0 0;color:var(--fg-muted);font-size:12px;line-height:1.4}
 .aux-temperature{font-size:11px;color:var(--fg-muted);background:var(--bg-user);padding:5px 8px;border-radius:8px}
+.aux-usage{margin:9px 0 0;color:var(--fg-muted);font-size:12.5px;line-height:1.5}
 .aux-model-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
 .aux-model-fields label{display:flex;flex-direction:column;gap:5px;min-width:0;color:var(--fg-muted);font-size:12px}
 .aux-model-fields input{box-sizing:border-box;width:100%;min-width:0;border:1px solid var(--border);border-radius:9px;padding:8px;color:var(--fg);background:var(--bg-panel);font:inherit;font-size:12px}

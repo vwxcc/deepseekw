@@ -5989,6 +5989,12 @@
           (type === 'password' ? '' : escapeHtml(String(value ?? ''))) + '" placeholder="' +
           escapeHtml(placeholder || (type === 'password' && config.has_api_key ? 'Ключ сохранён — пустое поле не изменит его' : '')) +
           '" autocomplete="' + (type === 'password' ? 'new-password' : 'off') + '"></label>';
+        const usage = config.usage || {};
+        const usageLine = '<p class="aux-usage">Использование: ' +
+          Number(usage.calls || 0).toLocaleString('ru-RU') + ' вызовов · вход ' +
+          Number(usage.tokens_in || 0).toLocaleString('ru-RU') + ' / выход ' +
+          Number(usage.tokens_out || 0).toLocaleString('ru-RU') + ' токенов · $' +
+          Number(usage.cost_usd || 0).toFixed(6) + '</p>';
         return '<section class="aux-model-card"><header><div><b>' + title + '</b><p>' + description + '</p></div>' +
           (temp ? '<span class="aux-temperature">Temperature 1.1</span>' : '') + '</header><div class="aux-model-fields">' +
           field('provider','Провайдер',config.provider || 'openai') +
@@ -5997,7 +6003,7 @@
           field('key','API-ключ','','password') +
           field('pin','Цена входа, $/1M токенов',config.price_in,'number') +
           field('pout','Цена выхода, $/1M токенов',config.price_out,'number') +
-          '</div><footer><label><input id="' + prefix + '-enabled" type="checkbox"' + (config.is_enabled ? ' checked' : '') + '> Использовать модель</label>' +
+          '</div>' + usageLine + '<footer><label><input id="' + prefix + '-enabled" type="checkbox"' + (config.is_enabled ? ' checked' : '') + '> Использовать модель</label>' +
           '<button type="button" id="save-' + prefix + '">Сохранить</button></footer></section>';
       }
       const auxiliaryHtml = auxCard('status-model','Модель статусов',

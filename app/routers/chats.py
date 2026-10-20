@@ -8,9 +8,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_user, get_db, get_owned_chat, require_csrf
-from ..models import Attachment, Chat, Message, MessageStatus, Project, Suggestion, User
+from ..models import Attachment, Chat, Message, MessageStatus, ModelSet, ModelSetEntry, Project, RouteType, Suggestion, User
 from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut, SharedChatOut
-from ..services.limits import allow, get_limits
+from ..services.limits import allow, get_limits, normalize_plan
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -109,6 +109,7 @@ async def branch_chat(
         title=("Ветка · " + (source.title or "Чат"))[:255],
         mode=source.mode or "chat",
         model_name=source.model_name,
+        model_set_id=source.model_set_id,
         bundle_id=source.bundle_id,
         effort=source.effort,
         source_chat_id=source.id,
@@ -181,6 +182,18 @@ async def rename_chat(
             if project is None or project.user_id != chat.user_id:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Проект не найден")
             chat.project_id = project.id
+    if data.model_set_id is not None:
+        cluster = await db.get(ModelSet, data.model_set_id)
+        if cluster is None or not cluster.is_active or cluster.is_router or cluster.route_type != RouteType.MAIN:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Выбранный кластер недоступен")
+        owner = await db.get(User, chat.user_id)
+        if not bool(getattr(cluster, "free_access", True)) and owner and normalize_plan(owner.plan) != "pro" and not owner.is_admin:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта модель доступна только по подписке Pro.")
+        count = await db.scalar(select(func.count()).select_from(ModelSetEntry).where(
+            ModelSetEntry.model_set_id == cluster.id, ModelSetEntry.is_active.is_(True)))
+        if not count:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "В выбранном кластере нет активной модели")
+        chat.model_set_id = cluster.id
     await db.commit()
     await db.refresh(chat)
     return ChatOut.model_validate(chat)

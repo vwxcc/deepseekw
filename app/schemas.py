@@ -54,6 +54,7 @@ class ChatOut(ORMModel):
     share_token: str | None = None
     mode: str = "chat"
     model_name: str | None = None
+    model_set_id: str | None = None
     bundle_id: str | None = None
     source_chat_id: str | None = None
     source_chat_title: str | None = None
@@ -70,6 +71,7 @@ class ChatUpdate(BaseModel):
     title: str | None = None
     is_pinned: bool | None = None
     project_id: str | None = None
+    model_set_id: str | None = None
 
 
 class ShareOut(BaseModel):
@@ -365,15 +367,19 @@ class ModelSetEntryOut(ORMModel):
 class ModelSetOut(ORMModel):
     id: str
     name: str
+    description: str = ""
     slug: str
     route_type: str
     is_active: bool
+    free_access: bool = True
     is_router: bool = False
     entries: list[ModelSetEntryOut] = Field(default_factory=list)
 
 
 class ModelSetCreate(BaseModel):
     name: str
+    description: str = Field(default="", max_length=2000)
+    free_access: bool = True
     slug: str | None = None
     route_type: str = "MAIN"
     is_active: bool = True
@@ -381,6 +387,8 @@ class ModelSetCreate(BaseModel):
 
 class ModelSetUpdate(BaseModel):
     name: str | None = None
+    description: str | None = Field(default=None, max_length=2000)
+    free_access: bool | None = None
     is_active: bool | None = None
 
 

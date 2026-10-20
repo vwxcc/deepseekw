@@ -28,9 +28,11 @@ def model_set_out(ms: ModelSet) -> ModelSetOut:
     return ModelSetOut(
         id=ms.id,
         name=ms.name,
+        description=getattr(ms, "description", "") or "",
         slug=ms.slug,
         route_type=ms.route_type.value,
         is_active=ms.is_active,
+        free_access=bool(getattr(ms, "free_access", True)),
         is_router=bool(getattr(ms, "is_router", False)),
         entries=[entry_out(e) for e in sorted(ms.entries, key=lambda x: x.position)],
     )

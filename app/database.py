@@ -60,6 +60,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "effort": "VARCHAR(16) DEFAULT 'recommended'",
         "mode": "VARCHAR(16) DEFAULT 'chat'",
         "model_name": "VARCHAR(200)",
+        "model_set_id": "VARCHAR(36)",
         "bundle_id": "VARCHAR(36)",
         "source_chat_id": "VARCHAR(36)",
         "source_chat_title": "VARCHAR(255)",
@@ -80,6 +81,8 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "model_sets": {
         "is_router": "BOOLEAN DEFAULT 0",
+        "description": "TEXT DEFAULT ''",
+        "free_access": "BOOLEAN DEFAULT 1",
     },
     "plan_limits": {
         "text_value": "TEXT",

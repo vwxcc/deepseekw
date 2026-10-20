@@ -65,21 +65,19 @@ async def list_model_sets(db: AsyncSession = Depends(get_db)):
 async def create_model_set(
     data: ModelSetCreate, _csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)
 ):
-    try:
-        route = RouteType(data.route_type.upper())
-    except ValueError:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "route_type: MAIN / TITLE / SUGGESTIONS"
-        )
+    # Selectable clusters are MAIN models; historic auxiliary route rows stay untouched.
+    route = RouteType.MAIN
     slug = (data.slug or _slugify(data.name)).strip()
     exists = await db.execute(select(ModelSet).where(ModelSet.slug == slug))
     if exists.scalar_one_or_none() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Такой slug уже существует")
     ms = ModelSet(
         name=(data.name or "").strip() or "Model Set",
+        description=(data.description or "").strip()[:2000],
         slug=slug,
         route_type=route,
         is_active=data.is_active,
+        free_access=bool(data.free_access),
     )
     db.add(ms)
     await db.commit()
@@ -96,6 +94,10 @@ async def update_model_set(
     ms = await _get_set(db, set_id)
     if data.name is not None and data.name.strip():
         ms.name = data.name.strip()
+    if data.description is not None:
+        ms.description = data.description.strip()[:2000]
+    if data.free_access is not None:
+        ms.free_access = bool(data.free_access)
     if data.is_active is not None:
         ms.is_active = data.is_active
     await db.commit()

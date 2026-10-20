@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import get_current_user, get_db
-from ..models import Message, ModelSet, ModelSetEntry, Role, User
+from ..models import Message, ModelSet, ModelSetEntry, Role, RouteType, User
 from ..schemas import ModelSetOut, ModelStatOut
 from ..services.model_sets_view import model_set_out
 
@@ -21,10 +21,11 @@ async def list_sets(
     result = await db.execute(
         select(ModelSet)
         .options(selectinload(ModelSet.entries))
-        .where(ModelSet.is_active.is_(True))
-        .order_by(ModelSet.route_type, ModelSet.name)
+        .where(ModelSet.is_active.is_(True), ModelSet.route_type == RouteType.MAIN, ModelSet.is_router.is_(False))
+        .order_by(ModelSet.name, ModelSet.id)
     )
-    return [model_set_out(ms) for ms in result.scalars().all()]
+    sets = result.scalars().all()
+    return [model_set_out(ms) for ms in sets if any(bool(e.is_active) for e in (ms.entries or []))]
 
 
 @router.get("/stats", response_model=list[ModelStatOut])

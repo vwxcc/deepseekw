@@ -131,6 +131,7 @@ class Chat(Base):
     effort: Mapped[str] = mapped_column(String(16), default="recommended")
     mode: Mapped[str] = mapped_column(String(16), default="chat")
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    model_set_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     bundle_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     source_chat_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     source_chat_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -260,9 +261,11 @@ class ModelSet(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     route_type: Mapped[RouteType] = mapped_column(Enum(RouteType), default=RouteType.MAIN)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    free_access: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_router: Mapped[bool] = mapped_column(Boolean, default=False)
 
     entries: Mapped[list["ModelSetEntry"]] = relationship(

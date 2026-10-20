@@ -3369,7 +3369,7 @@
     const lang = rawLang === 'run' ? 'python' : rawLang;
     const code = String(item.code || '');
     const base64 = btoa(unescape(encodeURIComponent(code)));
-    const runnerHook = "<script>(function(){function send(message){try{parent.postMessage({type:\"device-code-error\",message:String(message).slice(0,50000)},\"*\")}catch(_){}}window.addEventListener(\"error\",function(e){send((e.message||\"JavaScript error\")+(e.filename?\" (\"+e.filename+\":\"+e.lineno+\")\":\"\"))});window.addEventListener(\"unhandledrejection\",function(e){send(e.reason&&(e.reason.stack||e.reason.message)||e.reason||\"Unhandled promise rejection\")});})();</script>";
+    const runnerHook = "<script>(function(){function send(message){try{parent.postMessage({type:\"device-code-error\",message:String(message).slice(0,50000)},\"*\")}catch(_){}}window.addEventListener(\"error\",function(e){send((e.message||\"JavaScript error\")+(e.filename?\" (\"+e.filename+\":\"+e.lineno+\")\":\"\"))});window.addEventListener(\"unhandledrejection\",function(e){send(e.reason&&(e.reason.message||e.reason.stack)||e.reason||\"Unhandled promise rejection\")});})();</script>";
     const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#faf9f5}' +
       'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{display:block;box-sizing:border-box;padding:12px;background:#f0eee6;border:1px solid #e4e0d5;border-radius:10px;min-height:120px;max-height:52vh;overflow:auto;overscroll-behavior:contain}' +
@@ -3531,7 +3531,9 @@
           const skippedFiles = Array.isArray(data.skipped) ? data.skipped.filter(Boolean).map(x => String(x).slice(0, 160)) : [];
           status.textContent = skippedFiles.length
             ? 'Создание завершено частично. Пропущено: ' + skippedFiles.join('; ')
-            : (data.success ? 'Выполнение на устройстве завершено.' : 'Локальный запуск завершился без результата.');
+            : (data.success ? 'Выполнение на устройстве завершено.' :
+              (deviceCodeLastError ? 'Ошибка выполнения. Логи можно скачать или скопировать ниже.' :
+                'Локальный запуск завершился без результата.'));
         }
         if (messageNode) {
           updateDeviceRunnerStatusPanel(messageId, messageNode);

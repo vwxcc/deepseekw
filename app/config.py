@@ -123,9 +123,11 @@ class Settings(BaseSettings):
     fast_qwen_price_out: float = Field(default=0.0, ge=0)
     fast_qwen_price_cache: float = Field(default=0.0, ge=0)
 
-    # --- Admin bootstrap (optional) ---
+    # --- Admin and Pro-user bootstrap (optional) ---
     admin_email: str = ""
     admin_password: str = ""
+    # JSON array of {"email": "...", "password": "...", "name": "..."} objects.
+    pro_users_json: str = ""
 
     @property
     def database_url(self) -> str:

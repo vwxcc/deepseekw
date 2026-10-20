@@ -823,17 +823,27 @@ class AIRouter:
             return
         try:
             async with SessionLocal() as db:
-                await record(
-                    db,
-                    user_id=job.user_id,
-                    chat_id=job.chat_id,
-                    message_id=job.message_id,
-                    entry=entry,
-                    action=action,
-                    tokens_in=tin,
-                    tokens_out=tout,
-                    tokens_cached=tcached,
-                )
+                if action.startswith("agent_step_") or action.endswith("_race_lost"):
+                    # These are extra paid calls attached to the same answer. Add their
+                    # tokens to the message stats as well as the usage journal.
+                    await account(
+                        db, job.chat_id, entry.model_set_id, tin, tout,
+                        entry=entry, user_id=job.user_id, message_id=job.message_id,
+                        action=action, tokens_cached=tcached,
+                    )
+                else:
+                    # The main answer counters are added in _finish to avoid double-counting.
+                    await record(
+                        db,
+                        user_id=job.user_id,
+                        chat_id=job.chat_id,
+                        message_id=job.message_id,
+                        entry=entry,
+                        action=action,
+                        tokens_in=tin,
+                        tokens_out=tout,
+                        tokens_cached=tcached,
+                    )
                 await db.commit()
         except Exception as e:  # noqa: BLE001 - accounting must never break a chat
             log.warning("Billing failed (%s): %s", action, e)

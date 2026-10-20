@@ -226,6 +226,7 @@ async def complete_chat(
     timeout: float,
     disable_thinking: bool = True,
     effort: str | None = None,
+    error_env_prefix: str = "QWEN",
 ) -> str:
     url = _endpoint(base_url)
     payload = _build_payload(

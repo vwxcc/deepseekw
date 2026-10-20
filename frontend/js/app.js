@@ -1719,11 +1719,12 @@
   }
 
   function latestActivityLabel(n) {
+    // While generating, the configured status model owns the compact status label.
+    const modelStatus = String(n && n.statusModelCurrent || '').trim();
+    if (modelStatus) return modelStatus;
     const items = activityItems(n);
     const latest = items.length ? items[items.length - 1] : null;
-    return String(latest && latest.text || (n && n.stage === 'search'
-      ? 'Обрабатываю запрос…'
-      : 'Подготавливаю ответ…'));
+    return String(latest && latest.text || 'Готовлю статус…');
   }
 
   function formatActivityDuration(ms) {
@@ -2171,7 +2172,7 @@
     }).join('');
     const placeholder = generating && !items.length
       ? '<div class="activity-row active">' + icon('sparkle', 'activity-status-icon') +
-        '<span class="activity-text">Обрабатываю запрос…</span>' + thinkAnim() + '</div>' : '';
+        '<span class="activity-text">Готовлю статус…</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
     const execution = expanded && runs.length
       ? '<div class="activity-execution">' + toolRunsHtml(runs) + '</div>' : '';
@@ -4415,7 +4416,12 @@
               const item = streamContext.previewStatuses[streamContext.previewStatusIndex++];
               const statusText = typeof item === 'string' ? item : String(item && item.text || '');
               if (statusText.trim()) {
-                appendActivity(streamContext.node, { kind: 'status', text: statusText });
+                const n = (state.currentChatId === streamContext.chatId
+                  ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
+                // Keep the current model-generated status separate from transport/stage events.
+                n.statusModelCurrent = stripActivityEmoji(statusText);
+                streamContext.node.statusModelCurrent = n.statusModelCurrent;
+                appendActivity(n, { kind: 'status', text: n.statusModelCurrent });
                 if (state.currentChatId === streamContext.chatId) {
                   renderMessageInPlace(streamContext.assistantId);
                   bindStreamRefs();
@@ -4432,10 +4438,7 @@
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.stage = data.stage || '';
-            if (data.stage === 'search') appendActivity(n, { kind: 'status', text: 'Обрабатываю запрос' });
-            else if (data.stage === 'routing') appendActivity(n, { kind: 'status', text: 'Подбираю способ решения' });
-            else if (data.stage === 'generation') { /* statuses are supplied by the parallel status model */ }
-            else if (data.stage) appendActivity(n, { kind: 'status', text: 'Подготавливаю ответ' });
+            // Do not replace status-model progress with generic transport labels.
             renderActivityPopup(n);
             if (state.currentChatId === streamContext.chatId) {
               renderMessageInPlace(streamContext.assistantId);
@@ -4445,8 +4448,10 @@
         } else if (ev === 'ui_status') {
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
-          if (n) {
-            appendActivity(n, { kind: 'status', text: data.text || '' });
+          const statusText = stripActivityEmoji(data.text || '');
+          const genericTransportStatus = /^(?:думаю|передаю запрос|обрабатываю запрос|получаю ответ от модели|подготавливаю ответ|подбираю способ решения|ожидаю завершения предыдущего ответа)[.…! ]*$/iu;
+          if (n && statusText && !genericTransportStatus.test(statusText.trim())) {
+            appendActivity(n, { kind: 'status', text: statusText });
             if (state.currentChatId === streamContext.chatId) {
               renderMessageInPlace(streamContext.assistantId);
               bindStreamRefs();

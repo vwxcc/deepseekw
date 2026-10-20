@@ -4408,7 +4408,12 @@
             n.publicStream = String(n.publicStream || '') + deltaText;
             n.creating = false;
             state.streamStarted = true;
-            scheduleDeltaRender(n);
+            if (needsAnswerBody && state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(streamContext.assistantId);
+              bindStreamRefs();
+            } else {
+              scheduleDeltaRender(n);
+            }
           }
           if (state.currentChatId === streamContext.chatId && state.draftTail) {
             state.draftTail.textContent = tailText(state.streamBuf, 260);

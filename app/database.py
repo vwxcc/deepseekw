@@ -83,6 +83,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "is_router": "BOOLEAN DEFAULT 0",
         "description": "TEXT DEFAULT ''",
         "free_access": "BOOLEAN DEFAULT 1",
+        "is_default": "BOOLEAN DEFAULT 0",
     },
     "plan_limits": {
         "text_value": "TEXT",

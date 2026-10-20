@@ -373,6 +373,7 @@ class ModelSetOut(ORMModel):
     route_type: str
     is_active: bool
     free_access: bool = True
+    is_default: bool = False
     is_router: bool = False
     entries: list[ModelSetEntryOut] = Field(default_factory=list)
 
@@ -391,6 +392,7 @@ class ModelSetUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     free_access: bool | None = None
     is_active: bool | None = None
+    is_default: bool | None = None
 
 
 class ModelSetEntryIn(BaseModel):

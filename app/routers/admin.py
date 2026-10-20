@@ -100,6 +100,27 @@ async def update_model_set(
         ms.free_access = bool(data.free_access)
     if data.is_active is not None:
         ms.is_active = data.is_active
+    if data.is_default is not None:
+        if data.is_default:
+            has_active_entry = any(bool(entry.is_active) for entry in (ms.entries or []))
+            if (
+                not ms.is_active
+                or ms.route_type != RouteType.MAIN
+                or ms.is_router
+                or not has_active_entry
+            ):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Для модели по умолчанию нужен активный MAIN-кластер с активной моделью",
+                )
+            others = await db.execute(select(ModelSet).where(ModelSet.id != ms.id))
+            for other in others.scalars().all():
+                other.is_default = False
+            ms.is_default = True
+        else:
+            ms.is_default = False
+    if not ms.is_active:
+        ms.is_default = False
     await db.commit()
     return model_set_out(await _get_set(db, set_id))
 

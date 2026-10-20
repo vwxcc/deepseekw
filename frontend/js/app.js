@@ -2143,11 +2143,19 @@
     const visibleItems = generating && items.length ? [items[items.length - 1]] : items;
     const rows = visibleItems.map((item, index) => {
       const last = generating && index === visibleItems.length - 1;
+      const statusEmoji = item.kind === 'status'
+        ? String(item.text || '').match(/^(\p{Extended_Pictographic}\uFE0F?)\s*/u)
+        : null;
+      const displayActivityText = statusEmoji
+        ? String(item.text || '').slice(statusEmoji[0].length)
+        : item.text;
       const symbol = item.kind === 'action'
         ? icon(ACTIVITY_ICON_NAMES.has(item.icon) ? item.icon : 'sparkle', 'activity-icon')
-        : '<span class="activity-bullet" aria-hidden="true">' + activityStatusEmoji(item.text) + '</span>';
-      return '<div class="activity-row' + (last ? ' active' : '') + '">' + symbol +
-        '<span class="activity-text">' + escapeHtml(item.text) + '</span>' +
+        : '<span class="activity-bullet" aria-hidden="true">' +
+          (statusEmoji ? statusEmoji[1] : activityStatusEmoji(item.text)) + '</span>';
+      return '<div class="activity-row' + (last ? ' active' : '') +
+        (item.kind === 'status' ? ' status-row' : '') + '">' + symbol +
+        '<span class="activity-text">' + escapeHtml(displayActivityText) + '</span>' +
         (last ? thinkAnim() : '') + '</div>';
     }).join('');
     const placeholder = generating && !items.length
@@ -4169,6 +4177,15 @@
       node: null,
       renderFrame: 0,
       pendingRenderNode: null,
+      statusTimer: null,
+      previewStatuses: [],
+      previewStatusIndex: 0,
+    };
+    const stopPreviewStatuses = () => {
+      if (streamContext.statusTimer) {
+        window.clearInterval(streamContext.statusTimer);
+        streamContext.statusTimer = null;
+      }
     };
     const flushPendingDeltaRender = () => {
       if (streamContext.renderFrame) {
@@ -4368,6 +4385,34 @@
             renderMessages();
           }
           if (ev === 'assistant_message') bindStreamRefs();
+        } else if (ev === 'status_preview') {
+          const statuses = Array.isArray(data.statuses) ? data.statuses : [];
+          if (streamContext.node && statuses.length && !state.streamStarted) {
+            stopPreviewStatuses();
+            streamContext.previewStatuses = statuses.slice(0, 60);
+            streamContext.previewStatusIndex = 0;
+            const showNextPreviewStatus = () => {
+              if (state.streamStarted || !streamContext.node || !streamContext.previewStatuses.length) {
+                stopPreviewStatuses();
+                return;
+              }
+              const item = streamContext.previewStatuses[
+                streamContext.previewStatusIndex % streamContext.previewStatuses.length
+              ];
+              streamContext.previewStatusIndex += 1;
+              const statusText = typeof item === 'string'
+                ? item : (String(item && item.emoji || '🔄') + ' ' + String(item && item.text || 'Проверяю детали'));
+              appendActivity(streamContext.node, { kind: 'status', text: statusText });
+              if (state.currentChatId === streamContext.chatId) {
+                renderMessageInPlace(streamContext.assistantId);
+                bindStreamRefs();
+              }
+            };
+            showNextPreviewStatus();
+            streamContext.statusTimer = window.setInterval(showNextPreviewStatus, 2800);
+          }
+        } else if (ev === 'status_stop') {
+          stopPreviewStatuses();
         } else if (ev === 'stage') {
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
@@ -4375,7 +4420,7 @@
             n.stage = data.stage || '';
             if (data.stage === 'search') appendActivity(n, { kind: 'status', text: 'Обрабатываю запрос' });
             else if (data.stage === 'routing') appendActivity(n, { kind: 'status', text: 'Подбираю способ решения' });
-            else if (data.stage === 'generation') appendActivity(n, { kind: 'status', text: 'Отправляю запрос основной модели' });
+            else if (data.stage === 'generation') { /* statuses are supplied by the parallel status model */ }
             else if (data.stage) appendActivity(n, { kind: 'status', text: 'Подготавливаю ответ' });
             renderActivityPopup(n);
             if (state.currentChatId === streamContext.chatId) {
@@ -4406,6 +4451,7 @@
         } else if (ev === 'thinking') {
           // Provider-private reasoning is deliberately not rendered or copied into the UI.
         } else if (ev === 'delta') {
+          stopPreviewStatuses();
           const deltaText = data.text || '';
           state.streamBuf += deltaText;
           const n = (state.currentChatId === streamContext.chatId
@@ -4522,6 +4568,7 @@
           renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'done') {
+          stopPreviewStatuses();
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
           const completeAnswer = String((data && data.text) || state.streamBuf || '');
@@ -4556,6 +4603,7 @@
           }
           loadUsage();
         } else if (ev === 'error') {
+          stopPreviewStatuses();
           maybeOpenBudgetModal(data && (data.error || data.detail || data));
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
@@ -4568,6 +4616,7 @@
             if (state.currentChatId === streamContext.chatId) renderMessageInPlace(n.id);
           }
         } else if (ev === 'cancelled') {
+          stopPreviewStatuses();
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, data.message_id || streamContext.assistantId) : null) || streamContext.node;
           if (n) {
@@ -4626,6 +4675,7 @@
       }
       state.tmpUser = null; state.tmpAssistant = null;
     } finally {
+      stopPreviewStatuses();
       if (streamContext.pendingRenderNode) flushPendingDeltaRender();
       if (watchdog) clearTimeout(watchdog);
       if (window.__aichActiveStream === streamContext) window.__aichActiveStream = null;

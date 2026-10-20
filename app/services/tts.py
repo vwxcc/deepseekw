@@ -3,12 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 from pathlib import Path
 
 import httpx
 
 from ..config import settings
+from ..database import SessionLocal
+from ..models import ReadableTextModelConfig
+from .auxiliary_models import record_auxiliary_usage
+
+
+log = logging.getLogger("chatstudio.tts")
 
 
 AUDIO_FORMATS = {"mp3", "opus", "aac", "flac", "wav", "pcm"}
@@ -32,7 +39,7 @@ class TTSGenerationError(RuntimeError):
     """Raised when the configured TTS provider cannot return usable audio."""
 
 
-def _provider_error_detail(response: httpx.Response) -> str:
+def _provider_error_detail(response: httpx.Response, extra_secrets: tuple[str, ...] = ()) -> str:
     """Extract a short, safe provider error message without exposing credentials."""
     try:
         data = response.json()
@@ -52,7 +59,7 @@ def _provider_error_detail(response: httpx.Response) -> str:
     detail = "".join(ch if ch.isprintable() else " " for ch in detail)
     detail = " ".join(detail.split())
     # Error payloads should not echo credentials, but redact them defensively.
-    for secret in (settings.tts_api_key, settings.tts_preprocess_api_key):
+    for secret in (settings.tts_api_key, settings.tts_preprocess_api_key, *extra_secrets):
         secret = str(secret or "").strip()
         if secret:
             detail = detail.replace(secret, "[redacted]")
@@ -76,33 +83,55 @@ def _validated_api_key(value: str, setting_name: str) -> str:
     return key
 
 
-async def prepare_spoken_text(value: str) -> str:
-    """Use one explicitly configured OpenAI-compatible model to verbalize notation."""
-    dedicated_preprocessor = any((
-        str(settings.tts_preprocess_base_url or "").strip(),
-        str(settings.tts_preprocess_api_key or "").strip(),
-        str(settings.tts_preprocess_model or "").strip(),
-    ))
-    if dedicated_preprocessor:
-        base_url = (settings.tts_preprocess_base_url or "").strip().rstrip("/")
-        api_key = _validated_api_key(settings.tts_preprocess_api_key, "TTS_PREPROCESS_API_KEY")
-        model = (settings.tts_preprocess_model or "").strip()
-        if not base_url or not model:
-            raise TTSNotConfiguredError(
-                "Для отдельного ИИ-подготовщика задайте TTS_PREPROCESS_BASE_URL "
-                "и TTS_PREPROCESS_MODEL (а при необходимости — TTS_PREPROCESS_API_KEY)."
-            )
-    else:
-        # Reuse the configured main Qwen-compatible API when no dedicated
-        # speech-preprocessing model has been configured.
-        base_url = (settings.qwen_base_url or "").strip().rstrip("/")
-        api_key = _validated_api_key(settings.qwen_api_key, "QWEN_API_KEY")
-        model = (settings.qwen_model or "").strip()
-        if not base_url or not model:
-            raise TTSNotConfiguredError(
-                "Для подготовки читабельного текста настройте TTS_PREPROCESS_* "
-                "или основной QWEN_BASE_URL, QWEN_API_KEY и QWEN_MODEL."
-            )
+async def prepare_spoken_text(
+    value: str, *, user_id: str | None = None, chat_id: str | None = None,
+    message_id: str | None = None
+) -> str:
+    """Use the admin-configured standalone model, with legacy environment fallback."""
+    config_price_in = config_price_out = 0.0
+    config_source = "legacy"
+    try:
+        async with SessionLocal() as config_db:
+            admin_config = await config_db.get(ReadableTextModelConfig, 1)
+            if admin_config and admin_config.is_enabled:
+                base_url = str(admin_config.base_url or "").strip().rstrip("/")
+                api_key = _validated_api_key(admin_config.api_key, "READABLE_TEXT_MODEL_API_KEY")
+                model = str(admin_config.model or "").strip()
+                if not base_url or not model:
+                    raise TTSNotConfiguredError(
+                        "Укажите Base URL и ID модели читабельного текста в панели администратора."
+                    )
+                config_price_in = float(admin_config.price_in or 0.0)
+                config_price_out = float(admin_config.price_out or 0.0)
+                config_source = "admin"
+    except TTSNotConfiguredError:
+        raise
+    except Exception as exc:
+        log.debug("Cannot load readable-text model settings: %s", type(exc).__name__)
+    if config_source == "legacy":
+        dedicated_preprocessor = any((
+            str(settings.tts_preprocess_base_url or "").strip(),
+            str(settings.tts_preprocess_api_key or "").strip(),
+            str(settings.tts_preprocess_model or "").strip(),
+        ))
+        if dedicated_preprocessor:
+            base_url = (settings.tts_preprocess_base_url or "").strip().rstrip("/")
+            api_key = _validated_api_key(settings.tts_preprocess_api_key, "TTS_PREPROCESS_API_KEY")
+            model = (settings.tts_preprocess_model or "").strip()
+            if not base_url or not model:
+                raise TTSNotConfiguredError(
+                    "Для отдельного ИИ-подготовщика задайте TTS_PREPROCESS_BASE_URL "
+                    "и TTS_PREPROCESS_MODEL (а при необходимости — TTS_PREPROCESS_API_KEY)."
+                )
+        else:
+            base_url = (settings.qwen_base_url or "").strip().rstrip("/")
+            api_key = _validated_api_key(settings.qwen_api_key, "QWEN_API_KEY")
+            model = (settings.qwen_model or "").strip()
+            if not base_url or not model:
+                raise TTSNotConfiguredError(
+                    "Для подготовки читабельного текста настройте TTS_PREPROCESS_* "
+                    "или основной QWEN_BASE_URL, QWEN_API_KEY и QWEN_MODEL."
+                )
     source = str(value or "").strip()
     if not source:
         raise ValueError("В ответе нет текста для озвучки.")
@@ -160,7 +189,7 @@ async def prepare_spoken_text(value: str) -> str:
     except httpx.HTTPError as exc:
         raise TTSGenerationError("Не удалось связаться с ИИ-подготовщиком озвучки.") from exc
     if response.status_code < 200 or response.status_code >= 300:
-        detail = _provider_error_detail(response)
+        detail = _provider_error_detail(response, (api_key,))
         suffix = f": {detail}" if detail else ""
         raise TTSGenerationError(
             f"ИИ-подготовщик озвучки вернул HTTP {response.status_code}{suffix}"
@@ -170,6 +199,7 @@ async def prepare_spoken_text(value: str) -> str:
         prepared = data["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise TTSGenerationError("ИИ-подготовщик озвучки вернул ответ неизвестного формата.") from exc
+    response_usage = data.get("usage") if isinstance(data, dict) else None
     if isinstance(prepared, list):
         prepared = " ".join(
             item.get("text", "") for item in prepared if isinstance(item, dict)
@@ -177,6 +207,16 @@ async def prepare_spoken_text(value: str) -> str:
     prepared = clean_tts_text(str(prepared or ""))
     if not prepared:
         raise TTSGenerationError("ИИ-подготовщик вернул пустой текст для озвучки.")
+    try:
+        await record_auxiliary_usage(
+            user_id=user_id, chat_id=chat_id, message_id=message_id,
+            model=model, price_in=config_price_in, price_out=config_price_out,
+            action="readable_text",
+            prompt_text=system_prompt + "\n" + source,
+            response_text=prepared, usage=response_usage,
+        )
+    except Exception:
+        log.exception("Could not account for readable-text model usage")
     return prepared
 
 

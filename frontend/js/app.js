@@ -5168,7 +5168,9 @@
       const description = String(set.description || '').trim() || 'Универсальные задачи';
       const context = entry && Number(entry.context_len) > 0 ? 'Контекст ' + fmtNum(entry.context_len) : '';
       return '<button type="button" role="option" aria-selected="' + String(isSelected) + '" class="model-option' + (isSelected ? ' selected' : '') + (locked ? ' locked' : '') + '" data-model-index="' + modelIndex + '">' +
-        '<span class="model-option-head"><b>' + escapeHtml(set.name) + '</b>' + (locked ? '<span class="model-pro-badge">Доступно на Pro</span>' : (isSelected ? '<span class="model-option-check">' + icon('check') + '</span>' : '')) + '</span>' +
+        '<span class="model-option-head"><b>' + escapeHtml(set.name) + '</b>' +
+        (!set.free_access ? '<span class="model-pro-badge">Доступно на Pro</span>' : '') +
+        (isSelected ? '<span class="model-option-check">' + icon('check') + '</span>' : '') + '</span>' +
         '<span class="model-option-desc">' + escapeHtml(description) + '</span>' +
         (context ? '<span class="model-option-meta">' + escapeHtml(context) + '</span>' : '') + '</button>';
     }).join('');

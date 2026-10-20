@@ -42,6 +42,9 @@ def cost_usd(
     tin = max(0, int(tokens_in or 0))
     tout = max(0, int(tokens_out or 0))
     tcached = min(max(0, int(tokens_cached or 0)), tin)
+    # A zero cache rate means it is not configured, not that cached input is free.
+    if pcache <= 0 and pin > 0:
+        pcache = pin
     # cached tokens are billed at the cache rate instead of the full input rate
     billed_in = max(0, tin - tcached)
     total = (
@@ -117,14 +120,20 @@ async def account(
         chat = await db.get(Chat, chat_id)
         user_id = chat.user_id if chat is not None else None
 
-    row = (
-        await db.execute(
-            select(Message)
-            .where(Message.chat_id == chat_id, Message.role == Role.assistant)
-            .order_by(Message.created_at.desc())
-            .limit(1)
-        )
-    ).scalars().first()
+    row = None
+    if message_id:
+        candidate = await db.get(Message, message_id)
+        if candidate is not None and candidate.chat_id == chat_id and candidate.role == Role.assistant:
+            row = candidate
+    if row is None:
+        row = (
+            await db.execute(
+                select(Message)
+                .where(Message.chat_id == chat_id, Message.role == Role.assistant)
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
     if row is not None:
         row.tokens_in = (row.tokens_in or 0) + int(tokens_in or 0)
         row.tokens_out = (row.tokens_out or 0) + int(tokens_out or 0)

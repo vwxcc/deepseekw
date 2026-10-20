@@ -198,17 +198,20 @@ async def stream_chat(
         messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
         stream=True, disable_thinking=disable_thinking, effort=effort,
     )
-    try:
-        async for item in _stream_once(url, payload, api_key, timeout):
-            yield item
-    except ProviderError as e:
-        # some backends reject reasoning_effort -> retry once without it
-        if "reasoning_effort" in payload and "400" in str(e):
-            payload.pop("reasoning_effort", None)
-            payload["chat_template_kwargs"] = {"enable_thinking": True}
+    payload["stream_options"] = {"include_usage": True}
+    while True:
+        try:
             async for item in _stream_once(url, payload, api_key, timeout):
                 yield item
-        else:
+            break
+        except ProviderError as exc:
+            if "reasoning_effort" in payload and "400" in str(exc):
+                payload.pop("reasoning_effort", None)
+                payload["chat_template_kwargs"] = {"enable_thinking": True}
+                continue
+            if "stream_options" in payload and "400" in str(exc):
+                payload.pop("stream_options", None)
+                continue
             raise
 
 

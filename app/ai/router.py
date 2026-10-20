@@ -46,7 +46,6 @@ from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, image_search, read_search_results, read_web_page, web_search
 from . import model_sets as ms
 from . import prompts
-from .provider_config import apply_primary_provider_overrides
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -419,6 +418,20 @@ def _estimate_text_tokens(value) -> tuple[int, int]:
     return 0, 0
 
 
+def _usage_or_estimate(usage: dict | None, messages: list[dict], output_text: str) -> dict:
+    """Prefer provider token counts; estimate only missing counters if the gateway omits usage."""
+    result = dict(usage or {})
+    if int(result.get("prompt_tokens") or 0) <= 0:
+        text_tokens, image_tokens = _estimate_text_tokens(messages)
+        result["prompt_tokens"] = max(1, text_tokens + image_tokens)
+        result["_usage_estimated"] = True
+    if int(result.get("completion_tokens") or 0) <= 0:
+        text_tokens, image_tokens = _estimate_text_tokens(output_text or "")
+        result["completion_tokens"] = max(1, text_tokens + image_tokens)
+        result["_usage_estimated"] = True
+    return result
+
+
 def _estimated_model_call_cost(
     entry: "EntryConfig", messages: list[dict], max_tokens: int | None = None
 ) -> float:
@@ -505,74 +518,41 @@ class AIRouter:
     # --- single primary model ---------------------------------------------
 
     async def _resolve_entries(
-        self,
-        route_type: RouteType,
-        model_set_id: str | None = None,
+        self, route_type: RouteType, model_set_id: str | None = None,
     ) -> tuple[str, str, list[EntryConfig]]:
-        """Resolve the configured primary MAIN model."""
-        del route_type, model_set_id
+        """Resolve one active model from the selected MAIN cluster."""
+        del route_type  # titles and compression use this same cluster
         async with SessionLocal() as db:
-            result = await db.execute(
-                select(ModelSet)
-                .where(
-                    ModelSet.route_type == RouteType.MAIN,
-                    ModelSet.is_active.is_(True),
-                    ModelSet.is_router.is_(False),
-                )
-                .order_by(ModelSet.name, ModelSet.id)
-            )
-            candidates = result.scalars().all()
-            mset = None
-            entries = []
-            for candidate in candidates:
-                active_entries = await ms.get_active_entries(db, candidate.id)
-                if active_entries:
-                    mset = candidate
-                    # The first configured entry is the primary. No fallback chain.
-                    entries = active_entries[:1]
-                    break
+            if model_set_id:
+                mset = await db.get(ModelSet, model_set_id)
+                if mset is None or not mset.is_active or mset.is_router or mset.route_type != RouteType.MAIN:
+                    raise ProviderError("Выбранный кластер не найден или выключен")
+                entries = (await ms.get_active_entries(db, mset.id))[:1]
+            else:
+                result = await db.execute(select(ModelSet).where(
+                    ModelSet.route_type == RouteType.MAIN, ModelSet.is_active.is_(True),
+                    ModelSet.is_router.is_(False)).order_by(ModelSet.name, ModelSet.id))
+                mset, entries = None, []
+                for candidate in result.scalars().all():
+                    active = await ms.get_active_entries(db, candidate.id)
+                    if active:
+                        mset, entries = candidate, active[:1]
+                        break
             if mset is None or not entries:
-                raise ProviderError(
-                    "Нет активной основной модели. Включите основной MAIN-набор "
-                    "без Auto Routing и добавьте в него активную модель."
-                )
+                raise ProviderError("Нет активного кластера. Включите кластер и добавьте активную модель.")
             e = entries[0]
-            primary_provider, primary_base_url, primary_api_key, primary_model = (
-                apply_primary_provider_overrides(
-                    e.provider, e.base_url, e.api_key, e.model
-                )
-            )
-            temperature = e.temperature
-            max_tokens = e.max_tokens
-            price_in = (
-                settings.qwen_price_in if settings.qwen_price_in is not None
-                else (getattr(e, "price_in", 0.0) or 0.0)
-            )
-            price_out = (
-                settings.qwen_price_out if settings.qwen_price_out is not None
-                else (getattr(e, "price_out", 0.0) or 0.0)
-            )
-            price_cache = (
-                settings.qwen_price_cache if settings.qwen_price_cache is not None
-                else (getattr(e, "price_cache", 0.0) or 0.0)
-            )
-            entry_id, resolved_name = e.id, mset.name
-            configs = [EntryConfig(
-                id=entry_id,
-                model_set_id=e.model_set_id,
-                provider=primary_provider,
-                base_url=primary_base_url,
-                api_key=primary_api_key,
-                model=primary_model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=e.timeout,
+            # The provider reports token usage; pricing belongs to the selected cluster row.
+            config = EntryConfig(
+                id=e.id, model_set_id=e.model_set_id, provider=(e.provider or "openai").strip(),
+                base_url=(e.base_url or "").strip().rstrip("/"), api_key=(e.api_key or "").strip(),
+                model=e.model, temperature=float(e.temperature if e.temperature is not None else 0.2),
+                max_tokens=int(e.max_tokens or 32000), timeout=int(e.timeout or 300),
                 max_parallel=int(getattr(e, "max_parallel", 2) or 2),
-                price_in=float(price_in),
-                price_out=float(price_out),
-                price_cache=float(price_cache),
-            )]
-            return mset.id, resolved_name, configs
+                price_in=float(getattr(e, "price_in", 0.0) or 0.0),
+                price_out=float(getattr(e, "price_out", 0.0) or 0.0),
+                price_cache=float(getattr(e, "price_cache", 0.0) or 0.0),
+            )
+            return mset.id, mset.name, [config]
 
 
     def _fast_qwen_entry(self, primary: EntryConfig) -> EntryConfig | None:
@@ -822,10 +802,11 @@ class AIRouter:
                         json.dumps(sources, ensure_ascii=False) if sources else None
                     )
                 if usage:
-                    msg.tokens_in = int(usage.get("prompt_tokens") or 0)
-                    msg.tokens_out = int(usage.get("completion_tokens") or 0)
+                    # Preserve tokens that title/search helpers already added to the same assistant message.
+                    msg.tokens_in = int(msg.tokens_in or 0) + int(usage.get("prompt_tokens") or 0)
+                    msg.tokens_out = int(msg.tokens_out or 0) + int(usage.get("completion_tokens") or 0)
                     details = usage.get("prompt_tokens_details") or {}
-                    msg.tokens_cached = int(details.get("cached_tokens") or 0)
+                    msg.tokens_cached = int(msg.tokens_cached or 0) + int(details.get("cached_tokens") or 0)
                 await db.commit()
 
     async def _bill(
@@ -1006,6 +987,8 @@ class AIRouter:
                 continue
             if job.cancel.is_set():
                 await emit_items(markup.finish())
+                usage = _usage_or_estimate(usage, messages, full + ("\n" + thinking if thinking else ""))
+                await self._bill(job, entry, usage, "main")
                 await self._finish(
                     job.message_id,
                     MessageStatus.cancelled,
@@ -1030,6 +1013,7 @@ class AIRouter:
                     answer_status_sent = True
                 await emit_items(markup.feed(piece))
         await emit_items(markup.finish())
+        usage = _usage_or_estimate(usage, messages, full + ("\n" + thinking if thinking else ""))
         return full, thinking, usage
 
     async def _attach_run_files(self, job: Job, result: dict) -> list[dict]:
@@ -1225,6 +1209,7 @@ class AIRouter:
         queries: list[str] = []
         image_query = ""
         answer = ""
+        search_usage = None
         explicit_none = False
         if use_model_queries:
             search_messages = [
@@ -1240,16 +1225,12 @@ class AIRouter:
                 if blocked:
                     log.info("Skipping paid search query planning: %s", blocked)
                 else:
-                    answer = await complete_chat(
-                        messages=search_messages,
-                        base_url=entry.base_url,
-                        api_key=entry.api_key,
-                        model=entry.model,
-                        temperature=0.0,
-                        max_tokens=160,
-                        timeout=min(entry.timeout or 60, 45),
-                        disable_thinking=True,
+                    answer, search_usage = await complete_chat_with_usage(
+                        messages=search_messages, base_url=entry.base_url, api_key=entry.api_key,
+                        model=entry.model, temperature=0.0, max_tokens=160,
+                        timeout=min(entry.timeout or 60, 45), disable_thinking=True,
                     )
+                    search_usage = _usage_or_estimate(search_usage, search_messages, answer)
                 text = (answer or "").strip()
                 explicit_none = text.casefold() == "none"
                 for raw_line in text.splitlines():
@@ -1359,23 +1340,20 @@ class AIRouter:
             sum(1 for item in results if item.get("page_text")), len(image_results),
         )
 
-        # The query-planning call is billable even if a provider returns no hits.
-        if answer:
+        # Query-planning consumes tokens even if no web results are found.
+        if search_usage:
             try:
                 async with SessionLocal() as db:
-                    await record(
-                        db,
-                        user_id=job.user_id,
-                        chat_id=job.chat_id,
-                        message_id=job.message_id,
-                        entry=entry,
-                        action="search_queries",
-                        tokens_in=est(SEARCH_QUERIES_SYSTEM) + est(job.search_query),
-                        tokens_out=est(answer),
+                    details = search_usage.get("prompt_tokens_details") or {}
+                    await account(
+                        db, job.chat_id, entry.model_set_id,
+                        int(search_usage.get("prompt_tokens") or 0), int(search_usage.get("completion_tokens") or 0),
+                        entry=entry, user_id=job.user_id, message_id=job.message_id,
+                        action="search_queries", tokens_cached=int(details.get("cached_tokens") or 0),
                     )
                     await db.commit()
-            except Exception as e:  # noqa: BLE001
-                log.warning("Search accounting failed: %s", type(e).__name__)
+            except Exception as exc:
+                log.warning("Search accounting failed: %s", type(exc).__name__)
 
         # Keep visual results independent from text-page deduplication and limits.
         return results[:8] + image_results[:4], answer
@@ -1951,16 +1929,16 @@ class AIRouter:
             await self._run_title(job)
 
     async def _run_title(self, job: Job) -> None:
+        """Generate the title using the selected cluster and bill its usage."""
         blocked = await self._budget_error(job)
         if blocked:
             log.info("Skipping title generation: %s", blocked)
             return
         try:
-            _, _, entries = await self._resolve_entries(RouteType.TITLE)
-        except ProviderError as e:
-            log.warning("Title generation skipped: %s", e)
+            _, _, entries = await self._resolve_entries(RouteType.MAIN, job.model_set_id)
+        except ProviderError as exc:
+            log.warning("Title generation skipped: %s", exc)
             return
-
         messages = [
             {"role": "system", "content": prompts.TITLE_SYSTEM},
             {"role": "user", "content": (job.user_text or "")[:2000]},
@@ -1971,43 +1949,34 @@ class AIRouter:
             if entry is None:
                 return
             try:
-                blocked = await self._budget_error(
-                    job, _estimated_model_call_cost(entry, messages, max_tokens=96)
-                )
+                blocked = await self._budget_error(job, _estimated_model_call_cost(entry, messages, max_tokens=96))
                 if blocked:
-                    log.info("Skipping title generation: %s", blocked)
+                    log.info("Skipping title generation: budget exhausted")
                     return
-                raw = await complete_chat(
-                    messages=messages,
-                    base_url=entry.base_url,
-                    api_key=entry.api_key,
-                    model=entry.model,
-                    temperature=0.3,
-                    max_tokens=96,
-                    timeout=min(entry.timeout, 60),
-                    disable_thinking=True,
+                raw, usage = await complete_chat_with_usage(
+                    messages=messages, base_url=entry.base_url, api_key=entry.api_key,
+                    model=entry.model, temperature=entry.temperature, max_tokens=96,
+                    timeout=min(entry.timeout, 60), disable_thinking=True,
                 )
+                usage = _usage_or_estimate(usage, messages, raw)
                 title = _clean_title(raw)
+                details = usage.get("prompt_tokens_details") or {}
+                async with SessionLocal() as db:
+                    chat = await db.get(Chat, job.chat_id)
+                    if chat is not None and title:
+                        chat.title = title
+                    await account(
+                        db, job.chat_id, entry.model_set_id,
+                        int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0),
+                        entry=entry, user_id=job.user_id, message_id=job.message_id,
+                        action="title", tokens_cached=int(details.get("cached_tokens") or 0),
+                    )
+                    await db.commit()
                 if title:
-                    async with SessionLocal() as db:
-                        chat = await db.get(Chat, job.chat_id)
-                        if chat is not None:
-                            chat.title = title
-                        await account(
-                            db,
-                            job.chat_id,
-                            entry.model_set_id,
-                            est(prompts.TITLE_SYSTEM) + est((job.user_text or "")[:2000]),
-                            est(title),
-                            entry=entry,
-                            user_id=job.user_id,
-                            message_id=job.message_id,
-                            action="title",
-                        )
-                        await db.commit()
                     return
-            except Exception as e:
-                log.warning("Title entry %s failed: %s", entry.label, e)
+                tried.add(entry.id)
+            except Exception as exc:
+                log.warning("Title entry %s failed: %s", entry.label, type(exc).__name__)
                 tried.add(entry.id)
             finally:
                 await pool.release(entry)

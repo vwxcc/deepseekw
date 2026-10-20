@@ -6056,7 +6056,7 @@
       }
       $('#save-status-model', root).addEventListener('click', () => saveAux('status-model','/api/admin/status-model'));
       $('#save-readable-model', root).addEventListener('click', () => saveAux('readable-model','/api/admin/readable-text-model'));
-      $('[data-edit-set]', root).forEach(b => b.addEventListener('click', () => { const set = sets.find(s => s.id === b.dataset.editSet); if (set) editSetForm(root,set,rerender); }));
+      $$('[data-edit-set]', root).forEach(b => b.addEventListener('click', () => { const set = sets.find(s => s.id === b.dataset.editSet); if (set) editSetForm(root,set,rerender); }));
       $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => { if (!confirm('Удалить кластер и его модели?')) return; await api.del('/api/admin/model-sets/' + b.dataset.delSet); await rerender(); await loadModelSets(); }));
       $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => { await api.patch('/api/admin/model-sets/' + b.dataset.toggle, {is_active:b.dataset.active !== '1'}); await rerender(); await loadModelSets(); }));
       $$('[data-default]', root).forEach(b => b.addEventListener('click', async () => {

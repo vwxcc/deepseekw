@@ -25,7 +25,7 @@ from ..deps import (
 )
 from ..config import settings
 from ..database import SessionLocal
-from ..services.auxiliary_models import generate_statuses
+from ..services.progress_statuses import select_progress_statuses
 from ..models import (
     AudioGeneration,
     Attachment,
@@ -103,18 +103,6 @@ def _json(model) -> dict:
     return model.model_dump(mode="json")
 
 
-async def _emit_status_preview(job: Job) -> None:
-    """Publish only query-specific statuses returned by the configured status model."""
-    try:
-        statuses = await generate_statuses(job)
-        if statuses and not job.cancel.is_set():
-            await job.output.put(("status_preview", statuses))
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        log.exception("Auxiliary status generation failed")
-
-
 async def _stream_job(
     request: Request,
     job: Job,
@@ -130,7 +118,10 @@ async def _stream_job(
     yield _sse("assistant_message", _json(message_out(assistant)))
 
     finished = False
-    status_task = asyncio.create_task(_emit_status_preview(job))
+    # Send prewritten, keyword-matched statuses immediately; no auxiliary model call.
+    statuses = select_progress_statuses(getattr(job, "user_text", ""))
+    if statuses:
+        yield _sse("status_preview", {"statuses": statuses})
     try:
         while True:
             try:
@@ -222,9 +213,6 @@ async def _stream_job(
             if await request.is_disconnected():
                 break
     finally:
-        if not status_task.done():
-            status_task.cancel()
-        await asyncio.gather(status_task, return_exceptions=True)
         if not finished:
             # Keep the primary generation alive after the browser disconnects, but
             # drain its unbounded event queue until the worker persists the result.

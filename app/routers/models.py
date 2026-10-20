@@ -25,7 +25,24 @@ async def list_sets(
         .order_by(ModelSet.name, ModelSet.id)
     )
     sets = result.scalars().all()
-    return [model_set_out(ms) for ms in sets if any(bool(e.is_active) for e in (ms.entries or []))]
+    public_sets = [
+        model_set_out(ms)
+        for ms in sets
+        if any(bool(e.is_active) for e in (ms.entries or []))
+    ]
+    # The public selector needs display names and context limits, not provider model IDs.
+    # Keep the full identifiers available through the separate admin model-configuration routes.
+    return [
+        model_set.model_copy(
+            update={
+                "entries": [
+                    entry.model_copy(update={"model": ""})
+                    for entry in model_set.entries
+                ]
+            }
+        )
+        for model_set in public_sets
+    ]
 
 
 @router.get("/stats", response_model=list[ModelStatOut])

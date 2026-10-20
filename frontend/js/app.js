@@ -1755,22 +1755,29 @@
       .replace(/\s+/g, ' ').trim();
   }
 
-  function activityStatusIconName(text) {
+  function activityStatusEmoji(text, n) {
+    const savedEmoji = String(n && n.statusModelEmoji || '').trim();
+    if (savedEmoji) return savedEmoji;
     const value = stripActivityEmoji(text).toLowerCase();
-    if (/(ошиб|не удалось|недоступ|сбой|failed|error)/u.test(value)) return 'wrench';
-    if (/(интернет|поиск|источник|веб|сайт|страниц|ссылк)/u.test(value)) return 'search';
-    if (/(код|песочниц|запуск|выполн|исполн|скрипт|программ|команд)/u.test(value)) return 'terminal';
-    if (/(вычис|математ|формул|уравнен|арифмет|расч[её]т)/u.test(value)) return 'calculator';
-    if (/(презентац|слайд)/u.test(value)) return 'presentation';
-    if (/(таблиц|excel|xlsx|csv|ячейк|данн)/u.test(value)) return 'table';
-    if (/(изображ|фото|картин|рисунк|svg|png)/u.test(value)) return 'image';
-    if (/(график|диаграм|метрик|аналитик)/u.test(value)) return 'chart-line';
-    if (/(файл|документ|pdf|docx|текст|письм|формулир)/u.test(value)) return 'file-text';
-    if (/(план|этап|структур|порядок|шаг)/u.test(value)) return 'list-checks';
-    if (/(провер|сверя|готов|заверш|результат|итог|точност|противореч)/u.test(value)) return 'check-circle';
-    if (/(объясн|анализ|сравн|истор|литератур|исслед|контекст)/u.test(value)) return 'book-open';
-    if (/(связ|маршрут|выбира|вариант|решени|подход)/u.test(value)) return 'compass';
-    return 'sparkle';
+    if (/(ошиб|не удалось|недоступ|сбой|failed|error)/u.test(value)) return '🛠️';
+    if (/(интернет|поиск|источник|веб|сайт|страниц|ссылк)/u.test(value)) return '🔎';
+    if (/(код|песочниц|запуск|выполн|исполн|скрипт|программ|команд|python|javascript)/u.test(value)) return '💻';
+    if (/(вычис|математ|формул|уравнен|арифмет|расч[её]т)/u.test(value)) return '🧮';
+    if (/(презентац|слайд)/u.test(value)) return '📊';
+    if (/(таблиц|excel|xlsx|csv|ячейк|данн)/u.test(value)) return '📋';
+    if (/(изображ|фото|картин|рисунк|svg|png|визуал)/u.test(value)) return '🎨';
+    if (/(график|диаграм|метрик|аналитик)/u.test(value)) return '📈';
+    if (/(файл|документ|pdf|docx|текст|письм|формулир)/u.test(value)) return '📄';
+    if (/(план|этап|структур|порядок|шаг)/u.test(value)) return '🗂️';
+    if (/(перевод|язык|терминолог)/u.test(value)) return '🌐';
+    if (/(провер|сверя|готов|заверш|результат|итог|точност|противореч)/u.test(value)) return '🔍';
+    if (/(объясн|анализ|сравн|истор|литератур|исслед|контекст)/u.test(value)) return '📚';
+    if (/(связ|маршрут|выбира|вариант|решени|подход)/u.test(value)) return '🧭';
+    return '✨';
+  }
+
+  function latestActivityEmoji(n) {
+    return activityStatusEmoji(latestActivityLabel(n), n);
   }
 
   function deviceCodeForFilePlan(planSource) {
@@ -2161,14 +2168,16 @@
         : item.text;
       const symbol = item.kind === 'action'
         ? icon(ACTIVITY_ICON_NAMES.has(item.icon) ? item.icon : 'sparkle', 'activity-icon')
-        : icon(activityStatusIconName(displayActivityText), 'activity-status-icon');
+        : (item.kind === 'status'
+          ? '<span class="activity-status-emoji" aria-hidden="true">' + escapeHtml(activityStatusEmoji(displayActivityText, n)) + '</span>'
+          : icon('sparkle', 'activity-status-icon'));
       return '<div class="activity-row' + (last ? ' active' : '') +
         (item.kind === 'status' ? ' status-row' : '') + '">' + symbol +
         '<span class="activity-text">' + escapeHtml(displayActivityText) + '</span>' +
         (last ? thinkAnim() : '') + '</div>';
     }).join('');
     const placeholder = generating && !items.length
-      ? '<div class="activity-row active">' + icon('sparkle', 'activity-status-icon') +
+      ? '<div class="activity-row active"><span class="activity-status-emoji" aria-hidden="true">🧠</span>' +
         '<span class="activity-text">Думаю</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
     const execution = expanded && runs.length
@@ -2180,7 +2189,7 @@
       '<div class="activity-head"><button type="button" class="activity-summary-button" data-activity-toggle="' +
       escapeHtml(n.id) + '" aria-expanded="' + String(expanded) + '">' +
       '<span data-activity-elapsed="' + escapeHtml(n.id) + '">' +
-      (generating ? escapeHtml(latestActivityLabel(n)) : 'Думал ' + duration) + '</span>' +
+      (generating ? escapeHtml(latestActivityEmoji(n) + ' ' + latestActivityLabel(n)) : 'Думал ' + duration) + '</span>' +
       icon(expanded ? 'chevron-up' : 'chevron-down') + '</button></div>' +
       '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + fullStream + (rows || placeholder) + execution + '</div>' +
       deviceFallbackHtml(n, runs) +
@@ -4250,7 +4259,7 @@
         : null;
       if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
           !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {
-        elapsedEl.textContent = latestActivityLabel(elapsedNode);
+        elapsedEl.textContent = latestActivityEmoji(elapsedNode) + ' ' + latestActivityLabel(elapsedNode);
       }
     }, 1000);
     const controller = new AbortController();
@@ -4398,6 +4407,9 @@
         } else if (ev === 'status_preview') {
           const statuses = Array.isArray(data.statuses) ? data.statuses : [];
           if (streamContext.node && statuses.length) {
+            const selectedEmoji = String(data.emoji || '✨');
+            streamContext.statusEmoji = selectedEmoji;
+            streamContext.node.statusModelEmoji = selectedEmoji;
             stopPreviewStatuses();
             streamContext.previewStatuses = statuses.slice(0, 60);
             streamContext.previewStatusIndex = 0;
@@ -4417,7 +4429,9 @@
                   ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
                 // Keep the current model-generated status separate from transport/stage events.
                 n.statusModelCurrent = stripActivityEmoji(statusText);
+                n.statusModelEmoji = streamContext.statusEmoji || '✨';
                 streamContext.node.statusModelCurrent = n.statusModelCurrent;
+                streamContext.node.statusModelEmoji = n.statusModelEmoji;
                 appendActivity(n, { kind: 'status', text: n.statusModelCurrent });
                 if (state.currentChatId === streamContext.chatId) {
                   renderMessageInPlace(streamContext.assistantId);

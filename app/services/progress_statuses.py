@@ -401,3 +401,41 @@ def select_progress_statuses(user_text: Any) -> list[str]:
         if secondary_score >= max(2, primary_score * 0.6):
             return list(primary[:7] + secondary[:3])
     return list(primary)
+
+_CATEGORY_EMOJI = {
+    "debugging": "🛠️",
+    "presentation": "📊",
+    "mathematics": "🧮",
+    "research": "🔎",
+    "spreadsheet_data": "📋",
+    "image_design": "🎨",
+    "translation": "🌐",
+    "api_database": "🗄️",
+    "coding": "💻",
+    "analysis": "🔍",
+    "learning": "📚",
+    "planning": "🗂️",
+    "summary": "📝",
+    "creative_writing": "✍️",
+    "communication": "💬",
+    "document": "📄",
+    "science": "🔬",
+    "general": "✨",
+}
+
+
+def select_progress_emoji(user_text: Any) -> str:
+    """Choose the topic emoji using the same keywords as the status library."""
+    text = str(user_text or "").casefold().replace("ё", "е")[:10000]
+    scored: list[tuple[int, int, str]] = []
+    for order, (name, keywords, _statuses) in enumerate(_CATEGORIES):
+        if name == "general":
+            continue
+        score = sum(1 for keyword in keywords if keyword.replace("ё", "е") in text)
+        if score:
+            scored.append((score, -order, name))
+    if not scored:
+        return _CATEGORY_EMOJI["general"]
+    scored.sort(reverse=True)
+    return _CATEGORY_EMOJI.get(scored[0][2], _CATEGORY_EMOJI["general"])
+

@@ -25,7 +25,7 @@ from ..deps import (
 )
 from ..config import settings
 from ..database import SessionLocal
-from ..services.progress_statuses import select_progress_statuses
+from ..services.progress_statuses import select_progress_emoji, select_progress_statuses
 from ..models import (
     AudioGeneration,
     Attachment,
@@ -119,10 +119,12 @@ async def _stream_job(
 
     finished = False
     # Send prewritten, keyword-matched statuses immediately; no auxiliary model call.
-    statuses = select_progress_statuses(getattr(job, "user_text", ""))
+    user_text = getattr(job, "user_text", "")
+    statuses = select_progress_statuses(user_text)
+    status_emoji = select_progress_emoji(user_text)
     try:
         if statuses:
-            yield _sse("status_preview", {"statuses": statuses})
+            yield _sse("status_preview", {"statuses": statuses, "emoji": status_emoji})
         while True:
             try:
                 kind, payload = await asyncio.wait_for(job.output.get(), timeout=900)

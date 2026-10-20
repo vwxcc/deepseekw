@@ -2545,6 +2545,7 @@ body { font-weight: 400; }
 .activity-icon { display: inline-block; flex: 0 0 17px; width: 17px; height: 17px; color: #77756e; stroke-width: 1.55; fill: none; }
 .activity-bullet { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 17px; width: 17px; color: #929087; font-size: 20px; line-height: 1; }
 .activity-status-icon { display: inline-block; flex: 0 0 16px; width: 16px; height: 16px; color: #89867d; stroke-width: 1.65; fill: none; }
+.activity-status-emoji { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; width: 18px; font-size: 15px; line-height: 1; }
 .activity-row.status-row { font-size: 13.8px; }
 .activity-row .think-anim { width: 18px; height: 18px; flex: 0 0 18px; margin-left: 0; }
 .activity-row .think-anim .core { width: 7px; height: 7px; }

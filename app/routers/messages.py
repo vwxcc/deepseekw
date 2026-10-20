@@ -106,13 +106,17 @@ def _json(model) -> dict:
 async def _emit_status_preview(job: Job) -> None:
     """Generate statuses in parallel and show a local sequence if the model is slow."""
     generation_task = asyncio.create_task(generate_statuses(job))
+    fallback_sent = False
     try:
         done, _ = await asyncio.wait({generation_task}, timeout=1.2)
         if not done and not job.cancel.is_set():
             await job.output.put(("status_preview", fallback_statuses()))
+            fallback_sent = True
         statuses = await generation_task
         if statuses and not job.cancel.is_set():
             await job.output.put(("status_preview", statuses))
+        elif not fallback_sent and not job.cancel.is_set():
+            await job.output.put(("status_preview", fallback_statuses()))
     except asyncio.CancelledError:
         if not generation_task.done():
             generation_task.cancel()
@@ -120,6 +124,8 @@ async def _emit_status_preview(job: Job) -> None:
         raise
     except Exception:
         log.exception("Auxiliary status generation failed")
+        if not fallback_sent and not job.cancel.is_set():
+            await job.output.put(("status_preview", fallback_statuses()))
 
 
 async def _stream_job(

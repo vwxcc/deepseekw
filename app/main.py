@@ -124,8 +124,8 @@ async def health() -> dict:
         "app": settings.app_name,
         "version": settings.app_version,
         "sandbox": {
-            "enabled": bool(settings.run_sandbox_enabled),
-            "state": "enabled" if settings.run_sandbox_enabled else "disabled",
+            "enabled": bool(settings.sandbox_url),
+            "state": "configured" if settings.sandbox_url else "unconfigured",
         },
     }
 

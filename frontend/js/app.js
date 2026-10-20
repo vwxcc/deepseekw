@@ -1719,9 +1719,9 @@
   }
 
   function latestActivityLabel(n) {
-    // The compact live label is reserved for the dedicated status model.
+    // While the dedicated status model is preparing its first status, show the usual thinking label.
     const modelStatus = String(n && n.statusModelCurrent || '').trim();
-    return modelStatus || 'Готовлю статус…';
+    return modelStatus || 'Думаю';
   }
 
   function formatActivityDuration(ms) {
@@ -2169,7 +2169,7 @@
     }).join('');
     const placeholder = generating && !items.length
       ? '<div class="activity-row active">' + icon('sparkle', 'activity-status-icon') +
-        '<span class="activity-text">Готовлю статус…</span>' + thinkAnim() + '</div>' : '';
+        '<span class="activity-text">Думаю</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
     const execution = expanded && runs.length
       ? '<div class="activity-execution">' + toolRunsHtml(runs) + '</div>' : '';

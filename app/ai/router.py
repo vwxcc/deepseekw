@@ -1633,20 +1633,10 @@ class AIRouter:
                             answer = blocked
                             usage = None
                             break
+                        # Fast-Qwen race is intentionally paused: stream the configured
+                        # primary model directly so the user sees tokens immediately.
                         response_entry = entry
-                        fast_entry = self._fast_qwen_entry(entry)
-                        if fast_entry is not None:
-                            raced = await self._race_primary_and_fast(job, entry, fast_entry, messages)
-                            if raced is None:
-                                return
-                            got, response_entry = raced
-                            # Both answers were buffered until a full answer won.
-                            # Only now expose the selected answer to the client.
-                            selected_text = str(got[0] or got[1] or "")
-                            if selected_text.strip():
-                                await job.output.put(("delta", selected_text))
-                        else:
-                            got = await self._stream_once(job, entry, messages)
+                        got = await self._stream_once(job, entry, messages)
                         if got is None:
                             return
                         full, thinking, usage = got

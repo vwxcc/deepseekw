@@ -12,6 +12,41 @@ from collections.abc import AsyncIterator
 import httpx
 
 
+_PROVIDER_CLIENT: httpx.AsyncClient | None = None
+
+
+def init_provider_client() -> None:
+    """Create a shared keep-alive client for model-provider requests."""
+    global _PROVIDER_CLIENT
+    if _PROVIDER_CLIENT is None or _PROVIDER_CLIENT.is_closed:
+        _PROVIDER_CLIENT = httpx.AsyncClient(
+            timeout=httpx.Timeout(300.0),
+            limits=httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            ),
+        )
+
+
+async def close_provider_client() -> None:
+    """Close the shared client cleanly during application shutdown."""
+    global _PROVIDER_CLIENT
+    client = _PROVIDER_CLIENT
+    _PROVIDER_CLIENT = None
+    if client is not None and not client.is_closed:
+        await client.aclose()
+
+
+def _get_provider_client() -> httpx.AsyncClient:
+    client = _PROVIDER_CLIENT
+    if client is None or client.is_closed:
+        init_provider_client()
+        client = _PROVIDER_CLIENT
+    assert client is not None
+    return client
+
+
 class ProviderError(Exception):
     pass
 
@@ -111,38 +146,38 @@ def _extract_text(message: dict) -> str:
 async def _stream_once(
     url: str, payload: dict, api_key: str, timeout: float
 ) -> AsyncIterator[tuple[str, str]]:
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream(
-            "POST", url, json=payload, headers=_headers(api_key)
-        ) as resp:
-            if resp.status_code >= 400:
-                body = (await resp.aread()).decode(errors="replace")
-                raise ProviderError(
-                    _format_http_error(resp.status_code, body, str(payload.get("model") or ""))
-                )
-            async for line in resp.aiter_lines():
-                if not line or not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    obj = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                usage = obj.get("usage")
-                if isinstance(usage, dict) and usage:
-                    yield ("usage", json.dumps(usage))
-                choices = obj.get("choices") or []
-                if not choices:
-                    continue
-                delta = choices[0].get("delta") or {}
-                rpiece = delta.get("reasoning")
-                if isinstance(rpiece, str) and rpiece:
-                    yield ("thinking", rpiece)
-                piece = delta.get("content")
-                if isinstance(piece, str) and piece:
-                    yield ("content", piece)
+    client = _get_provider_client()
+    async with client.stream(
+        "POST", url, json=payload, headers=_headers(api_key), timeout=timeout
+    ) as resp:
+        if resp.status_code >= 400:
+            body = (await resp.aread()).decode(errors="replace")
+            raise ProviderError(
+                _format_http_error(resp.status_code, body, str(payload.get("model") or ""))
+            )
+        async for line in resp.aiter_lines():
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                obj = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            usage = obj.get("usage")
+            if isinstance(usage, dict) and usage:
+                yield ("usage", json.dumps(usage))
+            choices = obj.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            rpiece = delta.get("reasoning")
+            if isinstance(rpiece, str) and rpiece:
+                yield ("thinking", rpiece)
+            piece = delta.get("content")
+            if isinstance(piece, str) and piece:
+                yield ("content", piece)
 
 
 async def stream_chat(
@@ -196,8 +231,9 @@ async def complete_chat(
     )
 
     async def _once(pl: dict) -> str:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=pl, headers=_headers(api_key))
+        resp = await _get_provider_client().post(
+            url, json=pl, headers=_headers(api_key), timeout=timeout
+        )
             if resp.status_code >= 400:
                 raise ProviderError(
                     _format_http_error(
@@ -242,8 +278,9 @@ async def complete_chat_with_usage(
     )
 
     async def _once(pl: dict) -> tuple[str, dict | None]:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=pl, headers=_headers(api_key))
+        resp = await _get_provider_client().post(
+            url, json=pl, headers=_headers(api_key), timeout=timeout
+        )
             if resp.status_code >= 400:
                 raise ProviderError(
                     _format_http_error(resp.status_code, resp.text, str(pl.get("model") or ""))

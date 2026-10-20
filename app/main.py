@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai.router import router as ai_router
+from .ai.providers import close_provider_client, init_provider_client
 from .bootstrap import bootstrap
 from .config import settings
 from .database import init_db
@@ -83,13 +84,17 @@ async def lifespan(app: FastAPI):
     )
     await init_db()
     await bootstrap()
+    init_provider_client()
     await ai_router.start()
     watchdog = asyncio.create_task(_storage_watchdog())
     try:
         yield
     finally:
         watchdog.cancel()
-        await ai_router.stop()
+        try:
+            await ai_router.stop()
+        finally:
+            await close_provider_client()
 
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)

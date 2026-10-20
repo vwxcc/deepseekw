@@ -954,6 +954,7 @@ class AIRouter:
         thinking = ""
         usage: dict | None = None
         markup = ActivityMarkupParser()
+        answer_status_sent = False
 
         async def emit_items(items) -> None:
             nonlocal full
@@ -1019,6 +1020,14 @@ class AIRouter:
                 # the explicit activity markers and the public answer stream.
                 thinking += piece
             else:
+                if not answer_status_sent:
+                    status_event = ("ui_status", "Получаю ответ от модели")
+                    if defer_output:
+                        if deferred_events is not None:
+                            deferred_events.append(status_event)
+                    else:
+                        await job.output.put(status_event)
+                    answer_status_sent = True
                 await emit_items(markup.feed(piece))
         await emit_items(markup.finish())
         return full, thinking, usage
@@ -1376,7 +1385,7 @@ class AIRouter:
     ) -> tuple[list[dict], list[dict]]:
         """Search, fold the results into the prompt and return (history, sources)."""
         system_prompt = job.system_prompt
-        # Specialized, repository-bundled skill files are loaded only for relevant requests.
+        # Add task-specific instructions exactly once, after the base system prompt was built by the API layer.
         skill_context = prompts.skills_for(job.user_text)
         if skill_context:
             system_prompt = f"{system_prompt}\n\n{skill_context}"
@@ -1635,6 +1644,9 @@ class AIRouter:
                             break
                         # Fast-Qwen race is intentionally paused: stream the configured
                         # primary model directly so the user sees tokens immediately.
+                        await job.output.put(
+                            ("stage", json.dumps({"stage": "generation"}))
+                        )
                         response_entry = entry
                         got = await self._stream_once(job, entry, messages)
                         if got is None:

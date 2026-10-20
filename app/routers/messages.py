@@ -440,12 +440,6 @@ async def _spawn(
     execution_target = execution_target if execution_target in {"site", "device", "both"} else "site"
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
-    system_prompt += prompts.skills_for(_last_user_text(history_messages))
-    history_messages, trimmed = _trim_history(
-        history_messages, settings.model_context_len
-    )
-    if trimmed:
-        system_prompt += prompts.CONTEXT_LIMIT_NOTE
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
@@ -499,6 +493,7 @@ async def _spawn(
         mode=mode,
         execution_target=execution_target,
         project=chat.id if mode == "code" else None,
+        user_text=_last_user_text(history_messages),
         system_prompt=system_prompt,
         history_messages=history_messages,
     )
@@ -601,16 +596,11 @@ async def send_message(
     if data.effort:
         chat.effort = data.effort
 
-    history_messages = await ancestor_chain(
-        db, user_msg.id, summary_upto=chat.summary_upto
-    )
-    history_messages, trimmed = _trim_history(
-        history_messages, await _model_context(db, None)
-    )
+    # Keep the complete ancestor chain; do not trim older turns before sending to the model.
+    history_messages = await ancestor_chain(db, user_msg.id)
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
-    system_prompt += prompts.skills_for(content)
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     if trimmed:
         system_prompt += prompts.CONTEXT_LIMIT_NOTE

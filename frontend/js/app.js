@@ -1710,6 +1710,14 @@
     renderActivityPopup(n);
   }
 
+  function latestActivityLabel(n) {
+    const items = activityItems(n);
+    const latest = items.length ? items[items.length - 1] : null;
+    return String(latest && latest.text || (n && n.stage === 'search'
+      ? 'Обрабатываю запрос…'
+      : 'Подготавливаю ответ…'));
+  }
+
   function formatActivityDuration(ms) {
     const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
     if (total < 60) return total + ' сек.';
@@ -2149,7 +2157,7 @@
       '<div class="activity-head"><button type="button" class="activity-summary-button" data-activity-toggle="' +
       escapeHtml(n.id) + '" aria-expanded="' + String(expanded) + '">' +
       '<span data-activity-elapsed="' + escapeHtml(n.id) + '">' +
-      (generating ? 'Думаю · ' + duration : 'Думал ' + duration) + '</span>' +
+      (generating ? escapeHtml(latestActivityLabel(n)) : 'Думал ' + duration) + '</span>' +
       icon(expanded ? 'chevron-up' : 'chevron-down') + '</button></div>' +
       '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + fullStream + (rows || placeholder) + execution + '</div>' +
       deviceFallbackHtml(n, runs) +
@@ -4151,6 +4159,31 @@
       startChatOpenToken: state.chatOpenToken,
       assistantId: null,
       node: null,
+      renderFrame: 0,
+      pendingRenderNode: null,
+    };
+    const flushPendingDeltaRender = () => {
+      if (streamContext.renderFrame) {
+        cancelAnimationFrame(streamContext.renderFrame);
+        streamContext.renderFrame = 0;
+      }
+      const pendingNode = streamContext.pendingRenderNode;
+      streamContext.pendingRenderNode = null;
+      if (!pendingNode) return;
+      renderActivityPopup(pendingNode);
+      if (state.currentChatId === streamContext.chatId && streamContext.assistantId) {
+        renderMessageInPlace(streamContext.assistantId);
+        bindStreamRefs();
+      }
+      maybeScroll();
+    };
+    const scheduleDeltaRender = (node) => {
+      if (node) streamContext.pendingRenderNode = node;
+      if (streamContext.renderFrame) return;
+      streamContext.renderFrame = requestAnimationFrame(() => {
+        streamContext.renderFrame = 0;
+        flushPendingDeltaRender();
+      });
     };
     window.__aichActiveStream = streamContext;
     state.streamEl = null; state.thinkBody = null; state.draftTail = null;
@@ -4182,8 +4215,7 @@
         : null;
       if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
           !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {
-        elapsedEl.textContent = 'Выполняю запрос · ' +
-          formatActivityDuration(activityElapsed(elapsedNode, true));
+        elapsedEl.textContent = latestActivityLabel(elapsedNode);
       }
     }, 1000);
     const controller = new AbortController();
@@ -4258,6 +4290,7 @@
       await consumeSse(res, (ev, data) => {
         armWatchdog(330000);
         state.lastEvent = Date.now();
+        if (ev !== 'delta' && streamContext.pendingRenderNode) flushPendingDeltaRender();
         if (ev === 'chat_created') {
           // The combined endpoint tells the UI which chat now owns this stream.
           if (data && typeof data === 'object' && data.id) {
@@ -4334,6 +4367,7 @@
             n.stage = data.stage || '';
             if (data.stage === 'search') appendActivity(n, { kind: 'status', text: 'Обрабатываю запрос' });
             else if (data.stage === 'routing') appendActivity(n, { kind: 'status', text: 'Подбираю способ решения' });
+            else if (data.stage === 'generation') appendActivity(n, { kind: 'status', text: 'Отправляю запрос основной модели' });
             else if (data.stage) appendActivity(n, { kind: 'status', text: 'Подготавливаю ответ' });
             renderActivityPopup(n);
             if (state.currentChatId === streamContext.chatId) {
@@ -4374,18 +4408,11 @@
             n.publicStream = String(n.publicStream || '') + deltaText;
             n.creating = false;
             state.streamStarted = true;
-            renderActivityPopup(n);
-          }
-          if (n && state.currentChatId === streamContext.chatId) {
-            // Update the visible answer as chunks arrive, not just the activity panel.
-            // Keep the same message node and rebind controls created by live Markdown.
-            renderMessageInPlace(streamContext.assistantId);
-            bindStreamRefs();
+            scheduleDeltaRender(n);
           }
           if (state.currentChatId === streamContext.chatId && state.draftTail) {
             state.draftTail.textContent = tailText(state.streamBuf, 260);
           }
-          maybeScroll();
         } else if (ev === 'memory') {
           const n = findNode(state.tree, state.activeAssistantId);
           if (n) n.memories = (n.memories || []).concat(data.items || []);
@@ -4586,6 +4613,7 @@
       }
       state.tmpUser = null; state.tmpAssistant = null;
     } finally {
+      if (streamContext.pendingRenderNode) flushPendingDeltaRender();
       if (watchdog) clearTimeout(watchdog);
       if (window.__aichActiveStream === streamContext) window.__aichActiveStream = null;
       setStreaming(false);

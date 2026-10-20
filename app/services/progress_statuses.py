@@ -387,7 +387,7 @@ def select_progress_statuses(user_text: Any) -> list[str]:
     for order, (name, keywords, statuses) in enumerate(_CATEGORIES):
         if name == "general":
             continue
-        score = sum(1 for keyword in keywords if keyword in text)
+        score = sum(1 for keyword in keywords if keyword.replace("ё", "е") in text)
         if score:
             scored.append((score, -order, statuses))
 

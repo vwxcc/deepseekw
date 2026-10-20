@@ -120,9 +120,9 @@ async def _stream_job(
     finished = False
     # Send prewritten, keyword-matched statuses immediately; no auxiliary model call.
     statuses = select_progress_statuses(getattr(job, "user_text", ""))
-    if statuses:
-        yield _sse("status_preview", {"statuses": statuses})
     try:
+        if statuses:
+            yield _sse("status_preview", {"statuses": statuses})
         while True:
             try:
                 kind, payload = await asyncio.wait_for(job.output.get(), timeout=900)

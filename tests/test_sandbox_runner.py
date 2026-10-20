@@ -7,18 +7,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.config import Settings
 from sandbox import server
 
 
 class SandboxRunnerTests(unittest.TestCase):
     def test_legacy_disable_env_is_not_a_server_execution_gate(self) -> None:
         with patch.dict(os.environ, {"RUN_SANDBOX_ENABLED": "0"}, clear=False):
-            config = Settings(_env_file=None)
+            self.assertEqual(os.environ["RUN_SANDBOX_ENABLED"], "0")
+            root = Path(__file__).resolve().parents[1]
+            config_source = (root / "app" / "config.py").read_text(encoding="utf-8")
+            router_source = (root / "app" / "ai" / "router.py").read_text(encoding="utf-8")
 
-        self.assertFalse(hasattr(config, "run_sandbox_enabled"))
-        router_path = Path(__file__).resolve().parents[1] / "app" / "ai" / "router.py"
-        router_source = router_path.read_text(encoding="utf-8")
+        self.assertNotIn("RUN_SANDBOX_ENABLED", config_source)
+        self.assertNotIn("run_sandbox_enabled", config_source)
         self.assertNotIn("run_sandbox_enabled", router_source)
 
     @unittest.skipUnless(

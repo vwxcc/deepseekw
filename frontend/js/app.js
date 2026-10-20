@@ -5947,8 +5947,8 @@
       $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
       $$('[data-edit-set]', root).forEach(b => b.addEventListener('click', () => { const set = sets.find(s => s.id === b.dataset.editSet); if (set) editSetForm(root,set,rerender); }));
       $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => { if (!confirm('Удалить кластер и его модели?')) return; await api.del('/api/admin/model-sets/' + b.dataset.delSet); await rerender(); await loadModelSets(); }));
-      $('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => { await api.patch('/api/admin/model-sets/' + b.dataset.toggle, {is_active:b.dataset.active !== '1'}); await rerender(); await loadModelSets(); }));
-      $('[data-default]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => { await api.patch('/api/admin/model-sets/' + b.dataset.toggle, {is_active:b.dataset.active !== '1'}); await rerender(); await loadModelSets(); }));
+      $$('[data-default]', root).forEach(b => b.addEventListener('click', async () => {
         try {
           await api.patch('/api/admin/model-sets/' + b.dataset.default, {is_default:true});
           await rerender();
@@ -5956,7 +5956,7 @@
           toast('Модель по умолчанию обновлена для всех пользователей');
         } catch (e) { toast('Не удалось изменить модель по умолчанию: ' + e.message, 'error'); }
       }));
-      $('[data-del-entry]', root).forEach(b => { const [sid,eid] = b.dataset.delEntry.split('|'); b.addEventListener('click', async () => { await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); await rerender(); await loadModelSets(); }); });
+      $$('[data-del-entry]', root).forEach(b => { const [sid,eid] = b.dataset.delEntry.split('|'); b.addEventListener('click', async () => { await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); await rerender(); await loadModelSets(); }); });
       $$('[data-edit-entry]', root).forEach(b => { const [sid,eid] = b.dataset.editEntry.split('|'); b.addEventListener('click', () => editEntryForm(root,sid,eid,rerender)); });
       $$('[data-add-entry]', root).forEach(b => b.addEventListener('click', () => addEntryForm(root,b.dataset.addEntry,rerender)));
     }

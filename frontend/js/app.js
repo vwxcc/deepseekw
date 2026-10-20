@@ -5884,12 +5884,14 @@
         f.type === 'html' ? (f.html || '') :
         '<label>' + escapeHtml(f.label) +
         (f.type === 'select'
-          ? '<select id="' + f.id + '">' + f.options.map(o => '<option>' + escapeHtml(o) + '</option>').join('') + '</select>'
-          : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
-            (f.type === 'number' ? ' step="any"' : '') +
-            (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
-            (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') +
-            (f.calc ? ' data-calc="1" inputmode="decimal"' : '') + ' />') +
+          ? '<select id="' + f.id + '">' + f.options.map(o => '<option' + (f.selected === o ? ' selected' : '') + '>' + escapeHtml(o) + '</option>').join('') + '</select>'
+          : f.type === 'textarea'
+            ? '<textarea id="' + f.id + '" rows="3"' + (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') + '>' + escapeHtml(f.value || '') + '</textarea>'
+            : '<input id="' + f.id + '" type="' + (f.type || 'text') + '"' +
+              (f.type === 'number' ? ' step="any"' : '') +
+              (f.value !== undefined ? ' value="' + escapeHtml(f.value) + '"' : '') +
+              (f.placeholder ? ' placeholder="' + escapeHtml(f.placeholder) + '"' : '') +
+              (f.calc ? ' data-calc="1" inputmode="decimal"' : '') + ' />') +
         (f.note ? '<span class="field-note">' + f.note + '</span>' : '') +
         '</label>').join('') + '</div>' +
       '<div class="row"><button class="ghost" data-cancel>Отмена</button>' +
@@ -5902,147 +5904,119 @@
 
   async function openModelSetsAdmin() {
     const root = $('#modal-root');
-
     async function rerender() {
-      const sets = await api.get('/api/admin/model-sets');
-      const body = sets.length ? sets.map(s =>
-        '<div class="ms-set"><div class="ms-head">' +
-          '<span class="ms-route">' + escapeHtml(s.route_type) + '</span>' +
-          '<b>' + escapeHtml(s.name) + '</b>' +
-          '<span class="ms-slug">' + escapeHtml(s.slug) + '</span>' +
-          '<span class="spacer" style="flex:1"></span>' +
-          '<button data-toggle="' + s.id + '" data-active="' + (s.is_active ? 1 : 0) + '">' +
-            (s.is_active ? 'вкл' : 'выкл') + '</button>' +
-          '<button data-del-set="' + s.id + '" title="Удалить набор">' + icon('trash') + '</button>' +
-        '</div><div class="ms-entries">' +
-          (s.entries.length ? s.entries.map(e =>
-            '<div class="ms-entry">' +
-              '<span class="ms-pos">' + e.position + '</span>' +
-              '<span class="ms-model">' + escapeHtml(e.model) + '</span>' +
-              '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
-              '<span class="ms-key">' + (e.has_api_key ? icon('check') : '—') + '</span>' +
-              '<span class="ms-price">' + (e.price_in || e.price_out
-                ? '$' + (e.price_in || 0) + ' / $' + (e.price_out || 0)
-                : '—') + '</span>' +
-              '<button data-edit-entry="' + s.id + '|' + e.id + '" title="Модель, цены, контекст, лимит ответа">Изменить</button>' +
-              '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button>' +
-            '</div>').join('') : '<div class="ms-empty">нет моделей</div>') +
-          '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button>' +
-        '</div></div>').join('') : '<p>Наборов нет.</p>';
-
-      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px">' +
-        '<h3>Model Sets</h3><div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div>' +
-        '<div class="row"><button class="ghost" data-add-set>' + icon('plus') + 'Набор</button>' +
-        '<span style="flex:1"></span><button class="solid" data-close>Закрыть</button></div></div></div>';
-
+      const sets = (await api.get('/api/admin/model-sets')).filter(s => s.route_type === 'MAIN' && !s.is_router);
+      const body = sets.length ? sets.map(s => '<div class="ms-set"><div class="ms-head">' +
+        '<b>' + escapeHtml(s.name) + '</b><span class="ms-slug">' + escapeHtml(s.slug) + '</span>' +
+        '<span class="ms-access ' + (s.free_access ? 'all' : 'pro') + '">' + (s.free_access ? 'Для всех' : 'Только Pro') + '</span>' +
+        '<span class="ms-description" title="' + escapeHtml(s.description || '') + '">' + escapeHtml(s.description || '') + '</span>' +
+        '<span class="spacer" style="flex:1"></span><button data-edit-set="' + s.id + '">Изменить</button>' +
+        '<button data-toggle="' + s.id + '" data-active="' + (s.is_active ? 1 : 0) + '">' + (s.is_active ? 'вкл' : 'выкл') + '</button>' +
+        '<button data-del-set="' + s.id + '" title="Удалить кластер">' + icon('trash') + '</button>' +
+        '</div><div class="ms-entries">' + ((s.entries || []).length ? s.entries.map(e =>
+          '<div class="ms-entry"><span class="ms-pos">' + e.position + '</span><span class="ms-model">' + escapeHtml(e.model) + '</span>' +
+          '<span class="ms-url" title="' + escapeHtml(e.base_url) + '">' + escapeHtml(e.base_url) + '</span>' +
+          '<span class="ms-key">' + (e.has_api_key ? icon('check') : '—') + '</span><span class="ms-price">' +
+          (e.price_in || e.price_out ? '$' + (e.price_in || 0) + ' / $' + (e.price_out || 0) : '—') + '</span>' +
+          '<button data-edit-entry="' + s.id + '|' + e.id + '" title="ID, цены, контекст, Temperature">Изменить</button>' +
+          '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button></div>').join('') : '<div class="ms-empty">нет моделей</div>') +
+          '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button></div></div>').join('') : '<p>Кластеров пока нет.</p>';
+      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px"><h3>Кластеры моделей</h3>' +
+        '<div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div><div class="row">' +
+        '<button class="ghost" data-add-set>' + icon('plus') + 'Добавить кластер</button><span style="flex:1"></span>' +
+        '<button class="solid" data-close>Закрыть</button></div></div></div>';
       $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
       $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
-      $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => {
-        if (!confirm('Удалить набор и все его модели?')) return;
-        await api.del('/api/admin/model-sets/' + b.dataset.delSet); rerender();
-      }));
-      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => {
-        await api.patch('/api/admin/model-sets/' + b.dataset.toggle,
-          { is_active: b.dataset.active !== '1' }); rerender();
-      }));
-      $$('[data-del-entry]', root).forEach(b => {
-        const [sid, eid] = b.dataset.delEntry.split('|');
-        b.addEventListener('click', async () => {
-          await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); rerender();
-        });
-      });
-      $$('[data-edit-entry]', root).forEach(b => {
-        const [sid, eid] = b.dataset.editEntry.split('|');
-        b.addEventListener('click', () => editEntryForm(root, sid, eid, rerender));
-      });
-      $$('[data-add-entry]', root).forEach(b =>
-        b.addEventListener('click', () => addEntryForm(root, b.dataset.addEntry, rerender)));
+      $$('[data-edit-set]', root).forEach(b => b.addEventListener('click', () => { const set = sets.find(s => s.id === b.dataset.editSet); if (set) editSetForm(root,set,rerender); }));
+      $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => { if (!confirm('Удалить кластер и его модели?')) return; await api.del('/api/admin/model-sets/' + b.dataset.delSet); await rerender(); await loadModelSets(); }));
+      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => { await api.patch('/api/admin/model-sets/' + b.dataset.toggle, {is_active:b.dataset.active !== '1'}); await rerender(); await loadModelSets(); }));
+      $$('[data-del-entry]', root).forEach(b => { const [sid,eid] = b.dataset.delEntry.split('|'); b.addEventListener('click', async () => { await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); await rerender(); await loadModelSets(); }); });
+      $$('[data-edit-entry]', root).forEach(b => { const [sid,eid] = b.dataset.editEntry.split('|'); b.addEventListener('click', () => editEntryForm(root,sid,eid,rerender)); });
+      $$('[data-add-entry]', root).forEach(b => b.addEventListener('click', () => addEntryForm(root,b.dataset.addEntry,rerender)));
     }
-
     await rerender();
   }
 
   function addSetForm(root, done) {
-    adminForm(root, 'Новый Model Set', [
-      { id: 'ms-name', label: 'Название', placeholder: 'Например: Qwen Fast' },
-      { id: 'ms-route', label: 'Маршрут', type: 'select', options: ['MAIN', 'TITLE', 'SUGGESTIONS'] },
+    adminForm(root, 'Новый кластер модели', [
+      {id:'ms-name',label:'Название для пользователя',placeholder:'Например: Быстрая модель'},
+      {id:'ms-desc',label:'Для каких задач',type:'textarea',placeholder:'Быстрые ответы, перевод, код, анализ…'},
+      {id:'ms-access',label:'Доступность',type:'select',options:['Доступно всем (Free и Pro)','Только Pro']},
     ], async () => {
-      await api.post('/api/admin/model-sets', {
-        name: $('#ms-name').value.trim(),
-        route_type: $('#ms-route').value,
-      });
+      await api.post('/api/admin/model-sets',{name:$('#ms-name').value.trim(),description:$('#ms-desc').value.trim(),free_access:$('#ms-access').value!=='Только Pro',route_type:'MAIN'});
+      await loadModelSets();
     }, done);
   }
 
+  function editSetForm(root, set, done) {
+    adminForm(root,'Настройки кластера',[
+      {id:'es-name',label:'Название для пользователя',value:set.name || ''},
+      {id:'es-desc',label:'Для каких задач',type:'textarea',value:set.description || ''},
+      {id:'es-access',label:'Доступность',type:'select',options:['Доступно всем (Free и Pro)','Только Pro'],selected:set.free_access?'Доступно всем (Free и Pro)':'Только Pro'},
+    ],async()=>{
+      await api.patch('/api/admin/model-sets/'+set.id,{name:$('#es-name').value.trim(),description:$('#es-desc').value.trim(),free_access:$('#es-access').value!=='Только Pro'});
+      await loadModelSets();
+    },done);
+  }
+
+
   function addEntryForm(root, setId, done) {
-    adminForm(root, 'Добавить модель в набор', [
-      { id: 'me-url', label: 'Base URL', placeholder: 'https://…/v1' },
-      { id: 'me-model', label: 'Модель', placeholder: 'qwen36-35b' },
-      { id: 'me-key', label: 'API-ключ', placeholder: 'sk-…' },
-      { id: 'me-pos', label: 'Позиция', type: 'number', value: '0' },
-      { id: 'me-temp', label: 'Temperature', type: 'number', value: '0.2' },
-      { id: 'me-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: '32000', calc: true },
-      { id: 'me-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: '0', calc: true },
-      { id: 'me-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: '0', calc: true },
-      { id: 'me-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: '0', calc: true },
-      { id: 'me-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: '0', calc: true },
-      { type: 'html', html: '<div id="me-calc" class="field-calc"></div>' },
+    adminForm(root, 'Модель и цена кластера', [
+      {id:'me-provider',label:'Совместимый провайдер',value:'openai'},
+      {id:'me-url',label:'Base URL',placeholder:'https://…/v1'},
+      {id:'me-model',label:'ID модели у провайдера',placeholder:'vendor/model-id'},
+      {id:'me-key',label:'API-ключ',placeholder:'Ключ провайдера'},
+      {id:'me-pos',label:'Позиция',type:'number',value:'0'},
+      {id:'me-temp',label:'Temperature',type:'number',value:'0.2'},
+      {id:'me-max',label:'Максимум токенов в ответе',type:'number',value:'32000',calc:true},
+      {id:'me-ctx',label:'Максимальный контекст, токенов (0 = общий)',type:'number',value:'0',calc:true},
+      {id:'me-pin',label:'Цена входа, $ за 1M токенов',type:'number',value:'0',calc:true},
+      {id:'me-pout',label:'Цена выхода, $ за 1M токенов',type:'number',value:'0',calc:true},
+      {id:'me-pcache',label:'Цена кэша, $ за 1M токенов (0 = цена входа)',type:'number',value:'0',calc:true},
+      {type:'html',html:'<div id="me-calc" class="field-calc"></div>'},
     ], async () => {
       await api.post('/api/admin/model-sets/' + setId + '/entries', {
-        base_url: $('#me-url').value.trim(),
-        model: $('#me-model').value.trim(),
-        api_key: $('#me-key').value,
-        position: parseInt($('#me-pos').value, 10) || 0,
-        temperature: parseFloat($('#me-temp').value) || 0.2,
-        max_tokens: parseInt($('#me-max').value, 10) || 32000,
-        context_len: parseInt($('#me-ctx').value, 10) || 0,
-        price_in: parseFloat($('#me-pin').value) || 0,
-        price_out: parseFloat($('#me-pout').value) || 0,
-        price_cache: parseFloat($('#me-pcache').value) || 0,
+        provider:$('#me-provider').value.trim() || 'openai', base_url:$('#me-url').value.trim(),
+        model:$('#me-model').value.trim(), api_key:$('#me-key').value,
+        position:parseInt($('#me-pos').value,10) || 0, temperature:parseFloat($('#me-temp').value) || 0.2,
+        max_tokens:parseInt($('#me-max').value,10) || 32000, context_len:parseInt($('#me-ctx').value,10) || 0,
+        price_in:parseFloat($('#me-pin').value) || 0, price_out:parseFloat($('#me-pout').value) || 0,
+        price_cache:parseFloat($('#me-pcache').value) || 0,
       });
+      await loadModelSets();
     }, done);
-    wireCostCalc(root, 'me-calc',
-      { in: 'me-pin', out: 'me-pout', cache: 'me-pcache', ctx: 'me-ctx', max: 'me-max' });
+    wireCostCalc(root,'me-calc',{in:'me-pin',out:'me-pout',cache:'me-pcache',ctx:'me-ctx',max:'me-max'});
   }
 
   async function editEntryForm(root, setId, entryId, done) {
     let entry = null;
     try {
       const sets = await api.get('/api/models/sets');
-      (sets || []).forEach(s => {
-        (s.entries || []).forEach(e => { if (e.id === entryId) entry = e; });
-      });
+      (sets || []).forEach(s => (s.entries || []).forEach(e => { if (e.id === entryId) entry = e; }));
     } catch (e) { /* ignore */ }
     if (!entry) { toast('Модель не найдена', 'error'); return; }
-    adminForm(root, 'Модель: ' + (entry.model || ''), [
-      { id: 'ee-model', label: 'Модель', value: entry.model || '' },
-      { id: 'ee-url', label: 'Base URL', value: entry.base_url || '' },
-      { id: 'ee-key', label: 'API-ключ (пусто = не менять)', placeholder: 'sk-…' },
-      { id: 'ee-temp', label: 'Temperature', type: 'number', value: String(entry.temperature != null ? entry.temperature : 0.2) },
-      { id: 'ee-max', label: 'Максимум токенов в ОТВЕТЕ', type: 'number', value: String(entry.max_tokens || 32000), calc: true },
-      { id: 'ee-ctx', label: 'Максимальный КОНТЕКСТ, токенов (0 = общий)', type: 'number', value: String(entry.context_len || 0), calc: true },
-      { id: 'ee-pin', label: 'Цена входа, $ за 1M токенов', type: 'number', value: String(entry.price_in || 0), calc: true },
-      { id: 'ee-pout', label: 'Цена выхода, $ за 1M токенов', type: 'number', value: String(entry.price_out || 0), calc: true },
-      { id: 'ee-pcache', label: 'Цена кэша, $ за 1M токенов', type: 'number', value: String(entry.price_cache || 0), calc: true },
-      { type: 'html', html: '<div id="ee-calc" class="field-calc"></div>' },
+    adminForm(root, 'Настройка модели кластера', [
+      {id:'ee-provider',label:'Совместимый провайдер',value:entry.provider || 'openai'},
+      {id:'ee-model',label:'ID модели у провайдера',value:entry.model || ''},
+      {id:'ee-url',label:'Base URL',value:entry.base_url || ''},
+      {id:'ee-key',label:'API-ключ (пусто = не менять)',placeholder:'Новый ключ'},
+      {id:'ee-temp',label:'Temperature',type:'number',value:String(entry.temperature != null ? entry.temperature : 0.2)},
+      {id:'ee-max',label:'Максимум токенов в ответе',type:'number',value:String(entry.max_tokens || 32000),calc:true},
+      {id:'ee-ctx',label:'Максимальный контекст, токенов (0 = общий)',type:'number',value:String(entry.context_len || 0),calc:true},
+      {id:'ee-pin',label:'Цена входа, $ за 1M токенов',type:'number',value:String(entry.price_in || 0),calc:true},
+      {id:'ee-pout',label:'Цена выхода, $ за 1M токенов',type:'number',value:String(entry.price_out || 0),calc:true},
+      {id:'ee-pcache',label:'Цена кэша, $ за 1M токенов (0 = цена входа)',type:'number',value:String(entry.price_cache || 0),calc:true},
+      {type:'html',html:'<div id="ee-calc" class="field-calc"></div>'},
     ], async () => {
-      const body = {
-        model: $('#ee-model').value.trim(),
-        base_url: $('#ee-url').value.trim(),
-        temperature: parseFloat($('#ee-temp').value) || 0.2,
-        max_tokens: parseInt($('#ee-max').value, 10) || 32000,
-        context_len: parseInt($('#ee-ctx').value, 10) || 0,
-        price_in: parseFloat($('#ee-pin').value) || 0,
-        price_out: parseFloat($('#ee-pout').value) || 0,
-        price_cache: parseFloat($('#ee-pcache').value) || 0,
-      };
-      const key = $('#ee-key').value;
-      if (key) body.api_key = key;
+      const body = {provider:$('#ee-provider').value.trim() || 'openai', model:$('#ee-model').value.trim(), base_url:$('#ee-url').value.trim(),
+        temperature:parseFloat($('#ee-temp').value) || 0.2, max_tokens:parseInt($('#ee-max').value,10) || 32000,
+        context_len:parseInt($('#ee-ctx').value,10) || 0, price_in:parseFloat($('#ee-pin').value) || 0,
+        price_out:parseFloat($('#ee-pout').value) || 0, price_cache:parseFloat($('#ee-pcache').value) || 0};
+      const key = $('#ee-key').value; if (key) body.api_key = key;
       await api.patch('/api/admin/model-sets/' + setId + '/entries/' + entryId, body);
-      toast('Модель обновлена');
+      await loadModelSets(); toast('Модель и цены кластера обновлены');
     }, done);
-    wireCostCalc(root, 'ee-calc',
-      { in: 'ee-pin', out: 'ee-pout', cache: 'ee-pcache', ctx: 'ee-ctx', max: 'ee-max' });
+    wireCostCalc(root,'ee-calc',{in:'ee-pin',out:'ee-pout',cache:'ee-pcache',ctx:'ee-ctx',max:'ee-max'});
   }
 
   // ---------- sidebar ----------

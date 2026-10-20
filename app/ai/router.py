@@ -1163,7 +1163,7 @@ class AIRouter:
 
         # With sandbox disabled, or when a device target was explicitly chosen,
         # let the browser run the marked block after the terminal completion event.
-        if not settings.run_sandbox_enabled or job.execution_target == "device":
+        if job.execution_target == "device":
             device_fence = tick + "python\n" + code + "\n# AI_CH_AUTO_RUN_FILES\n" + tick
             return str(answer).replace(fence, device_fence).strip(), []
 
@@ -1455,7 +1455,7 @@ class AIRouter:
             )
         artifact_request = is_artifact_request(job.user_text)
 
-        device_only = not settings.run_sandbox_enabled or job.execution_target == "device"
+        device_only = job.execution_target == "device"
         if job.user_id:
             async with SessionLocal() as project_db:
                 current_chat = await project_db.get(Chat, job.chat_id) if job.chat_id else None
@@ -1496,8 +1496,7 @@ class AIRouter:
             if device_only:
                 setattr(job, "sandbox_available", False)
                 system_prompt += (
-                    "\n\nРЕЖИМ СОЗДАНИЯ ФАЙЛА ПОСЛЕ ПОЛНОГО ОТВЕТА: серверная песочница выключена "
-                    "или явно выбран запуск на устройстве. Не используй fileplan, агентные блоки и не "
+                    "\n\nРЕЖИМ СОЗДАНИЯ ФАЙЛА ПОСЛЕ ПОЛНОГО ОТВЕТА: для этой задачи явно выбран запуск на устройстве. Не используй fileplan, агентные блоки и не "
                     "делай план отдельным вызовом. Сразу дай один полный ответ. Если нужен скачиваемый файл, "
                     "в конце добавь ОДИН полный fenced Python-блок, действительно создающий конечный файл "
                     "в текущей рабочей папке. Первая строка — комментарий # AI_CH_ACTION: Создаю готовый файл; "
@@ -1592,7 +1591,7 @@ class AIRouter:
             max_steps = max(1, int(base_steps))
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
         round_limit = 1 if code_mode else 2
-        if artifact_work_request or not settings.run_sandbox_enabled:
+        if artifact_work_request:
             round_limit = 1
 
         tried: set[str] = set()
@@ -1604,7 +1603,7 @@ class AIRouter:
             retryable_error = True
             # Code Agent must not trigger a second generation through provider fallback.
             entry_attempt_limit = 1 if code_mode else len(entries)
-            if artifact_work_request or not settings.run_sandbox_enabled:
+            if artifact_work_request:
                 entry_attempt_limit = 1
             while len(tried) < entry_attempt_limit:
                 entry = await self._acquire_primary(job, entries, tried)
@@ -1796,20 +1795,14 @@ class AIRouter:
                                 summaries.append("Созданные файлы: " + ", ".join(files[:30]))
                         answer = "\n\n".join(summaries).strip()
                     post_answer_runs: list[dict] = []
-                    if requested_artifact and settings.run_sandbox_enabled and job.execution_target != "device":
+                    if requested_artifact and job.execution_target != "device":
                         answer, post_answer_runs = await self._run_final_server_artifact(
                             job, answer, run_timeout
                         )
                         if post_answer_runs:
                             all_runs.extend(post_answer_runs)
                     if requested_artifact:
-                        if not settings.run_sandbox_enabled:
-                            sandbox_status = (
-                                "Статус песочницы: серверное исполнение выключено "
-                                "(RUN_SANDBOX_ENABLED=0); после полного ответа будет предпринята попытка "
-                                "создания файла на устройстве."
-                            )
-                        elif job.execution_target == "device":
+                        if job.execution_target == "device":
                             sandbox_status = (
                                 "Статус песочницы: для этой задачи выбран запуск на устройстве; "
                                 "серверный код не запускается."

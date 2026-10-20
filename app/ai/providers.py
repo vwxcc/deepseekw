@@ -234,17 +234,17 @@ async def complete_chat(
         resp = await _get_provider_client().post(
             url, json=pl, headers=_headers(api_key), timeout=timeout
         )
-            if resp.status_code >= 400:
-                raise ProviderError(
-                    _format_http_error(
-                        resp.status_code, resp.text, str(pl.get("model") or ""), error_env_prefix
-                    )
+        if resp.status_code >= 400:
+            raise ProviderError(
+                _format_http_error(
+                    resp.status_code, resp.text, str(pl.get("model") or ""), error_env_prefix
                 )
-            data = resp.json()
-            choices = data.get("choices") or []
-            if not choices:
-                raise ProviderError("Провайдер вернул пустой ответ")
-            return _extract_text(choices[0].get("message") or {}).strip()
+            )
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise ProviderError("Провайдер вернул пустой ответ")
+        return _extract_text(choices[0].get("message") or {}).strip()
 
     try:
         return await _once(payload)
@@ -281,26 +281,26 @@ async def complete_chat_with_usage(
         resp = await _get_provider_client().post(
             url, json=pl, headers=_headers(api_key), timeout=timeout
         )
-            if resp.status_code >= 400:
-                raise ProviderError(
-                    _format_http_error(resp.status_code, resp.text, str(pl.get("model") or ""))
-                )
-            data = resp.json()
-            choices = data.get("choices") or []
-            if not choices:
-                raise ProviderError("Провайдер вернул пустой ответ")
-            message = choices[0].get("message") or {}
-            if allow_reasoning_fallback:
-                text = _extract_text(message).strip()
-            else:
-                content = message.get("content")
-                text = content.strip() if isinstance(content, str) else ""
-            raw_usage = data.get("usage")
-            usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
-            # Preserve truncation metadata for the caller without changing billing fields.
-            if choices[0].get("finish_reason") == "length":
-                usage["_finish_reason"] = "length"
-            return text, usage or None
+        if resp.status_code >= 400:
+            raise ProviderError(
+                _format_http_error(resp.status_code, resp.text, str(pl.get("model") or ""))
+            )
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise ProviderError("Провайдер вернул пустой ответ")
+        message = choices[0].get("message") or {}
+        if allow_reasoning_fallback:
+            text = _extract_text(message).strip()
+        else:
+            content = message.get("content")
+            text = content.strip() if isinstance(content, str) else ""
+        raw_usage = data.get("usage")
+        usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
+        # Preserve truncation metadata for the caller without changing billing fields.
+        if choices[0].get("finish_reason") == "length":
+            usage["_finish_reason"] = "length"
+        return text, usage or None
 
     try:
         return await _once(payload)

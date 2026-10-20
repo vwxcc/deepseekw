@@ -602,8 +602,6 @@ async def send_message(
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
-    if trimmed:
-        system_prompt += prompts.CONTEXT_LIMIT_NOTE
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary

@@ -266,6 +266,7 @@ class ModelSet(Base):
     route_type: Mapped[RouteType] = mapped_column(Enum(RouteType), default=RouteType.MAIN)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     free_access: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_router: Mapped[bool] = mapped_column(Boolean, default=False)
 
     entries: Mapped[list["ModelSetEntry"]] = relationship(

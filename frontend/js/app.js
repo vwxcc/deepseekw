@@ -5991,7 +5991,7 @@
   async function editEntryForm(root, setId, entryId, done) {
     let entry = null;
     try {
-      const sets = await api.get('/api/models/sets');
+      const sets = await api.get('/api/admin/model-sets');
       (sets || []).forEach(s => (s.entries || []).forEach(e => { if (e.id === entryId) entry = e; }));
     } catch (e) { /* ignore */ }
     if (!entry) { toast('Модель не найдена', 'error'); return; }

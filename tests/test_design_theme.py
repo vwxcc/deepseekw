@@ -90,7 +90,7 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("span.className = 'aich-themed-emoji'", app_js)
         self.assertNotIn("textarea,button,svg,.katex", app_js)
         self.assertIn('id="i-mountain"', index_html)
-        self.assertIn("app.js?v=91&rev=94", index_html)
+        self.assertIn("app.js?v=92&rev=95", index_html)
 
     def test_brand_name_uses_ai_ch_without_version_suffix(self):
         root = Path(__file__).resolve().parents[1]
@@ -114,7 +114,7 @@ class DesignThemeTests(unittest.TestCase):
 
         self.assertIn("width: min(80%, 704px); height: min(67.2vh, 624px);", css)
         self.assertIn("width: 80%; height: min(73.6vh, 720px); border-radius: 19px;", css)
-        self.assertIn("app.css?v=61&rev=64", index_html)
+        self.assertIn("app.css?v=62&rev=95", index_html)
 
     def test_file_generation_is_template_based_and_sandbox_errors_are_brief(self):
         self.assertIn("ОБЯЗАТЕЛЬНО создай настоящий файл", prompts.CORE_RULES)

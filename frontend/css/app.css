@@ -2544,7 +2544,8 @@ body { font-weight: 400; }
 .activity-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .activity-icon { display: inline-block; flex: 0 0 17px; width: 17px; height: 17px; color: #77756e; stroke-width: 1.55; fill: none; }
 .activity-bullet { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 17px; width: 17px; color: #929087; font-size: 20px; line-height: 1; }
-.activity-row.status-row { font-size: 16.56px; }
+.activity-status-icon { display: inline-block; flex: 0 0 16px; width: 16px; height: 16px; color: #89867d; stroke-width: 1.65; fill: none; }
+.activity-row.status-row { font-size: 13.8px; }
 .activity-row .think-anim { width: 18px; height: 18px; flex: 0 0 18px; margin-left: 0; }
 .activity-row .think-anim .core { width: 7px; height: 7px; }
 .activity-draft { max-height: 62px; margin-top: 7px; }
@@ -2563,7 +2564,7 @@ body { font-weight: 400; }
   .activity-head { align-items: flex-start; }
   .activity-controls { margin-left: 0; }
   .activity-row { font-size: 13.3px; gap: 7px; }
-  .activity-row.status-row { font-size: 15.96px; }
+  .activity-row.status-row { font-size: 13.3px; }
   .code-block .code-head { align-items: flex-start; gap: 8px; flex-wrap: wrap; }
   .code-block .code-head .code-acts { gap: 6px; }
 }
@@ -2762,7 +2763,7 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   color: var(--fg-muted);
   background: transparent;
   font: inherit;
-  font-size: 13.4px;
+  font-size: 16.08px;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   cursor: pointer;

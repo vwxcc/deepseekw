@@ -1702,7 +1702,9 @@
 
   function appendActivity(n, item) {
     if (!n || !item || !['status', 'action'].includes(item.kind)) return;
-    const text = String(item.text || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    const rawText = String(item.text || '');
+    const text = (item.kind === 'status' ? stripActivityEmoji(rawText) : rawText)
+      .replace(/\s+/g, ' ').trim().slice(0, 240);
     if (!text) return;
     const activities = activityItems(n);
     const iconName = item.kind === 'action' && ACTIVITY_ICON_NAMES.has(String(item.icon || ''))
@@ -1749,15 +1751,28 @@
     return Number.isFinite(ended) && ended > 0 ? Math.max(0, ended - started) : 0;
   }
 
-  function activityStatusEmoji(text) {
-    const value = String(text || '').toLowerCase();
-    if (/(ошиб|не удалось|недоступ|сбой|failed|error)/u.test(value)) return '⚠️';
-    if (/(создан|создаю|файл|документ|презентац|таблиц|изображ|экспорт|сохран)/u.test(value)) return '📄';
-    if (/(код|песочниц|запуск|выполн|исполн|команд)/u.test(value)) return '⚙️';
-    if (/(интернет|поиск|источник|веб)/u.test(value)) return '🔎';
-    if (/(готов|заверш|успеш|результат|провер)/u.test(value)) return '✅';
-    if (/(подбира|маршрут|план|подготавли|анализ)/u.test(value)) return '🧭';
-    return '🔄';
+  function stripActivityEmoji(text) {
+    return String(text || '')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2300}-\u{23FF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\uFE0E\uFE0F\u200D\u20E3]/gu, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+
+  function activityStatusIconName(text) {
+    const value = stripActivityEmoji(text).toLowerCase();
+    if (/(ошиб|не удалось|недоступ|сбой|failed|error)/u.test(value)) return 'wrench';
+    if (/(интернет|поиск|источник|веб|сайт|страниц|ссылк)/u.test(value)) return 'search';
+    if (/(код|песочниц|запуск|выполн|исполн|скрипт|программ|команд)/u.test(value)) return 'terminal';
+    if (/(вычис|математ|формул|уравнен|арифмет|расч[её]т)/u.test(value)) return 'calculator';
+    if (/(презентац|слайд)/u.test(value)) return 'presentation';
+    if (/(таблиц|excel|xlsx|csv|ячейк|данн)/u.test(value)) return 'table';
+    if (/(изображ|фото|картин|рисунк|svg|png)/u.test(value)) return 'image';
+    if (/(график|диаграм|метрик|аналитик)/u.test(value)) return 'chart-line';
+    if (/(файл|документ|pdf|docx|текст|письм|формулир)/u.test(value)) return 'file-text';
+    if (/(план|этап|структур|порядок|шаг)/u.test(value)) return 'list-checks';
+    if (/(провер|сверя|готов|заверш|результат|итог|точност|противореч)/u.test(value)) return 'check-circle';
+    if (/(объясн|анализ|сравн|истор|литератур|исслед|контекст)/u.test(value)) return 'book-open';
+    if (/(связ|маршрут|выбира|вариант|решени|подход)/u.test(value)) return 'compass';
+    return 'sparkle';
   }
 
   function deviceCodeForFilePlan(planSource) {
@@ -2143,23 +2158,19 @@
     const visibleItems = generating && items.length ? [items[items.length - 1]] : items;
     const rows = visibleItems.map((item, index) => {
       const last = generating && index === visibleItems.length - 1;
-      const statusEmoji = item.kind === 'status'
-        ? String(item.text || '').match(/^(\p{Extended_Pictographic}\uFE0F?)\s*/u)
-        : null;
-      const displayActivityText = statusEmoji
-        ? String(item.text || '').slice(statusEmoji[0].length)
+      const displayActivityText = item.kind === 'status'
+        ? stripActivityEmoji(item.text)
         : item.text;
       const symbol = item.kind === 'action'
         ? icon(ACTIVITY_ICON_NAMES.has(item.icon) ? item.icon : 'sparkle', 'activity-icon')
-        : '<span class="activity-bullet" aria-hidden="true">' +
-          (statusEmoji ? statusEmoji[1] : activityStatusEmoji(item.text)) + '</span>';
+        : icon(activityStatusIconName(displayActivityText), 'activity-status-icon');
       return '<div class="activity-row' + (last ? ' active' : '') +
         (item.kind === 'status' ? ' status-row' : '') + '">' + symbol +
         '<span class="activity-text">' + escapeHtml(displayActivityText) + '</span>' +
         (last ? thinkAnim() : '') + '</div>';
     }).join('');
     const placeholder = generating && !items.length
-      ? '<div class="activity-row active"><span class="activity-bullet" aria-hidden="true">🔄</span>' +
+      ? '<div class="activity-row active">' + icon('sparkle', 'activity-status-icon') +
         '<span class="activity-text">Обрабатываю запрос…</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
     const execution = expanded && runs.length
@@ -2193,7 +2204,8 @@
       if (!log || !answer) return;
       const wasNearBottom = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90;
       log.textContent = activityItems(n).map((item, index) =>
-        (index + 1) + '. ' + (item.kind === 'action' ? '[' + (item.icon || 'sparkle') + '] ' : activityStatusEmoji(item.text) + ' ') + item.text
+        (index + 1) + '. ' + (item.kind === 'action' ? '[' + (item.icon || 'sparkle') + '] ' : '') +
+        (item.kind === 'status' ? stripActivityEmoji(item.text) : item.text)
       ).join('\n') || 'Ожидаю первые статусы…';
       answer.textContent = String(n.publicStream || n.content || n.draft || '');
       if (stateLabel) stateLabel.textContent = n.status === 'completed'
@@ -4387,25 +4399,27 @@
           if (ev === 'assistant_message') bindStreamRefs();
         } else if (ev === 'status_preview') {
           const statuses = Array.isArray(data.statuses) ? data.statuses : [];
-          if (streamContext.node && statuses.length && !state.streamStarted) {
+          if (streamContext.node && statuses.length) {
             stopPreviewStatuses();
             streamContext.previewStatuses = statuses.slice(0, 60);
             streamContext.previewStatusIndex = 0;
             const showNextPreviewStatus = () => {
-              if (state.streamStarted || !streamContext.node || !streamContext.previewStatuses.length) {
+              if (!streamContext.node || !streamContext.previewStatuses.length) {
                 stopPreviewStatuses();
                 return;
               }
-              const item = streamContext.previewStatuses[
-                streamContext.previewStatusIndex % streamContext.previewStatuses.length
-              ];
-              streamContext.previewStatusIndex += 1;
-              const statusText = typeof item === 'string'
-                ? item : (String(item && item.emoji || '🔄') + ' ' + String(item && item.text || 'Проверяю детали'));
-              appendActivity(streamContext.node, { kind: 'status', text: statusText });
-              if (state.currentChatId === streamContext.chatId) {
-                renderMessageInPlace(streamContext.assistantId);
-                bindStreamRefs();
+              if (streamContext.previewStatusIndex >= streamContext.previewStatuses.length) {
+                stopPreviewStatuses();
+                return;
+              }
+              const item = streamContext.previewStatuses[streamContext.previewStatusIndex++];
+              const statusText = typeof item === 'string' ? item : String(item && item.text || '');
+              if (statusText.trim()) {
+                appendActivity(streamContext.node, { kind: 'status', text: statusText });
+                if (state.currentChatId === streamContext.chatId) {
+                  renderMessageInPlace(streamContext.assistantId);
+                  bindStreamRefs();
+                }
               }
             };
             showNextPreviewStatus();
@@ -4451,7 +4465,6 @@
         } else if (ev === 'thinking') {
           // Provider-private reasoning is deliberately not rendered or copied into the UI.
         } else if (ev === 'delta') {
-          stopPreviewStatuses();
           const deltaText = data.text || '';
           state.streamBuf += deltaText;
           const n = (state.currentChatId === streamContext.chatId

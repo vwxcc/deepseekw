@@ -25,7 +25,7 @@ from ..deps import (
 )
 from ..config import settings
 from ..database import SessionLocal
-from ..services.auxiliary_models import fallback_statuses, generate_statuses
+from ..services.auxiliary_models import generate_statuses
 from ..models import (
     AudioGeneration,
     Attachment,
@@ -104,28 +104,15 @@ def _json(model) -> dict:
 
 
 async def _emit_status_preview(job: Job) -> None:
-    """Generate statuses in parallel and show a local sequence if the model is slow."""
-    generation_task = asyncio.create_task(generate_statuses(job))
-    fallback_sent = False
+    """Publish only query-specific statuses returned by the configured status model."""
     try:
-        done, _ = await asyncio.wait({generation_task}, timeout=1.2)
-        if not done and not job.cancel.is_set():
-            await job.output.put(("status_preview", fallback_statuses()))
-            fallback_sent = True
-        statuses = await generation_task
+        statuses = await generate_statuses(job)
         if statuses and not job.cancel.is_set():
             await job.output.put(("status_preview", statuses))
-        elif not fallback_sent and not job.cancel.is_set():
-            await job.output.put(("status_preview", fallback_statuses()))
     except asyncio.CancelledError:
-        if not generation_task.done():
-            generation_task.cancel()
-        await asyncio.gather(generation_task, return_exceptions=True)
         raise
     except Exception:
         log.exception("Auxiliary status generation failed")
-        if not fallback_sent and not job.cancel.is_set():
-            await job.output.put(("status_preview", fallback_statuses()))
 
 
 async def _stream_job(
@@ -143,7 +130,6 @@ async def _stream_job(
     yield _sse("assistant_message", _json(message_out(assistant)))
 
     finished = False
-    first_main_token = False
     status_task = asyncio.create_task(_emit_status_preview(job))
     try:
         while True:
@@ -155,14 +141,9 @@ async def _stream_job(
                 break
 
             if kind == "status_preview":
-                if not first_main_token and isinstance(payload, list):
+                if isinstance(payload, list) and payload:
                     yield _sse("status_preview", {"statuses": payload})
             elif kind == "delta":
-                if not first_main_token:
-                    first_main_token = True
-                    if not status_task.done():
-                        status_task.cancel()
-                    yield _sse("status_stop", {})
                 yield _sse("delta", {"text": payload})
             elif kind == "ui_status":
                 yield _sse("ui_status", {"text": str(payload or "")})

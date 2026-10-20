@@ -426,6 +426,39 @@ async def _request_context_block(
     )
 
 
+async def _choose_model_set(db: AsyncSession, user: User, requested_id: str | None = None, current_id: str | None = None) -> str:
+    """Resolve the selected MAIN cluster and enforce Pro access server-side."""
+    is_pro = normalize_plan(user.plan) == "pro" or bool(user.is_admin)
+    selected_id = str(requested_id or current_id or "").strip()
+
+    async def has_active_entry(cluster: ModelSet) -> bool:
+        if not cluster.is_active or cluster.is_router or cluster.route_type != RouteType.MAIN:
+            return False
+        if not bool(getattr(cluster, "free_access", True)) and not is_pro:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта модель доступна только по подписке Pro.")
+        count = await db.scalar(select(func.count()).select_from(ModelSetEntry).where(
+            ModelSetEntry.model_set_id == cluster.id, ModelSetEntry.is_active.is_(True)))
+        return bool(count)
+
+    if selected_id:
+        cluster = await db.get(ModelSet, selected_id)
+        if cluster is None or not await has_active_entry(cluster):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Выбранный кластер выключен или не содержит активной модели")
+        return cluster.id
+    result = await db.execute(select(ModelSet).where(
+        ModelSet.is_active.is_(True), ModelSet.route_type == RouteType.MAIN,
+        ModelSet.is_router.is_(False)).order_by(ModelSet.name, ModelSet.id))
+    clusters = list(result.scalars().all())
+    if not is_pro:
+        clusters.sort(key=lambda c: (not bool(getattr(c, "free_access", True)), c.name.casefold(), c.id))
+    for cluster in clusters:
+        if not is_pro and not bool(getattr(cluster, "free_access", True)):
+            continue
+        if await has_active_entry(cluster):
+            return cluster.id
+    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Нет доступных моделей. Администратору нужно настроить кластер.")
+
+
 async def _spawn(
     *,
     request: Request,
@@ -438,6 +471,12 @@ async def _spawn(
     execution_target: str = "site",
 ) -> StreamingResponse:
     execution_target = execution_target if execution_target in {"site", "device", "both"} else "site"
+    selected_model_set_id = chat.model_set_id
+    if user_id:
+        current_user = await db.get(User, user_id)
+        if current_user is not None:
+            selected_model_set_id = await _choose_model_set(db, current_user, current_id=chat.model_set_id)
+            chat.model_set_id = selected_model_set_id
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
     if chat.summary:
@@ -488,6 +527,7 @@ async def _spawn(
         route_type=RouteType.MAIN,
         chat_id=chat.id,
         message_id=assistant.id,
+        model_set_id=selected_model_set_id,
         effort=effort or chat.effort,
         user_id=user_id,
         mode=mode,
@@ -547,6 +587,8 @@ async def send_message(
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
     await _check_budget_before_send(user, db)
+    data.model_set_id = await _choose_model_set(db, user, data.model_set_id, chat.model_set_id)
+    chat.model_set_id = data.model_set_id
     execution_target = (data.execution_target or "site").strip().lower()
     if execution_target not in {"site", "device", "both"}:
         execution_target = "site"
@@ -692,6 +734,7 @@ async def send_first_message(
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
     await _check_budget_before_send(user, db)
+    data.model_set_id = await _choose_model_set(db, user, data.model_set_id)
 
     # Validate attachments before creating a chat so invalid uploads do not leave
     # an empty chat behind.
@@ -702,7 +745,7 @@ async def send_first_message(
 
     # A new chat is always a new root branch.
     data.parent_message_id = None
-    chat = Chat(user_id=user.id, title="Новый чат", mode="chat")
+    chat = Chat(user_id=user.id, title="Новый чат", mode="chat", model_set_id=data.model_set_id)
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
@@ -1034,12 +1077,13 @@ async def compress_chat(
     if len(cut) < 2:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего сжимать")
 
-    from ..ai.providers import ProviderError, complete_chat
-    from ..ai.router import pool
+    from ..ai.providers import ProviderError, complete_chat_with_usage
+    from ..ai.router import _usage_or_estimate, pool
 
+    chat.model_set_id = await _choose_model_set(db, user, current_id=chat.model_set_id)
     try:
-        # Use the same primary model as answers and titles; no separate compression chain.
-        _, _, chain = await ai_router._resolve_entries(RouteType.MAIN)
+        # Compression follows the chat's selected cluster and its own pricing.
+        _, _, chain = await ai_router._resolve_entries(RouteType.MAIN, chat.model_set_id)
     except ProviderError as exc:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Нет активной основной модели для сжатия"
@@ -1059,19 +1103,24 @@ async def compress_chat(
         if entry is None:
             break
         try:
-            summary = await complete_chat(
-                messages=[
-                    {"role": "system", "content": prompts.COMPRESS_SYSTEM},
-                    {"role": "user", "content": transcript},
-                ],
-                base_url=entry.base_url,
-                api_key=entry.api_key,
-                model=entry.model,
-                temperature=0.3,
-                max_tokens=1200,
-                timeout=150,
-                disable_thinking=True,
+            compression_messages = [
+                {"role": "system", "content": prompts.COMPRESS_SYSTEM},
+                {"role": "user", "content": transcript},
+            ]
+            summary, summary_usage = await complete_chat_with_usage(
+                messages=compression_messages, base_url=entry.base_url, api_key=entry.api_key,
+                model=entry.model, temperature=entry.temperature, max_tokens=1200,
+                timeout=150, disable_thinking=True,
             )
+            summary_usage = _usage_or_estimate(summary_usage, compression_messages, summary)
+            details = summary_usage.get("prompt_tokens_details") or {}
+            await account(
+                db, chat.id, entry.model_set_id,
+                int(summary_usage.get("prompt_tokens") or 0), int(summary_usage.get("completion_tokens") or 0),
+                entry=entry, user_id=user.id, action="compress",
+                tokens_cached=int(details.get("cached_tokens") or 0),
+            )
+            await db.commit()
             if summary.strip():
                 used = entry
                 break
@@ -1089,20 +1138,6 @@ async def compress_chat(
             status.HTTP_502_BAD_GATEWAY, f"Сжатие не удалось: {last_error}"
         )
 
-    try:
-        _in_tokens = sum(est(m.content) for m in cut)
-    except Exception:
-        _in_tokens = 0
-    await account(
-        db,
-        chat.id,
-        used.model_set_id,
-        _in_tokens,
-        est(summary),
-        entry=used,
-        user_id=user.id,
-        action="compress",
-    )
     chat.summary = summary.strip()[:20000]
     chat.summary_upto = cut[-1].id
     chat.compress_count = (chat.compress_count or 0) + 1

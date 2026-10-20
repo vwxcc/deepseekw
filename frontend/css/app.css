@@ -358,13 +358,13 @@ a { color: var(--accent); }
 #input {
   width: 100%; border: none; resize: none; background: transparent;
   font-size: 17.05px; line-height: 1.6; color: var(--fg);
-  max-height: 210px; min-height: 26px; padding: 5px 8px;
+  max-height: 210px; min-height: 26px; padding: 5px 8px 5px 0;
 }
 #input:focus { outline: none; }
 #input::placeholder { color: var(--fg-soft); }
 .composer-row { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; }
 .composer-row .spacer { flex: 1; }
-.model-select-btn { flex:0 1 auto; display:inline-flex; align-items:center; gap:5px; width:max-content; max-width:min(44vw,260px); min-width:0; height:34px; padding:0 10px; border:1px solid var(--border); border-radius:10px; background:var(--bg-panel); color:var(--fg); font-family:'YS Text',var(--font); font-size:14.3px; white-space:nowrap; }
+.model-select-btn { flex:0 1 auto; display:inline-flex; align-items:center; gap:5px; width:max-content; max-width:min(44vw,260px); min-width:0; height:34px; padding:0 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-panel); color:var(--fg); font-family:'YS Text',var(--font); font-size:14.3px; white-space:nowrap; }
 .model-select-btn:hover { background:var(--bg-hover); }
 .model-select-btn .ic { width:13px; height:13px; flex:0 0 auto; }
 .model-select-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

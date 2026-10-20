@@ -4877,8 +4877,9 @@
     const modelButton = $('#model-select-btn'), modelPanel = $('#model-picker');
     if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); state.modelPickerOpen = !state.modelPickerOpen; renderModelPicker(); });
     if (modelPanel) modelPanel.addEventListener('click', async event => {
-      const option = event.target.closest('[data-model-id]'); if (!option) return;
-      const cluster = state.modelSets.find(s => s.id === option.dataset.modelId); if (!cluster) return;
+      const option = event.target.closest('[data-model-index]'); if (!option) return;
+      const modelIndex = Number(option.dataset.modelIndex);
+      const cluster = Number.isInteger(modelIndex) && modelIndex >= 0 ? state.modelSets[modelIndex] : null; if (!cluster) return;
       if (!modelSetCanUse(cluster)) { toast('Эта модель доступна только по подписке Pro.', 'error'); return; }
       try {
         if (state.currentChatId) await api.patch('/api/chats/' + encodeURIComponent(state.currentChatId), {model_set_id: cluster.id});
@@ -4888,7 +4889,7 @@
         state.modelPickerOpen = false; renderModelPicker(); renderChatList();
       } catch (error) { toast('Не удалось выбрать модель: ' + usefulErrorMessage(error, 'ошибка сохранения'), 'error'); }
     });
-    document.addEventListener('click', event => { if (state.modelPickerOpen && !event.target.closest('.composer-inner')) { state.modelPickerOpen = false; renderModelPicker(); } });
+    document.addEventListener('click', event => { if (state.modelPickerOpen && !event.target.closest('.composer-inner, .model-picker-anchor')) { state.modelPickerOpen = false; renderModelPicker(); } });
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
@@ -5160,15 +5161,16 @@
     button.setAttribute('aria-expanded', String(!!state.modelPickerOpen)); panel.classList.toggle('hidden', !state.modelPickerOpen);
     if (!state.modelPickerOpen) { panel.innerHTML = ''; return; }
     if (!state.modelSets.length) { panel.innerHTML = '<div class="model-picker-empty">Нет активных кластеров моделей.</div>'; return; }
-    panel.innerHTML = state.modelSets.map(set => {
+    panel.innerHTML = state.modelSets.map((set, modelIndex) => {
       const locked = !modelSetCanUse(set);
       const entry = (set.entries || []).find(e => e && e.is_active) || (set.entries || [])[0];
       const isSelected = !!(selected && selected.id === set.id);
       const description = String(set.description || '').trim() || 'Универсальные задачи';
-      const context = entry && Number(entry.context_len) > 0 ? ' · Контекст ' + fmtNum(entry.context_len) : '';
-      return '<button type="button" role="option" aria-selected="' + String(isSelected) + '" class="model-option' + (isSelected ? ' selected' : '') + (locked ? ' locked' : '') + '" data-model-id="' + escapeHtml(set.id) + '">' +
+      const context = entry && Number(entry.context_len) > 0 ? 'Контекст ' + fmtNum(entry.context_len) : '';
+      return '<button type="button" role="option" aria-selected="' + String(isSelected) + '" class="model-option' + (isSelected ? ' selected' : '') + (locked ? ' locked' : '') + '" data-model-index="' + modelIndex + '">' +
         '<span class="model-option-head"><b>' + escapeHtml(set.name) + '</b>' + (locked ? '<span class="model-pro-badge">Доступно на Pro</span>' : (isSelected ? '<span class="model-option-check">' + icon('check') + '</span>' : '')) + '</span>' +
-        '<span class="model-option-desc">' + escapeHtml(description) + '</span><span class="model-option-meta">' + escapeHtml((entry && entry.model || '') + context) + '</span></button>';
+        '<span class="model-option-desc">' + escapeHtml(description) + '</span>' +
+        (context ? '<span class="model-option-meta">' + escapeHtml(context) + '</span>' : '') + '</button>';
     }).join('');
   }
 

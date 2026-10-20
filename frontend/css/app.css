@@ -3647,3 +3647,20 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
 @media (max-width: 620px) {
   #modal-root .modal.share-wide { width: 85vw; max-width: 85vw; }
 }
+
+
+/* The model chooser is a separate floating panel, not part of the input surface. */
+.model-picker-anchor {
+  position: relative; z-index: 40; width: 100%; max-width: var(--col);
+  height: 0; margin: 0 auto; pointer-events: none;
+}
+.model-picker-anchor .model-picker {
+  position: absolute; right: 10px; bottom: 8px; width: 40%; max-width: 304px;
+  max-height: min(38vh, 340px); margin: 0; border-radius: var(--radius-lg);
+  pointer-events: auto;
+}
+.model-picker-anchor .model-option { border-radius: 12px; }
+.model-select-btn { border-radius: var(--radius-lg); }
+@media (max-width: 560px) {
+  .model-picker-anchor .model-picker { max-height: min(34vh, 300px); }
+}

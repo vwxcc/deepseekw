@@ -1159,7 +1159,8 @@
     activeAssistantId: null,
     thinkBody: null,
     modelSets: [],
-    modelSetId: '',
+    modelSetId: localStorage.getItem('aich_model_set_id') || '',
+    modelPickerOpen: false,
     effort: 'medium',
     usage: null,
     draftTail: null,
@@ -1514,6 +1515,11 @@
       }
       const chat = (Array.isArray(state.chats) ? state.chats : [])
         .find(c => c && typeof c === 'object' && c.id === id);
+      if (chat && chat.model_set_id) {
+        const selectedCluster = state.modelSets.find(s => s.id === chat.model_set_id && modelSetCanUse(s));
+        if (selectedCluster) { state.modelSetId = selectedCluster.id; localStorage.setItem('aich_model_set_id', selectedCluster.id); }
+      }
+      renderModelPicker();
       $('#chat-title').textContent = chat ? (chat.title || 'Новый чат') : 'Чат';
       renderChatList();
       renderMessages();
@@ -4868,6 +4874,21 @@
 
   function bindComposer() {
     const input = $('#input');
+    const modelButton = $('#model-select-btn'), modelPanel = $('#model-picker');
+    if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); state.modelPickerOpen = !state.modelPickerOpen; renderModelPicker(); });
+    if (modelPanel) modelPanel.addEventListener('click', async event => {
+      const option = event.target.closest('[data-model-id]'); if (!option) return;
+      const cluster = state.modelSets.find(s => s.id === option.dataset.modelId); if (!cluster) return;
+      if (!modelSetCanUse(cluster)) { toast('Эта модель доступна только по подписке Pro.', 'error'); return; }
+      try {
+        if (state.currentChatId) await api.patch('/api/chats/' + encodeURIComponent(state.currentChatId), {model_set_id: cluster.id});
+        state.modelSetId = cluster.id; localStorage.setItem('aich_model_set_id', cluster.id);
+        const current = state.chats.find(c => c && c.id === state.currentChatId);
+        if (current) { current.model_set_id = cluster.id; current.model_name = cluster.name; }
+        state.modelPickerOpen = false; renderModelPicker(); renderChatList();
+      } catch (error) { toast('Не удалось выбрать модель: ' + usefulErrorMessage(error, 'ошибка сохранения'), 'error'); }
+    });
+    document.addEventListener('click', event => { if (state.modelPickerOpen && !event.target.closest('.composer-inner')) { state.modelPickerOpen = false; renderModelPicker(); } });
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
@@ -4885,7 +4906,6 @@
       if (files.length) await uploadFiles(files, options);
       e.target.value = '';
     });
-    // The server uses one primary model for all AI tasks.
     if ($('#context-btn')) $('#context-btn').addEventListener('click', openUsageModal);
     if ($('#project-btn')) $('#project-btn').addEventListener('click', () => toggleProjectPanel());
     if ($('#pp-close')) $('#pp-close').addEventListener('click', () => toggleProjectPanel(false));
@@ -5123,15 +5143,44 @@
     }));
   }
 
-  async function loadModelSets() {
-    try {
-      state.modelSets = await api.get('/api/models/sets');
-    } catch (e) {
-      state.modelSets = [];
+  function modelSetCanUse(set) {
+    return !!(set && (set.free_access || (state.user && (state.user.is_admin || state.user.plan === 'pro'))));
+  }
+
+  function renderModelPicker() {
+    const button = $('#model-select-btn'), panel = $('#model-picker'); if (!button || !panel) return;
+    let selected = state.modelSets.find(s => s.id === state.modelSetId && modelSetCanUse(s));
+    if (!selected) {
+      selected = state.modelSets.find(modelSetCanUse) || null; state.modelSetId = selected ? selected.id : '';
+      if (selected) localStorage.setItem('aich_model_set_id', selected.id); else localStorage.removeItem('aich_model_set_id');
     }
-    // The client no longer selects a model set; the server always uses one primary MAIN model.
-    // Keep the set list for admin tools only, never send the Auto Routing set as a selection.
-    state.modelSetId = '';
+    button.innerHTML = '<span class="model-select-label">' + escapeHtml(selected ? selected.name : 'Нет доступных моделей') + '</span>' + icon('chevron-down');
+    button.title = selected ? (selected.description || selected.name) : 'Нет активных моделей';
+    button.style.width = 'max-content'; button.style.maxWidth = 'min(44vw,260px)';
+    button.setAttribute('aria-expanded', String(!!state.modelPickerOpen)); panel.classList.toggle('hidden', !state.modelPickerOpen);
+    if (!state.modelPickerOpen) { panel.innerHTML = ''; return; }
+    if (!state.modelSets.length) { panel.innerHTML = '<div class="model-picker-empty">Нет активных кластеров моделей.</div>'; return; }
+    panel.innerHTML = state.modelSets.map(set => {
+      const locked = !modelSetCanUse(set);
+      const entry = (set.entries || []).find(e => e && e.is_active) || (set.entries || [])[0];
+      const isSelected = !!(selected && selected.id === set.id);
+      const description = String(set.description || '').trim() || 'Универсальные задачи';
+      const context = entry && Number(entry.context_len) > 0 ? ' · Контекст ' + fmtNum(entry.context_len) : '';
+      return '<button type="button" role="option" aria-selected="' + String(isSelected) + '" class="model-option' + (isSelected ? ' selected' : '') + (locked ? ' locked' : '') + '" data-model-id="' + escapeHtml(set.id) + '">' +
+        '<span class="model-option-head"><b>' + escapeHtml(set.name) + '</b>' + (locked ? '<span class="model-pro-badge">Доступно на Pro</span>' : (isSelected ? '<span class="model-option-check">' + icon('check') + '</span>' : '')) + '</span>' +
+        '<span class="model-option-desc">' + escapeHtml(description) + '</span><span class="model-option-meta">' + escapeHtml((entry && entry.model || '') + context) + '</span></button>';
+    }).join('');
+  }
+
+  async function loadModelSets() {
+    try { state.modelSets = await api.get('/api/models/sets'); if (!Array.isArray(state.modelSets)) state.modelSets = []; }
+    catch (e) { state.modelSets = []; }
+    const saved = localStorage.getItem('aich_model_set_id') || state.modelSetId;
+    const selected = state.modelSets.find(s => s.id === saved && modelSetCanUse(s));
+    const firstAllowed = state.modelSets.find(modelSetCanUse);
+    state.modelSetId = (selected || firstAllowed || {}).id || '';
+    if (state.modelSetId) localStorage.setItem('aich_model_set_id', state.modelSetId); else localStorage.removeItem('aich_model_set_id');
+    renderModelPicker();
   }
 
   // ---------- files ----------

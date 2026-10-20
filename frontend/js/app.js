@@ -1719,12 +1719,9 @@
   }
 
   function latestActivityLabel(n) {
-    // While generating, the configured status model owns the compact status label.
+    // The compact live label is reserved for the dedicated status model.
     const modelStatus = String(n && n.statusModelCurrent || '').trim();
-    if (modelStatus) return modelStatus;
-    const items = activityItems(n);
-    const latest = items.length ? items[items.length - 1] : null;
-    return String(latest && latest.text || 'Готовлю статус…');
+    return modelStatus || 'Готовлю статус…';
   }
 
   function formatActivityDuration(ms) {

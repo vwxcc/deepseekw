@@ -368,7 +368,11 @@ a { color: var(--accent); }
 .model-select-btn:hover { background:var(--bg-hover); }
 .model-select-btn .ic { width:13px; height:13px; flex:0 0 auto; }
 .model-select-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.model-picker { display:flex; flex-direction:column; gap:4px; width:100%; max-height:min(38vh,340px); overflow-y:auto; overscroll-behavior:contain; padding:6px; margin:0 0 10px; border:1px solid var(--border); border-radius:13px; background:var(--bg-panel); box-shadow:var(--shadow-sm); }
+.model-picker { display:flex; flex-direction:column; gap:4px; width:100%; max-height:min(38vh,340px); overflow-y:auto; overscroll-behavior:contain; padding:6px; margin:0 0 10px; border:1px solid var(--border); border-radius:13px; background:var(--bg-panel); box-shadow:var(--shadow-sm); scrollbar-width:thin; scrollbar-color:#b8b2a7 var(--bg-side); }
+.model-picker::-webkit-scrollbar { width:8px; }
+.model-picker::-webkit-scrollbar-track { background:var(--bg-side); border-radius:999px; margin:7px 2px; }
+.model-picker::-webkit-scrollbar-thumb { background:linear-gradient(180deg,#cec8bd,#a6a094); border:2px solid var(--bg-side); border-radius:999px; }
+.model-picker::-webkit-scrollbar-thumb:hover { background:#888276; }
 .model-picker-empty { padding:12px; color:var(--fg-muted); font-size:14px; }
 .model-option { display:flex; flex-direction:column; align-items:stretch; gap:3px; width:100%; min-width:0; padding:10px 12px; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--fg); text-align:left; font-family:'YS Text',var(--font); cursor:pointer; }
 .model-option:hover { background:var(--bg-hover); }
@@ -616,6 +620,10 @@ a { color: var(--accent); }
 .ms-model { font-weight: 600; color: var(--fg); }
 .ms-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-empty { font-size: 13.75px; color: var(--fg-soft); padding: 4px 0; }
+.ms-default-tag { display:inline-flex; align-items:center; margin:7px 8px 0 0; padding:4px 10px; border:1px solid var(--border-soft); border-radius:999px; background:var(--bg-user); color:var(--fg-muted); font-size:12px; }
+.ms-default-note { display:inline-block; margin:7px 8px 0 0; color:var(--fg-soft); font-size:12px; }
+.ms-default-btn { margin:7px 8px 0 0; }
+.ms-default-btn:hover { color:var(--fg) !important; background:var(--bg-hover) !important; }
 .ms-entry button { border: none; background: transparent; color: var(--fg-soft); border-radius: 6px; padding: 2px 6px; }
 .ms-entry button:hover { color: var(--danger); }
 

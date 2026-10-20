@@ -43,14 +43,3 @@ def apply_primary_provider_overrides(
         model = legacy_model
 
     return provider, base_url, api_key, model
-
-
-def get_think_provider_overrides() -> tuple[str, str, str, str]:
-    """Read THINK_* connection values independently of the primary model."""
-    provider = str(getattr(settings, "think_provider", "") or "openai").strip()
-    base_url = str(getattr(settings, "think_base_url", "") or "").strip().rstrip("/")
-    api_key = str(getattr(settings, "think_api_key", "") or "").strip()
-    model_id = str(getattr(settings, "think_model_id", "") or "").strip()
-    legacy_model = str(getattr(settings, "think_model", "") or "").strip()
-    # Leave missing values empty: the router must not inherit primary credentials.
-    return provider, base_url, api_key, (model_id or legacy_model)

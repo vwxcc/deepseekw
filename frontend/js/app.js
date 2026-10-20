@@ -651,19 +651,31 @@
   function codeBlockHtml(lang, code) {
     const id = 'code_' + Math.random().toString(36).slice(2);
     const rawCode = String(code || '');
-    const key = String(lang || '').trim().toLowerCase().split(/\s+/)[0];
-    // AI_CH_ACTION marks intentional file-generation code; ordinary snippets stay inert.
+    const key = String(lang || '').trim().toLowerCase().split(/\s+/)[0].replace(/^language-/, '');
+    // Hidden protocol markers let the model request a live HTML preview without
+    // exposing implementation commands in the visible code.
+    const previewMarker = /^\s*<!--\s*AI_CH_PREVIEW_HTML\s*-->/i.test(rawCode) ||
+      /^\s*<!--\s*AI_CH_ACTION:\s*preview-html\s*-->/i.test(rawCode);
     const actionMarker = /^\s*#\s*AI_CH_ACTION:\s*[^\r\n]+/i.test(rawCode);
-    const isFileGenerationBlock = ['python', 'py', 'run'].includes(key) && actionMarker;
+    const cleanedHtml = rawCode
+      .replace(/^\s*<!--\s*AI_CH_PREVIEW_HTML\s*-->\s*/i, '')
+      .replace(/^\s*<!--\s*AI_CH_ACTION:\s*preview-html\s*-->\s*/i, '');
+    const looksLikeHtmlDocument = /^\s*(?:<!doctype\s+html\b|<html(?:\s|>)|<(?:head|body|main|section|article|div|form|header|footer)(?:\s|>))/i.test(cleanedHtml);
+    // Some models incorrectly label an HTML page as Python. Detect a document
+    // only when the block starts like HTML; preserve Python file-generation code.
+    const isHtml = ['html', 'htm', 'xhtml'].includes(key) || previewMarker ||
+      (!actionMarker && looksLikeHtmlDocument && ['python', 'py', 'python3', 'run', 'text', 'plaintext', ''].includes(key));
+    const displayLang = isHtml ? 'html' : (lang || '');
+    const displaySource = isHtml ? cleanedHtml : rawCode;
+    const isFileGenerationBlock = !isHtml && ['python', 'py', 'run'].includes(key) && actionMarker;
     const displayCode = isFileGenerationBlock
-      ? rawCode
+      ? displaySource
           .replace(/^\s*#\s*AI_CH_ACTION:\s*[^\r\n]+\s*(?:\r?\n|$)/i, '')
           .replace(/(?:^|\r?\n)\s*#\s*AI_CH_AUTO_RUN_FILES\s*$/i, '')
           .trimEnd()
-      : rawCode;
+      : displaySource;
     window.__codeStore = window.__codeStore || {};
-    window.__codeStore[id] = { lang: lang || '', code: displayCode };
-    const isHtml = ['html', 'htm'].indexOf(key) >= 0;
+    window.__codeStore[id] = { lang: displayLang, code: displayCode };
     const isSvg = key === 'svg' && /<svg(?:\s|>)/i.test(displayCode);
     const svgDocument = isSvg
       ? '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -672,8 +684,9 @@
       : '';
     const preview = isHtml
       ? '<div class="html-preview"><div class="hp-bar">' + icon('globe') +
-        '<span>Живое превью</span></div>' +
-        '<iframe sandbox="allow-scripts allow-forms" loading="lazy" srcdoc="' +
+        '<span>Живое превью</span><button type="button" class="preview-run" data-preview-run="' + id +
+        '" title="Запустить или обновить HTML-превью">' + icon('play') + '<span>Запустить</span></button></div>' +
+        '<iframe sandbox="allow-scripts allow-forms" loading="eager" title="Предпросмотр HTML" srcdoc="' +
         escapeHtml(displayCode) + '"></iframe></div>'
       : isSvg
         ? '<div class="html-preview svg-preview"><div class="hp-bar">' + icon('image') +
@@ -692,8 +705,8 @@
       ? '<button data-code-toggle="' + id + '" aria-expanded="false" title="Развернуть код">' +
         icon('chevron-down') + '<span>Развернуть</span></button>'
       : '';
-    return '<div class="code-block' + (collapsed ? ' is-collapsed' : '') + '"><div class="code-head"><span>' +
-      escapeHtml(languageLabel(lang)) + '</span><span class="code-acts">' +
+    return '<div class="code-block' + (collapsed ? ' is-collapsed' : '') + (isHtml ? ' html-code-block' : '') + '"><div class="code-head"><span>' +
+      escapeHtml(languageLabel(displayLang)) + '</span><span class="code-acts">' +
       toggleButton +
       '<button data-copy="' + id + '">' + icon('copy') + 'Копировать</button>' +
       '<button data-dl="' + id + '" title="Скачать">' + icon('download') + '</button>' +
@@ -704,7 +717,6 @@
         : '<pre class="code-full"><code>' + escapeHtml(displayCode) + '</code></pre>') +
       '</div>';
   }
-
   function safeHttpUrl(value) {
     const raw = String(value || '').trim();
     if (!/^https?:\/\//i.test(raw)) return '';
@@ -1149,7 +1161,6 @@
     modelSets: [],
     modelSetId: '',
     effort: 'medium',
-    thinkMode: false,
     usage: null,
     draftTail: null,
     memories: [],
@@ -3982,6 +3993,18 @@
         '<span>' + (expanded ? 'Свернуть' : 'Развернуть') + '</span>';
     }));
 
+    $$('[data-preview-run]', scope).forEach(button => button.addEventListener('click', () => {
+      const rec = (window.__codeStore || {})[button.dataset.previewRun];
+      const preview = button.closest('.html-preview');
+      const frame = preview ? $('iframe', preview) : null;
+      if (!rec || typeof rec.code !== 'string' || !frame) {
+        toast('Код для HTML-превью не найден.', 'error');
+        return;
+      }
+      frame.srcdoc = rec.code + '\n<!-- AI_CH_PREVIEW_RELOAD:' + Date.now() + ' -->';
+      button.blur();
+    }));
+
     $$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
@@ -4739,7 +4762,6 @@
         web_search: true,
         execution_target: selectedExecutionTarget,
         effort: state.effort,
-        think_mode: state.thinkMode,
         style: state.style,
       }, { optimistic: true, input, draft, attachments: sentAttachments });
       requestStarted = true;
@@ -4803,21 +4825,6 @@
 
   function bindComposer() {
     const input = $('#input');
-    const thinkButton = $('#think-btn');
-    if (thinkButton) {
-      const syncThinkButton = () => {
-        thinkButton.classList.toggle('active', Boolean(state.thinkMode));
-        thinkButton.setAttribute('aria-pressed', String(Boolean(state.thinkMode)));
-        thinkButton.title = state.thinkMode
-          ? 'Think включён: запрос уйдёт второй модели'
-          : 'Think выключен: используется основная модель';
-      };
-      thinkButton.addEventListener('click', () => {
-        state.thinkMode = !state.thinkMode;
-        syncThinkButton();
-      });
-      syncThinkButton();
-    }
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }

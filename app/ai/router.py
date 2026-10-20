@@ -46,7 +46,7 @@ from ..services.usage import account, est, record, window_spend
 from ..services.websearch import format_context, image_search, read_search_results, read_web_page, web_search
 from . import model_sets as ms
 from . import prompts
-from .provider_config import apply_primary_provider_overrides, get_think_provider_overrides
+from .provider_config import apply_primary_provider_overrides
 from .prompts import (
     extract_ask,
     extract_memories,
@@ -60,6 +60,7 @@ from .prompts import (
 from .providers import (
     ProviderError,
     complete_chat,
+    complete_chat_with_usage,
     is_model_unavailable_error,
     stream_chat,
 )
@@ -68,6 +69,22 @@ log = logging.getLogger("chatstudio.ai")
 
 SCHEDULE_MARKER_RE = re.compile(r"\[\[\s*AICH_SCHEDULE\s*:\s*(\{[\s\S]*?\})\s*\]\]", re.I)
 USER_TIMEZONE = ZoneInfo("Europe/Berlin")
+
+
+FAST_QWEN_DECLINE_MARKER = "[[AICH_FAST_QWEN_DECLINE]]"
+FAST_QWEN_SYSTEM_PROMPT = (
+    "Ты — быстрая вспомогательная модель AI CH, которая отвечает только на лёгкие и средние запросы. "
+    "Жёсткий лимит генерации — не более 8000 выходных токенов. Если не уверен, что можешь полностью, "
+    "корректно и без догадок решить запрос в пределах 8000 выходных токенов, немедленно верни ровно "
+    + FAST_QWEN_DECLINE_MARKER +
+    " и больше ничего. Не начинай частичный ответ. Обязательно откажись от больших или многошаговых "
+    "задач, длинных исследований, сложного анализа, длинного кода, создания PPTX/DOCX/XLSX/PDF и иных "
+    "скачиваемых файлов, обработки больших вложений, выполнения кода, а также запросов, где требуется "
+    "много фактов или проверок. Для коротких объяснений, небольших вычислений, перевода, краткого "
+    "пересказа, обычных вопросов и компактных HTML-страниц отвечай ясно и полностью. Не упоминай этот "
+    "внутренний режим пользователю. Если задача простая/средняя, но ответ может превысить лимит, "
+    "верни только маркер отказа. Не печатай маркер, если отвечаешь."
+)
 
 _ARTIFACT_NOUNS = (
     r"(?:файл\w*|презентац\w*|слайд\w*|таблиц\w*|документ\w*|отч[её]т\w*|резюме|"
@@ -309,7 +326,6 @@ class Job:
     user_text: str = ""
     model_set_id: str | None = None
     effort: str | None = None
-    think_mode: bool = False
     user_id: str | None = None
     mode: str = "chat"
     execution_target: str = "site"
@@ -492,9 +508,8 @@ class AIRouter:
         self,
         route_type: RouteType,
         model_set_id: str | None = None,
-        think_mode: bool = False,
     ) -> tuple[str, str, list[EntryConfig]]:
-        """Resolve the primary model or its separate Think override."""
+        """Resolve the configured primary MAIN model."""
         del route_type, model_set_id
         async with SessionLocal() as db:
             result = await db.execute(
@@ -542,34 +557,6 @@ class AIRouter:
                 else (getattr(e, "price_cache", 0.0) or 0.0)
             )
             entry_id, resolved_name = e.id, mset.name
-            if think_mode:
-                primary_provider, primary_base_url, primary_api_key, primary_model = (
-                    get_think_provider_overrides()
-                )
-                missing = [
-                    label for label, value in (
-                        ("THINK_BASE_URL", primary_base_url),
-                        ("THINK_API_KEY", primary_api_key),
-                        ("THINK_MODEL_ID (или THINK_MODEL)", primary_model),
-                    ) if not value
-                ]
-                if missing:
-                    raise ProviderError(
-                        "Think не настроен в Render: заполните " + ", ".join(missing)
-                        + ". Основная модель не будет подменена автоматически."
-                    )
-                temperature = (
-                    settings.think_temperature if settings.think_temperature is not None
-                    else e.temperature
-                )
-                max_tokens = (
-                    settings.think_max_tokens if settings.think_max_tokens is not None
-                    else e.max_tokens
-                )
-                price_in = settings.think_price_in if settings.think_price_in is not None else (getattr(e, "price_in", 0.0) or 0.0)
-                price_out = settings.think_price_out if settings.think_price_out is not None else (getattr(e, "price_out", 0.0) or 0.0)
-                price_cache = settings.think_price_cache if settings.think_price_cache is not None else (getattr(e, "price_cache", 0.0) or 0.0)
-                entry_id, resolved_name = f"{e.id}:think", f"{mset.name} · Think"
             configs = [EntryConfig(
                 id=entry_id,
                 model_set_id=e.model_set_id,
@@ -586,6 +573,199 @@ class AIRouter:
                 price_cache=float(price_cache),
             )]
             return mset.id, resolved_name, configs
+
+
+    def _fast_qwen_entry(self, primary: EntryConfig) -> EntryConfig | None:
+        """Build the optional fast-lane model from its own independent credentials."""
+        base_url = str(settings.fast_qwen_base_url or "").strip().rstrip("/")
+        api_key = str(settings.fast_qwen_api_key or "").strip()
+        model_id = str(settings.fast_qwen_model_id or "").strip()
+        if not (base_url and api_key and model_id):
+            return None
+        return EntryConfig(
+            id="fast-qwen-automatic",
+            model_set_id="fast-qwen-automatic",
+            provider="openai",
+            base_url=base_url,
+            api_key=api_key,
+            model=model_id,
+            temperature=0.2,
+            max_tokens=min(8000, max(1, int(settings.fast_qwen_max_tokens or 8000))),
+            timeout=max(5, int(settings.fast_qwen_timeout or 60)),
+            max_parallel=1,
+            price_in=float(settings.fast_qwen_price_in or 0.0),
+            price_out=float(settings.fast_qwen_price_out or 0.0),
+            price_cache=float(settings.fast_qwen_price_cache or 0.0),
+        )
+
+    async def _fast_qwen_once(
+        self, entry: EntryConfig, messages: list[dict]
+    ) -> tuple[str, dict | None, bool]:
+        """Return text, usage and acceptance; declined/truncated calls may still cost tokens."""
+        prompt_messages = [dict(item) for item in messages if isinstance(item, dict)]
+        if prompt_messages and prompt_messages[0].get("role") == "system":
+            original = str(prompt_messages[0].get("content") or "")
+            prompt_messages[0]["content"] = original + "\n\n" + FAST_QWEN_SYSTEM_PROMPT
+        else:
+            prompt_messages.insert(0, {"role": "system", "content": FAST_QWEN_SYSTEM_PROMPT})
+        answer, usage = await complete_chat_with_usage(
+            messages=prompt_messages,
+            base_url=entry.base_url,
+            api_key=entry.api_key,
+            model=entry.model,
+            temperature=entry.temperature,
+            max_tokens=min(8000, max(1, entry.max_tokens)),
+            timeout=entry.timeout,
+            disable_thinking=True,
+            allow_reasoning_fallback=False,
+            error_env_prefix="FAST_QWEN",
+        )
+        answer = str(answer or "").strip()
+        if not answer or FAST_QWEN_DECLINE_MARKER.casefold() in answer.casefold():
+            return answer, usage, False
+        if isinstance(usage, dict):
+            if usage.get("_finish_reason") == "length":
+                return answer, usage, False
+            try:
+                if int(usage.get("completion_tokens") or 0) >= min(8000, entry.max_tokens) - 2:
+                    return answer, usage, False
+            except (TypeError, ValueError):
+                pass
+        return answer, usage, True
+
+    async def _race_primary_and_fast(
+        self, job: Job, primary: EntryConfig, fast: EntryConfig, messages: list[dict]
+    ) -> tuple[tuple[str, str, dict | None], EntryConfig] | None:
+        """Choose the first complete valid answer; keep partial losing output invisible."""
+        primary_events: list[tuple[str, str]] = []
+
+        async def primary_call():
+            try:
+                value = await self._stream_once(
+                    job, primary, messages, defer_output=True, deferred_events=primary_events
+                )
+                return ("primary", time.monotonic(), value, None)
+            except Exception as exc:
+                return ("primary", time.monotonic(), None, exc)
+
+        async def fast_call():
+            try:
+                value = await self._fast_qwen_once(fast, messages)
+                return ("fast", time.monotonic(), value, None)
+            except Exception as exc:
+                return ("fast", time.monotonic(), None, exc)
+
+        primary_task = asyncio.create_task(primary_call(), name="ai-primary-race")
+        fast_task = asyncio.create_task(fast_call(), name="ai-fast-qwen-race")
+        pending: set[asyncio.Task] = {primary_task, fast_task}
+        winner: tuple[tuple[str, str, dict | None], EntryConfig] | None = None
+        errors: list[str] = []
+        completed_usage: dict[str, dict | None] = {}
+
+        try:
+            while pending and not job.cancel.is_set():
+                done, pending = await asyncio.wait(
+                    pending, timeout=0.25, return_when=asyncio.FIRST_COMPLETED
+                )
+                if not done:
+                    continue
+                outcomes = []
+                for task in done:
+                    try:
+                        outcomes.append(task.result())
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception as exc:
+                        errors.append(f"{type(exc).__name__}: {exc}")
+                # Record usage for every fully completed call, including a losing
+                # model or a Qwen response rejected by the prompt/length guard.
+                outcomes.sort(key=lambda item: (item[1], 0 if item[0] == "primary" else 1))
+                for lane, _, value, error in outcomes:
+                    if error is not None:
+                        errors.append(f"{lane}: {type(error).__name__}: {error}")
+                        continue
+                    if lane == "primary":
+                        if value is None:
+                            errors.append("primary: генерация прервана")
+                            continue
+                        full, thinking, usage = value
+                        completed_usage["primary"] = usage
+                        visible = str(full or thinking or "").strip()
+                        if winner is None and visible:
+                            winner = ((str(full or ""), str(thinking or ""), usage), primary)
+                            for event in primary_events:
+                                await job.output.put(event)
+                        elif not visible:
+                            errors.append("primary: пустой ответ")
+                        continue
+
+                    if value is None:
+                        # The request failed before the provider returned a response.
+                        continue
+                    answer, usage, accepted = value
+                    completed_usage["fast"] = usage
+                    if winner is not None or not accepted:
+                        continue
+                    # Do not let the fast lane produce downloadable artifacts or
+                    # replace a dedicated Code-mode response, even if it ignores the prompt.
+                    if job.mode == "code" or is_artifact_request(job.user_text):
+                        continue
+                    activity_parser = ActivityMarkupParser()
+                    activity_items = activity_parser.feed(str(answer))
+                    activity_items.extend(activity_parser.finish())
+                    visible_parts: list[str] = []
+                    deferred_events: list[tuple[str, str]] = []
+                    for item in activity_items:
+                        kind = item.get("kind")
+                        if kind == "text":
+                            visible_parts.append(str(item.get("text") or ""))
+                        elif kind == "status":
+                            deferred_events.append(("ui_status", str(item.get("text") or "")))
+                        elif kind == "action":
+                            deferred_events.append((
+                                "ui_action",
+                                json.dumps(
+                                    {"icon": item.get("icon") or "sparkle", "text": item.get("text") or ""},
+                                    ensure_ascii=False,
+                                ),
+                            ))
+                    visible_answer = "".join(visible_parts).strip()
+                    if visible_answer:
+                        winner = ((visible_answer, "", usage), fast)
+                        for event in deferred_events:
+                            await job.output.put(event)
+                if winner:
+                    break
+        finally:
+            for task in (primary_task, fast_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(primary_task, fast_task, return_exceptions=True)
+
+        # Bill every fully completed losing request. The winner is billed later
+        # with the final message; cancelled/incomplete requests have no confirmed usage.
+        winning_lane = "fast" if winner and winner[1].id == fast.id else "primary"
+        for lane, usage in completed_usage.items():
+            if lane == winning_lane and winner is not None:
+                continue
+            if not usage:
+                continue
+            entry = fast if lane == "fast" else primary
+            action = "fast_qwen_race_lost" if lane == "fast" else "main_race_lost"
+            await self._bill(job, entry, usage, action)
+
+        if job.cancel.is_set():
+            await self._finish(
+                job.message_id, MessageStatus.cancelled, error="Остановлено пользователем"
+            )
+            await job.output.put(("cancelled", ""))
+            return None
+        if winner:
+            lane = "fast Qwen" if winner[1].id == fast.id else "primary"
+            log.info("Automatic model race winner for message %s: %s", job.message_id, lane)
+            return winner
+        detail = "; ".join(errors[-4:]) or "обе модели вернули пустой ответ"
+        raise ProviderError("Не удалось получить полноценный ответ ни от одной модели: " + detail)
 
     async def _acquire_primary(
         self, job: Job, entries: list[EntryConfig], skip: set[str]
@@ -760,8 +940,16 @@ class AIRouter:
         finally:
             self._primary_generation_lock.release()
 
-    async def _stream_once(self, job: Job, entry: EntryConfig, messages: list[dict]):
-        """Stream clean answer text while forwarding short activity metadata separately."""
+    async def _stream_once(
+        self,
+        job: Job,
+        entry: EntryConfig,
+        messages: list[dict],
+        *,
+        defer_output: bool = False,
+        deferred_events: list[tuple[str, str]] | None = None,
+    ):
+        """Stream clean answer text; optionally buffer activity UI events until a winner is chosen."""
         full = ""
         thinking = ""
         usage: dict | None = None
@@ -775,17 +963,28 @@ class AIRouter:
                     text = item.get("text") or ""
                     if text:
                         full += text
-                        await job.output.put(("delta", text))
+                        if not defer_output:
+                            await job.output.put(("delta", text))
                 elif kind == "status":
-                    await job.output.put(("ui_status", item["text"]))
+                    event = ("ui_status", str(item["text"]))
+                    if defer_output:
+                        if deferred_events is not None:
+                            deferred_events.append(event)
+                    else:
+                        await job.output.put(event)
                 elif kind == "action":
-                    await job.output.put((
+                    event = (
                         "ui_action",
                         json.dumps(
                             {"icon": item["icon"], "text": item["text"]},
                             ensure_ascii=False,
                         ),
-                    ))
+                    )
+                    if defer_output:
+                        if deferred_events is not None:
+                            deferred_events.append(event)
+                    else:
+                        await job.output.put(event)
 
         async for kind, piece in stream_chat(
             messages=messages,
@@ -1363,7 +1562,7 @@ class AIRouter:
 
         try:
             mset_id, mset_name, entries = await self._resolve_entries(
-                job.route_type, job.model_set_id, think_mode=job.think_mode
+                job.route_type, job.model_set_id
             )
         except ProviderError as e:
             await self._finish(job.message_id, MessageStatus.failed, error=str(e))
@@ -1434,7 +1633,20 @@ class AIRouter:
                             answer = blocked
                             usage = None
                             break
-                        got = await self._stream_once(job, entry, messages)
+                        response_entry = entry
+                        fast_entry = self._fast_qwen_entry(entry)
+                        if fast_entry is not None:
+                            raced = await self._race_primary_and_fast(job, entry, fast_entry, messages)
+                            if raced is None:
+                                return
+                            got, response_entry = raced
+                            # Both answers were buffered until a full answer won.
+                            # Only now expose the selected answer to the client.
+                            selected_text = str(got[0] or got[1] or "")
+                            if selected_text.strip():
+                                await job.output.put(("delta", selected_text))
+                        else:
+                            got = await self._stream_once(job, entry, messages)
                         if got is None:
                             return
                         full, thinking, usage = got
@@ -1647,7 +1859,12 @@ class AIRouter:
                             ))
                         )
 
-                    await self._bill(job, entry, usage, "main")
+                    await self._bill(
+                        job,
+                        response_entry,
+                        usage,
+                        "fast_qwen" if response_entry.id == "fast-qwen-automatic" else "main",
+                    )
                     answer = await _process_schedule_markers(job.user_id, answer)
                     await self._finish(
                         job.message_id,

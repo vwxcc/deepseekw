@@ -24,7 +24,7 @@ def is_model_unavailable_error(error: object) -> bool:
     )
 
 
-def _format_http_error(status_code: int, body: str, model: str) -> str:
+def _format_http_error(status_code: int, body: str, model: str, env_prefix: str = "QWEN") -> str:
     """Explain a missing provider model/channel without hiding the upstream request ID."""
     if not is_model_unavailable_error(body):
         return f"HTTP {status_code}: {body[:400]}"
@@ -43,8 +43,8 @@ def _format_http_error(status_code: int, body: str, model: str) -> str:
     return (
         f"HTTP {status_code}: провайдер не нашёл доступный канал для модели{model_label} "
         f"(model_not_found). Ответ провайдера: {message[:300]}. "
-        "Проверьте в Render → ai-ch → Environment, что QWEN_MODEL_ID точно совпадает "
-        "с внешним ID модели у выбранного API-шлюза, а QWEN_BASE_URL и QWEN_API_KEY "
+        f"Проверьте в Render → ai-ch → Environment, что {env_prefix}_MODEL_ID точно совпадает "
+        f"с внешним ID модели у выбранного API-шлюза, а {env_prefix}_BASE_URL и {env_prefix}_API_KEY "
         "относятся к этому же провайдеру. На стороне провайдера также должен быть "
         "активный канал/доступ к модели в группе default. Изменение URL или ключа "
         "само по себе не создаёт канал для модели."
@@ -200,13 +200,70 @@ async def complete_chat(
             resp = await client.post(url, json=pl, headers=_headers(api_key))
             if resp.status_code >= 400:
                 raise ProviderError(
-                    _format_http_error(resp.status_code, resp.text, str(pl.get("model") or ""))
+                    _format_http_error(
+                        resp.status_code, resp.text, str(pl.get("model") or ""), error_env_prefix
+                    )
                 )
             data = resp.json()
             choices = data.get("choices") or []
             if not choices:
                 raise ProviderError("Провайдер вернул пустой ответ")
             return _extract_text(choices[0].get("message") or {}).strip()
+
+    try:
+        return await _once(payload)
+    except ProviderError as e:
+        if "reasoning_effort" in payload and "400" in str(e):
+            payload.pop("reasoning_effort", None)
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            return await _once(payload)
+        raise
+
+
+async def complete_chat_with_usage(
+    *,
+    messages: list[dict],
+    base_url: str,
+    api_key: str,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+    disable_thinking: bool = True,
+    effort: str | None = None,
+    allow_reasoning_fallback: bool = True,
+    error_env_prefix: str = "QWEN",
+) -> tuple[str, dict | None]:
+    """Complete a chat and return provider usage; optionally reject reasoning-only text."""
+    url = _endpoint(base_url)
+    payload = _build_payload(
+        messages=messages, model=model, temperature=temperature, max_tokens=max_tokens,
+        stream=False, disable_thinking=disable_thinking, effort=effort,
+    )
+
+    async def _once(pl: dict) -> tuple[str, dict | None]:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=pl, headers=_headers(api_key))
+            if resp.status_code >= 400:
+                raise ProviderError(
+                    _format_http_error(resp.status_code, resp.text, str(pl.get("model") or ""))
+                )
+            data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise ProviderError("Провайдер вернул пустой ответ")
+            message = choices[0].get("message") or {}
+            if allow_reasoning_fallback:
+                text = _extract_text(message).strip()
+            else:
+                content = message.get("content")
+                text = content.strip() if isinstance(content, str) else ""
+            raw_usage = data.get("usage")
+            usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
+            # Preserve truncation metadata for the caller without changing billing fields.
+            if choices[0].get("finish_reason") == "length":
+                usage["_finish_reason"] = "length"
+            return text, usage or None
 
     try:
         return await _once(payload)

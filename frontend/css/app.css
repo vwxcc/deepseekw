@@ -456,6 +456,58 @@ a { color: var(--accent); }
 .code-block pre { margin: 0; background: var(--bg-code); color: var(--fg); padding: 13px 15px; overflow-x: auto; }
 .code-block code { font-family: var(--mono); font-size: 14.3px; background: none; padding: 0; color: inherit; }
 
+/* HTML code blocks render an isolated page preview before the source. */
+.html-preview {
+  margin: 0 0 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+.html-preview .hp-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  font-size: 13.2px;
+}
+.html-preview .hp-bar > span { flex: 1 1 auto; min-width: 0; }
+.html-preview .hp-bar .ic { width: 15px; height: 15px; flex: 0 0 auto; }
+.html-preview .hp-bar button.preview-run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  white-space: nowrap;
+}
+.html-preview .hp-bar button.preview-run:hover { background: var(--bg-hover); }
+.html-preview .hp-bar button.preview-run .ic { width: 13px; height: 13px; }
+.html-preview iframe {
+  display: block;
+  width: 100%;
+  height: 380px;
+  border: 0;
+  background: #fff;
+}
+.html-preview.svg-preview iframe { height: 400px; }
+.html-code-block .code-head > span:first-child { color: var(--fg); font-weight: 600; }
+@media (max-width: 620px) {
+  .html-preview iframe { height: 340px; }
+  .html-preview.svg-preview iframe { height: 360px; }
+  .html-preview .hp-bar { gap: 6px; }
+  .html-preview .hp-bar button.preview-run { padding: 4px 7px; }
+}
+
 /* ============================================================
    Files panel
    ============================================================ */
@@ -3538,10 +3590,11 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
 }
 
 
-/* Focused AI CH refinements: beige sidebar controls and Think. */
+/* Sidebar shortcuts blend into the sidebar surface instead of looking like raised cards. */
 #sidebar .new-chat,
 #sidebar .chip-btn,
-#sidebar .side-item { background: var(--bg); }
+#sidebar .side-item { background: var(--bg-side); }
+#sidebar .side-row.top-account-actions #sidebar-limits-btn { background: var(--bg-side); }
 #sidebar .new-chat:hover,
 #sidebar .chip-btn:hover,
 #sidebar .side-item:hover { background: var(--bg-hover); }
@@ -3552,16 +3605,7 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
 }
 #input { padding-left: 0; }
 .composer-row #input { width: auto; flex: 1 1 0; min-width: 64px; }
-#composer .think-toggle {
-  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
-  gap: 6px; min-height: 34px; padding: 6px 11px;
-  color: var(--fg-muted); background: var(--bg); border: 1px solid var(--border-soft);
-  white-space: nowrap;
-}
-#composer .think-toggle .ic { width: 16px; height: 16px; color: var(--fg-soft); }
-#composer .think-toggle.active { color: var(--fg); background: var(--bg-active); border-color: var(--border); }
-#composer .think-toggle.active .ic { color: var(--fg-muted); }
-#composer .think-toggle:focus-visible, .file-code-run:focus-visible { outline: 2px solid var(--fg-muted); outline-offset: 2px; }
+.file-code-run:focus-visible { outline: 2px solid var(--fg-muted); outline-offset: 2px; }
 .code-acts button.file-code-run {
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
   padding: 5px 10px; border: 1px solid var(--border); border-radius: 7px;
@@ -3580,5 +3624,4 @@ mark.chat-search-match.is-current { background: #ffc94d; box-shadow: 0 0 0 2px r
 .connectors-empty p { max-width: 420px; margin: 0; color: var(--fg-muted); font-size: 13px; line-height: 1.6; }
 @media (max-width: 620px) {
   #modal-root .modal.share-wide { width: 85vw; max-width: 85vw; }
-  #composer .think-toggle { padding: 6px 9px; }
 }

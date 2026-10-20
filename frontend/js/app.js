@@ -2231,7 +2231,13 @@
       const draft = n.draft || '';
 
       if (generating) {
-        inner = activityHtml(n, true) + messageFilesHtml(n);
+        // Render the accumulated draft while the model is still responding.
+        // renderMarkdown also recognises complete code fences, math and UI blocks.
+        const liveDraft = String(draft || n.publicStream || '');
+        inner = activityHtml(n, true) + messageFilesHtml(n) +
+          (liveDraft.trim()
+            ? '<div class="content md streaming-answer" aria-live="polite">' + renderMarkdown(liveDraft) + '</div>'
+            : '');
       } else if (failed) {
         inner = activityHtml(n, false) + messageFilesHtml(n) +
           '<div class="content md" style="color:var(--danger)">Ошибка: ' +
@@ -4370,7 +4376,9 @@
             state.streamStarted = true;
             renderActivityPopup(n);
           }
-          if (needsAnswerBody && state.currentChatId === streamContext.chatId) {
+          if (n && state.currentChatId === streamContext.chatId) {
+            // Update the visible answer as chunks arrive, not just the activity panel.
+            // Keep the same message node and rebind controls created by live Markdown.
             renderMessageInPlace(streamContext.assistantId);
             bindStreamRefs();
           }

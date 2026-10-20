@@ -1161,8 +1161,8 @@ class AIRouter:
         fence = match.group("fence")
         tick = chr(96) * 3
 
-        # With sandbox disabled, or when a device target was explicitly chosen,
-        # let the browser run the marked block after the terminal completion event.
+        # Only an explicit device target uses the browser-side runner.
+        # All other targets execute in the isolated server runner after the full answer.
         if job.execution_target == "device":
             device_fence = tick + "python\n" + code + "\n# AI_CH_AUTO_RUN_FILES\n" + tick
             return str(answer).replace(fence, device_fence).strip(), []
@@ -1496,7 +1496,8 @@ class AIRouter:
             if device_only:
                 setattr(job, "sandbox_available", False)
                 system_prompt += (
-                    "\n\nРЕЖИМ СОЗДАНИЯ ФАЙЛА ПОСЛЕ ПОЛНОГО ОТВЕТА: для этой задачи явно выбран запуск на устройстве. Не используй fileplan, агентные блоки и не "
+                    "\n\nРЕЖИМ СОЗДАНИЯ ФАЙЛА ПОСЛЕ ПОЛНОГО ОТВЕТА: для этой задачи явно выбран запуск на устройстве. "
+                    "Не используй fileplan, агентные блоки и не "
                     "делай план отдельным вызовом. Сразу дай один полный ответ. Если нужен скачиваемый файл, "
                     "в конце добавь ОДИН полный fenced Python-блок, действительно создающий конечный файл "
                     "в текущей рабочей папке. Первая строка — комментарий # AI_CH_ACTION: Создаю готовый файл; "

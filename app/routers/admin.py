@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import get_current_admin, get_db, require_csrf
-from ..models import Chat, File, Message, ModelSet, ModelSetEntry, RouteType, User
+from ..models import Chat, File, Message, ModelSet, ModelSetEntry, ReadableTextModelConfig, RouteType, StatusModelConfig, User
 from ..schemas import (
     AdminChatOut,
     AdminStatsOut,
@@ -21,6 +21,7 @@ from ..schemas import (
     ModelSetOut,
     ModelSetUpdate,
     ShareOut,
+    AuxiliaryModelConfigUpdate,
 )
 from ..services.model_sets_view import entry_out, model_set_out
 
@@ -49,6 +50,58 @@ async def _get_set(db: AsyncSession, set_id: str) -> ModelSet:
     if ms is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Model Set не найден")
     return ms
+
+
+def _aux_config_out(config):
+    return {
+        "provider": config.provider if config else "openai",
+        "base_url": config.base_url if config else "",
+        "model": config.model if config else "",
+        "is_enabled": bool(config.is_enabled) if config else False,
+        "configured": bool(config and config.is_enabled and config.base_url.strip() and config.model.strip()),
+        "has_api_key": bool(config and config.api_key),
+        "price_in": float(config.price_in or 0) if config else 0.0,
+        "price_out": float(config.price_out or 0) if config else 0.0,
+    }
+
+
+async def _save_aux_config(db, model_cls, data):
+    base_url, model = data.base_url.strip().rstrip("/"), data.model.strip()
+    if data.is_enabled and (not base_url or not model):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Укажите Base URL и ID модели или отключите модель")
+    config = await db.get(model_cls, 1)
+    if config is None:
+        config = model_cls(id=1)
+        db.add(config)
+    config.provider = data.provider.strip()[:64] or "openai"
+    config.base_url, config.model = base_url[:512], model[:255]
+    config.is_enabled = data.is_enabled
+    config.price_in, config.price_out = data.price_in, data.price_out
+    if data.api_key.strip():
+        config.api_key = data.api_key.strip()[:512]
+    await db.commit()
+    await db.refresh(config)
+    return _aux_config_out(config)
+
+
+@router.get("/status-model")
+async def get_status_model_config(db: AsyncSession = Depends(get_db)):
+    return {**_aux_config_out(await db.get(StatusModelConfig, 1)), "temperature": 1.1}
+
+
+@router.patch("/status-model")
+async def patch_status_model_config(data: AuxiliaryModelConfigUpdate, _csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)):
+    return {**await _save_aux_config(db, StatusModelConfig, data), "temperature": 1.1}
+
+
+@router.get("/readable-text-model")
+async def get_readable_text_model_config(db: AsyncSession = Depends(get_db)):
+    return _aux_config_out(await db.get(ReadableTextModelConfig, 1))
+
+
+@router.patch("/readable-text-model")
+async def patch_readable_text_model_config(data: AuxiliaryModelConfigUpdate, _csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)):
+    return await _save_aux_config(db, ReadableTextModelConfig, data)
 
 
 @router.get("/model-sets", response_model=list[ModelSetOut])

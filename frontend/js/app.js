@@ -5931,6 +5931,29 @@
     const root = $('#modal-root');
     async function rerender() {
       const sets = (await api.get('/api/admin/model-sets')).filter(s => s.route_type === 'MAIN' && !s.is_router);
+      const statusConfig = await api.get('/api/admin/status-model');
+      const readableConfig = await api.get('/api/admin/readable-text-model');
+      function auxCard(prefix, title, description, config, temp) {
+        const field = (name, label, value, type='text', placeholder='') =>
+          '<label><span>' + label + '</span><input id="' + prefix + '-' + name + '" type="' + type + '" value="' +
+          (type === 'password' ? '' : escapeHtml(String(value ?? ''))) + '" placeholder="' +
+          escapeHtml(placeholder || (type === 'password' && config.has_api_key ? 'Ключ сохранён — пустое поле не изменит его' : '')) +
+          '" autocomplete="' + (type === 'password' ? 'new-password' : 'off') + '"></label>';
+        return '<section class="aux-model-card"><header><div><b>' + title + '</b><p>' + description + '</p></div>' +
+          (temp ? '<span class="aux-temperature">Temperature 1.1</span>' : '') + '</header><div class="aux-model-fields">' +
+          field('provider','Провайдер',config.provider || 'openai') +
+          field('url','API Base URL',config.base_url,'text','https://…/v1') +
+          field('model','ID модели',config.model,'text','model-id') +
+          field('key','API-ключ','','password') +
+          field('pin','Цена входа, $/1M токенов',config.price_in,'number') +
+          field('pout','Цена выхода, $/1M токенов',config.price_out,'number') +
+          '</div><footer><label><input id="' + prefix + '-enabled" type="checkbox"' + (config.is_enabled ? ' checked' : '') + '> Использовать модель</label>' +
+          '<button type="button" id="save-' + prefix + '">Сохранить</button></footer></section>';
+      }
+      const auxiliaryHtml = auxCard('status-model','Модель статусов',
+        'Отдельная модель коротких статусов ожидания; не входит в кластеры.',statusConfig,true) +
+        auxCard('readable-model','Модель читабельного текста для озвучки',
+        'Подготавливает ответы к озвучке; не входит в кластеры.',readableConfig,false);
       const body = sets.length ? sets.map(s => '<div class="ms-set"><div class="ms-head">' +
         '<b>' + escapeHtml(s.name) + '</b><span class="ms-slug">' + escapeHtml(s.slug) + '</span>' +
         '<span class="ms-access ' + (s.free_access ? 'all' : 'pro') + '">' + (s.free_access ? 'Для всех' : 'Только Pro') + '</span>' +
@@ -5952,12 +5975,32 @@
               : '<span class="ms-default-note">Для выбора по умолчанию нужна активная модель</span>')) +
           '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button></div></div>').join('') : '<p>Кластеров пока нет.</p>';
       root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px"><h3>Кластеры моделей</h3>' +
-        '<div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div><div class="row">' +
+        '<div class="modal-body" style="max-height:62vh;overflow:auto">' + auxiliaryHtml + body + '</div><div class="row">' +
         '<button class="ghost" data-add-set>' + icon('plus') + 'Добавить кластер</button><span style="flex:1"></span>' +
         '<button class="solid" data-close>Закрыть</button></div></div></div>';
       $('[data-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
       $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
-      $$('[data-edit-set]', root).forEach(b => b.addEventListener('click', () => { const set = sets.find(s => s.id === b.dataset.editSet); if (set) editSetForm(root,set,rerender); }));
+      async function saveAux(prefix, endpoint) {
+        const button = $('#save-' + prefix, root);
+        button.disabled = true;
+        try {
+          await api.patch(endpoint, {
+            provider: $('#'+prefix+'-provider',root).value.trim() || 'openai',
+            base_url: $('#'+prefix+'-url',root).value.trim(),
+            model: $('#'+prefix+'-model',root).value.trim(),
+            api_key: $('#'+prefix+'-key',root).value,
+            is_enabled: $('#'+prefix+'-enabled',root).checked,
+            price_in: Math.max(0, Number($('#'+prefix+'-pin',root).value) || 0),
+            price_out: Math.max(0, Number($('#'+prefix+'-pout',root).value) || 0),
+          });
+          toast('Настройки сохранены');
+          await rerender();
+        } catch (e) { toast('Не удалось сохранить: ' + e.message, 'error'); }
+        finally { if ($('#save-' + prefix, root)) $('#save-' + prefix, root).disabled = false; }
+      }
+      $('#save-status-model', root).addEventListener('click', () => saveAux('status-model','/api/admin/status-model'));
+      $('#save-readable-model', root).addEventListener('click', () => saveAux('readable-model','/api/admin/readable-text-model'));
+      $('[data-edit-set]', root).forEach(b => b.addEventListener('click', () => { const set = sets.find(s => s.id === b.dataset.editSet); if (set) editSetForm(root,set,rerender); }));
       $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => { if (!confirm('Удалить кластер и его модели?')) return; await api.del('/api/admin/model-sets/' + b.dataset.delSet); await rerender(); await loadModelSets(); }));
       $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => { await api.patch('/api/admin/model-sets/' + b.dataset.toggle, {is_active:b.dataset.active !== '1'}); await rerender(); await loadModelSets(); }));
       $$('[data-default]', root).forEach(b => b.addEventListener('click', async () => {

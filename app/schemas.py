@@ -428,4 +428,14 @@ class ModelSetEntryUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class AuxiliaryModelConfigUpdate(BaseModel):
+    provider: str = Field(default="openai", max_length=64)
+    base_url: str = Field(default="", max_length=512)
+    model: str = Field(default="", max_length=255)
+    api_key: str = Field(default="", max_length=512)
+    is_enabled: bool = True
+    price_in: float = Field(default=0.0, ge=0)
+    price_out: float = Field(default=0.0, ge=0)
+
+
 MessageOut.model_rebuild()

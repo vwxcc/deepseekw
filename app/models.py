@@ -443,3 +443,27 @@ class PlanLimit(Base):
     key: Mapped[str] = mapped_column(String(32), nullable=False)
     value: Mapped[float | None] = mapped_column(Float, nullable=True)
     text_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class StatusModelConfig(Base):
+    __tablename__ = "status_model_config"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    provider: Mapped[str] = mapped_column(String(64), default="openai", nullable=False)
+    base_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    api_key: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    model: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    price_in: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    price_out: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+
+class ReadableTextModelConfig(Base):
+    __tablename__ = "readable_text_model_config"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    provider: Mapped[str] = mapped_column(String(64), default="openai", nullable=False)
+    base_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    api_key: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    model: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    price_in: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    price_out: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

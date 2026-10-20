@@ -1,6 +1,8 @@
 """Seed default data on startup (admin user + default model sets)."""
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,7 @@ from .services.memory_cleanup import clean_noisy_memories
 async def bootstrap() -> None:
     async with SessionLocal() as db:
         await _seed_admin(db)
+        await _seed_pro_users(db)
         await _seed_model_sets(db)
         await _ensure_primary_main_prices(db)
         await _ensure_pro_budget(db)
@@ -108,6 +111,69 @@ async def _seed_admin(db: AsyncSession) -> None:
         # Older startup code implicitly gave the admin Pro limits. Admin rights
         # are independent from a paid subscription; migrate that implicit grant.
         user.plan = "free"
+
+
+async def _seed_pro_users(db: AsyncSession) -> None:
+    """Create configured Pro accounts or grant Pro to existing accounts without resetting credentials."""
+    raw = (settings.pro_users_json or "").strip()
+    if not raw:
+        return
+
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "PRO_USERS_JSON must be a valid JSON array of user objects."
+        ) from exc
+    if not isinstance(entries, list):
+        raise RuntimeError("PRO_USERS_JSON must be a JSON array of user objects.")
+
+    normalized: list[tuple[str, str, str]] = []
+    seen_emails: set[str] = set()
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"PRO_USERS_JSON item {index} must be an object.")
+
+        email_value = entry.get("email")
+        password = entry.get("password")
+        name_value = entry.get("name", "")
+        if not isinstance(email_value, str):
+            raise RuntimeError(f"PRO_USERS_JSON item {index} requires a valid email.")
+        email = email_value.strip().lower()
+        if not email or "@" not in email or len(email) > 320:
+            raise RuntimeError(f"PRO_USERS_JSON item {index} requires a valid email.")
+        if not isinstance(password, str) or not 8 <= len(password) <= 128:
+            raise RuntimeError(
+                f"PRO_USERS_JSON item {index} password must contain 8–128 characters."
+            )
+        if name_value is None:
+            name_value = ""
+        if not isinstance(name_value, str):
+            raise RuntimeError(f"PRO_USERS_JSON item {index} name must be a string.")
+        name = name_value.strip() or email.split("@", 1)[0]
+        if len(name) > 120:
+            raise RuntimeError(f"PRO_USERS_JSON item {index} name must be at most 120 characters.")
+        if email in seen_emails:
+            raise RuntimeError(f"PRO_USERS_JSON contains duplicate email at item {index}.")
+        seen_emails.add(email)
+        normalized.append((email, password, name))
+
+    for email, password, name in normalized:
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+        if user is None:
+            db.add(
+                User(
+                    email=email,
+                    password_hash=hash_password(password),
+                    name=name,
+                    plan="pro",
+                    is_admin=False,
+                )
+            )
+        else:
+            # Keep an existing account's password, name and admin role intact.
+            user.plan = "pro"
 
 
 async def _seed_model_sets(db: AsyncSession) -> None:

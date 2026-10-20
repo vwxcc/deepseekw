@@ -5177,11 +5177,22 @@
   async function loadModelSets() {
     try { state.modelSets = await api.get('/api/models/sets'); if (!Array.isArray(state.modelSets)) state.modelSets = []; }
     catch (e) { state.modelSets = []; }
+    const globalDefault = state.modelSets.find(s => s.is_default) || null;
+    const globalDefaultId = globalDefault ? globalDefault.id : '';
+    const lastKnownDefaultId = localStorage.getItem('aich_default_model_set_id') || '';
+    const globalDefaultChanged = globalDefaultId !== lastKnownDefaultId;
+    if (globalDefaultId) localStorage.setItem('aich_default_model_set_id', globalDefaultId);
+    else localStorage.removeItem('aich_default_model_set_id');
+
     const saved = localStorage.getItem('aich_model_set_id') || state.modelSetId;
     const selected = state.modelSets.find(s => s.id === saved && modelSetCanUse(s));
+    const availableDefault = globalDefault && modelSetCanUse(globalDefault) ? globalDefault : null;
     const firstAllowed = state.modelSets.find(modelSetCanUse);
-    state.modelSetId = (selected || firstAllowed || {}).id || '';
-    if (state.modelSetId) localStorage.setItem('aich_model_set_id', state.modelSetId); else localStorage.removeItem('aich_model_set_id');
+    state.modelSetId = (
+      (globalDefaultChanged && availableDefault) || selected || availableDefault || firstAllowed || {}
+    ).id || '';
+    if (state.modelSetId) localStorage.setItem('aich_model_set_id', state.modelSetId);
+    else localStorage.removeItem('aich_model_set_id');
     renderModelPicker();
   }
 
@@ -5922,6 +5933,11 @@
           (e.price_in || e.price_out ? '$' + (e.price_in || 0) + ' / $' + (e.price_out || 0) : '—') + '</span>' +
           '<button data-edit-entry="' + s.id + '|' + e.id + '" title="ID, цены, контекст, Temperature">Изменить</button>' +
           '<button data-del-entry="' + s.id + '|' + e.id + '" title="Удалить">' + icon('trash') + '</button></div>').join('') : '<div class="ms-empty">нет моделей</div>') +
+          (s.is_default
+            ? '<span class="ms-default-tag">По умолчанию для всех</span>'
+            : (s.is_active && (s.entries || []).some(e => e && e.is_active)
+              ? '<button class="chip-btn ms-default-btn" data-default="' + s.id + '">' + icon('check') + 'Сделать моделью по умолчанию для всех</button>'
+              : '<span class="ms-default-note">Для выбора по умолчанию нужна активная модель</span>')) +
           '<button class="chip-btn" data-add-entry="' + s.id + '">' + icon('plus') + 'модель</button></div></div>').join('') : '<p>Кластеров пока нет.</p>';
       root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:760px"><h3>Кластеры моделей</h3>' +
         '<div class="modal-body" style="max-height:62vh;overflow:auto">' + body + '</div><div class="row">' +
@@ -5931,8 +5947,16 @@
       $('[data-add-set]', root).addEventListener('click', () => addSetForm(root, rerender));
       $$('[data-edit-set]', root).forEach(b => b.addEventListener('click', () => { const set = sets.find(s => s.id === b.dataset.editSet); if (set) editSetForm(root,set,rerender); }));
       $$('[data-del-set]', root).forEach(b => b.addEventListener('click', async () => { if (!confirm('Удалить кластер и его модели?')) return; await api.del('/api/admin/model-sets/' + b.dataset.delSet); await rerender(); await loadModelSets(); }));
-      $$('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => { await api.patch('/api/admin/model-sets/' + b.dataset.toggle, {is_active:b.dataset.active !== '1'}); await rerender(); await loadModelSets(); }));
-      $$('[data-del-entry]', root).forEach(b => { const [sid,eid] = b.dataset.delEntry.split('|'); b.addEventListener('click', async () => { await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); await rerender(); await loadModelSets(); }); });
+      $('[data-toggle]', root).forEach(b => b.addEventListener('click', async () => { await api.patch('/api/admin/model-sets/' + b.dataset.toggle, {is_active:b.dataset.active !== '1'}); await rerender(); await loadModelSets(); }));
+      $('[data-default]', root).forEach(b => b.addEventListener('click', async () => {
+        try {
+          await api.patch('/api/admin/model-sets/' + b.dataset.default, {is_default:true});
+          await rerender();
+          await loadModelSets();
+          toast('Модель по умолчанию обновлена для всех пользователей');
+        } catch (e) { toast('Не удалось изменить модель по умолчанию: ' + e.message, 'error'); }
+      }));
+      $('[data-del-entry]', root).forEach(b => { const [sid,eid] = b.dataset.delEntry.split('|'); b.addEventListener('click', async () => { await api.del('/api/admin/model-sets/' + sid + '/entries/' + eid); await rerender(); await loadModelSets(); }); });
       $$('[data-edit-entry]', root).forEach(b => { const [sid,eid] = b.dataset.editEntry.split('|'); b.addEventListener('click', () => editEntryForm(root,sid,eid,rerender)); });
       $$('[data-add-entry]', root).forEach(b => b.addEventListener('click', () => addEntryForm(root,b.dataset.addEntry,rerender)));
     }

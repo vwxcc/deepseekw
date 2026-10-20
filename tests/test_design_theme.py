@@ -213,6 +213,24 @@ class DesignThemeTests(unittest.TestCase):
         self.assertIn("if (carousel.isConnected) timer.interval = window.setInterval(advance, 2000)", app_js)
         self.assertIn("$$('.aich-ui-actions-carousel', root).forEach", app_js)
 
+    def test_pro_only_models_are_labelled_in_composer_picker(self):
+        root = Path(__file__).resolve().parents[1]
+        app_js = (root / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+        app_css = (root / "frontend" / "css" / "app.css").read_text(encoding="utf-8")
+        schemas = (root / "app" / "schemas.py").read_text(encoding="utf-8")
+        view = (root / "app" / "services" / "model_sets_view.py").read_text(encoding="utf-8")
+        models_router = (root / "app" / "routers" / "models.py").read_text(encoding="utf-8")
+
+        self.assertIn("requires_pro: bool = False", schemas)
+        self.assertIn('requires_pro=not bool(getattr(ms, "free_access", True))', view)
+        self.assertIn("function modelSetRequiresPro(set)", app_js)
+        self.assertIn("const requiresPro = modelSetRequiresPro(set);", app_js)
+        self.assertIn("model-pro-badge", app_js)
+        self.assertIn("model-select-pro-badge", app_js)
+        self.assertIn("Доступно на Pro", app_js)
+        self.assertIn(".model-select-pro-badge", app_css)
+        self.assertIn('entry.model_copy(update={"model": ""})', models_router)
+
     def test_skills_library_hides_system_skill_content_and_persists_user_skills(self):
         root = Path(__file__).resolve().parents[1]
         skill_router = (root / "app" / "routers" / "skills.py").read_text(encoding="utf-8")

@@ -5144,8 +5144,15 @@
     }));
   }
 
+  function modelSetRequiresPro(set) {
+    if (!set || typeof set !== 'object') return false;
+    if (typeof set.requires_pro === 'boolean') return set.requires_pro;
+    if (typeof set.free_access === 'boolean') return !set.free_access;
+    return set.free_access === 0 || String(set.free_access).toLowerCase() === 'false';
+  }
+
   function modelSetCanUse(set) {
-    return !!(set && (set.free_access || (state.user && (state.user.is_admin || state.user.plan === 'pro'))));
+    return !!(set && (!modelSetRequiresPro(set) || (state.user && (state.user.is_admin || state.user.plan === 'pro'))));
   }
 
   function renderModelPicker() {
@@ -5155,21 +5162,24 @@
       selected = state.modelSets.find(modelSetCanUse) || null; state.modelSetId = selected ? selected.id : '';
       if (selected) localStorage.setItem('aich_model_set_id', selected.id); else localStorage.removeItem('aich_model_set_id');
     }
-    button.innerHTML = '<span class="model-select-label">' + escapeHtml(selected ? selected.name : 'Нет доступных моделей') + '</span>' + icon('chevron-down');
-    button.title = selected ? (selected.description || selected.name) : 'Нет активных моделей';
+    button.innerHTML = '<span class="model-select-label">' + escapeHtml(selected ? selected.name : 'Нет доступных моделей') + '</span>' +
+      (selected && modelSetRequiresPro(selected) ? '<span class="model-pro-badge model-select-pro-badge">Доступно на Pro</span>' : '') +
+      icon('chevron-down');
+    button.title = selected ? ((modelSetRequiresPro(selected) ? 'Доступно на Pro · ' : '') + (selected.description || selected.name)) : 'Нет активных моделей';
     button.style.width = 'max-content'; button.style.maxWidth = 'min(44vw,260px)';
     button.setAttribute('aria-expanded', String(!!state.modelPickerOpen)); panel.classList.toggle('hidden', !state.modelPickerOpen);
     if (!state.modelPickerOpen) { panel.innerHTML = ''; return; }
     if (!state.modelSets.length) { panel.innerHTML = '<div class="model-picker-empty">Нет активных кластеров моделей.</div>'; return; }
     panel.innerHTML = state.modelSets.map((set, modelIndex) => {
+      const requiresPro = modelSetRequiresPro(set);
       const locked = !modelSetCanUse(set);
       const entry = (set.entries || []).find(e => e && e.is_active) || (set.entries || [])[0];
       const isSelected = !!(selected && selected.id === set.id);
       const description = String(set.description || '').trim() || 'Универсальные задачи';
       const context = entry && Number(entry.context_len) > 0 ? 'Контекст ' + fmtNum(entry.context_len) : '';
-      return '<button type="button" role="option" aria-selected="' + String(isSelected) + '" class="model-option' + (isSelected ? ' selected' : '') + (locked ? ' locked' : '') + '" data-model-index="' + modelIndex + '">' +
+      return '<button type="button" role="option" aria-selected="' + String(isSelected) + '" aria-disabled="' + String(locked) + '" class="model-option' + (isSelected ? ' selected' : '') + (locked ? ' locked' : '') + '" data-model-index="' + modelIndex + '">' +
         '<span class="model-option-head"><b>' + escapeHtml(set.name) + '</b>' +
-        (!set.free_access ? '<span class="model-pro-badge">Доступно на Pro</span>' : '') +
+        (requiresPro ? '<span class="model-pro-badge">Доступно на Pro</span>' : '') +
         (isSelected ? '<span class="model-option-check">' + icon('check') + '</span>' : '') + '</span>' +
         '<span class="model-option-desc">' + escapeHtml(description) + '</span>' +
         (context ? '<span class="model-option-meta">' + escapeHtml(context) + '</span>' : '') + '</button>';

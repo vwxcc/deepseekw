@@ -350,6 +350,8 @@ class Job:
 _WEB_SEARCH_TRIGGER_RE = re.compile(
     r"(?:https?://|"
     r"\b(?:найди|найдите)\s+(?:мне\s+)?(?:в\s+)?интернет\w*|"
+    r"\bнайди(?:те)?\b.{0,100}\b(?:сайт|страниц|источник|шаблон|презентац|сервис|товар|"
+    r"модел|фото|картин|пример|стать|новост|цен|отзыв|документ|изображен)\w*|"
     r"\bпоищи(?:те)?\b|\bищи(?:те)?\s+в\s+интернет\w*|"
     r"\b(?:актуальн\w*|сегодня|сейчас|на\s+данный\s+момент|текущ\w*|"
     r"новост\w*|цен\w*|стоимост\w*|курс(?:ы)?\s+валют|погод\w*|"
@@ -367,7 +369,9 @@ _SEARCH_SETUP_RE = re.compile(
 )
 _CACHE_SIDE_EFFECT_RE = re.compile(
     r"\b(?:запомни|сохрани|запиши в календарь|запланируй|напомни|"
-    r"добавь в запланировано|добавь в календарь|запиши на дату|выполни код|запусти код)\b",
+    r"добавь в запланировано|добавь в календарь|запиши на дату|выполни код|запусти код|"
+    r"придумай|сочини|напиши (?:рассказ|стих|песн|сказк)|случайн\w*|рандом\w*|"
+    r"выбери за меня|сгенерируй (?:число|имя|идею|вариант|список))\b",
     re.IGNORECASE,
 )
 _RESPONSE_CACHE_TTL = 600.0
@@ -1990,9 +1994,9 @@ class AIRouter:
                         await job.output.put(
                             ("ask", json.dumps({"questions": ask}, ensure_ascii=False))
                         )
-                    if job.first_exchange and code_mode:
-                        # The Code Agent already has a 2-3 turn budget. Make a useful
-                        # title locally so title generation does not add a fourth model call.
+                    if job.first_exchange:
+                        # Set a useful local title for every new chat, avoiding a second,
+                        # separately billed model call after the answer has finished.
                         try:
                             async with SessionLocal() as db:
                                 chat = await db.get(Chat, job.chat_id)
@@ -2002,25 +2006,7 @@ class AIRouter:
                         except Exception as title_error:
                             log.warning("Local Code Agent title update failed: %s", title_error)
                     await job.output.put(("done", answer))
-                    # Normal chats keep model-generated titles. The Code Agent uses
-                    # a deterministic local title to avoid an extra provider request.
-                    if job.first_exchange and not code_mode:
-                        await self.enqueue(
-                            Job(
-                                kind="followup",
-                                route_type=RouteType.TITLE,
-                                chat_id=job.chat_id,
-                                message_id=job.message_id,
-                                user_id=job.user_id,
-                                model_set_id=job.model_set_id,
-                                user_text=job.user_text,
-                                history=[
-                                    *job.history_messages,
-                                    {"role": "assistant", "content": answer},
-                                ],
-                                first_exchange=True,
-                            )
-                        )
+                    # Title generation is intentionally local; don't enqueue a second LLM call.
                     return
                 except asyncio.CancelledError:
                     await self._finish(

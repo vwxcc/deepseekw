@@ -231,6 +231,15 @@ def _one_edit_apart(left: str, right: str) -> bool:
     # Differences limited to case and/or е/ё are valid spelling/search variants.
     if a == b:
         return True
+    if len(a) == len(b):
+        mismatches = [index for index, (x, y) in enumerate(zip(a, b)) if x != y]
+        if (
+            len(mismatches) == 2
+            and mismatches[1] == mismatches[0] + 1
+            and a[mismatches[0]] == b[mismatches[1]]
+            and a[mismatches[1]] == b[mismatches[0]]
+        ):
+            return True
     if abs(len(a) - len(b)) > 1:
         return False
     i = j = edits = 0

@@ -74,6 +74,7 @@ from ..services.audio_state import (
     set_audio_generation_error,
 )
 from ..services.sandbox import list_project_files
+from ..services.ready_answers import find_ready_answer_exact
 from ..services.tts import (
     AUDIO_MEDIA_TYPES,
     TTSGenerationError,
@@ -220,6 +221,29 @@ async def _stream_job(
             # drain its unbounded event queue until the worker persists the result.
             detach_output_drain(job.output)
 
+
+
+async def _stream_ready_answer(
+    request: Request,
+    assistant: Message,
+    user_msg: Message,
+    user_attachments: list,
+    answer: str,
+):
+    """Emit a cached answer through the same SSE protocol as a normal response."""
+    yield _sse(
+        "user_message",
+        _json(message_out(user_msg, attachments=user_attachments or [])),
+    )
+    payload = _json(message_out(assistant))
+    # The browser appends deltas to the initially empty assistant message.
+    payload["content"] = ""
+    payload["status"] = "processing"
+    payload["error"] = None
+    yield _sse("assistant_message", payload)
+    if answer:
+        yield _sse("delta", {"text": answer})
+    yield _sse("done", {"message_id": assistant.id, "text": answer})
 
 def _last_user_text(messages: list[dict]) -> str:
     """Find the most recent actual user request, skipping the synthetic continue prompt."""
@@ -722,7 +746,25 @@ async def send_message(
         max_steps=int((await get_limits(db, user.plan or "free")).get("agent_steps") or 0)
         or None,
     )
+    # Start the normal AI job first. The exact-title lookup runs only after it has
+    # entered the router; on a hit, cancel that work and return the prepared answer.
     await ai_router.enqueue(job)
+
+    if not attached and not code_mode:
+        cached = await find_ready_answer_exact(content)
+        if cached is not None:
+            job.ready_answer_hit = True
+            job.cancel.set()
+            assistant.content = cached.answer
+            assistant.status = MessageStatus.completed
+            assistant.error = None
+            await db.commit()
+            await db.refresh(assistant)
+            return StreamingResponse(
+                _stream_ready_answer(request, assistant, user_msg, user_atts, cached.answer),
+                media_type="text/event-stream",
+                headers=SSE_HEADERS,
+            )
 
     return StreamingResponse(
         _stream_job(request, job, assistant, user_msg, user_atts),

@@ -5232,6 +5232,10 @@
     const esc = value => escapeHtml(String(value == null ? '' : value));
 
     async function rerender(q = currentQuery) {
+      const oldSearch = $('#ready-search', root);
+      const keepSearchFocus = !!oldSearch && document.activeElement === oldSearch;
+      const searchStart = keepSearchFocus ? oldSearch.selectionStart : null;
+      const searchEnd = keepSearchFocus ? oldSearch.selectionEnd : null;
       currentQuery = q;
       let d;
       try { d = await api.get('/api/admin/ready-answers?q=' + encodeURIComponent(q) + '&limit=30'); }
@@ -5279,6 +5283,15 @@
         '<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Подготовленный список (' + (d.seed_questions || []).length +
         ' вопросов)</summary><div style="margin-top:8px">' + seeds + '</div></details></div><div class="row"><span style="flex:1"></span><button class="solid" data-ready-close>Закрыть</button></div></div></div>';
 
+      if (keepSearchFocus) {
+        const searchAfterRender = $('#ready-search', root);
+        if (searchAfterRender) {
+          searchAfterRender.focus();
+          if (searchStart != null && searchEnd != null) {
+            try { searchAfterRender.setSelectionRange(searchStart, searchEnd); } catch (_) { /* search input support varies */ }
+          }
+        }
+      }
       $('[data-ready-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
       $('#ready-refresh', root).addEventListener('click', () => rerender($('#ready-search', root).value.trim()));
       $('#ready-search', root).addEventListener('input', () => {

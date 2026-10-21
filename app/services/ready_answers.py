@@ -100,6 +100,14 @@ async def _ensure_defaults_and_seeds() -> None:
                 ReadyAnswerSeed(question=question, position=index, consumed=False)
                 for index, question in enumerate(SEED_QUESTIONS, start=1)
             ])
+        # Recover jobs that were active when the previous process was killed/redeployed.
+        stale_tasks = list((await db.execute(
+            select(ReadyAnswerTask).where(ReadyAnswerTask.status == "generating")
+        )).scalars().all())
+        for task in stale_tasks:
+            task.status = "queued"
+            task.error = "Возвращено в очередь после перезапуска приложения."
+            task.updated_at = utcnow()
         await db.commit()
 
 

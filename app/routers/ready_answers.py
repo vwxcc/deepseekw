@@ -190,18 +190,32 @@ async def queue_requests(
             ReadyAnswerTask.status.in_(("queued", "generating")),
         )
     )).scalars().all())
-    cleaned = [query for query in cleaned if query not in existing_queries]
+    existing_titles = set((await db.execute(
+        select(ReadyAnswerTitle.title).where(ReadyAnswerTitle.title.in_(cleaned))
+    )).scalars().all())
+    cleaned = [
+        query for query in cleaned
+        if query not in existing_queries and query not in existing_titles
+    ]
     if not cleaned:
-        return {"added": 0, "skipped": len(seen), "message": "Такие запросы уже находятся в очереди."}
-    priority = 10000 if data.priority_first else 0
-    now = utcnow()
+        return {
+            "added": 0, "skipped": len(seen),
+            "message": "Все запросы уже подготовлены или находятся в очереди.",
+        }
+    if data.priority_first:
+        max_priority = int(await db.scalar(
+            select(func.max(ReadyAnswerTask.priority)).where(ReadyAnswerTask.status == "queued")
+        ) or 0)
+        priority = max_priority + 1
+    else:
+        priority = 0
     db.add_all([
         ReadyAnswerTask(
-            query=query, status="queued", priority=priority,
+            query=query, status="queued", priority=priority, position=index,
             source="manual", created_by_id=admin.id,
-            created_at=now, updated_at=now,
+            created_at=utcnow(), updated_at=utcnow(),
         )
-        for query in cleaned
+        for index, query in enumerate(cleaned)
     ])
     await db.commit()
     return {"added": len(cleaned), "skipped": len(seen) - len(cleaned)}

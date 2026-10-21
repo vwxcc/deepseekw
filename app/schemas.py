@@ -18,6 +18,7 @@ class UserOut(ORMModel):
     plan: str
     avatar: int = 0
     is_admin: bool
+    is_guest: bool = False
     created_at: datetime
 
 

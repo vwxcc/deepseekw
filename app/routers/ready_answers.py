@@ -203,15 +203,19 @@ async def add_prepared_questions(
             "Добавьте хотя бы один непустой запрос длиной до 2000 символов.",
         )
 
-    existing_prepared = set((await db.execute(
-        select(ReadyAnswerSeed.question).where(ReadyAnswerSeed.question.in_(cleaned))
-    )).scalars().all())
-    existing_queued = set((await db.execute(
-        select(ReadyAnswerTask.query).where(
-            ReadyAnswerTask.query.in_(cleaned),
-            ReadyAnswerTask.status.in_(("queued", "generating")),
-        )
-    )).scalars().all())
+    existing_prepared = {
+        question.casefold() for question in (await db.execute(
+            select(ReadyAnswerSeed.question).where(ReadyAnswerSeed.question.in_(cleaned))
+        )).scalars().all()
+    }
+    existing_queued = {
+        query.casefold() for query in (await db.execute(
+            select(ReadyAnswerTask.query).where(
+                ReadyAnswerTask.query.in_(cleaned),
+                ReadyAnswerTask.status.in_(("queued", "generating")),
+            )
+        )).scalars().all()
+    }
     normalized_queries = {query.casefold() for query in cleaned}
     existing_titles = set((await db.execute(
         select(ReadyAnswerTitle.normalized_title).where(
@@ -220,8 +224,8 @@ async def add_prepared_questions(
     )).scalars().all())
     cleaned = [
         query for query in cleaned
-        if query not in existing_prepared
-        and query not in existing_queued
+        if query.casefold() not in existing_prepared
+        and query.casefold() not in existing_queued
         and query.casefold() not in existing_titles
     ]
     skipped = len(seen) - len(cleaned)
@@ -273,12 +277,14 @@ async def queue_requests(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Добавьте хотя бы один непустой запрос длиной до 2000 символов.")
     if len(cleaned) > 500:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "За один раз можно добавить не более 500 запросов.")
-    existing_queries = set((await db.execute(
-        select(ReadyAnswerTask.query).where(
-            ReadyAnswerTask.query.in_(cleaned),
-            ReadyAnswerTask.status.in_(("queued", "generating")),
-        )
-    )).scalars().all())
+    existing_queries = {
+        query.casefold() for query in (await db.execute(
+            select(ReadyAnswerTask.query).where(
+                ReadyAnswerTask.query.in_(cleaned),
+                ReadyAnswerTask.status.in_(("queued", "generating")),
+            )
+        )).scalars().all()
+    }
     normalized_queries = {query.casefold() for query in cleaned}
     existing_titles = set((await db.execute(
         select(ReadyAnswerTitle.normalized_title).where(

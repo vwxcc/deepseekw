@@ -61,6 +61,7 @@ class User(Base):
     github_user: Mapped[str | None] = mapped_column(String(120), nullable=True)
     github_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_guest: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     # A per-user quota reset marker; historical billing records remain intact.
     usage_reset_at: Mapped[datetime | None] = mapped_column(

@@ -222,9 +222,16 @@ def _has_meaningful_query(query: str) -> bool:
 
 
 def _one_edit_apart(left: str, right: str) -> bool:
-    """Allow only one insertion, deletion, swap/substitution worth of typo distance."""
-    a, b = _normalise_typo_text(left), _normalise_typo_text(right)
-    if not a or not b or a == b or abs(len(a) - len(b)) > 1:
+    """Allow ё/е variants or only one insertion/deletion/substitution typo."""
+    raw_left = (left or "").strip()
+    raw_right = (right or "").strip()
+    if not raw_left or not raw_right or raw_left == raw_right:
+        return False
+    a, b = _normalise_typo_text(raw_left), _normalise_typo_text(raw_right)
+    # Differences limited to case and/or е/ё are valid spelling/search variants.
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) > 1:
         return False
     i = j = edits = 0
     while i < len(a) and j < len(b):

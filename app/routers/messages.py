@@ -757,6 +757,7 @@ async def send_message(
         if cached is not None:
             job.ready_answer_hit = True
             job.cancel.set()
+            detach_output_drain(job.output)
             assistant.content = cached.answer
             assistant.status = MessageStatus.completed
             assistant.error = None

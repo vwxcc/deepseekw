@@ -62,7 +62,7 @@ class ReadyAnswerParsingTests(unittest.TestCase):
 
     def test_adjacent_transposition_is_allowed_but_unrelated_text_is_not(self) -> None:
         self.assertTrue(_one_edit_apart("привет", "привеет"))  # duplicated letter
-        self.assertTrue(_one_edit_apart("привет", "превит"))   # adjacent transposition
+        self.assertTrue(_one_edit_apart("привет", "првиет"))   # adjacent transposition
         self.assertTrue(_one_edit_apart("ежик", "ёжик"))
         self.assertFalse(_one_edit_apart("ааа", "привет"))
         self.assertFalse(_one_edit_apart("Что такое рекурсия?", "Что такое география?"))

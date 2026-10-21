@@ -102,7 +102,7 @@ async def overview(
     tasks = list((await db.execute(
         select(ReadyAnswerTask).order_by(
             ReadyAnswerTask.priority.desc(), ReadyAnswerTask.created_at.desc()
-        ).limit(100)
+        ).limit(500)
     )).scalars().all())
     seed_rows = list((await db.execute(
         select(ReadyAnswerSeed).order_by(ReadyAnswerSeed.position).limit(100)

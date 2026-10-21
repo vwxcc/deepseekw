@@ -236,8 +236,9 @@ def _parse_generation(raw: str, query: str, target: int) -> tuple[str, list[str]
             continue
         seen.add(title)
         titles.append(title)
-    if query not in seen:
-        titles.insert(0, query)
+    # Always preserve the user's exact original query as the first title, even
+    # when the model returned it late in a long generated list.
+    titles = [query] + [title for title in titles if title != query]
     titles = titles[:target]
     if len(titles) < 10:
         raise ValueError(f"Модель вернула только {len(titles)} уникальных заголовков; требуется не менее 10.")
@@ -295,15 +296,37 @@ async def _generate(task: ClaimedTask) -> None:
         current = await db.get(ReadyAnswerTask, task.id)
         if current is None:
             return
+        # If another parallel worker finished this exact request while this model
+        # call was running, reuse its answer instead of racing to insert a duplicate.
+        already_saved = (
+            await db.execute(
+                select(ReadyAnswer)
+                .join(ReadyAnswerTitle, ReadyAnswerTitle.answer_id == ReadyAnswer.id)
+                .where(ReadyAnswerTitle.title == task.query)
+                .limit(1)
+            )
+        ).scalars().first()
+        if already_saved is not None:
+            current.ready_answer_id = already_saved.id
+            current.status = "completed"
+            current.error = None
+            current.updated_at = utcnow()
+            await db.commit()
+            return
+        existing_titles = set((await db.execute(
+            select(ReadyAnswerTitle.title).where(ReadyAnswerTitle.title.in_(titles))
+        )).scalars().all())
+        new_titles = [title for title in titles if title not in existing_titles]
+        if len(new_titles) < 10:
+            raise ValueError(
+                "Менее 10 свободных заголовков: сгенерированные формулировки уже заняты другой записью. "
+                "Нажмите «Повторить», чтобы сгенерировать новые варианты."
+            )
         ready = ReadyAnswer(source_query=task.query, answer=answer)
         db.add(ready)
         await db.flush()
-        for title in titles:
-            exists = await db.scalar(
-                select(ReadyAnswerTitle.id).where(ReadyAnswerTitle.title == title).limit(1)
-            )
-            if not exists:
-                db.add(ReadyAnswerTitle(answer_id=ready.id, title=title))
+        for title in new_titles:
+            db.add(ReadyAnswerTitle(answer_id=ready.id, title=title))
         current.ready_answer_id = ready.id
         current.status = "completed"
         current.error = None

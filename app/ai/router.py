@@ -374,6 +374,11 @@ _CACHE_SIDE_EFFECT_RE = re.compile(
     r"выбери за меня|сгенерируй (?:число|имя|идею|вариант|список))\b",
     re.IGNORECASE,
 )
+_CACHE_TIME_SENSITIVE_RE = re.compile(
+    r"\b(?:сколько дней до|дней осталось до|до нового года|какой день недели|"
+    r"какое сегодня число|текущее время|текущая дата|курс валют на|прогноз погоды)\b",
+    re.IGNORECASE,
+)
 _RESPONSE_CACHE_TTL = 600.0
 _RESPONSE_CACHE_MAX_ITEMS = 128
 _RESPONSE_CACHE: OrderedDict[str, tuple[float, str]] = OrderedDict()
@@ -410,6 +415,7 @@ def _response_cache_key(job: "Job", entry: EntryConfig, messages: list[dict]) ->
         or _WEB_SEARCH_TRIGGER_RE.search(query)
         or _SEARCH_SETUP_RE.search(query)
         or _CACHE_SIDE_EFFECT_RE.search(query)
+        or _CACHE_TIME_SENSITIVE_RE.search(query)
         or is_artifact_request(query)
     ):
         return None
@@ -423,6 +429,21 @@ def _response_cache_key(job: "Job", entry: EntryConfig, messages: list[dict]) ->
             return None
     if total_chars > 24000:
         return None
+    # The base prompt includes the current local timestamp for calendar actions.
+    # Normalize only that instruction timestamp so unrelated stable answers can hit
+    # the cache within its short TTL. Date/time questions are excluded above.
+    cache_messages = []
+    for item in messages:
+        cloned = dict(item)
+        content = cloned.get("content")
+        if isinstance(content, str):
+            cloned["content"] = re.sub(
+                r"(Для относительных дат используй текущее локальное время:\s*)"
+                r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{2,5}",
+                r"\1[CURRENT_LOCAL_TIME]",
+                content,
+            )
+        cache_messages.append(cloned)
     payload = json.dumps(
         {
             "user_id": job.user_id,
@@ -433,7 +454,7 @@ def _response_cache_key(job: "Job", entry: EntryConfig, messages: list[dict]) ->
             "temperature": entry.temperature,
             "max_tokens": entry.max_tokens,
             "effort": job.effort,
-            "messages": messages,
+            "messages": cache_messages,
         },
         ensure_ascii=False,
         sort_keys=True,

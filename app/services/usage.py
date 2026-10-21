@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Message, ModelSetEntry, Role, UsageEvent, User, utcnow
@@ -167,11 +167,14 @@ async def window_spend(
         if reset_at.tzinfo is not None:
             reset_at = reset_at.astimezone(timezone.utc).replace(tzinfo=None)
         since = max(since, reset_at)
-    rows = (
+    total, count = (
         await db.execute(
-            select(UsageEvent.cost_usd).where(
+            select(
+                func.coalesce(func.sum(UsageEvent.cost_usd), 0.0),
+                func.count(UsageEvent.id),
+            ).where(
                 UsageEvent.user_id == user_id, UsageEvent.created_at >= since
             )
         )
-    ).scalars().all()
-    return round(sum(float(r or 0.0) for r in rows), 6), len(rows)
+    ).one()
+    return round(float(total or 0.0), 6), int(count or 0)

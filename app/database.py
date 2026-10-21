@@ -48,6 +48,11 @@ async def init_db() -> None:
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_chats_share_token ON chats (share_token)"
         )
+        # Budget checks filter usage by user and rolling timestamp window.
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_usage_events_user_created_at "
+            "ON usage_events (user_id, created_at)"
+        )
 
 
 # table -> {column: ddl}

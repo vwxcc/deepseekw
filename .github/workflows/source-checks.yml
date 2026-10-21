@@ -266,8 +266,10 @@ jobs:
               or "activity-execution" not in js
               or "Шаг ' + (i + 1)" in js):
               raise SystemExit("Execution output must stay inside the expandable status panel without visible step numbering")
-          if "job.first_exchange and code_mode" not in router or "_local_code_chat_title(job.user_text)" not in router:
-              raise SystemExit("Code Agent title must not require an extra model request")
+          if "if job.first_exchange:" not in router or "_local_code_chat_title(job.user_text)" not in router:
+              raise SystemExit("New chats must get a local title without an extra model request")
+          if 'kind="followup"' in router:
+              raise SystemExit("First-answer title generation must not enqueue another model request")
           if 'use_model_queries=job.mode != "code"' not in router:
               raise SystemExit("Code Agent web search must not consume a separate query-planning model turn")
           if ("одним блоком run" not in Path("app/ai/prompts.py").read_text(encoding="utf-8")

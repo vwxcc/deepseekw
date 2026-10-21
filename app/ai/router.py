@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import math
 import re
 import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
@@ -342,6 +344,153 @@ class Job:
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
 
+# Web search is expensive: it may add a query-planning model call plus several
+# external requests. Keep it for explicit research/current-information requests,
+# but do not run it for ordinary explanations, calculations, and coding questions.
+_WEB_SEARCH_TRIGGER_RE = re.compile(
+    r"(?:https?://|"
+    r"\b(?:найди|найдите)\s+(?:мне\s+)?(?:в\s+)?интернет\w*|"
+    r"\bнайди(?:те)?\b.{0,100}\b(?:сайт|страниц|источник|шаблон|презентац|сервис|товар|"
+    r"модел|фото|картин|пример|стать|новост|цен|отзыв|документ|изображен)\w*|"
+    r"\bпоищи(?:те)?\b|\bищи(?:те)?\s+в\s+интернет\w*|"
+    r"\b(?:актуальн\w*|сегодня|сейчас|на\s+данный\s+момент|текущ\w*|"
+    r"новост\w*|цен\w*|стоимост\w*|курс(?:ы)?\s+валют|погод\w*|"
+    r"расписани\w*|со\s+ссылками|источник\w*|официальн\w+\s+(?:сайт|источник|документ)|"
+    r"последн\w+\s+(?:верси|обновлен|событи|новост)|открой\s+(?:сайт|страниц)|"
+    r"прочитай\s+страниц|по\s+этой\s+ссылке|проверь\w*\s+(?:актуальн|источник)|"
+    r"исследуй\w*\s+(?:рынок|сайт|тему)|сравни\w*\s+(?:сервис|товар|цен|модел|провайдер|сайт)|"
+    r"обзор\w*\s+(?:рынка|сервис|товар)))\b|\b202[5-9]\b",
+    re.IGNORECASE,
+)
+_SEARCH_SETUP_RE = re.compile(
+    r"(?:\*\*\s*поиск\s*\.\s*\*\*|"
+    r"что именно найти\?.{0,160}(?:поищу в интернете|со ссылками))",
+    re.IGNORECASE | re.DOTALL,
+)
+_CACHE_SIDE_EFFECT_RE = re.compile(
+    r"\b(?:запомни|сохрани|запиши в календарь|запланируй|напомни|"
+    r"добавь в запланировано|добавь в календарь|запиши на дату|выполни код|запусти код|"
+    r"придумай|сочини|напиши (?:рассказ|стих|песн|сказк)|случайн\w*|рандом\w*|"
+    r"выбери за меня|сгенерируй (?:число|имя|идею|вариант|список))\b",
+    re.IGNORECASE,
+)
+_CACHE_TIME_SENSITIVE_RE = re.compile(
+    r"\b(?:сколько дней до|дней осталось до|до нового года|какой день недели|"
+    r"какое сегодня число|текущее время|текущая дата|курс валют на|прогноз погоды)\b",
+    re.IGNORECASE,
+)
+_RESPONSE_CACHE_TTL = 600.0
+_RESPONSE_CACHE_MAX_ITEMS = 128
+_RESPONSE_CACHE: OrderedDict[str, tuple[float, str]] = OrderedDict()
+
+
+def _job_wants_web_search(job: "Job") -> bool:
+    """Search only when requested or when freshness/source verification matters."""
+    if not job.web_search:
+        return False
+    query = str(job.search_query or job.user_text or "").strip()
+    if not query or _SEARCH_SETUP_RE.search(query):
+        return False
+    # The first message produced by the Search quick-action is only a prompt asking
+    # what to search for. Apply search to the user's subsequent answer instead.
+    for item in reversed((job.history_messages or [])[:-1][-8:]):
+        if not isinstance(item, dict) or item.get("role") != "user":
+            continue
+        content = item.get("content")
+        if isinstance(content, str) and _SEARCH_SETUP_RE.search(content):
+            return True
+    return bool(_WEB_SEARCH_TRIGGER_RE.search(query))
+
+
+def _response_cache_key(job: "Job", entry: EntryConfig, messages: list[dict]) -> str | None:
+    """Cache only short, first-turn, text-only answers with no external or stateful work."""
+    query = str(job.user_text or "").strip()
+    if (
+        not job.first_exchange
+        or job.mode != "chat"
+        or not job.user_id
+        or len(query) < 16
+        or len(query) > 600
+        or _job_wants_web_search(job)
+        or _WEB_SEARCH_TRIGGER_RE.search(query)
+        or _SEARCH_SETUP_RE.search(query)
+        or _CACHE_SIDE_EFFECT_RE.search(query)
+        or _CACHE_TIME_SENSITIVE_RE.search(query)
+        or is_artifact_request(query)
+    ):
+        return None
+    total_chars = 0
+    for item in messages:
+        if not isinstance(item, dict) or not isinstance(item.get("content"), str):
+            return None
+        content = item["content"]
+        total_chars += len(content)
+        if "[Вложение:" in content or len(content) > 12000:
+            return None
+    if total_chars > 24000:
+        return None
+    # The base prompt includes the current local timestamp for calendar actions.
+    # Normalize only that instruction timestamp so unrelated stable answers can hit
+    # the cache within its short TTL. Date/time questions are excluded above.
+    cache_messages = []
+    for item in messages:
+        cloned = dict(item)
+        content = cloned.get("content")
+        if isinstance(content, str):
+            cloned["content"] = re.sub(
+                r"(Для относительных дат используй текущее локальное время:\s*)"
+                r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Z]{2,5}",
+                r"\1[CURRENT_LOCAL_TIME]",
+                content,
+            )
+        cache_messages.append(cloned)
+    payload = json.dumps(
+        {
+            "user_id": job.user_id,
+            "model_set_id": entry.model_set_id,
+            "provider": entry.provider,
+            "base_url": entry.base_url,
+            "model": entry.model,
+            "temperature": entry.temperature,
+            "max_tokens": entry.max_tokens,
+            "effort": job.effort,
+            "messages": cache_messages,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _get_cached_response(key: str | None) -> str | None:
+    if not key:
+        return None
+    item = _RESPONSE_CACHE.get(key)
+    if item is None:
+        return None
+    created_at, answer = item
+    if time.monotonic() - created_at > _RESPONSE_CACHE_TTL:
+        _RESPONSE_CACHE.pop(key, None)
+        return None
+    _RESPONSE_CACHE.move_to_end(key)
+    return answer
+
+
+def _store_cached_response(key: str | None, answer: str) -> None:
+    text = str(answer or "").strip()
+    if not key or not text or len(text) > 6000:
+        return
+    now = time.monotonic()
+    for old_key, (created_at, _answer) in list(_RESPONSE_CACHE.items()):
+        if now - created_at > _RESPONSE_CACHE_TTL:
+            _RESPONSE_CACHE.pop(old_key, None)
+    _RESPONSE_CACHE[key] = (now, text)
+    _RESPONSE_CACHE.move_to_end(key)
+    while len(_RESPONSE_CACHE) > _RESPONSE_CACHE_MAX_ITEMS:
+        _RESPONSE_CACHE.popitem(last=False)
+
+
 class ModelPool:
     """Keeps concurrency bounded for the single selected primary model."""
 
@@ -478,9 +627,6 @@ class AIRouter:
         self.queue: asyncio.Queue[Job] = asyncio.Queue()
         self.workers: list[asyncio.Task] = []
         self.active: dict[str, Job] = {}
-        # Serialize complete user-facing main responses (including agent steps).
-        # A browser chat switch does not cancel the server-side job.
-        self._primary_generation_lock = asyncio.Lock()
 
     async def start(self) -> None:
         for i in range(self.concurrency):
@@ -912,27 +1058,8 @@ class AIRouter:
                 self.queue.task_done()
 
     async def _run_serialized_message(self, job: Job) -> None:
-        """Hold the primary generation slot for the complete response, not one token loop."""
-        announced_wait = False
-        while True:
-            if job.cancel.is_set():
-                await self._finish(
-                    job.message_id, MessageStatus.cancelled,
-                    error="Остановлено пользователем",
-                )
-                await job.output.put(("cancelled", ""))
-                return
-            try:
-                await asyncio.wait_for(self._primary_generation_lock.acquire(), timeout=0.25)
-                break
-            except asyncio.TimeoutError:
-                if not announced_wait:
-                    announced_wait = True
-                    await job.output.put(("ui_status", "Ожидаю завершения предыдущего ответа"))
-        try:
-            await self._run_message(job)
-        finally:
-            self._primary_generation_lock.release()
+        """Run concurrently; the worker count and ModelPool enforce configured limits."""
+        await self._run_message(job)
 
     async def _stream_once(
         self,
@@ -1525,7 +1652,7 @@ class AIRouter:
                         "встрой созданные кодом PNG-иллюстрации, схемы или графики минимум на половине слайдов."
                     )
         sources: list[dict] = []
-        if job.web_search and job.search_query:
+        if _job_wants_web_search(job):
             await job.output.put(("stage", json.dumps({"stage": "search"})))
             # The Code Agent uses a locally extracted query so search does not
             # consume an extra model turn from its 2-3 request budget.
@@ -1602,6 +1729,26 @@ class AIRouter:
                     return
                 try:
                     messages, sources = await self._prepare_history(job, entry)
+                    cache_key = _response_cache_key(job, entry, messages) if not sources else None
+                    cached_answer = _get_cached_response(cache_key)
+                    if cached_answer is not None:
+                        # Cache hits avoid provider latency and consume no model tokens.
+                        await job.output.put(("stage", json.dumps({"stage": "generation"})))
+                        await job.output.put(("delta", cached_answer))
+                        await self._finish(
+                            job.message_id, MessageStatus.completed,
+                            content=cached_answer, error=None, sources=[],
+                        )
+                        try:
+                            async with SessionLocal() as db:
+                                chat = await db.get(Chat, job.chat_id)
+                                if chat is not None and (chat.title or "") in ("", "Новый чат"):
+                                    chat.title = _local_code_chat_title(job.user_text)
+                                    await db.commit()
+                        except Exception as title_error:
+                            log.warning("Local cached-answer title update failed: %s", title_error)
+                        await job.output.put(("done", cached_answer))
+                        return
                     answer = ""
                     thinking = ""
                     usage: dict | None = None
@@ -1855,13 +2002,22 @@ class AIRouter:
                         tool_runs=all_runs or None,
                         sources=sources,
                     )
+                    if (
+                        cache_key
+                        and not ask
+                        and not memories
+                        and not all_runs
+                        and not sources
+                        and not SCHEDULE_MARKER_RE.search(full)
+                    ):
+                        _store_cached_response(cache_key, answer)
                     if ask:
                         await job.output.put(
                             ("ask", json.dumps({"questions": ask}, ensure_ascii=False))
                         )
-                    if job.first_exchange and code_mode:
-                        # The Code Agent already has a 2-3 turn budget. Make a useful
-                        # title locally so title generation does not add a fourth model call.
+                    if job.first_exchange:
+                        # Set a useful local title for every new chat, avoiding a second,
+                        # separately billed model call after the answer has finished.
                         try:
                             async with SessionLocal() as db:
                                 chat = await db.get(Chat, job.chat_id)
@@ -1871,25 +2027,7 @@ class AIRouter:
                         except Exception as title_error:
                             log.warning("Local Code Agent title update failed: %s", title_error)
                     await job.output.put(("done", answer))
-                    # Normal chats keep model-generated titles. The Code Agent uses
-                    # a deterministic local title to avoid an extra provider request.
-                    if job.first_exchange and not code_mode:
-                        await self.enqueue(
-                            Job(
-                                kind="followup",
-                                route_type=RouteType.TITLE,
-                                chat_id=job.chat_id,
-                                message_id=job.message_id,
-                                user_id=job.user_id,
-                                model_set_id=job.model_set_id,
-                                user_text=job.user_text,
-                                history=[
-                                    *job.history_messages,
-                                    {"role": "assistant", "content": answer},
-                                ],
-                                first_exchange=True,
-                            )
-                        )
+                    # Title generation is intentionally local; don't enqueue a second LLM call.
                     return
                 except asyncio.CancelledError:
                     await self._finish(

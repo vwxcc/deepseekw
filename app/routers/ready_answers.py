@@ -33,6 +33,11 @@ class SettingsPatch(BaseModel):
     titles_per_answer: int | None = Field(default=None, ge=10, le=100)
 
 
+class PreparedQuestions(BaseModel):
+    """Questions to store in the prepared pool, not immediately enqueue."""
+    queries: list[str] = Field(min_length=1, max_length=500)
+
+
 def _dt(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
@@ -95,6 +100,8 @@ async def _result_rows(db: AsyncSession, q: str, limit: int) -> list[dict[str, A
 async def overview(
     q: str = Query(default="", max_length=500),
     limit: int = Query(default=30, ge=1, le=100),
+    seed_limit: int = Query(default=100, ge=1, le=500),
+    seed_offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     """Show exact-match title database, queue, prepared questions, and current settings."""
@@ -105,13 +112,20 @@ async def overview(
         ).limit(500)
     )).scalars().all())
     seed_rows = list((await db.execute(
-        select(ReadyAnswerSeed).order_by(ReadyAnswerSeed.position).limit(100)
+        select(ReadyAnswerSeed)
+        .order_by(ReadyAnswerSeed.position.desc(), ReadyAnswerSeed.created_at.desc())
+        .offset(seed_offset)
+        .limit(seed_limit)
     )).scalars().all())
     count = lambda model, *where: db.scalar(
         select(func.count()).select_from(model).where(*where)
     )
     answers_count = int(await count(ReadyAnswer) or 0)
     titles_count = int(await count(ReadyAnswerTitle) or 0)
+    prepared_total = int(await count(ReadyAnswerSeed) or 0)
+    prepared_remaining = int(await count(
+        ReadyAnswerSeed, ReadyAnswerSeed.consumed.is_(False)
+    ) or 0)
     queue_stats = {}
     for state in ("queued", "generating", "completed", "failed"):
         queue_stats[state] = int(await count(ReadyAnswerTask, ReadyAnswerTask.status == state) or 0)
@@ -124,8 +138,8 @@ async def overview(
         "stats": {
             "answers": answers_count, "titles": titles_count,
             **queue_stats,
-            "prepared_questions": len(seed_rows),
-            "prepared_remaining": sum(1 for item in seed_rows if not item.consumed),
+            "prepared_questions": prepared_total,
+            "prepared_remaining": prepared_remaining,
         },
         "results": await _result_rows(db, q, limit),
         "tasks": [{
@@ -137,6 +151,9 @@ async def overview(
         "seed_questions": [{
             "question": seed.question, "position": seed.position, "consumed": bool(seed.consumed),
         } for seed in seed_rows],
+        "seed_total": prepared_total,
+        "seed_limit": seed_limit,
+        "seed_offset": seed_offset,
     }
 
 
@@ -160,6 +177,75 @@ async def patch_settings(
         "auto_enabled": bool(cfg.auto_enabled),
         "parallelism": int(cfg.parallelism),
         "titles_per_answer": int(cfg.titles_per_answer),
+    }
+
+
+@router.post("/prepared-questions", status_code=status.HTTP_201_CREATED)
+async def add_prepared_questions(
+    data: PreparedQuestions,
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    """Append questions to the prepared pool; do not run them through the live queue."""
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in data.queries:
+        if not isinstance(value, str):
+            continue
+        query = value.strip()
+        if not query or len(query) > 2000 or query in seen:
+            continue
+        seen.add(query)
+        cleaned.append(query)
+    if not cleaned:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Добавьте хотя бы один непустой запрос длиной до 2000 символов.",
+        )
+
+    existing_prepared = set((await db.execute(
+        select(ReadyAnswerSeed.question).where(ReadyAnswerSeed.question.in_(cleaned))
+    )).scalars().all())
+    existing_queued = set((await db.execute(
+        select(ReadyAnswerTask.query).where(
+            ReadyAnswerTask.query.in_(cleaned),
+            ReadyAnswerTask.status.in_(("queued", "generating")),
+        )
+    )).scalars().all())
+    existing_titles = set((await db.execute(
+        select(ReadyAnswerTitle.title).where(ReadyAnswerTitle.title.in_(cleaned))
+    )).scalars().all())
+    cleaned = [
+        query for query in cleaned
+        if query not in existing_prepared
+        and query not in existing_queued
+        and query not in existing_titles
+    ]
+    skipped = len(seen) - len(cleaned)
+    if not cleaned:
+        return {
+            "added": 0,
+            "skipped": skipped,
+            "message": "Все запросы уже подготовлены, находятся в очереди или имеют готовый ответ.",
+        }
+
+    last_position = int(await db.scalar(select(func.max(ReadyAnswerSeed.position)) ) or 0)
+    now = utcnow()
+    db.add_all([
+        ReadyAnswerSeed(
+            question=query,
+            position=last_position + index,
+            consumed=False,
+            created_at=now,
+            updated_at=now,
+        )
+        for index, query in enumerate(cleaned, start=1)
+    ])
+    await db.commit()
+    return {
+        "added": len(cleaned),
+        "skipped": skipped,
+        "message": "Запросы добавлены в подготовленный список; генерация не запускалась.",
     }
 
 

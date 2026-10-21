@@ -31,11 +31,13 @@ from .routers import (
     models,
     projects as projects_router,
     public,
+    ready_answers as ready_answers_router,
     scheduled as scheduled_router,
     system,
     skills as skills_router,
 )
 from .services.storage import disk_free, enforce_disk_floor
+from .services.ready_answers import start_ready_answer_workers, stop_ready_answer_workers
 
 log = logging.getLogger("chatstudio")
 
@@ -94,12 +96,14 @@ async def lifespan(app: FastAPI):
     await bootstrap()
     init_provider_client()
     await ai_router.start()
+    await start_ready_answer_workers()
     watchdog = asyncio.create_task(_storage_watchdog())
     try:
         yield
     finally:
         watchdog.cancel()
         try:
+            await stop_ready_answer_workers()
             await ai_router.stop()
         finally:
             await close_provider_client()
@@ -113,6 +117,7 @@ app.include_router(messages.router)
 app.include_router(files.router)
 app.include_router(models.router)
 app.include_router(admin.router)
+app.include_router(ready_answers_router.router)
 app.include_router(public.router)
 app.include_router(memory.router)
 app.include_router(council.router)

@@ -79,7 +79,7 @@ async def find_ready_answer_exact(query: str) -> ReadyAnswer | None:
             result = await db.execute(
                 select(ReadyAnswer)
                 .join(ReadyAnswerTitle, ReadyAnswerTitle.answer_id == ReadyAnswer.id)
-                .where(ReadyAnswerTitle.title == title)
+                .where(ReadyAnswerTitle.normalized_title == _normalise_title(title))
                 .order_by(ReadyAnswer.created_at.desc(), ReadyAnswer.id)
                 .limit(1)
             )
@@ -122,7 +122,7 @@ async def _settings_snapshot() -> dict[str, Any]:
         return {
             "auto_enabled": bool(row.auto_enabled),
             "parallelism": max(1, min(20, int(row.parallelism or 2))),
-            "titles_per_answer": max(10, min(100, int(row.titles_per_answer or 30))),
+            "titles_per_answer": max(10, min(500, int(row.titles_per_answer or 30))),
         }
 
 
@@ -199,7 +199,7 @@ async def _get_generation_model() -> dict[str, Any]:
             "entry_id": entry.id, "model_set_id": model_set.id,
             "base_url": entry.base_url, "api_key": entry.api_key, "model": entry.model,
             "temperature": float(entry.temperature or 0.2),
-            "max_tokens": max(3000, min(16000, int(entry.max_tokens or 12000))),
+            "max_tokens": max(3000, min(32000, int(entry.max_tokens or 16000))),
             "timeout": max(30, min(300, int(entry.timeout or 300))),
             "price_in": max(0.0, float(entry.price_in or 0)),
             "price_out": max(0.0, float(entry.price_out or 0)),
@@ -208,27 +208,87 @@ async def _get_generation_model() -> dict[str, Any]:
 
 _RU_KEY_ROWS = ("йцукенгшщзхъ", "фывапролджэ", "ячсмитьбю")
 _EN_KEY_ROWS = ("qwertyuiop", "asdfghjkl", "zxcvbnm")
+_CONTENT_STOPWORDS = {
+    "а", "без", "бы", "в", "во", "вот", "все", "вы", "где", "да", "для",
+    "до", "его", "ее", "если", "есть", "же", "за", "и", "из", "или", "им",
+    "как", "к", "ко", "когда", "ли", "мне", "на", "над", "не", "но", "о",
+    "об", "от", "по", "под", "при", "про", "раз", "с", "со", "так", "то",
+    "у", "уже", "что", "это", "я", "the", "a", "an", "and", "or", "of",
+    "to", "in", "on", "at", "by", "for", "from", "is", "are", "be", "how",
+    "what", "when", "why", "which", "who", "explain", "tell", "me", "about",
+}
+_ENTITY_ALIAS_GROUPS = {
+    "python": {"python", "питон", "пайтон"},
+    "javascript": {"javascript", "js", "джаваскрипт", "яваскрипт"},
+    "typescript": {"typescript", "ts", "тайпскрипт"},
+    "java": {"java", "ява"},
+    "csharp": {"csharp", "c#", "си шарп", "шарп"},
+    "cplusplus": {"c++", "cpp", "си плюс плюс"},
+    "openai": {"openai", "open ai", "опен аи", "опенаи"},
+    "deepseek": {"deepseek", "deep seek", "дипсик", "дип сик"},
+    "chatgpt": {"chatgpt", "chat gpt", "чатгпт", "чат gpt"},
+    "google": {"google", "гугл"},
+    "microsoft": {"microsoft", "майкрософт"},
+    "apple": {"apple", "эпл", "эппл"},
+    "amazon": {"amazon", "амазон"},
+    "nvidia": {"nvidia", "нвидиа"},
+    "telegram": {"telegram", "телеграм"},
+    "github": {"github", "гитхаб"},
+}
+
+
+def _normalise_title(value: str) -> str:
+    """Use one Unicode-aware lowercase key for generation and exact lookup."""
+    return (value or "").strip().casefold()
 
 
 def _normalise_typo_text(value: str) -> str:
-    return (value or "").strip().casefold().replace("ё", "е")
+    return _normalise_title(value).replace("ё", "е")
 
 
 def _has_meaningful_query(query: str) -> bool:
-    """Do not invent spelling variants for noise such as 'ааа' or '!!!'."""
+    """Noise such as 'ааа' must not receive synonyms, translations, or variants."""
     letters = [ch for ch in (query or "") if ch.isalpha()]
     normalized = [ch.casefold().replace("ё", "е") for ch in letters]
     return len(letters) >= 5 and len(set(normalized)) >= 3
 
 
+def _word_tokens(value: str) -> list[str]:
+    return re.findall(r"[^\W_]+(?:[+#.][^\W_]+)*", _normalise_title(value), flags=re.UNICODE)
+
+
+def _content_tokens(value: str) -> set[str]:
+    return {
+        token.replace("ё", "е")
+        for token in _word_tokens(value)
+        if token not in _CONTENT_STOPWORDS and len(token) > 1
+    }
+
+
+def _punctuation_signature(value: str) -> str:
+    """Ignore punctuation and casing, but retain the words and their order."""
+    return " ".join(_word_tokens(value))
+
+
+def _entity_groups(value: str) -> set[str]:
+    normalized = _normalise_title(value)
+    padded = f" {normalized} "
+    found: set[str] = set()
+    for group, aliases in _ENTITY_ALIAS_GROUPS.items():
+        for alias in aliases:
+            alias_norm = _normalise_title(alias)
+            if re.search(r"(?<!\w)" + re.escape(alias_norm) + r"(?!\w)", padded):
+                found.add(group)
+                break
+    return found
+
+
 def _one_edit_apart(left: str, right: str) -> bool:
-    """Allow ё/е variants or only one insertion/deletion/substitution typo."""
-    raw_left = (left or "").strip()
-    raw_right = (right or "").strip()
+    """Allow e/ё variants or one insertion/deletion/substitution/adjacent swap."""
+    raw_left, raw_right = _normalise_title(left), _normalise_title(right)
     if not raw_left or not raw_right or raw_left == raw_right:
         return False
     a, b = _normalise_typo_text(raw_left), _normalise_typo_text(raw_right)
-    # Differences limited to case and/or е/ё are valid spelling/search variants.
     if a == b:
         return True
     if len(a) == len(b):
@@ -263,6 +323,40 @@ def _one_edit_apart(left: str, right: str) -> bool:
     return edits == 1
 
 
+def _title_is_related(query: str, candidate: str) -> bool:
+    """Reject topic drift while allowing synonyms/rephrasing around shared subject anchors."""
+    source = _normalise_title(query)
+    title = _normalise_title(candidate)
+    if not source or not title:
+        return False
+    if source == title:
+        return True
+    if _punctuation_signature(source) == _punctuation_signature(title):
+        return True
+    if _one_edit_apart(source, title):
+        return True
+
+    source_entities = _entity_groups(source)
+    title_entities = _entity_groups(title)
+    # Do not allow switching the core company/language/tool to another one.
+    if source_entities and title_entities and not (source_entities & title_entities):
+        return False
+    if source_entities & title_entities:
+        return True
+
+    source_content = _content_tokens(source)
+    title_content = _content_tokens(title)
+    shared = source_content & title_content
+    if shared:
+        coverage = len(shared) / max(1, len(source_content))
+        return coverage >= 0.25 or len(shared) >= 2
+    # A single meaningful word may have a genuine synonym or translated spelling.
+    # Multi-word questions without a shared subject anchor are too risky to cache.
+    if len(source_content) == 1 and len(title_content) <= 3 and len(_word_tokens(title)) <= 4:
+        return _has_meaningful_query(source)
+    return False
+
+
 def _keyboard_neighbours(char: str) -> list[str]:
     """Nearby keys on Russian/English keyboard layouts, for realistic one-key typos."""
     lower = char.casefold()
@@ -274,83 +368,82 @@ def _keyboard_neighbours(char: str) -> list[str]:
             options: list[str] = []
             for other_index in range(max(0, row_index - 1), min(len(rows), row_index + 2)):
                 other = rows[other_index]
-                radius = 1 if other_index == row_index else 1
-                for k in range(max(0, column - radius), min(len(other), column + radius + 1)):
+                for k in range(max(0, column - 1), min(len(other), column + 2)):
                     if other[k] != lower and other[k].isalpha():
                         options.append(other[k])
             return list(dict.fromkeys(options))
     return []
 
 
-def _typo_title_candidates(query: str, model_titles: list[str], target: int) -> list[str]:
-    """Keep only the original query and mechanically plausible spelling variants.
-
-    The model can propose candidates, but the server validates every title against
-    the source string. Thus a query about one subject cannot acquire unrelated
-    titles accidentally invented by the model.
-    """
-    original = (query or "").strip()
+def _title_candidates(query: str, model_titles: list[str], target: int) -> list[str]:
+    """Create lowercase exact-match keys from relevant AI variants and safe mechanical variants."""
+    original = _normalise_title(query)
     if not original:
         return []
-    titles = [original]
-    seen = {original}
+    limit = max(1, min(500, int(target or 30)))
+    titles: list[str] = []
+    seen: set[str] = set()
 
-    def add(candidate: str) -> None:
-        candidate = str(candidate or "").strip()
-        if not candidate or candidate in seen or len(candidate) > 2000:
+    def add(candidate: str, *, validate_related: bool = True) -> None:
+        candidate = _normalise_title(candidate)
+        if not candidate or len(candidate) > 2000 or candidate in seen or len(titles) >= limit:
             return
-        if not _one_edit_apart(original, candidate):
+        if validate_related and not _title_is_related(original, candidate):
             return
         seen.add(candidate)
         titles.append(candidate)
 
-    # Low-information prompts get a single exact title only. In particular,
-    # "ааа" must never gain titles like "привет" or "привет аа".
     if not _has_meaningful_query(original):
-        return titles
+        return [original]
 
-    # First cover the explicit Russian ё/е spelling difference (single changes
-    # and the all-swapped spelling), without changing any other letters or words.
-    swapped_all = original.translate(str.maketrans({"ё": "е", "Ё": "Е"}))
-    if swapped_all != original:
-        add(swapped_all)
-    swapped_all = original.translate(str.maketrans({"е": "ё", "Е": "Ё"}))
-    if swapped_all != original:
-        add(swapped_all)
-    for index, char in enumerate(original):
-        if char in "еёЕЁ":
-            other = {"е": "ё", "ё": "е", "Е": "Ё", "Ё": "Е"}[char]
-            add(original[:index] + other + original[index + 1:])
-
-    # Accept AI-proposed variants only when they are one typographical edit away.
+    add(original, validate_related=False)
     for candidate in model_titles:
         if isinstance(candidate, str):
             add(candidate)
 
-    # Keyboard-adjacent substitution errors.
+    # Punctuation variants are based only on already-accepted titles.
+    base_titles = list(titles)
+    outer_quotes = "\"'«»“”„‟()[]{}" + chr(96)
+    for title in base_titles:
+        if len(titles) >= limit:
+            break
+        no_commas = re.sub(r"\s*,\s*", " ", title)
+        no_commas = re.sub(r"\s{2,}", " ", no_commas).strip()
+        add(no_commas)
+        no_outer_quotes = title.strip().strip(outer_quotes)
+        add(no_outer_quotes)
+        for open_quote, close_quote in (('"', '"'), ("«", "»"), ("(", ")")):
+            add(open_quote + no_outer_quotes + close_quote)
+            if len(titles) >= limit:
+                break
+        for conjunction in (" и ", " or ", " and ", " но ", " but ", " потому что "):
+            if conjunction in title:
+                add(title.replace(conjunction, "," + conjunction.strip() + " ", 1))
+                if len(titles) >= limit:
+                    break
+
     for index, char in enumerate(original):
         if not char.isalpha():
             continue
         for nearby in _keyboard_neighbours(char):
-            replacement = nearby.upper() if char.isupper() else nearby
-            add(original[:index] + replacement + original[index + 1:])
-
-    # Common typing errors: adjacent-letter transposition, omitted letter,
-    # and accidentally repeated letter. Every candidate stays tied to the source.
+            add(original[:index] + nearby + original[index + 1:])
+            if len(titles) >= limit:
+                return titles
     for index in range(len(original) - 1):
         left, right = original[index], original[index + 1]
-        if left.isalpha() and right.isalpha() and left.casefold() != right.casefold():
+        if left.isalpha() and right.isalpha() and left != right:
             add(original[:index] + right + left + original[index + 2:])
+            if len(titles) >= limit:
+                break
     for index, char in enumerate(original):
-        if not char.isalpha():
-            continue
-        word_start = index == 0 or not original[index - 1].isalpha()
-        word_end = index + 1 == len(original) or not original[index + 1].isalpha()
-        if not (word_start and word_end):
-            add(original[:index] + original[index + 1:])
-        add(original[:index + 1] + char + original[index + 1:])
+        if char.isalpha():
+            if index > 0 and original[index - 1].isalpha():
+                add(original[:index] + original[index + 1:])
+            add(original[:index + 1] + char + original[index + 1:])
+            if len(titles) >= limit:
+                break
 
-    return titles[:max(1, min(100, target))]
+    return titles[:limit]
 
 
 def _parse_generation(raw: str, query: str, target: int) -> tuple[str, list[str]]:
@@ -373,10 +466,10 @@ def _parse_generation(raw: str, query: str, target: int) -> tuple[str, list[str]
         raise ValueError("Модель вернула пустой готовый ответ.")
     if not isinstance(raw_titles, list):
         raw_titles = []
-    titles = _typo_title_candidates(query, raw_titles, target)
+    titles = _title_candidates(query, raw_titles, target)
     if _has_meaningful_query(query) and len(titles) < min(10, target):
         raise ValueError(
-            f"Не удалось построить хотя бы 10 вариантов написания для запроса; "
+            f"Не удалось построить хотя бы 10 связанных заголовков для запроса; "
             "попробуйте сформулировать его подробнее."
         )
     return answer, titles
@@ -400,13 +493,15 @@ async def _generate(task: ClaimedTask) -> None:
     generation_rules = (
         "\n\n[СПЕЦИАЛЬНЫЙ РЕЖИМ: СОЗДАНИЕ ГОТОВОГО ОТВЕТА ДЛЯ БАЗЫ AI CH]\n"
         "Ответь на пользовательский вопрос так же качественно, полно и по правилам выше, как в обычном чате. "
-        "Дополнительно подготовь заголовки ТОЛЬКО как варианты написания исходного запроса: путаница е/ё, "
-        "опечатки соседними клавишами, пропуск/удвоение одной буквы, перестановка соседних букв. "
-        "Не создавай синонимы, новые формулировки, другие вопросы или другие темы; не добавляй и не удаляй слова. "
-        "Первым заголовком включи исходный запрос дословно. Для короткого/бессмысленного запроса вроде «ааа» "
-        "верни только исходный заголовок. "
-        f"Предложи до {target} уникальных вариантов, никогда не больше 100. Сервер отфильтрует все варианты, "
-        "которые не являются опечаткой исходной строки, так что не пытайся менять смысл.\n"
+        "Дополнительно подготовь заголовки для поиска того ЖЕ самого вопроса. Варианты могут включать: "
+        "синонимичные формулировки без изменения предмета; замену отдельных слов близкими по смыслу; "
+        "распространённые переводы названий компаний, языков программирования и терминов; варианты с е/ё, "
+        "опечатками соседними клавишами, пропуском/удвоением букв и перестановкой соседних букв; "
+        "варианты с запятыми и без запятых, с кавычками и без кавычек. Все заголовки выводи только строчными "
+        "буквами. Первым заголовком включи исходный запрос, тоже в нижнем регистре. Не добавляй другие темы, "
+        "вопросы или ключевые слова, которые не относятся к исходному вопросу. Для бессмысленного или шумового "
+        "запроса вроде «ааа» верни только исходный заголовок. "
+        f"Предложи до {target} уникальных заголовков, максимум 500. Сервер проверит связь с исходным вопросом.\n"
         "Верни только один корректный JSON-объект без Markdown-ограждений и текста вокруг, строго такой формы: "
         '{"answer":"полный ответ в Markdown","titles":["исходный запрос","вариант с опечаткой","..."]}. '
         "В answer должен быть только ответ пользователю, без упоминания базы, очереди, заголовков или этого режима. "
@@ -440,7 +535,7 @@ async def _generate(task: ClaimedTask) -> None:
             await db.execute(
                 select(ReadyAnswer)
                 .join(ReadyAnswerTitle, ReadyAnswerTitle.answer_id == ReadyAnswer.id)
-                .where(ReadyAnswerTitle.title == task.query)
+                .where(ReadyAnswerTitle.normalized_title == _normalise_title(task.query))
                 .limit(1)
             )
         ).scalars().first()
@@ -468,7 +563,11 @@ async def _generate(task: ClaimedTask) -> None:
         db.add(ready)
         await db.flush()
         for title in new_titles:
-            db.add(ReadyAnswerTitle(answer_id=ready.id, title=title))
+            db.add(ReadyAnswerTitle(
+                answer_id=ready.id,
+                title=_normalise_title(title),
+                normalized_title=_normalise_title(title),
+            ))
         current.ready_answer_id = ready.id
         current.status = "completed"
         current.error = None

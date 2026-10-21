@@ -359,7 +359,27 @@ def _title_is_related(query: str, candidate: str) -> bool:
     # one of its known local spellings. Do not silently switch Python to Java,
     # or turn a generic question into a new technology-specific question.
     if source_entities:
-        return bool(source_entities & title_entities)
+        if not (source_entities & title_entities):
+            return False
+        source_entity_terms = {
+            token for group in source_entities for alias in _ENTITY_ALIAS_GROUPS[group]
+            for token in _content_tokens(alias)
+        }
+        title_entity_terms = {
+            token for group in title_entities for alias in _ENTITY_ALIAS_GROUPS[group]
+            for token in _content_tokens(alias)
+        }
+        source_anchors = _content_tokens(source) - source_entity_terms
+        title_anchors = _content_tokens(title) - title_entity_terms
+        # A one-word company/language query may use a known alias; otherwise
+        # keep at least one of the source's non-entity subject terms.
+        if not source_anchors:
+            return len(title_anchors) <= 2
+        shared_anchors = source_anchors & title_anchors
+        if not shared_anchors:
+            return False
+        coverage = len(shared_anchors) / max(1, len(source_anchors))
+        return coverage >= 0.25 or len(shared_anchors) >= 2
     if title_entities:
         return False
 

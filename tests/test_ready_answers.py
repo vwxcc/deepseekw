@@ -97,6 +97,21 @@ class ReadyAnswerParsingTests(unittest.TestCase):
         self.assertFalse(_title_is_related("как работает python", "как работает java"))
         self.assertTrue(_title_is_related("deepseek api", "дипсик api"))
 
+    def test_lowercase_alias_and_punctuation_variants(self) -> None:
+        query = "Как работает Python"
+        _, parsed = _parse_generation(
+            self._raw([query, "как работает питон", '"как работает python"', "как работает java"]),
+            query,
+            500,
+        )
+
+        self.assertEqual(parsed[0], "как работает python")
+        self.assertTrue(all(title == title.casefold() for title in parsed))
+        self.assertIn("как работает питон", parsed)
+        self.assertIn('"как работает python"', parsed)
+        self.assertNotIn("как работает java", parsed)
+        self.assertLessEqual(len(parsed), 500)
+
     def test_title_count_accepts_500_limit(self) -> None:
         query = "Объясни рекурсию в Python"
         variants = [f"объясни рекурсию на python вариант {n}" for n in range(1, 501)]

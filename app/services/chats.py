@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
@@ -119,37 +119,74 @@ async def ancestor_chain(
     given, everything up to and including that message is dropped (it lives in
     the chat summary instead).
     """
-    chain: list[dict] = []
-    current_id: str | None = message_id
-    seen: set[str] = set()
-    while current_id and current_id not in seen:
-        if summary_upto and current_id == summary_upto:
-            break
-        seen.add(current_id)
-        msg = await db.get(Message, current_id)
-        if msg is None:
-            break
+    # Walk the parent chain in one recursive query instead of one SELECT per
+    # message. The path guard preserves the old cycle protection for damaged data.
+    message_table = Message.__table__
+    base = select(
+        message_table.c.id.label("id"),
+        message_table.c.parent_message_id.label("parent_message_id"),
+        literal(0).label("depth"),
+        (literal("|") + cast(message_table.c.id, String) + literal("|")).label("path"),
+    ).where(message_table.c.id == message_id)
+    if summary_upto:
+        base = base.where(message_table.c.id != summary_upto)
+    ancestor_cte = base.cte(name="message_ancestors", recursive=True)
+    parent = message_table.alias("ancestor_parent")
+    recursive_step = (
+        select(
+            parent.c.id.label("id"),
+            parent.c.parent_message_id.label("parent_message_id"),
+            (ancestor_cte.c.depth + 1).label("depth"),
+            (ancestor_cte.c.path + cast(parent.c.id, String) + literal("|")).label("path"),
+        )
+        .select_from(parent.join(ancestor_cte, parent.c.id == ancestor_cte.c.parent_message_id))
+        .where(
+            func.instr(
+                ancestor_cte.c.path,
+                literal("|") + cast(parent.c.id, String) + literal("|"),
+            ) == 0
+        )
+    )
+    if summary_upto:
+        recursive_step = recursive_step.where(
+            ancestor_cte.c.parent_message_id != summary_upto
+        )
+    ancestor_cte = ancestor_cte.union_all(recursive_step)
+    result = await db.execute(
+        select(Message)
+        .join(ancestor_cte, Message.id == ancestor_cte.c.id)
+        .order_by(ancestor_cte.c.depth.desc())
+    )
+    messages = result.scalars().all()
+    if not messages:
+        return []
 
+    attachments_by_message: dict[str, list[File]] = {}
+    if include_attachments:
+        result = await db.execute(
+            select(Attachment, File)
+            .join(File, File.id == Attachment.file_id)
+            .where(Attachment.message_id.in_([message.id for message in messages]))
+        )
+        for attachment, file_record in result.all():
+            attachments_by_message.setdefault(attachment.message_id, []).append(file_record)
+
+    chain: list[dict] = []
+    for msg in messages:
         text = msg.content or ""
         images: list[dict] = []
-        if include_attachments:
-            res = await db.execute(
-                select(Attachment, File)
-                .join(File, File.id == Attachment.file_id)
-                .where(Attachment.message_id == msg.id)
-            )
-            for _att, rec in res.all():
-                if rec.kind == "image":
-                    url = image_to_data_url(rec.storage_path, rec.mime_type or "")
-                    if url:
-                        images.append(
-                            {"type": "image_url", "image_url": {"url": url}}
-                        )
-                elif rec.extracted_text:
-                    text += (
-                        f"\n\n[Вложение: {rec.original_name}]\n"
-                        f"{rec.extracted_text[: settings.max_attachment_chars]}"
+        for rec in attachments_by_message.get(msg.id, []):
+            if rec.kind == "image":
+                url = image_to_data_url(rec.storage_path, rec.mime_type or "")
+                if url:
+                    images.append(
+                        {"type": "image_url", "image_url": {"url": url}}
                     )
+            elif rec.extracted_text:
+                text += (
+                    f"\n\n[Вложение: {rec.original_name}]\n"
+                    f"{rec.extracted_text[: settings.max_attachment_chars]}"
+                )
 
         if images:
             content: list | str = [
@@ -158,6 +195,4 @@ async def ancestor_chain(
         else:
             content = text
         chain.append({"role": msg.role.value, "content": content})
-        current_id = msg.parent_message_id
-    chain.reverse()
     return chain

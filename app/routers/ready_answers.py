@@ -222,7 +222,7 @@ async def add_prepared_questions(
         query for query in cleaned
         if query not in existing_prepared
         and query not in existing_queued
-        and query not in existing_titles
+        and query.casefold() not in existing_titles
     ]
     skipped = len(seen) - len(cleaned)
     if not cleaned:
@@ -287,7 +287,7 @@ async def queue_requests(
     )).scalars().all())
     cleaned = [
         query for query in cleaned
-        if query not in existing_queries and query not in existing_titles
+        if query.casefold() not in existing_queries and query.casefold() not in existing_titles
     ]
     if not cleaned:
         return {

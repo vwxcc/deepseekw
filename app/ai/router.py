@@ -1726,6 +1726,10 @@ class AIRouter:
                         "встрой созданные кодом PNG-иллюстрации, схемы или графики минимум на половине слайдов."
                     )
         sources: list[dict] = []
+        # Stop before optional web search when the prepared-answer lookup has won
+        # while account/context data was being assembled.
+        if job.ready_answer_hit:
+            return prompts.with_system(job.history_messages, system_prompt), []
         if _job_wants_web_search(job):
             await job.output.put(("stage", json.dumps({"stage": "search"})))
             # The Code Agent uses a locally extracted query so search does not
@@ -1746,6 +1750,11 @@ class AIRouter:
     # --- main generation ---------------------------------------------------
 
     async def _run_message(self, job: Job) -> None:
+        # An exact prepared-answer match already completed the response; do not
+        # spend tokens on history preparation, web search, or another model call.
+        if job.ready_answer_hit:
+            await job.output.put(("cancelled", ""))
+            return
         blocked = await self._budget_error(job)
         if blocked:
             await self._finish(job.message_id, MessageStatus.failed, error=blocked)

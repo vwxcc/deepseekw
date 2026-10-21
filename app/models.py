@@ -504,6 +504,7 @@ class ReadyAnswerTask(Base):
     status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_by_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )

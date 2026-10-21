@@ -357,7 +357,12 @@ def _title_is_related(query: str, candidate: str) -> bool:
         return coverage >= 0.25 or len(shared) >= 2
     # A single meaningful word may have a genuine synonym or translated spelling.
     # Multi-word questions without a shared subject anchor are too risky to cache.
-    if len(source_content) == 1 and len(title_content) <= 3 and len(_word_tokens(title)) <= 4:
+    if (
+        len(source_content) == 1
+        and len(_word_tokens(source)) <= 2
+        and len(title_content) <= 2
+        and len(_word_tokens(title)) <= 2
+    ):
         return _has_meaningful_query(source)
     return False
 

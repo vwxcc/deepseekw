@@ -1815,8 +1815,27 @@
     return '✨';
   }
 
-  function latestActivityEmoji(n) {
-    return activityStatusEmoji(latestActivityLabel(n), n);
+  const ACTIVITY_STATUS_THEME_ICONS = {
+    '🛠': 'wrench', '📊': 'chart', '🧮': 'calculator', '🔎': 'search',
+    '📋': 'table', '🎨': 'palette', '🌐': 'globe-box', '🗄': 'database',
+    '💻': 'terminal', '🔍': 'search', '📚': 'book-open', '🗂': 'folder-open',
+    '📝': 'pencil', '✍': 'pencil', '💬': 'chat', '📄': 'file-text',
+    '🔬': 'microscope', '📈': 'chart-line', '🧭': 'compass', '🧠': 'brain',
+    '✨': 'sparkle'
+  };
+
+  function activityStatusIconHtml(text, n) {
+    const emoji = activityStatusEmoji(text, n);
+    const normalizedEmoji = emoji.replace(/\uFE0F/g, '');
+    const themedItem = themedEmojiItem(emoji);
+    const iconName = ACTIVITY_STATUS_THEME_ICONS[normalizedEmoji] ||
+      (themedItem && themedItem.symbol) || 'sparkle';
+    return '<span class="activity-status-emoji" aria-hidden="true">' +
+      icon(iconName, 'aich-themed-emoji-icon') + '</span>';
+  }
+
+  function latestActivityEmojiHtml(n) {
+    return activityStatusIconHtml(latestActivityLabel(n), n);
   }
 
   function deviceCodeForFilePlan(planSource) {
@@ -2208,7 +2227,7 @@
       const symbol = item.kind === 'action'
         ? icon(ACTIVITY_ICON_NAMES.has(item.icon) ? item.icon : 'sparkle', 'activity-icon')
         : (item.kind === 'status'
-          ? '<span class="activity-status-emoji" aria-hidden="true">' + escapeHtml(activityStatusEmoji(displayActivityText, n)) + '</span>'
+          ? activityStatusIconHtml(displayActivityText, n)
           : icon('sparkle', 'activity-status-icon'));
       return '<div class="activity-row' + (last ? ' active' : '') +
         (item.kind === 'status' ? ' status-row' : '') + '">' + symbol +
@@ -2216,7 +2235,7 @@
         (last ? thinkAnim() : '') + '</div>';
     }).join('');
     const placeholder = generating && !items.length
-      ? '<div class="activity-row active"><span class="activity-status-emoji" aria-hidden="true">🧠</span>' +
+      ? '<div class="activity-row active">' + activityStatusIconHtml('Думаю', {statusModelEmoji: '🧠'}) +
         '<span class="activity-text">Думаю</span>' + thinkAnim() + '</div>' : '';
     const expanded = !!n.showActivities;
     const execution = expanded && runs.length
@@ -2228,7 +2247,7 @@
       '<div class="activity-head"><button type="button" class="activity-summary-button" data-activity-toggle="' +
       escapeHtml(n.id) + '" aria-expanded="' + String(expanded) + '">' +
       '<span data-activity-elapsed="' + escapeHtml(n.id) + '">' +
-      (generating ? escapeHtml(latestActivityEmoji(n) + ' ' + latestActivityLabel(n)) : 'Думал ' + duration) + '</span>' +
+      (generating ? latestActivityEmojiHtml(n) + ' ' + escapeHtml(latestActivityLabel(n)) : 'Думал ' + duration) + '</span>' +
       icon(expanded ? 'chevron-up' : 'chevron-down') + '</button></div>' +
       '<div class="activity-list"' + (!expanded ? ' hidden' : '') + '>' + fullStream + (rows || placeholder) + execution + '</div>' +
       deviceFallbackHtml(n, runs) +
@@ -4298,7 +4317,7 @@
         : null;
       if (elapsedEl && elapsedNode && state.currentChatId === streamContext.chatId &&
           !['completed', 'failed', 'cancelled'].includes(elapsedNode.status)) {
-        elapsedEl.textContent = latestActivityEmoji(elapsedNode) + ' ' + latestActivityLabel(elapsedNode);
+        elapsedEl.innerHTML = latestActivityEmojiHtml(elapsedNode) + ' ' + escapeHtml(latestActivityLabel(elapsedNode));
       }
     }, 1000);
     const controller = new AbortController();

@@ -342,6 +342,50 @@ class Job:
     first_exchange: bool = False
     output: asyncio.Queue = field(default_factory=asyncio.Queue)
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
+    # Monotonic timestamps are process-local and are used only for diagnostic timings.
+    enqueued_at: float = 0.0
+    dequeued_at: float = 0.0
+    preparation_ms: float = 0.0
+    search_ms: float = 0.0
+    generation_started_at: float = 0.0
+    first_token_at: float = 0.0
+    cache_hit: bool = False
+
+
+def _log_job_timing(job: "Job", *, now: float | None = None) -> None:
+    """Log safe request timing aggregates without logging prompts or user IDs."""
+    if job.kind != "message" or not job.enqueued_at:
+        return
+    ended_at = time.monotonic() if now is None else now
+
+    def ms(value: float | None) -> str:
+        return "na" if value is None else f"{max(0.0, value):.1f}"
+
+    queue_ms = (
+        (job.dequeued_at - job.enqueued_at) * 1000
+        if job.dequeued_at else None
+    )
+    first_token_ms = (
+        (job.first_token_at - job.enqueued_at) * 1000
+        if job.first_token_at else None
+    )
+    provider_ttft_ms = (
+        (job.first_token_at - job.generation_started_at) * 1000
+        if job.first_token_at and job.generation_started_at
+        and job.first_token_at >= job.generation_started_at else None
+    )
+    log.info(
+        "AI timing message=%s queue_ms=%s preparation_ms=%s search_ms=%s "
+        "first_token_ms=%s provider_ttft_ms=%s total_ms=%s cache_hit=%s",
+        (job.message_id or "-")[:8],
+        ms(queue_ms),
+        ms(job.preparation_ms),
+        ms(job.search_ms),
+        ms(first_token_ms),
+        ms(provider_ttft_ms),
+        ms((ended_at - job.enqueued_at) * 1000),
+        job.cache_hit,
+    )
 
 
 # Web search is expensive: it may add a query-planning model call plus several
@@ -650,8 +694,11 @@ class AIRouter:
         self.workers.clear()
 
     async def enqueue(self, job: Job) -> None:
-        if job.message_id and job.kind == "message":
-            self.active[job.message_id] = job
+        if job.kind == "message":
+            if not job.enqueued_at:
+                job.enqueued_at = time.monotonic()
+            if job.message_id:
+                self.active[job.message_id] = job
         await self.queue.put(job)
 
     def cancel(self, message_id: str) -> bool:
@@ -1039,6 +1086,8 @@ class AIRouter:
     async def _worker(self) -> None:
         while True:
             job = await self.queue.get()
+            if job.kind == "message" and not job.dequeued_at:
+                job.dequeued_at = time.monotonic()
             try:
                 if job.kind == "followup":
                     await self._run_followup(job)
@@ -1053,8 +1102,10 @@ class AIRouter:
                 if job.kind == "message":
                     await job.output.put(("error", f"{type(e).__name__}: {e}"))
             finally:
-                if job.message_id and job.kind == "message":
-                    self.active.pop(job.message_id, None)
+                if job.kind == "message":
+                    _log_job_timing(job)
+                    if job.message_id:
+                        self.active.pop(job.message_id, None)
                 self.queue.task_done()
 
     async def _run_serialized_message(self, job: Job) -> None:
@@ -1086,6 +1137,8 @@ class AIRouter:
                     if text:
                         full += text
                         if not defer_output:
+                            if not job.first_token_at:
+                                job.first_token_at = time.monotonic()
                             await job.output.put(("delta", text))
                 elif kind == "status":
                     event = ("ui_status", str(item["text"]))
@@ -1108,6 +1161,7 @@ class AIRouter:
                     else:
                         await job.output.put(event)
 
+        job.generation_started_at = time.monotonic()
         async for kind, piece in stream_chat(
             messages=messages,
             base_url=entry.base_url,
@@ -1656,9 +1710,13 @@ class AIRouter:
             await job.output.put(("stage", json.dumps({"stage": "search"})))
             # The Code Agent uses a locally extracted query so search does not
             # consume an extra model turn from its 2-3 request budget.
-            sources, _ = await self._smart_search(
-                job, entry, use_model_queries=job.mode != "code"
-            )
+            search_started_at = time.monotonic()
+            try:
+                sources, _ = await self._smart_search(
+                    job, entry, use_model_queries=job.mode != "code"
+                )
+            finally:
+                job.search_ms += (time.monotonic() - search_started_at) * 1000
             ctx = format_context(sources)
             if ctx:
                 system_prompt = f"{system_prompt}\n\n{ctx}"
@@ -1728,11 +1786,17 @@ class AIRouter:
                     await job.output.put(("cancelled", ""))
                     return
                 try:
-                    messages, sources = await self._prepare_history(job, entry)
+                    preparation_started_at = time.monotonic()
+                    try:
+                        messages, sources = await self._prepare_history(job, entry)
+                    finally:
+                        job.preparation_ms += (time.monotonic() - preparation_started_at) * 1000
                     cache_key = _response_cache_key(job, entry, messages) if not sources else None
                     cached_answer = _get_cached_response(cache_key)
                     if cached_answer is not None:
                         # Cache hits avoid provider latency and consume no model tokens.
+                        job.cache_hit = True
+                        job.first_token_at = time.monotonic()
                         await job.output.put(("stage", json.dumps({"stage": "generation"})))
                         await job.output.put(("delta", cached_answer))
                         await self._finish(

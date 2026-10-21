@@ -145,7 +145,7 @@ async def _enqueue_next_seed() -> bool:
             seed.consumed = True
             seed.updated_at = utcnow()
             db.add(ReadyAnswerTask(
-                query=seed.question, status="queued", priority=0, source="prepared",
+                query=seed.question, status="queued", priority=0, position=seed.position, source="prepared",
             ))
             await db.commit()
             return True
@@ -157,7 +157,7 @@ async def _claim_task() -> ClaimedTask | None:
             await db.execute(
                 select(ReadyAnswerTask.id, ReadyAnswerTask.query, ReadyAnswerTask.created_by_id)
                 .where(ReadyAnswerTask.status == "queued")
-                .order_by(ReadyAnswerTask.priority.desc(), ReadyAnswerTask.created_at, ReadyAnswerTask.id)
+                .order_by(ReadyAnswerTask.priority.desc(), ReadyAnswerTask.created_at, ReadyAnswerTask.position, ReadyAnswerTask.id)
                 .limit(1)
             )
         ).first()

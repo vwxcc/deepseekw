@@ -350,6 +350,8 @@ class Job:
     generation_started_at: float = 0.0
     first_token_at: float = 0.0
     cache_hit: bool = False
+    # A prepared-answer hit won the request after the normal job was queued.
+    ready_answer_hit: bool = False
 
 
 def _log_job_timing(job: "Job", *, now: float | None = None) -> None:
@@ -931,10 +933,11 @@ class AIRouter:
             await self._bill(job, entry, usage, action)
 
         if job.cancel.is_set():
-            await self._finish(
-                job.message_id, MessageStatus.cancelled, error="Остановлено пользователем"
-            )
-            await job.output.put(("cancelled", ""))
+            if not job.ready_answer_hit:
+                await self._finish(
+                    job.message_id, MessageStatus.cancelled, error="Остановлено пользователем"
+                )
+                await job.output.put(("cancelled", ""))
             return None
         if winner:
             lane = "fast Qwen" if winner[1].id == fast.id else "primary"
@@ -959,9 +962,15 @@ class AIRouter:
     ) -> None:
         if not message_id:
             return
+        active_job = self.active.get(message_id)
+        if active_job is not None and active_job.ready_answer_hit:
+            return
         async with SessionLocal() as db:
             msg = await db.get(Message, message_id)
             if msg is None:
+                return
+            active_job = self.active.get(message_id)
+            if active_job is not None and active_job.ready_answer_hit:
                 return
             msg.status = status
             if model_set_id:
@@ -984,8 +993,14 @@ class AIRouter:
     ) -> None:
         if not message_id:
             return
+        active_job = self.active.get(message_id)
+        if active_job is not None and active_job.ready_answer_hit:
+            return
         async with SessionLocal() as db:
             msg = await db.get(Message, message_id)
+            active_job = self.active.get(message_id)
+            if active_job is not None and active_job.ready_answer_hit:
+                return
             if msg is not None:
                 if content is not None:
                     msg.content = content
@@ -1180,6 +1195,8 @@ class AIRouter:
                     usage = None
                 continue
             if job.cancel.is_set():
+                if job.ready_answer_hit:
+                    return None
                 await emit_items(markup.finish())
                 usage = _usage_or_estimate(usage, messages, full + ("\n" + thinking if thinking else ""))
                 await self._bill(job, entry, usage, "main")

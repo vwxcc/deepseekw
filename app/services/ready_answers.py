@@ -343,11 +343,13 @@ def _title_is_related(query: str, candidate: str) -> bool:
 
     source_entities = _entity_groups(source)
     title_entities = _entity_groups(title)
-    # Do not allow switching the core company/language/tool to another one.
-    if source_entities and title_entities and not (source_entities & title_entities):
+    # For named companies/languages/tools, keep the same recognized entity or
+    # one of its known local spellings. Do not silently switch Python to Java,
+    # or turn a generic question into a new technology-specific question.
+    if source_entities:
+        return bool(source_entities & title_entities)
+    if title_entities:
         return False
-    if source_entities & title_entities:
-        return True
 
     source_content = _content_tokens(source)
     title_content = _content_tokens(title)

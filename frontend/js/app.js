@@ -2274,8 +2274,8 @@
     popup.document.open();
     popup.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>Полный поток · AI CH</title><style>' +
-      ':root{color-scheme:light dark;--bg:#ffffff;--fg:#34332f;--muted:#777777;--line:#e5e5e5}' +
-      '@media(prefers-color-scheme:dark){:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
+      ':root{color-scheme:light;--bg:#ffffff;--fg:#34332f;--muted:#777777;--line:#e5e5e5}' +
+      '@media not all{:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
       '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif}' +
       'header{position:sticky;top:0;background:var(--bg);padding:18px 22px 12px;border-bottom:1px solid var(--line)}' +
       'h1{font-size:18px;font-weight:600;margin:0 0 3px}p{margin:0;color:var(--muted);font-size:12px}' +

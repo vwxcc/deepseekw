@@ -30,7 +30,7 @@ class QueueRequests(BaseModel):
 class SettingsPatch(BaseModel):
     auto_enabled: bool | None = None
     parallelism: int | None = Field(default=None, ge=1, le=20)
-    titles_per_answer: int | None = Field(default=None, ge=10, le=100)
+    titles_per_answer: int | None = Field(default=None, ge=10, le=500)
 
 
 class PreparedQuestions(BaseModel):
@@ -53,7 +53,7 @@ async def _settings(db: AsyncSession) -> ReadyAnswerSettings:
 
 
 async def _result_rows(db: AsyncSession, q: str, limit: int) -> list[dict[str, Any]]:
-    q = (q or "").strip()
+    q = (q or "").strip().casefold()
     if q:
         statement = (
             select(ReadyAnswerTitle.answer_id, ReadyAnswerTitle.title, ReadyAnswer, ReadyAnswer.created_at)
@@ -113,7 +113,7 @@ async def overview(
     )).scalars().all())
     seed_rows = list((await db.execute(
         select(ReadyAnswerSeed)
-        .order_by(ReadyAnswerSeed.position.desc(), ReadyAnswerSeed.created_at.desc())
+        .order_by(ReadyAnswerSeed.position.asc(), ReadyAnswerSeed.created_at.asc())
         .offset(seed_offset)
         .limit(seed_limit)
     )).scalars().all())
@@ -133,7 +133,7 @@ async def overview(
         "settings": {
             "auto_enabled": bool(cfg.auto_enabled),
             "parallelism": max(1, min(20, int(cfg.parallelism or 2))),
-            "titles_per_answer": max(10, min(100, int(cfg.titles_per_answer or 30))),
+            "titles_per_answer": max(10, min(500, int(cfg.titles_per_answer or 30))),
         },
         "stats": {
             "answers": answers_count, "titles": titles_count,
@@ -169,7 +169,7 @@ async def patch_settings(
     if data.parallelism is not None:
         cfg.parallelism = max(1, min(20, data.parallelism))
     if data.titles_per_answer is not None:
-        cfg.titles_per_answer = max(10, min(100, data.titles_per_answer))
+        cfg.titles_per_answer = max(10, min(500, data.titles_per_answer))
     cfg.updated_at = utcnow()
     await db.commit()
     await db.refresh(cfg)
@@ -212,8 +212,11 @@ async def add_prepared_questions(
             ReadyAnswerTask.status.in_(("queued", "generating")),
         )
     )).scalars().all())
+    normalized_queries = {query.casefold() for query in cleaned}
     existing_titles = set((await db.execute(
-        select(ReadyAnswerTitle.title).where(ReadyAnswerTitle.title.in_(cleaned))
+        select(ReadyAnswerTitle.normalized_title).where(
+            ReadyAnswerTitle.normalized_title.in_(normalized_queries)
+        )
     )).scalars().all())
     cleaned = [
         query for query in cleaned
@@ -276,8 +279,11 @@ async def queue_requests(
             ReadyAnswerTask.status.in_(("queued", "generating")),
         )
     )).scalars().all())
+    normalized_queries = {query.casefold() for query in cleaned}
     existing_titles = set((await db.execute(
-        select(ReadyAnswerTitle.title).where(ReadyAnswerTitle.title.in_(cleaned))
+        select(ReadyAnswerTitle.normalized_title).where(
+            ReadyAnswerTitle.normalized_title.in_(normalized_queries)
+        )
     )).scalars().all())
     cleaned = [
         query for query in cleaned

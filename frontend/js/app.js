@@ -5331,15 +5331,15 @@
           await rerender(currentQuery);
         } catch (e) { toast('Не удалось добавить пачку: ' + e.message, 'error'); }
       });
-      $('[data-ready-retry]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-ready-retry]', root).forEach(b => b.addEventListener('click', async () => {
         try { await api.post('/api/admin/ready-answers/tasks/' + b.dataset.readyRetry + '/retry', {}); await rerender(currentQuery); }
         catch (e) { toast('Не удалось повторить: ' + e.message, 'error'); }
       }));
-      $('[data-ready-delete-task]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-ready-delete-task]', root).forEach(b => b.addEventListener('click', async () => {
         try { await api.del('/api/admin/ready-answers/tasks/' + b.dataset.readyDeleteTask); await rerender(currentQuery); }
         catch (e) { toast('Не удалось удалить задачу: ' + e.message, 'error'); }
       }));
-      $('[data-ready-delete-answer]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-ready-delete-answer]', root).forEach(b => b.addEventListener('click', async () => {
         if (!confirm('Удалить готовый ответ вместе со всеми заголовками?')) return;
         try { await api.del('/api/admin/ready-answers/answers/' + b.dataset.readyDeleteAnswer); toast('Ответ удалён'); await rerender(currentQuery); }
         catch (e) { toast('Не удалось удалить ответ: ' + e.message, 'error'); }

@@ -1140,6 +1140,7 @@
   // ---------- state ----------
   const state = {
     user: null,
+    identityReady: false,
     chats: [],
     query: '',
     currentChatId: null,
@@ -1226,19 +1227,54 @@
   ];
 
   // ---------- auth ----------  // ---------- auth ----------
+  function updateAuthCta() {
+    const isGuest = !!(state.user && state.user.is_guest);
+    const registerButton = $('#register-btn');
+    const continueButton = $('#continue-guest-btn');
+    if (registerButton && state.user) registerButton.classList.toggle('hidden', !isGuest);
+    if (continueButton) continueButton.classList.toggle('hidden', !isGuest);
+    const who = $('#who');
+    if (who) who.textContent = state.user
+      ? (isGuest ? 'Гость' : ((state.user.name || state.user.email) + (state.user.is_admin ? ' · admin' : '')))
+      : 'Аккаунт';
+  }
+
   function showAuth() {
     $('#auth-screen').classList.remove('hidden');
     $('#main-screen').classList.add('hidden');
+    updateAuthCta();
   }
   function showApp() {
     $('#auth-screen').classList.add('hidden');
     $('#main-screen').classList.remove('hidden');
-    $('#who').textContent = (state.user ? (state.user.name || state.user.email) : '') +
-      (state.user && state.user.is_admin ? ' · admin' : '');
+    updateAuthCta();
   }
 
   function bindAuth() {
     const loginForm = $('#login-form'), regForm = $('#register-form');
+    const registerButton = $('#register-btn');
+    const continueGuestButton = $('#continue-guest-btn');
+    if (registerButton) registerButton.addEventListener('click', () => {
+      loginForm.classList.add('hidden');
+      regForm.classList.remove('hidden');
+      $('#auth-error').textContent = '';
+      showAuth();
+    });
+    if (continueGuestButton) continueGuestButton.addEventListener('click', async () => {
+      $('#auth-error').textContent = '';
+      try {
+        const out = await requestGuestSession();
+        if (state.user && state.user.id !== out.user.id) {
+          state.currentChatId = null; state.tree = []; state.chats = []; state.choices = {};
+        }
+        state.user = out.user;
+        state.identityReady = true;
+        window.__csrf = out.csrf_token;
+        await boot();
+      } catch (err) {
+        $('#auth-error').textContent = 'Не удалось открыть гостевую сессию: ' + err.message;
+      }
+    });
     $$('[data-mode]').forEach(a => a.addEventListener('click', () => {
       const mode = a.dataset.mode;
       loginForm.classList.toggle('hidden', mode !== 'login');
@@ -1256,6 +1292,7 @@
         });
         window.__csrf = out.csrf_token;
         state.user = out.user;
+        state.identityReady = true;
         await boot();
       } catch (err) { $('#auth-error').textContent = 'Ошибка входа: ' + err.message; }
     });
@@ -1271,6 +1308,7 @@
         });
         window.__csrf = out.csrf_token;
         state.user = out.user;
+        state.identityReady = true;
         await boot();
       } catch (err) { $('#auth-error').textContent = 'Ошибка регистрации: ' + err.message; }
     });
@@ -1422,6 +1460,7 @@
   }
 
   async function newChat(mode) {
+    if (!state.identityReady) { toast('Подключаем сессию…', 'info'); return; }
     // A second click during a slow POST must not create another empty chat.
     if (state.chatCreating) return;
     setChatCreationPending(true);
@@ -4799,6 +4838,7 @@
   async function sendCurrent(executionTarget) {
     const input = $('#input');
     if (!input) return;
+    if (!state.identityReady) { toast('Подключаем сессию…', 'info'); return; }
     const draft = input.value;
     const content = draft.trim();
     if (!content || state.streaming || state.sending || state.chatLoading) return;
@@ -8030,40 +8070,57 @@
     showApp();
     applySidebar();
 
-    // The empty welcome screen needs no server data. Render it immediately
-    // rather than waiting for the sidebar, files, models, memory and limits.
+    // Render the empty welcome workspace before background requests begin.
     const welcomeRenderedEarly = !state.currentChatId && allMessages(state.tree).length === 0;
     if (welcomeRenderedEarly) renderMessages();
 
     if (state.user && state.user.is_admin) {
       $('#sidebar-limits-btn').classList.remove('hidden');
-      await loadSystem();
-      setInterval(loadSystem, 20000);
+      if (!state.systemPollTimer) {
+        state.systemPollTimer = window.setInterval(() => { loadSystem().catch(() => {}); }, 20000);
+      }
+      loadSystem().catch(() => {});
     }
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    await loadChats();
-    await loadFiles();
-    await loadModelSets();
-    await loadMemory();
-    await loadLimits();
-    await loadUsage();
-
-    // The welcome screen was already rendered above. Any chat interaction during
-    // the asynchronous boot data loads renders its own current state; rebuilding
-    // it here caused an avoidable second DOM replacement and animation restart.
+    await Promise.allSettled([
+      loadChats(), loadFiles(), loadModelSets(), loadMemory(), loadLimits(), loadUsage(),
+    ]);
     if (!welcomeRenderedEarly) renderMessages();
+  }
+
+  async function requestGuestSession() {
+    const response = await fetch('/api/auth/guest', { method: 'POST', credentials: 'same-origin' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.user) {
+      throw new Error((payload && payload.detail) || ('HTTP ' + response.status));
+    }
+    window.__csrf = payload.csrf_token || '';
+    return payload;
   }
 
   async function init() {
     bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindFilesWorkspace(); bindProjectsWorkspace(); bindScheduledWorkspace(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
+
+    // Show the working screen synchronously; resolve identity and history behind it.
+    showApp();
+    if (!state.currentChatId && allMessages(state.tree).length === 0) renderMessages();
     try {
-      const me = await api.get('/api/auth/me');
-      state.user = me;
+      const response = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (response.ok) {
+        state.user = await response.json();
+      } else {
+        const guest = await requestGuestSession();
+        state.user = guest.user;
+      }
+      state.identityReady = true;
+      updateAuthCta();
       await boot();
     } catch (e) {
-      showAuth();
+      // Preserve the visible workspace during transient network failures.
+      updateAuthCta();
+      console.warn('AI CH session initialization failed:', e);
     }
   }
 

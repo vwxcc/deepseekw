@@ -100,6 +100,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "price_cache": "FLOAT DEFAULT 0",
         "max_parallel": "INTEGER DEFAULT 2",
     },
+    "ready_answer_tasks": {
+        "position": "INTEGER DEFAULT 0",
+    },
     "users": {
         "avatar": "INTEGER DEFAULT 0",
         "github_user": "VARCHAR(120)",

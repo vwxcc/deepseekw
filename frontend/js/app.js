@@ -5224,6 +5224,130 @@
       window.open('/?share=' + b.dataset.openLink, '_blank')));
   }
 
+  async function openReadyAnswersAdmin() {
+    const root = $('#modal-root');
+    let currentQuery = '';
+    let searchTimer = null;
+    const labels = {queued:'В очереди', generating:'Генерируется', completed:'Готово', failed:'Ошибка'};
+    const esc = value => escapeHtml(String(value == null ? '' : value));
+
+    async function rerender(q = currentQuery) {
+      const oldSearch = $('#ready-search', root);
+      const keepSearchFocus = !!oldSearch && document.activeElement === oldSearch;
+      const searchStart = keepSearchFocus ? oldSearch.selectionStart : null;
+      const searchEnd = keepSearchFocus ? oldSearch.selectionEnd : null;
+      currentQuery = q;
+      let d;
+      try { d = await api.get('/api/admin/ready-answers?q=' + encodeURIComponent(q) + '&limit=30'); }
+      catch (e) { toast('Не удалось открыть базу готовых ответов: ' + e.message, 'error'); return; }
+      const s = d.stats || {}, cfg = d.settings || {};
+      const answers = (d.results || []).map(a =>
+        '<details class="aux-model-card" style="margin:10px 0"><summary style="cursor:pointer;font-weight:600">' +
+        esc(a.source_query || 'Готовый ответ') + ' · ' + (a.titles || []).length + ' заголовков</summary>' +
+        '<p class="usage-note">Создан: ' + esc(a.created_at || '—') + '</p>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:5px;margin:10px 0">' + (a.titles || []).map(t =>
+          '<span style="border:1px solid var(--border,#ddd);border-radius:12px;padding:3px 8px;font-size:12px">' + esc(t) + '</span>'
+        ).join('') + '</div><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:280px;overflow:auto;padding:12px;background:var(--surface,#f7f7f7);border-radius:10px">' +
+        esc(a.answer) + '</pre><footer><button type="button" data-ready-delete-answer="' + esc(a.id) + '">Удалить ответ</button></footer></details>'
+      ).join('') || '<p class="usage-note">Ничего не найдено. Поиск идёт по всем заголовкам, а не по тексту ответа.</p>';
+      const tasks = (d.tasks || []).map(t => {
+        const controls = t.status === 'failed'
+          ? '<button type="button" data-ready-retry="' + esc(t.id) + '">Повторить</button><button type="button" data-ready-delete-task="' + esc(t.id) + '">Убрать</button>'
+          : (t.status !== 'generating' ? '<button type="button" data-ready-delete-task="' + esc(t.id) + '">Убрать</button>' : '');
+        return '<div class="kv" style="align-items:flex-start;gap:10px;border-bottom:1px solid var(--border,#ddd);padding:10px 0"><div style="flex:1;min-width:0"><b>' +
+          esc(labels[t.status] || t.status) + '</b> · ' + (t.source === 'prepared' ? 'подготовленный вопрос' : 'ручной запрос') +
+          '<div style="white-space:pre-wrap;overflow-wrap:anywhere">' + esc(t.query) + '</div>' +
+          (t.error ? '<p class="usage-note" style="color:var(--danger,#b33)">' + esc(t.error) + '</p>' : '') +
+          '</div><div style="display:flex;gap:5px;flex-wrap:wrap">' + controls + '</div></div>';
+      }).join('') || '<p class="usage-note">Очередь пока пустая.</p>';
+      const seeds = (d.seed_questions || []).map(x => '<div class="kv"><span>' + esc(x.position) + '. ' + esc(x.question) +
+        '</span><b>' + (x.consumed ? 'добавлен' : 'ожидает авто') + '</b></div>').join('');
+      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:1000px;width:min(96vw,1000px)"><h3>База готовых ответов</h3>' +
+        '<div class="modal-body" style="max-height:76vh;overflow:auto"><div class="usage-grid">' +
+        '<div class="usage-card"><span>Ответы</span><b>' + Number(s.answers || 0).toLocaleString('ru-RU') + '</b></div>' +
+        '<div class="usage-card"><span>Заголовки</span><b>' + Number(s.titles || 0).toLocaleString('ru-RU') + '</b></div>' +
+        '<div class="usage-card"><span>В очереди</span><b>' + Number(s.queued || 0).toLocaleString('ru-RU') + '</b></div>' +
+        '<div class="usage-card"><span>Генерируется</span><b>' + Number(s.generating || 0).toLocaleString('ru-RU') + '</b></div></div>' +
+        '<section class="aux-model-card" style="margin:12px 0"><header><div><b>Фоновая генерация</b><p>Ручная очередь работает всегда. Автогенерация добавляет вопросы из подготовленного списка, когда очередь пуста.</p></div></header>' +
+        '<div class="aux-model-fields"><label><span>Параллельных запросов (1–20)</span><input id="ready-parallel" type="number" min="1" max="20" value="' + esc(cfg.parallelism || 2) + '"></label>' +
+        '<label><span>Заголовков на ответ (10–100)</span><input id="ready-title-count" type="number" min="10" max="100" value="' + esc(cfg.titles_per_answer || 30) + '"></label></div>' +
+        '<footer style="justify-content:space-between;flex-wrap:wrap"><label><input id="ready-auto" type="checkbox"' + (cfg.auto_enabled ? ' checked' : '') +
+        '> Автогенерация по подготовленным вопросам</label><button type="button" id="ready-save-settings">Сохранить параметры</button></footer></section>' +
+        '<h4 class="sec">Добавить один запрос следующим</h4><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="ready-next-query" style="flex:1;min-width:220px" maxlength="2000" placeholder="Запрос, который пойдёт следующим">' +
+        '<button type="button" id="ready-add-next">В очередь следующим</button></div>' +
+        '<label style="display:block;margin-top:14px"><span>Пачка запросов — один вопрос на строку, до 500 запросов</span><textarea id="ready-batch" rows="5" maxlength="1000000" placeholder="Объясни рекурсию в Python&#10;Как решать квадратные уравнения?&#10;Что такое производная?"></textarea></label>' +
+        '<div style="display:flex;justify-content:flex-end;margin:8px 0 18px"><button type="button" id="ready-add-batch">Добавить пачку в общую очередь</button></div>' +
+        '<h4 class="sec">Поиск по всем заголовкам</h4><div style="display:flex;gap:8px"><input id="ready-search" style="flex:1;min-width:0" type="search" value="' + esc(currentQuery) +
+        '" placeholder="Часть или полный заголовок"><button type="button" id="ready-refresh">Обновить</button></div><div id="ready-results">' + answers + '</div>' +
+        '<h4 class="sec">Запросы и очередь</h4><p class="usage-note">Состояния обновляются при перезагрузке списка.</p><div id="ready-tasks">' + tasks + '</div>' +
+        '<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Подготовленный список (' + (d.seed_questions || []).length +
+        ' вопросов)</summary><div style="margin-top:8px">' + seeds + '</div></details></div><div class="row"><span style="flex:1"></span><button class="solid" data-ready-close>Закрыть</button></div></div></div>';
+
+      if (keepSearchFocus) {
+        const searchAfterRender = $('#ready-search', root);
+        if (searchAfterRender) {
+          searchAfterRender.focus();
+          if (searchStart != null && searchEnd != null) {
+            try { searchAfterRender.setSelectionRange(searchStart, searchEnd); } catch (_) { /* search input support varies */ }
+          }
+        }
+      }
+      $('[data-ready-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
+      $('#ready-refresh', root).addEventListener('click', () => rerender($('#ready-search', root).value.trim()));
+      $('#ready-search', root).addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => rerender($('#ready-search', root).value.trim()), 350);
+      });
+      $('#ready-save-settings', root).addEventListener('click', async () => {
+        const parallelism = Number($('#ready-parallel', root).value);
+        const titles_per_answer = Number($('#ready-title-count', root).value);
+        if (!Number.isInteger(parallelism) || parallelism < 1 || parallelism > 20 ||
+            !Number.isInteger(titles_per_answer) || titles_per_answer < 10 || titles_per_answer > 100) {
+          toast('Параллельность: 1–20; количество заголовков: 10–100.', 'error'); return;
+        }
+        try {
+          await api.patch('/api/admin/ready-answers/settings', {auto_enabled:$('#ready-auto', root).checked, parallelism, titles_per_answer});
+          toast('Параметры сохранены'); await rerender(currentQuery);
+        } catch (e) { toast('Не удалось сохранить: ' + e.message, 'error'); }
+      });
+      $('#ready-add-next', root).addEventListener('click', async () => {
+        const query = $('#ready-next-query', root).value.trim();
+        if (!query) { toast('Введите запрос.', 'error'); return; }
+        try {
+          const result = await api.post('/api/admin/ready-answers/queue', {queries:[query], priority_first:true});
+          $('#ready-next-query', root).value = '';
+          toast('Добавлено в очередь: ' + Number(result.added || 0)); await rerender(currentQuery);
+        } catch (e) { toast('Не удалось добавить запрос: ' + e.message, 'error'); }
+      });
+      $('#ready-add-batch', root).addEventListener('click', async () => {
+        const queries = $('#ready-batch', root).value.split(/\r?\n/)
+          .map(line => line.replace(/^\s*(?:[-*•]\s+|\d+[.)]\s+)/, '').trim()).filter(Boolean);
+        if (!queries.length) { toast('Вставьте запросы: один на строку.', 'error'); return; }
+        if (queries.length > 500) { toast('За раз можно добавить не более 500 запросов.', 'error'); return; }
+        try {
+          const result = await api.post('/api/admin/ready-answers/queue', {queries, priority_first:false});
+          $('#ready-batch', root).value = '';
+          toast('Добавлено: ' + Number(result.added || 0) + '; пропущено: ' + Number(result.skipped || 0));
+          await rerender(currentQuery);
+        } catch (e) { toast('Не удалось добавить пачку: ' + e.message, 'error'); }
+      });
+      $$('[data-ready-retry]', root).forEach(b => b.addEventListener('click', async () => {
+        try { await api.post('/api/admin/ready-answers/tasks/' + b.dataset.readyRetry + '/retry', {}); await rerender(currentQuery); }
+        catch (e) { toast('Не удалось повторить: ' + e.message, 'error'); }
+      }));
+      $$('[data-ready-delete-task]', root).forEach(b => b.addEventListener('click', async () => {
+        try { await api.del('/api/admin/ready-answers/tasks/' + b.dataset.readyDeleteTask); await rerender(currentQuery); }
+        catch (e) { toast('Не удалось удалить задачу: ' + e.message, 'error'); }
+      }));
+      $$('[data-ready-delete-answer]', root).forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Удалить готовый ответ вместе со всеми заголовками?')) return;
+        try { await api.del('/api/admin/ready-answers/answers/' + b.dataset.readyDeleteAnswer); toast('Ответ удалён'); await rerender(currentQuery); }
+        catch (e) { toast('Не удалось удалить ответ: ' + e.message, 'error'); }
+      }));
+    }
+    await rerender('');
+  }
+
   async function openAdminStats() {
     let s;
     try { s = await api.get('/api/admin/stats'); }
@@ -6318,6 +6442,7 @@
           '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
           (isAdmin
             ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
+              '<button class="chip-btn" id="open-ready-answers">' + icon('book') + 'База готовых ответов</button>' +
               '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
               '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>'
             : '') +
@@ -6331,6 +6456,7 @@
       on('#set-links', () => { closeModal(); openLinks(); });
       on('#set-files', () => { closeModal(); toggleFiles(true); });
       on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
+      on('#open-ready-answers', () => { closeModal(); openReadyAnswersAdmin(); });
       on('#open-stats', () => { closeModal(); openAdminStats(); });
       on('#open-allchats', () => { closeModal(); openAdminChats(); });
       on('#set-logout', async () => {

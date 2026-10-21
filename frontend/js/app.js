@@ -1140,6 +1140,7 @@
   // ---------- state ----------
   const state = {
     user: null,
+    identityReady: false,
     chats: [],
     query: '',
     currentChatId: null,
@@ -1226,19 +1227,54 @@
   ];
 
   // ---------- auth ----------  // ---------- auth ----------
+  function updateAuthCta() {
+    const isGuest = !!(state.user && state.user.is_guest);
+    const registerButton = $('#register-btn');
+    const continueButton = $('#continue-guest-btn');
+    if (registerButton && state.user) registerButton.classList.toggle('hidden', !isGuest);
+    if (continueButton) continueButton.classList.toggle('hidden', !isGuest);
+    const who = $('#who');
+    if (who) who.textContent = state.user
+      ? (isGuest ? 'Гость' : ((state.user.name || state.user.email) + (state.user.is_admin ? ' · admin' : '')))
+      : 'Аккаунт';
+  }
+
   function showAuth() {
     $('#auth-screen').classList.remove('hidden');
     $('#main-screen').classList.add('hidden');
+    updateAuthCta();
   }
   function showApp() {
     $('#auth-screen').classList.add('hidden');
     $('#main-screen').classList.remove('hidden');
-    $('#who').textContent = (state.user ? (state.user.name || state.user.email) : '') +
-      (state.user && state.user.is_admin ? ' · admin' : '');
+    updateAuthCta();
   }
 
   function bindAuth() {
     const loginForm = $('#login-form'), regForm = $('#register-form');
+    const registerButton = $('#register-btn');
+    const continueGuestButton = $('#continue-guest-btn');
+    if (registerButton) registerButton.addEventListener('click', () => {
+      loginForm.classList.add('hidden');
+      regForm.classList.remove('hidden');
+      $('#auth-error').textContent = '';
+      showAuth();
+    });
+    if (continueGuestButton) continueGuestButton.addEventListener('click', async () => {
+      $('#auth-error').textContent = '';
+      try {
+        const out = await requestGuestSession();
+        if (state.user && state.user.id !== out.user.id) {
+          state.currentChatId = null; state.tree = []; state.chats = []; state.choices = {};
+        }
+        state.user = out.user;
+        state.identityReady = true;
+        window.__csrf = out.csrf_token;
+        await boot();
+      } catch (err) {
+        $('#auth-error').textContent = 'Не удалось открыть гостевую сессию: ' + err.message;
+      }
+    });
     $$('[data-mode]').forEach(a => a.addEventListener('click', () => {
       const mode = a.dataset.mode;
       loginForm.classList.toggle('hidden', mode !== 'login');
@@ -1256,6 +1292,7 @@
         });
         window.__csrf = out.csrf_token;
         state.user = out.user;
+        state.identityReady = true;
         await boot();
       } catch (err) { $('#auth-error').textContent = 'Ошибка входа: ' + err.message; }
     });
@@ -1271,6 +1308,7 @@
         });
         window.__csrf = out.csrf_token;
         state.user = out.user;
+        state.identityReady = true;
         await boot();
       } catch (err) { $('#auth-error').textContent = 'Ошибка регистрации: ' + err.message; }
     });
@@ -1422,6 +1460,7 @@
   }
 
   async function newChat(mode) {
+    if (!state.identityReady) { toast('Подключаем сессию…', 'info'); return; }
     // A second click during a slow POST must not create another empty chat.
     if (state.chatCreating) return;
     setChatCreationPending(true);
@@ -2235,13 +2274,13 @@
     popup.document.open();
     popup.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>Полный поток · AI CH</title><style>' +
-      ':root{color-scheme:light dark;--bg:#faf9f5;--fg:#34332f;--muted:#77756e;--line:#e5e2d9}' +
+      ':root{color-scheme:light dark;--bg:#ffffff;--fg:#34332f;--muted:#777777;--line:#e5e5e5}' +
       '@media(prefers-color-scheme:dark){:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
       '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif}' +
       'header{position:sticky;top:0;background:var(--bg);padding:18px 22px 12px;border-bottom:1px solid var(--line)}' +
       'h1{font-size:18px;font-weight:600;margin:0 0 3px}p{margin:0;color:var(--muted);font-size:12px}' +
-      '#stream-scroll{height:calc(100vh - 82px);overflow:auto;padding:18px 22px 30px;scrollbar-width:thin;scrollbar-color:#a8a69d transparent}' +
-      '#stream-scroll::-webkit-scrollbar{width:8px}#stream-scroll::-webkit-scrollbar-thumb{background:#aaa89f;border-radius:8px;border:2px solid var(--bg)}' +
+      '#stream-scroll{height:calc(100vh - 82px);overflow:auto;padding:18px 22px 30px;scrollbar-width:thin;scrollbar-color:#a8a8a8 transparent}' +
+      '#stream-scroll::-webkit-scrollbar{width:8px}#stream-scroll::-webkit-scrollbar-thumb{background:#aaaaaa;border-radius:8px;border:2px solid var(--bg)}' +
       'h2{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 10px}#activity-log{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 26px;padding:0;font:inherit}' +
       '#stream-answer{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0}' +
       '.hint{margin-bottom:20px;color:var(--muted);font-size:12px}.empty{color:var(--muted)}' +
@@ -4799,6 +4838,7 @@
   async function sendCurrent(executionTarget) {
     const input = $('#input');
     if (!input) return;
+    if (!state.identityReady) { toast('Подключаем сессию…', 'info'); return; }
     const draft = input.value;
     const content = draft.trim();
     if (!content || state.streaming || state.sending || state.chatLoading) return;
@@ -8030,40 +8070,57 @@
     showApp();
     applySidebar();
 
-    // The empty welcome screen needs no server data. Render it immediately
-    // rather than waiting for the sidebar, files, models, memory and limits.
+    // Render the empty welcome workspace before background requests begin.
     const welcomeRenderedEarly = !state.currentChatId && allMessages(state.tree).length === 0;
     if (welcomeRenderedEarly) renderMessages();
 
     if (state.user && state.user.is_admin) {
       $('#sidebar-limits-btn').classList.remove('hidden');
-      await loadSystem();
-      setInterval(loadSystem, 20000);
+      if (!state.systemPollTimer) {
+        state.systemPollTimer = window.setInterval(() => { loadSystem().catch(() => {}); }, 20000);
+      }
+      loadSystem().catch(() => {});
     }
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
-    await loadChats();
-    await loadFiles();
-    await loadModelSets();
-    await loadMemory();
-    await loadLimits();
-    await loadUsage();
-
-    // The welcome screen was already rendered above. Any chat interaction during
-    // the asynchronous boot data loads renders its own current state; rebuilding
-    // it here caused an avoidable second DOM replacement and animation restart.
+    await Promise.allSettled([
+      loadChats(), loadFiles(), loadModelSets(), loadMemory(), loadLimits(), loadUsage(),
+    ]);
     if (!welcomeRenderedEarly) renderMessages();
+  }
+
+  async function requestGuestSession() {
+    const response = await fetch('/api/auth/guest', { method: 'POST', credentials: 'same-origin' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.user) {
+      throw new Error((payload && payload.detail) || ('HTTP ' + response.status));
+    }
+    window.__csrf = payload.csrf_token || '';
+    return payload;
   }
 
   async function init() {
     bindAuth(); bindSidebar(); bindComposer(); bindFiles(); bindFilesWorkspace(); bindProjectsWorkspace(); bindScheduledWorkspace(); bindAudioPlayer(); bindDeviceSpeechPlayer(); bindDeviceCodeRunner();
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
+
+    // Show the working screen synchronously; resolve identity and history behind it.
+    showApp();
+    if (!state.currentChatId && allMessages(state.tree).length === 0) renderMessages();
     try {
-      const me = await api.get('/api/auth/me');
-      state.user = me;
+      const response = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (response.ok) {
+        state.user = await response.json();
+      } else {
+        const guest = await requestGuestSession();
+        state.user = guest.user;
+      }
+      state.identityReady = true;
+      updateAuthCta();
       await boot();
     } catch (e) {
-      showAuth();
+      // Preserve the visible workspace during transient network failures.
+      updateAuthCta();
+      console.warn('AI CH session initialization failed:', e);
     }
   }
 

@@ -100,5 +100,6 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "github_user": "VARCHAR(120)",
         "github_token": "VARCHAR(255)",
         "usage_reset_at": "DATETIME",
+        "is_guest": "BOOLEAN DEFAULT 0",
     },
 }

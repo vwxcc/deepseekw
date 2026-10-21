@@ -63,6 +63,10 @@ async def _storage_watchdog() -> None:
     while True:
         try:
             await asyncio.sleep(CLEANUP_INTERVAL)
+            try:
+                await auth.cleanup_expired_guests()
+            except Exception as e:
+                log.warning("Guest cleanup failed: %s", e)
             free = disk_free()
             if free < settings.disk_min_free:
                 log.warning(
@@ -83,6 +87,10 @@ async def lifespan(app: FastAPI):
         level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s"
     )
     await init_db()
+    try:
+        await auth.cleanup_expired_guests()
+    except Exception as e:
+        log.warning("Guest cleanup failed during startup: %s", e)
     await bootstrap()
     init_provider_client()
     await ai_router.start()

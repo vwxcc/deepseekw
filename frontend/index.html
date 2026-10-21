@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>AI CH</title>
-  <meta name="theme-color" content="#faf9f5" />
+  <meta name="theme-color" content="#ffffff" />
   <link rel="preload" href="/assets/fonts/ys-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/lora-cyrillic-600.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/pt-400.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=65&rev=101" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=66&rev=102" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
@@ -190,7 +190,7 @@
   </svg>
 
   <!-- ===================== AUTH ===================== -->
-  <div id="auth-screen" class="screen">
+  <div id="auth-screen" class="screen hidden">
     <div class="auth-card">
       <div class="auth-logo"><svg class="ic ic-lg"><use href="#i-logo"/></svg></div>
       <h1>AI CH</h1>
@@ -220,12 +220,13 @@
         <div class="switch">Уже есть аккаунт? <a data-mode="login">Войти</a></div>
       </form>
 
+      <button class="chip-btn auth-continue-guest hidden" id="continue-guest-btn" type="button">Продолжить без аккаунта</button>
       <div id="auth-error" class="auth-error"></div>
     </div>
   </div>
 
   <!-- ===================== MAIN ===================== -->
-  <div id="main-screen" class="screen hidden">
+  <div id="main-screen" class="screen">
     <div id="sidebar-overlay"></div>
 
     <aside id="sidebar">
@@ -297,6 +298,7 @@
       <button class="icon-btn floating hidden" id="sidebar-open-btn" title="Показать панель"><svg class="ic"><use href="#i-logo"/></svg></button>
       <header id="chat-header">
         <div class="head-left">
+          <button class="register-cta" id="register-btn" type="button">Зарегистрироваться</button>
           <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-logo"/></svg></button>
         </div>
         <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">AI CH</div>
@@ -530,6 +532,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=98&rev=104"></script>
+  <script src="/assets/js/app.js?v=99&rev=105"></script>
 </body>
 </html>

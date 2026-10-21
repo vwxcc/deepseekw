@@ -70,8 +70,8 @@ _SEED_LOCK = asyncio.Lock()
 
 
 async def find_ready_answer_exact(query: str) -> ReadyAnswer | None:
-    """Case-sensitive, whole-string match. Only surrounding whitespace is stripped."""
-    title = (query or "").strip()
+    """Whole-string exact match after Unicode-aware lowercase normalization."""
+    title = _normalise_title(query)
     if not title:
         return None
     try:
@@ -234,6 +234,8 @@ _ENTITY_ALIAS_GROUPS = {
     "nvidia": {"nvidia", "нвидиа"},
     "telegram": {"telegram", "телеграм"},
     "github": {"github", "гитхаб"},
+    "sql": {"sql", "structured query language", "язык sql", "язык структурированных запросов"},
+    "rust": {"rust", "раст"},
 }
 
 
@@ -250,7 +252,10 @@ def _has_meaningful_query(query: str) -> bool:
     """Noise such as 'ааа' must not receive synonyms, translations, or variants."""
     letters = [ch for ch in (query or "") if ch.isalpha()]
     normalized = [ch.casefold().replace("ё", "е") for ch in letters]
-    return len(letters) >= 5 and len(set(normalized)) >= 3
+    if len(letters) >= 4 and len(set(normalized)) >= 3:
+        return True
+    # Recognized short technology/company names such as Java, SQL, JS and C++.
+    return bool(_entity_groups(query))
 
 
 def _word_tokens(value: str) -> list[str]:
@@ -397,12 +402,48 @@ def _title_candidates(query: str, model_titles: list[str], target: int) -> list[
         return [original]
 
     add(original, validate_related=False)
+
+    # Reserve space for spelling, alias, and punctuation variants instead of
+    # letting 500 model proposals crowd out every mechanically generated form.
+    model_budget = max(1, int(limit * 0.75))
     for candidate in model_titles:
+        if len(titles) >= model_budget:
+            break
         if isinstance(candidate, str):
             add(candidate)
 
+    # Explicit case/ё-е spelling variants, preserving every other character.
+    for index, char in enumerate(original):
+        if char in "её":
+            other = "ё" if char == "е" else "е"
+            add(original[:index] + other + original[index + 1:])
+    all_yo = original.replace("ё", "е")
+    if all_yo != original:
+        add(all_yo)
+    all_e = original.replace("е", "ё")
+    if all_e != original:
+        add(all_e)
+
+    # Replace known company/language names with common local spellings/translations.
+    padded_original = " " + original + " "
+    for aliases in _ENTITY_ALIAS_GROUPS.values():
+        for alias in aliases:
+            alias_norm = _normalise_title(alias)
+            if re.search(r"(?<!\\w)" + re.escape(alias_norm) + r"(?!\\w)", padded_original):
+                for replacement in aliases:
+                    if replacement != alias_norm:
+                        candidate = re.sub(
+                            r"(?<!\\w)" + re.escape(alias_norm) + r"(?!\\w)",
+                            replacement,
+                            original,
+                        )
+                        add(candidate)
+                        if len(titles) >= limit:
+                            return titles
+                break
+
     # Punctuation variants are based only on already-accepted titles.
-    base_titles = list(titles)
+    base_titles = list(titles[:max(1, min(len(titles), max(10, limit // 10)))])
     outer_quotes = "\"'«»“”„‟()[]{}" + chr(96)
     for title in base_titles:
         if len(titles) >= limit:

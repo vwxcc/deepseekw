@@ -5227,6 +5227,8 @@
   async function openReadyAnswersAdmin() {
     const root = $('#modal-root');
     let currentQuery = '';
+    let currentSeedOffset = 0;
+    const seedPageSize = 100;
     let searchTimer = null;
     const labels = {queued:'В очереди', generating:'Генерируется', completed:'Готово', failed:'Ошибка'};
     const esc = value => escapeHtml(String(value == null ? '' : value));
@@ -5238,9 +5240,15 @@
       const searchEnd = keepSearchFocus ? oldSearch.selectionEnd : null;
       currentQuery = q;
       let d;
-      try { d = await api.get('/api/admin/ready-answers?q=' + encodeURIComponent(q) + '&limit=30'); }
+      try {
+        d = await api.get('/api/admin/ready-answers?q=' + encodeURIComponent(q) +
+          '&limit=30&seed_limit=' + seedPageSize + '&seed_offset=' + currentSeedOffset);
+      }
       catch (e) { toast('Не удалось открыть базу готовых ответов: ' + e.message, 'error'); return; }
       const s = d.stats || {}, cfg = d.settings || {};
+      const seedTotal = Number(d.seed_total || 0);
+      const seedOffset = Number(d.seed_offset || 0);
+      const seedLimit = Number(d.seed_limit || seedPageSize);
       const answers = (d.results || []).map(a =>
         '<details class="aux-model-card" style="margin:10px 0"><summary style="cursor:pointer;font-weight:600">' +
         esc(a.source_query || 'Готовый ответ') + ' · ' + (a.titles || []).length + ' заголовков</summary>' +
@@ -5261,27 +5269,35 @@
           '</div><div style="display:flex;gap:5px;flex-wrap:wrap">' + controls + '</div></div>';
       }).join('') || '<p class="usage-note">Очередь пока пустая.</p>';
       const seeds = (d.seed_questions || []).map(x => '<div class="kv"><span>' + esc(x.position) + '. ' + esc(x.question) +
-        '</span><b>' + (x.consumed ? 'добавлен' : 'ожидает авто') + '</b></div>').join('');
+        '</span><b>' + (x.consumed ? 'уже взят' : 'ожидает авто') + '</b></div>').join('');
+      const seedRange = (seedTotal ? seedOffset + 1 : 0) + '–' +
+        Math.min(seedOffset + seedLimit, seedTotal) + ' из ' + seedTotal;
       root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:1000px;width:min(96vw,1000px)"><h3>База готовых ответов</h3>' +
         '<div class="modal-body" style="max-height:76vh;overflow:auto"><div class="usage-grid">' +
         '<div class="usage-card"><span>Ответы</span><b>' + Number(s.answers || 0).toLocaleString('ru-RU') + '</b></div>' +
         '<div class="usage-card"><span>Заголовки</span><b>' + Number(s.titles || 0).toLocaleString('ru-RU') + '</b></div>' +
         '<div class="usage-card"><span>В очереди</span><b>' + Number(s.queued || 0).toLocaleString('ru-RU') + '</b></div>' +
         '<div class="usage-card"><span>Генерируется</span><b>' + Number(s.generating || 0).toLocaleString('ru-RU') + '</b></div></div>' +
-        '<section class="aux-model-card" style="margin:12px 0"><header><div><b>Фоновая генерация</b><p>Ручная очередь работает всегда. Автогенерация добавляет вопросы из подготовленного списка, когда очередь пуста.</p></div></header>' +
+        '<section class="aux-model-card" style="margin:12px 0"><header><div><b>Фоновая генерация</b><p>Одиночный запрос можно поставить следующим в очередь. Пачки попадают в подготовленный список и не запускаются сразу; автогенерация забирает их из этого списка, когда включена.</p></div></header>' +
         '<div class="aux-model-fields"><label><span>Параллельных запросов (1–20)</span><input id="ready-parallel" type="number" min="1" max="20" value="' + esc(cfg.parallelism || 2) + '"></label>' +
         '<label><span>Заголовков на ответ (10–100)</span><input id="ready-title-count" type="number" min="10" max="100" value="' + esc(cfg.titles_per_answer || 30) + '"></label></div>' +
         '<footer style="justify-content:space-between;flex-wrap:wrap"><label><input id="ready-auto" type="checkbox"' + (cfg.auto_enabled ? ' checked' : '') +
         '> Автогенерация по подготовленным вопросам</label><button type="button" id="ready-save-settings">Сохранить параметры</button></footer></section>' +
         '<h4 class="sec">Добавить один запрос следующим</h4><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="ready-next-query" style="flex:1;min-width:220px" maxlength="2000" placeholder="Запрос, который пойдёт следующим">' +
         '<button type="button" id="ready-add-next">В очередь следующим</button></div>' +
-        '<label style="display:block;margin-top:14px"><span>Пачка запросов — один вопрос на строку, до 500 запросов</span><textarea id="ready-batch" rows="5" maxlength="1000000" placeholder="Объясни рекурсию в Python&#10;Как решать квадратные уравнения?&#10;Что такое производная?"></textarea></label>' +
-        '<div style="display:flex;justify-content:flex-end;margin:8px 0 18px"><button type="button" id="ready-add-batch">Добавить пачку в общую очередь</button></div>' +
+        '<label style="display:block;margin-top:14px"><span>Пачка для подготовленного списка — один вопрос на строку, до 500 запросов</span><textarea id="ready-batch" rows="5" maxlength="1000000" placeholder="Объясни рекурсию в Python&#10;Как решать квадратные уравнения?&#10;Что такое производная?"></textarea></label>' +
+        '<div style="display:flex;justify-content:flex-end;margin:8px 0 18px"><button type="button" id="ready-add-batch">Добавить пачку в подготовленные</button></div>' +
         '<h4 class="sec">Поиск по всем заголовкам</h4><div style="display:flex;gap:8px"><input id="ready-search" style="flex:1;min-width:0" type="search" value="' + esc(currentQuery) +
         '" placeholder="Часть или полный заголовок"><button type="button" id="ready-refresh">Обновить</button></div><div id="ready-results">' + answers + '</div>' +
         '<h4 class="sec">Запросы и очередь</h4><p class="usage-note">Состояния обновляются при перезагрузке списка.</p><div id="ready-tasks">' + tasks + '</div>' +
-        '<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Подготовленный список (' + (d.seed_questions || []).length +
-        ' вопросов)</summary><div style="margin-top:8px">' + seeds + '</div></details></div><div class="row"><span style="flex:1"></span><button class="solid" data-ready-close>Закрыть</button></div></div></div>';
+        '<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Подготовленный список (' + seedTotal +
+        ' вопросов; ожидают авто: ' + Number(s.prepared_remaining || 0) + ')</summary>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0">' +
+        '<span class="usage-note">Показаны ' + seedRange + '</span><div style="display:flex;gap:8px">' +
+        '<button type="button" id="ready-seed-prev"' + (seedOffset <= 0 ? ' disabled' : '') + '>Назад</button>' +
+        '<button type="button" id="ready-seed-next"' + (seedOffset + seedLimit >= seedTotal ? ' disabled' : '') + '>Далее</button>' +
+        '</div></div><div style="margin-top:8px">' + seeds + '</div></details></div>' +
+        '<div class="row"><span style="flex:1"></span><button class="solid" data-ready-close>Закрыть</button></div></div></div>';
 
       if (keepSearchFocus) {
         const searchAfterRender = $('#ready-search', root);
@@ -5293,6 +5309,16 @@
         }
       }
       $('[data-ready-close]', root).addEventListener('click', () => { root.innerHTML = ''; });
+      $('#ready-seed-prev', root).addEventListener('click', async () => {
+        currentSeedOffset = Math.max(0, seedOffset - seedLimit);
+        await rerender(currentQuery);
+      });
+      $('#ready-seed-next', root).addEventListener('click', async () => {
+        if (seedOffset + seedLimit < seedTotal) {
+          currentSeedOffset = seedOffset + seedLimit;
+          await rerender(currentQuery);
+        }
+      });
       $('#ready-refresh', root).addEventListener('click', () => rerender($('#ready-search', root).value.trim()));
       $('#ready-search', root).addEventListener('input', () => {
         clearTimeout(searchTimer);
@@ -5325,9 +5351,10 @@
         if (!queries.length) { toast('Вставьте запросы: один на строку.', 'error'); return; }
         if (queries.length > 500) { toast('За раз можно добавить не более 500 запросов.', 'error'); return; }
         try {
-          const result = await api.post('/api/admin/ready-answers/queue', {queries, priority_first:false});
+          const result = await api.post('/api/admin/ready-answers/prepared-questions', {queries});
           $('#ready-batch', root).value = '';
-          toast('Добавлено: ' + Number(result.added || 0) + '; пропущено: ' + Number(result.skipped || 0));
+          currentSeedOffset = 0;
+          toast('Добавлено в подготовленные: ' + Number(result.added || 0) + '; пропущено: ' + Number(result.skipped || 0));
           await rerender(currentQuery);
         } catch (e) { toast('Не удалось добавить пачку: ' + e.message, 'error'); }
       });

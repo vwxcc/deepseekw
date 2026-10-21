@@ -205,13 +205,12 @@ async def add_prepared_questions(
 
     existing_prepared = {
         question.casefold() for question in (await db.execute(
-            select(ReadyAnswerSeed.question).where(ReadyAnswerSeed.question.in_(cleaned))
+            select(ReadyAnswerSeed.question).where(ReadyAnswerSeed.consumed.is_(False))
         )).scalars().all()
     }
     existing_queued = {
         query.casefold() for query in (await db.execute(
             select(ReadyAnswerTask.query).where(
-                ReadyAnswerTask.query.in_(cleaned),
                 ReadyAnswerTask.status.in_(("queued", "generating")),
             )
         )).scalars().all()
@@ -280,7 +279,6 @@ async def queue_requests(
     existing_queries = {
         query.casefold() for query in (await db.execute(
             select(ReadyAnswerTask.query).where(
-                ReadyAnswerTask.query.in_(cleaned),
                 ReadyAnswerTask.status.in_(("queued", "generating")),
             )
         )).scalars().all()

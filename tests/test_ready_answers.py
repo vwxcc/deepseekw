@@ -133,6 +133,10 @@ class ReadyAnswerParsingTests(unittest.TestCase):
         self.assertGreaterEqual(len(parsed), 10)
         self.assertEqual(parsed[0], _normalise_title(query))
 
+    def test_user_query_normalization_is_unicode_lowercase(self) -> None:
+        self.assertEqual(_normalise_title("ПРИВЕТ МОЙ МИР"), "привет мой мир")
+        self.assertEqual(_normalise_title("ЁЖИК"), "ёжик")
+
     def test_rejects_non_json_output(self) -> None:
         with self.assertRaisesRegex(ValueError, "не JSON"):
             _parse_generation("Я просто отвечаю текстом", "Вопрос", 30)

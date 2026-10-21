@@ -224,9 +224,20 @@ _ENTITY_ALIAS_GROUPS = {
     "java": {"java", "ява"},
     "csharp": {"csharp", "c#", "си шарп", "шарп"},
     "cplusplus": {"c++", "cpp", "си плюс плюс"},
+    "kotlin": {"kotlin", "котлин"},
+    "swift": {"swift", "свифт"},
+    "php": {"php", "пхп"},
+    "ruby": {"ruby", "руби"},
     "openai": {"openai", "open ai", "опен аи", "опенаи"},
     "deepseek": {"deepseek", "deep seek", "дипсик", "дип сик"},
     "chatgpt": {"chatgpt", "chat gpt", "чатгпт", "чат gpt"},
+    "anthropic": {"anthropic", "антропик"},
+    "claude": {"claude", "клауд", "клод"},
+    "gemini": {"gemini", "джемини"},
+    "qwen": {"qwen", "квен", "твен"},
+    "minimax": {"minimax", "мини макс", "минимакс"},
+    "openrouter": {"openrouter", "open router", "опенроутер"},
+    "perplexity": {"perplexity", "перплексити"},
     "google": {"google", "гугл"},
     "microsoft": {"microsoft", "майкрософт"},
     "apple": {"apple", "эпл", "эппл"},
@@ -234,6 +245,7 @@ _ENTITY_ALIAS_GROUPS = {
     "nvidia": {"nvidia", "нвидиа"},
     "telegram": {"telegram", "телеграм"},
     "github": {"github", "гитхаб"},
+    "yandex": {"yandex", "яндекс"},
     "sql": {"sql", "structured query language", "язык sql", "язык структурированных запросов"},
     "rust": {"rust", "раст"},
 }
@@ -538,6 +550,11 @@ async def _generate(task: ClaimedTask) -> None:
 
     config = await _get_generation_model()
     target = (await _settings_snapshot())["titles_per_answer"]
+    # Larger title sets need a larger completion budget; keep within the provider-safe cap.
+    config["max_tokens"] = min(
+        32000,
+        max(int(config["max_tokens"]), min(32000, 3000 + target * 20)),
+    )
     generation_rules = (
         "\n\n[СПЕЦИАЛЬНЫЙ РЕЖИМ: СОЗДАНИЕ ГОТОВОГО ОТВЕТА ДЛЯ БАЗЫ AI CH]\n"
         "Ответь на пользовательский вопрос так же качественно, полно и по правилам выше, как в обычном чате. "

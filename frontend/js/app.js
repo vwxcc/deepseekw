@@ -2274,13 +2274,13 @@
     popup.document.open();
     popup.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>Полный поток · AI CH</title><style>' +
-      ':root{color-scheme:light dark;--bg:#faf9f5;--fg:#34332f;--muted:#77756e;--line:#e5e2d9}' +
+      ':root{color-scheme:light dark;--bg:#ffffff;--fg:#34332f;--muted:#777777;--line:#e5e5e5}' +
       '@media(prefers-color-scheme:dark){:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
       '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif}' +
       'header{position:sticky;top:0;background:var(--bg);padding:18px 22px 12px;border-bottom:1px solid var(--line)}' +
       'h1{font-size:18px;font-weight:600;margin:0 0 3px}p{margin:0;color:var(--muted);font-size:12px}' +
-      '#stream-scroll{height:calc(100vh - 82px);overflow:auto;padding:18px 22px 30px;scrollbar-width:thin;scrollbar-color:#a8a69d transparent}' +
-      '#stream-scroll::-webkit-scrollbar{width:8px}#stream-scroll::-webkit-scrollbar-thumb{background:#aaa89f;border-radius:8px;border:2px solid var(--bg)}' +
+      '#stream-scroll{height:calc(100vh - 82px);overflow:auto;padding:18px 22px 30px;scrollbar-width:thin;scrollbar-color:#a8a8a8 transparent}' +
+      '#stream-scroll::-webkit-scrollbar{width:8px}#stream-scroll::-webkit-scrollbar-thumb{background:#aaaaaa;border-radius:8px;border:2px solid var(--bg)}' +
       'h2{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 10px}#activity-log{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 26px;padding:0;font:inherit}' +
       '#stream-answer{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0}' +
       '.hint{margin-bottom:20px;color:var(--muted);font-size:12px}.empty{color:var(--muted)}' +

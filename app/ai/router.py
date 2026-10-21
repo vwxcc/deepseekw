@@ -1226,6 +1226,9 @@ class AIRouter:
                         await job.output.put(status_event)
                     answer_status_sent = True
                 await emit_items(markup.feed(piece))
+        if job.ready_answer_hit:
+            await job.output.put(("cancelled", ""))
+            return None
         await emit_items(markup.finish())
         usage = _usage_or_estimate(usage, messages, full + ("\n" + thinking if thinking else ""))
         return full, thinking, usage

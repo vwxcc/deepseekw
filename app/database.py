@@ -45,6 +45,31 @@ async def init_db() -> None:
                     await conn.exec_driver_sql(
                         f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"
                     )
+        # Normalize the title key in Python for Unicode-safe case-insensitive matching.
+        # Resolve pre-existing case-only collisions deterministically before the unique index.
+        title_table = await conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='ready_answer_titles'")
+        if title_table.fetchone():
+            rows = (await conn.exec_driver_sql(
+                "SELECT id, title FROM ready_answer_titles ORDER BY created_at, id"
+            )).fetchall()
+            seen_normalized: set[str] = set()
+            for title_id, title_value in rows:
+                normalized = str(title_value or "").strip().casefold()
+                if not normalized or normalized in seen_normalized:
+                    await conn.exec_driver_sql(
+                        "DELETE FROM ready_answer_titles WHERE id = ?", (title_id,)
+                    )
+                    continue
+                seen_normalized.add(normalized)
+                await conn.exec_driver_sql(
+                    "UPDATE ready_answer_titles SET title = ?, normalized_title = ? WHERE id = ?",
+                    (normalized, normalized, title_id),
+                )
+            await conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_ready_answer_titles_normalized "
+                "ON ready_answer_titles (normalized_title)"
+            )
+
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_chats_share_token ON chats (share_token)"
         )
@@ -102,6 +127,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "ready_answer_tasks": {
         "position": "INTEGER DEFAULT 0",
+    },
+    "ready_answer_titles": {
+        "normalized_title": "VARCHAR(2000) DEFAULT ''",
     },
     "users": {
         "avatar": "INTEGER DEFAULT 0",

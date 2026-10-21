@@ -588,9 +588,13 @@ async def _generate(task: ClaimedTask) -> None:
             await db.commit()
             return
         existing_titles = set((await db.execute(
-            select(ReadyAnswerTitle.title).where(ReadyAnswerTitle.title.in_(titles))
+            select(ReadyAnswerTitle.normalized_title).where(
+                ReadyAnswerTitle.normalized_title.in_({_normalise_title(title) for title in titles})
+            )
         )).scalars().all())
-        new_titles = [title for title in titles if title not in existing_titles]
+        new_titles = [
+            title for title in titles if _normalise_title(title) not in existing_titles
+        ]
         # Preserve global title uniqueness. If a few typo variants are already
         # claimed by another answer, save the remaining valid variants instead
         # of failing the whole generation and repeating the same paid call.

@@ -405,7 +405,7 @@ def _title_candidates(query: str, model_titles: list[str], target: int) -> list[
 
     # Reserve space for spelling, alias, and punctuation variants instead of
     # letting 500 model proposals crowd out every mechanically generated form.
-    model_budget = max(1, int(limit * 0.75))
+    model_budget = max(1, int(limit * 0.60))
     for candidate in model_titles:
         if len(titles) >= model_budget:
             break
@@ -443,7 +443,7 @@ def _title_candidates(query: str, model_titles: list[str], target: int) -> list[
                 break
 
     # Punctuation variants are based only on already-accepted titles.
-    base_titles = list(titles[:max(1, min(len(titles), max(10, limit // 10)))])
+    base_titles = list(titles[:max(1, min(len(titles), max(1, limit // 20)))])
     outer_quotes = "\"'«»“”„‟()[]{}" + chr(96)
     for title in base_titles:
         if len(titles) >= limit:

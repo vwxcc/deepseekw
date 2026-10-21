@@ -598,7 +598,7 @@ async def _generate(task: ClaimedTask) -> None:
         # Preserve global title uniqueness. If a few typo variants are already
         # claimed by another answer, save the remaining valid variants instead
         # of failing the whole generation and repeating the same paid call.
-        if task.query not in new_titles:
+        if _normalise_title(task.query) not in new_titles:
             current.status = "failed"
             current.error = "Исходный запрос уже занят другой записью; удалите конфликт или поставьте задачу на повтор."
             current.updated_at = utcnow()

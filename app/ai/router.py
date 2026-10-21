@@ -1196,6 +1196,9 @@ class AIRouter:
                 continue
             if job.cancel.is_set():
                 if job.ready_answer_hit:
+                    # The HTTP handler is draining this job after a prepared answer won.
+                    # Send a terminal marker so the detached drain can release its task.
+                    await job.output.put(("cancelled", ""))
                     return None
                 await emit_items(markup.finish())
                 usage = _usage_or_estimate(usage, messages, full + ("\n" + thinking if thinking else ""))

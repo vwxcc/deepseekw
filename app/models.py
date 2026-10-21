@@ -468,3 +468,71 @@ class ReadableTextModelConfig(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     price_in: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     price_out: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+class ReadyAnswer(Base):
+    """One reusable answer generated off the request path."""
+    __tablename__ = "ready_answers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    source_query: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    titles: Mapped[list["ReadyAnswerTitle"]] = relationship(
+        back_populates="answer", cascade="all, delete-orphan"
+    )
+
+
+class ReadyAnswerTitle(Base):
+    """Globally unique exact-match title. Equality is deliberately case-sensitive."""
+    __tablename__ = "ready_answer_titles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    answer_id: Mapped[str] = mapped_column(
+        ForeignKey("ready_answers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(2000), unique=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    answer: Mapped["ReadyAnswer"] = relationship(back_populates="titles")
+
+
+class ReadyAnswerTask(Base):
+    """Manual or prepared prompt waiting to be converted into a reusable answer."""
+    __tablename__ = "ready_answer_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    query: Mapped[str] = mapped_column(String(2000), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    created_by_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    ready_answer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ready_answers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ReadyAnswerSeed(Base):
+    """The initial prepared-question pool consumed only when auto-generation is enabled."""
+    __tablename__ = "ready_answer_seeds"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    question: Mapped[str] = mapped_column(String(2000), unique=True, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    consumed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ReadyAnswerSettings(Base):
+    """Singleton configuration for auto-filling and generation concurrency."""
+    __tablename__ = "ready_answer_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    auto_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    parallelism: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    titles_per_answer: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

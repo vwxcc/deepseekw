@@ -483,7 +483,7 @@ class ReadyAnswer(Base):
 
 
 class ReadyAnswerTitle(Base):
-    """Globally unique exact-match title. Equality is deliberately case-sensitive."""
+    """Lowercase title with a unique case-insensitive exact-match key."""
     __tablename__ = "ready_answer_titles"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -491,6 +491,7 @@ class ReadyAnswerTitle(Base):
         ForeignKey("ready_answers.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(2000), unique=True, nullable=False, index=True)
+    normalized_title: Mapped[str] = mapped_column(String(2000), default="", nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     answer: Mapped["ReadyAnswer"] = relationship(back_populates="titles")
 

@@ -429,11 +429,11 @@ def _title_candidates(query: str, model_titles: list[str], target: int) -> list[
     for aliases in _ENTITY_ALIAS_GROUPS.values():
         for alias in aliases:
             alias_norm = _normalise_title(alias)
-            if re.search(r"(?<!\\w)" + re.escape(alias_norm) + r"(?!\\w)", padded_original):
+            if re.search(r"(?<!\w)" + re.escape(alias_norm) + r"(?!\w)", padded_original):
                 for replacement in aliases:
                     if replacement != alias_norm:
                         candidate = re.sub(
-                            r"(?<!\\w)" + re.escape(alias_norm) + r"(?!\\w)",
+                            r"(?<!\w)" + re.escape(alias_norm) + r"(?!\w)",
                             replacement,
                             original,
                         )

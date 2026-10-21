@@ -50,6 +50,15 @@ class ReadyAnswerParsingTests(unittest.TestCase):
 
         self.assertEqual(parsed, [query])
 
+    def test_typo_variants_are_generated_for_a_normal_single_word(self) -> None:
+        query = "привет"
+        _, parsed = _parse_generation(self._raw([query, "Как работает биология?"]), query, 10)
+
+        self.assertEqual(parsed[0], query)
+        self.assertEqual(len(parsed), 10)
+        self.assertTrue(all(_one_edit_apart(query, title) for title in parsed[1:]))
+        self.assertNotIn("Как работает биология?", parsed)
+
     def test_e_yo_spellings_are_allowed(self) -> None:
         query = "ежик и ёлка"
         _, parsed = _parse_generation(self._raw([query]), query, 30)

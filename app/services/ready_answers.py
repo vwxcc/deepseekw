@@ -367,7 +367,15 @@ async def _mark_task_failed(task_id: str, error: str) -> None:
 
 async def _worker_loop(retire: asyncio.Event) -> None:
     while not _STOP.is_set() and not retire.is_set():
-        task = await _claim_task()
+        try:
+            task = await _claim_task()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # SQLite serializes writes; a transient lock must not permanently kill a worker.
+            log.exception("Could not claim ready-answer task")
+            await asyncio.sleep(0.5)
+            continue
         if task is None:
             # Manual tasks always run. The toggle controls only automatic filling from
             # the prepared 30-question pool, avoiding surprise paid calls by default.

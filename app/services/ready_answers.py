@@ -206,6 +206,137 @@ async def _get_generation_model() -> dict[str, Any]:
         }
 
 
+_RU_KEY_ROWS = ("йцукенгшщзхъ", "фывапролджэ", "ячсмитьбю")
+_EN_KEY_ROWS = ("qwertyuiop", "asdfghjkl", "zxcvbnm")
+
+
+def _normalise_typo_text(value: str) -> str:
+    return (value or "").strip().casefold().replace("ё", "е")
+
+
+def _has_meaningful_query(query: str) -> bool:
+    """Do not invent spelling variants for noise such as 'ааа' or '!!!'."""
+    letters = [ch for ch in (query or "") if ch.isalpha()]
+    normalized = [ch.casefold().replace("ё", "е") for ch in letters]
+    return len(letters) >= 5 and len(set(normalized)) >= 3
+
+
+def _one_edit_apart(left: str, right: str) -> bool:
+    """Allow only one insertion, deletion, swap/substitution worth of typo distance."""
+    a, b = _normalise_typo_text(left), _normalise_typo_text(right)
+    if not a or not b or a == b or abs(len(a) - len(b)) > 1:
+        return False
+    i = j = edits = 0
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(a) > len(b):
+            i += 1
+        elif len(b) > len(a):
+            j += 1
+        else:
+            i += 1
+            j += 1
+    if i < len(a) or j < len(b):
+        edits += 1
+    return edits == 1
+
+
+def _keyboard_neighbours(char: str) -> list[str]:
+    """Nearby keys on Russian/English keyboard layouts, for realistic one-key typos."""
+    lower = char.casefold()
+    for rows in (_RU_KEY_ROWS, _EN_KEY_ROWS):
+        for row_index, row in enumerate(rows):
+            if lower not in row:
+                continue
+            column = row.index(lower)
+            options: list[str] = []
+            for other_index in range(max(0, row_index - 1), min(len(rows), row_index + 2)):
+                other = rows[other_index]
+                radius = 1 if other_index == row_index else 1
+                for k in range(max(0, column - radius), min(len(other), column + radius + 1)):
+                    if other[k] != lower and other[k].isalpha():
+                        options.append(other[k])
+            return list(dict.fromkeys(options))
+    return []
+
+
+def _typo_title_candidates(query: str, model_titles: list[str], target: int) -> list[str]:
+    """Keep only the original query and mechanically plausible spelling variants.
+
+    The model can propose candidates, but the server validates every title against
+    the source string. Thus a query about one subject cannot acquire unrelated
+    titles accidentally invented by the model.
+    """
+    original = (query or "").strip()
+    if not original:
+        return []
+    titles = [original]
+    seen = {original}
+
+    def add(candidate: str) -> None:
+        candidate = str(candidate or "").strip()
+        if not candidate or candidate in seen or len(candidate) > 2000:
+            return
+        if not _one_edit_apart(original, candidate):
+            return
+        seen.add(candidate)
+        titles.append(candidate)
+
+    # Low-information prompts get a single exact title only. In particular,
+    # "ааа" must never gain titles like "привет" or "привет аа".
+    if not _has_meaningful_query(original):
+        return titles
+
+    # First cover the explicit Russian ё/е spelling difference (single changes
+    # and the all-swapped spelling), without changing any other letters or words.
+    swapped_all = original.translate(str.maketrans({"ё": "е", "Ё": "Е"}))
+    if swapped_all != original:
+        add(swapped_all)
+    swapped_all = original.translate(str.maketrans({"е": "ё", "Е": "Ё"}))
+    if swapped_all != original:
+        add(swapped_all)
+    for index, char in enumerate(original):
+        if char in "еёЕЁ":
+            other = {"е": "ё", "ё": "е", "Е": "Ё", "Ё": "Е"}[char]
+            add(original[:index] + other + original[index + 1:])
+
+    # Accept AI-proposed variants only when they are one typographical edit away.
+    for candidate in model_titles:
+        if isinstance(candidate, str):
+            add(candidate)
+
+    # Keyboard-adjacent substitution errors.
+    for index, char in enumerate(original):
+        if not char.isalpha():
+            continue
+        for nearby in _keyboard_neighbours(char):
+            replacement = nearby.upper() if char.isupper() else nearby
+            add(original[:index] + replacement + original[index + 1:])
+
+    # Common typing errors: adjacent-letter transposition, omitted letter,
+    # and accidentally repeated letter. Every candidate stays tied to the source.
+    for index in range(len(original) - 1):
+        left, right = original[index], original[index + 1]
+        if left.isalpha() and right.isalpha() and left.casefold() != right.casefold():
+            add(original[:index] + right + left + original[index + 2:])
+    for index, char in enumerate(original):
+        if not char.isalpha():
+            continue
+        word_start = index == 0 or not original[index - 1].isalpha()
+        word_end = index + 1 == len(original) or not original[index + 1].isalpha()
+        if not (word_start and word_end):
+            add(original[:index] + original[index + 1:])
+        add(original[:index + 1] + char + original[index + 1:])
+
+    return titles[:max(1, min(100, target))]
+
+
 def _parse_generation(raw: str, query: str, target: int) -> tuple[str, list[str]]:
     text = (raw or "").strip()
     fence = chr(96) * 3
@@ -221,29 +352,18 @@ def _parse_generation(raw: str, query: str, target: int) -> tuple[str, list[str]
     if not isinstance(payload, dict):
         raise ValueError("В ответе модели нет JSON-объекта.")
     answer = str(payload.get("answer") or "").strip()
-    raw_titles = payload.get("titles")
+    raw_titles = payload.get("titles", [])
     if not answer:
         raise ValueError("Модель вернула пустой готовый ответ.")
     if not isinstance(raw_titles, list):
-        raise ValueError("Модель не вернула список заголовков.")
-    titles: list[str] = []
-    seen: set[str] = set()
-    for item in raw_titles:
-        if not isinstance(item, str):
-            continue
-        title = item.strip()
-        if not title or len(title) > 2000 or title in seen:
-            continue
-        seen.add(title)
-        titles.append(title)
-    # Always preserve the user's exact original query as the first title, even
-    # when the model returned it late in a long generated list.
-    titles = [query] + [title for title in titles if title != query]
-    titles = titles[:target]
-    if len(titles) < 10:
-        raise ValueError(f"Модель вернула только {len(titles)} уникальных заголовков; требуется не менее 10.")
+        raw_titles = []
+    titles = _typo_title_candidates(query, raw_titles, target)
+    if _has_meaningful_query(query) and len(titles) < min(10, target):
+        raise ValueError(
+            f"Не удалось построить хотя бы 10 вариантов написания для запроса; "
+            "попробуйте сформулировать его подробнее."
+        )
     return answer, titles
-
 
 async def _generate(task: ClaimedTask) -> None:
     # If another task has already prepared this exact query, reuse that answer and avoid a duplicate paid call.
@@ -264,13 +384,16 @@ async def _generate(task: ClaimedTask) -> None:
     generation_rules = (
         "\n\n[СПЕЦИАЛЬНЫЙ РЕЖИМ: СОЗДАНИЕ ГОТОВОГО ОТВЕТА ДЛЯ БАЗЫ AI CH]\n"
         "Ответь на пользовательский вопрос так же качественно, полно и по правилам выше, как в обычном чате. "
-        "Дополнительно подготовь заголовки-синонимы/варианты формулировки того же самого вопроса, чтобы система "
-        "могла найти этот ответ по точному совпадению всей строки. Заголовки не должны менять смысл вопроса и "
-        "не должны быть ответами или общими словами. Первым заголовком включи исходный запрос дословно. "
-        f"Сгенерируй {target} уникальных заголовков, но никогда не больше 100. "
-        "Не создавай заголовки для других вопросов и не выдумывай дополнительные факты.\n"
+        "Дополнительно подготовь заголовки ТОЛЬКО как варианты написания исходного запроса: путаница е/ё, "
+        "опечатки соседними клавишами, пропуск/удвоение одной буквы, перестановка соседних букв. "
+        "Не создавай синонимы, новые формулировки, другие вопросы или другие темы; не добавляй и не удаляй слова. "
+        "Первым заголовком включи исходный запрос дословно. Для короткого/бессмысленного запроса вроде «ааа» "
+        "верни только исходный заголовок. "
+        f"Предложи до {target} уникальных вариантов, никогда не больше 100. Сервер отфильтрует все варианты, "
+        "которые не являются опечаткой исходной строки, так что не пытайся менять смысл.
+"
         "Верни только один корректный JSON-объект без Markdown-ограждений и текста вокруг, строго такой формы: "
-        '{"answer":"полный ответ в Markdown","titles":["исходный запрос","вариант 2","..."]}. '
+        '{"answer":"полный ответ в Markdown","titles":["исходный запрос","вариант с опечаткой","..."]}. '
         "В answer должен быть только ответ пользователю, без упоминания базы, очереди, заголовков или этого режима. "
         "Не включай в JSON поля, кроме answer и titles."
     )
@@ -317,11 +440,15 @@ async def _generate(task: ClaimedTask) -> None:
             select(ReadyAnswerTitle.title).where(ReadyAnswerTitle.title.in_(titles))
         )).scalars().all())
         new_titles = [title for title in titles if title not in existing_titles]
-        if len(new_titles) < 10:
-            raise ValueError(
-                "Менее 10 свободных заголовков: сгенерированные формулировки уже заняты другой записью. "
-                "Нажмите «Повторить», чтобы сгенерировать новые варианты."
-            )
+        # Preserve global title uniqueness. If a few typo variants are already
+        # claimed by another answer, save the remaining valid variants instead
+        # of failing the whole generation and repeating the same paid call.
+        if task.query not in new_titles:
+            current.status = "failed"
+            current.error = "Исходный запрос уже занят другой записью; удалите конфликт или поставьте задачу на повтор."
+            current.updated_at = utcnow()
+            await db.commit()
+            return
         ready = ReadyAnswer(source_query=task.query, answer=answer)
         db.add(ready)
         await db.flush()

@@ -749,6 +749,8 @@ async def send_message(
     # Start the normal AI job first. The exact-title lookup runs only after it has
     # entered the router; on a hit, cancel that work and return the prepared answer.
     await ai_router.enqueue(job)
+    # Yield once so the normal AI worker can start processing before the exact-title lookup.
+    await asyncio.sleep(0)
 
     if not attached and not code_mode:
         cached = await find_ready_answer_exact(content)

@@ -5280,7 +5280,7 @@
         '<div class="usage-card"><span>Генерируется</span><b>' + Number(s.generating || 0).toLocaleString('ru-RU') + '</b></div></div>' +
         '<section class="aux-model-card" style="margin:12px 0"><header><div><b>Фоновая генерация</b><p>Одиночный запрос можно поставить следующим в очередь. Пачки попадают в подготовленный список и не запускаются сразу; автогенерация забирает их из этого списка, когда включена.</p></div></header>' +
         '<div class="aux-model-fields"><label><span>Параллельных запросов (1–20)</span><input id="ready-parallel" type="number" min="1" max="20" value="' + esc(cfg.parallelism || 2) + '"></label>' +
-        '<label><span>Заголовков на ответ (10–100)</span><input id="ready-title-count" type="number" min="10" max="100" value="' + esc(cfg.titles_per_answer || 30) + '"></label></div>' +
+        '<label><span>Заголовков на ответ (10–500)</span><input id="ready-title-count" type="number" min="10" max="500" value="' + esc(cfg.titles_per_answer || 30) + '"></label></div>' +
         '<footer style="justify-content:space-between;flex-wrap:wrap"><label><input id="ready-auto" type="checkbox"' + (cfg.auto_enabled ? ' checked' : '') +
         '> Автогенерация по подготовленным вопросам</label><button type="button" id="ready-save-settings">Сохранить параметры</button></footer></section>' +
         '<h4 class="sec">Добавить один запрос следующим</h4><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="ready-next-query" style="flex:1;min-width:220px" maxlength="2000" placeholder="Запрос, который пойдёт следующим">' +
@@ -5328,8 +5328,8 @@
         const parallelism = Number($('#ready-parallel', root).value);
         const titles_per_answer = Number($('#ready-title-count', root).value);
         if (!Number.isInteger(parallelism) || parallelism < 1 || parallelism > 20 ||
-            !Number.isInteger(titles_per_answer) || titles_per_answer < 10 || titles_per_answer > 100) {
-          toast('Параллельность: 1–20; количество заголовков: 10–100.', 'error'); return;
+            !Number.isInteger(titles_per_answer) || titles_per_answer < 10 || titles_per_answer > 500) {
+          toast('Параллельность: 1–20; количество заголовков: 10–500.', 'error'); return;
         }
         try {
           await api.patch('/api/admin/ready-answers/settings', {auto_enabled:$('#ready-auto', root).checked, parallelism, titles_per_answer});

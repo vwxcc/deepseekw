@@ -535,6 +535,7 @@ class ReadyAnswerSettings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     auto_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    lookup_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     parallelism: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     titles_per_answer: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

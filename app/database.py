@@ -136,6 +136,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "ready_answer_titles": {
         "normalized_title": "VARCHAR(2000) DEFAULT ''",
     },
+    "ready_answer_settings": {
+        "lookup_enabled": "BOOLEAN DEFAULT 1",
+    },
     "users": {
         "avatar": "INTEGER DEFAULT 0",
         "github_user": "VARCHAR(120)",

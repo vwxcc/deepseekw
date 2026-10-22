@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_db, require_csrf
@@ -29,6 +29,7 @@ class QueueRequests(BaseModel):
 
 class SettingsPatch(BaseModel):
     auto_enabled: bool | None = None
+    lookup_enabled: bool | None = None
     parallelism: int | None = Field(default=None, ge=1, le=20)
     titles_per_answer: int | None = Field(default=None, ge=10, le=500)
 
@@ -45,7 +46,7 @@ def _dt(value: datetime | None) -> str | None:
 async def _settings(db: AsyncSession) -> ReadyAnswerSettings:
     row = await db.get(ReadyAnswerSettings, 1)
     if row is None:
-        row = ReadyAnswerSettings(id=1, auto_enabled=False, parallelism=2, titles_per_answer=30)
+        row = ReadyAnswerSettings(id=1, auto_enabled=False, lookup_enabled=True, parallelism=2, titles_per_answer=30)
         db.add(row)
         await db.commit()
         await db.refresh(row)
@@ -54,6 +55,8 @@ async def _settings(db: AsyncSession) -> ReadyAnswerSettings:
 
 async def _result_rows(db: AsyncSession, q: str, limit: int) -> list[dict[str, Any]]:
     q = (q or "").strip().casefold()
+    # An empty search shows only the newest saved answer; a real search stays bounded.
+    limit = min(limit, 10) if q else 1
     if q:
         statement = (
             select(ReadyAnswerTitle.answer_id, ReadyAnswerTitle.title, ReadyAnswer, ReadyAnswer.created_at)
@@ -106,11 +109,21 @@ async def overview(
 ):
     """Show exact-match title database, queue, prepared questions, and current settings."""
     cfg = await _settings(db)
-    tasks = list((await db.execute(
-        select(ReadyAnswerTask).order_by(
-            ReadyAnswerTask.priority.desc(), ReadyAnswerTask.created_at.desc()
-        ).limit(500)
+    # Keep the live queue visible but cap the completed/failed history at three rows.
+    active_tasks = list((await db.execute(
+        select(ReadyAnswerTask)
+        .where(ReadyAnswerTask.status.in_(["queued", "generating"]))
+        .order_by(ReadyAnswerTask.priority.desc(), ReadyAnswerTask.created_at.desc())
+        .limit(50)
     )).scalars().all())
+    history_tasks = list((await db.execute(
+        select(ReadyAnswerTask)
+        .where(ReadyAnswerTask.status.in_(["completed", "failed"]))
+        .order_by(ReadyAnswerTask.updated_at.desc(), ReadyAnswerTask.created_at.desc())
+        .limit(3)
+    )).scalars().all())
+    tasks = active_tasks + history_tasks
+    tasks.sort(key=lambda task: task.updated_at or task.created_at, reverse=True)
     seed_rows = list((await db.execute(
         select(ReadyAnswerSeed)
         .order_by(ReadyAnswerSeed.position.asc(), ReadyAnswerSeed.created_at.asc())
@@ -132,6 +145,7 @@ async def overview(
     return {
         "settings": {
             "auto_enabled": bool(cfg.auto_enabled),
+            "lookup_enabled": bool(cfg.lookup_enabled),
             "parallelism": max(1, min(20, int(cfg.parallelism or 2))),
             "titles_per_answer": max(10, min(500, int(cfg.titles_per_answer or 30))),
         },
@@ -166,6 +180,8 @@ async def patch_settings(
     cfg = await _settings(db)
     if data.auto_enabled is not None:
         cfg.auto_enabled = data.auto_enabled
+    if data.lookup_enabled is not None:
+        cfg.lookup_enabled = data.lookup_enabled
     if data.parallelism is not None:
         cfg.parallelism = max(1, min(20, data.parallelism))
     if data.titles_per_answer is not None:
@@ -175,6 +191,7 @@ async def patch_settings(
     await db.refresh(cfg)
     return {
         "auto_enabled": bool(cfg.auto_enabled),
+        "lookup_enabled": bool(cfg.lookup_enabled),
         "parallelism": int(cfg.parallelism),
         "titles_per_answer": int(cfg.titles_per_answer),
     }
@@ -361,6 +378,16 @@ async def delete_answer(
     answer = await db.get(ReadyAnswer, answer_id)
     if answer is None:
         return None
-    await db.delete(answer)
+    # Explicitly clear referencing task IDs and delete titles first. This also
+    # handles older SQLite databases whose foreign-key actions predate the current schema.
+    await db.execute(
+        update(ReadyAnswerTask)
+        .where(ReadyAnswerTask.ready_answer_id == answer_id)
+        .values(ready_answer_id=None)
+    )
+    await db.execute(
+        delete(ReadyAnswerTitle).where(ReadyAnswerTitle.answer_id == answer_id)
+    )
+    await db.execute(delete(ReadyAnswer).where(ReadyAnswer.id == answer_id))
     await db.commit()
     return None

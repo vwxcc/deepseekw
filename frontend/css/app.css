@@ -3720,3 +3720,38 @@ html, body, #main-screen, #chat-area, #sidebar, #messages, #composer { color-sch
   #chat-header .head-right { gap: 3px; }
   #chat-header .register-cta { margin-left: 3px; max-width: 132px; overflow: hidden; text-overflow: ellipsis; }
 }
+
+
+/* Ready answers database: large desktop dialog and phone-height workspace. */
+.ready-answers-back { padding: 12px; }
+.modal.ready-answers-modal {
+  width: min(1000px, calc(100vw - 24px));
+  max-width: 1000px;
+  height: min(900px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.ready-answers-modal > h3,
+.ready-answers-modal > .row { flex: 0 0 auto; }
+.ready-answers-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+@media (max-width: 620px) {
+  .modal-back.ready-answers-back { padding: 0; place-items: stretch; }
+  .modal.ready-answers-modal {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+}

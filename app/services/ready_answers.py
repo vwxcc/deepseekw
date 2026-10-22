@@ -76,6 +76,9 @@ async def find_ready_answer_exact(query: str) -> ReadyAnswer | None:
         return None
     try:
         async with SessionLocal() as db:
+            ready_settings = await db.get(ReadyAnswerSettings, 1)
+            if ready_settings is not None and not ready_settings.lookup_enabled:
+                return None
             result = await db.execute(
                 select(ReadyAnswer)
                 .join(ReadyAnswerTitle, ReadyAnswerTitle.answer_id == ReadyAnswer.id)
@@ -93,7 +96,7 @@ async def find_ready_answer_exact(query: str) -> ReadyAnswer | None:
 async def _ensure_defaults_and_seeds() -> None:
     async with SessionLocal() as db:
         if await db.get(ReadyAnswerSettings, 1) is None:
-            db.add(ReadyAnswerSettings(id=1, auto_enabled=False, parallelism=2, titles_per_answer=30))
+            db.add(ReadyAnswerSettings(id=1, auto_enabled=False, lookup_enabled=True, parallelism=2, titles_per_answer=30))
         existing = int(await db.scalar(select(func.count()).select_from(ReadyAnswerSeed)) or 0)
         if existing == 0:
             db.add_all([
@@ -115,12 +118,13 @@ async def _settings_snapshot() -> dict[str, Any]:
     async with SessionLocal() as db:
         row = await db.get(ReadyAnswerSettings, 1)
         if row is None:
-            row = ReadyAnswerSettings(id=1, auto_enabled=False, parallelism=2, titles_per_answer=30)
+            row = ReadyAnswerSettings(id=1, auto_enabled=False, lookup_enabled=True, parallelism=2, titles_per_answer=30)
             db.add(row)
             await db.commit()
             await db.refresh(row)
         return {
             "auto_enabled": bool(row.auto_enabled),
+            "lookup_enabled": bool(row.lookup_enabled),
             "parallelism": max(1, min(20, int(row.parallelism or 2))),
             "titles_per_answer": max(10, min(500, int(row.titles_per_answer or 30))),
         }

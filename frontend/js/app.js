@@ -5242,7 +5242,7 @@
       let d;
       try {
         d = await api.get('/api/admin/ready-answers?q=' + encodeURIComponent(q) +
-          '&limit=30&seed_limit=' + seedPageSize + '&seed_offset=' + currentSeedOffset);
+          '&limit=' + (q ? 10 : 1) + '&seed_limit=' + seedPageSize + '&seed_offset=' + currentSeedOffset);
       }
       catch (e) { toast('Не удалось открыть базу готовых ответов: ' + e.message, 'error'); return; }
       const s = d.stats || {}, cfg = d.settings || {};
@@ -5272,8 +5272,8 @@
         '</span><b>' + (x.consumed ? 'уже взят' : 'ожидает авто') + '</b></div>').join('');
       const seedRange = (seedTotal ? seedOffset + 1 : 0) + '–' +
         Math.min(seedOffset + seedLimit, seedTotal) + ' из ' + seedTotal;
-      root.innerHTML = '<div class="modal-back"><div class="modal" style="max-width:1000px;width:min(96vw,1000px)"><h3>База готовых ответов</h3>' +
-        '<div class="modal-body" style="max-height:76vh;overflow:auto"><div class="usage-grid">' +
+      root.innerHTML = '<div class="modal-back ready-answers-back"><div class="modal ready-answers-modal"><h3>База готовых ответов</h3>' +
+        '<div class="modal-body ready-answers-body"><div class="usage-grid">' +
         '<div class="usage-card"><span>Ответы</span><b>' + Number(s.answers || 0).toLocaleString('ru-RU') + '</b></div>' +
         '<div class="usage-card"><span>Заголовки</span><b>' + Number(s.titles || 0).toLocaleString('ru-RU') + '</b></div>' +
         '<div class="usage-card"><span>В очереди</span><b>' + Number(s.queued || 0).toLocaleString('ru-RU') + '</b></div>' +
@@ -5281,7 +5281,8 @@
         '<section class="aux-model-card" style="margin:12px 0"><header><div><b>Фоновая генерация</b><p>Одиночный запрос можно поставить следующим в очередь. Пачки попадают в подготовленный список и не запускаются сразу; автогенерация забирает их из этого списка, когда включена.</p></div></header>' +
         '<div class="aux-model-fields"><label><span>Параллельных запросов (1–20)</span><input id="ready-parallel" type="number" min="1" max="20" value="' + esc(cfg.parallelism || 2) + '"></label>' +
         '<label><span>Заголовков на ответ (10–500)</span><input id="ready-title-count" type="number" min="10" max="500" value="' + esc(cfg.titles_per_answer || 30) + '"></label></div>' +
-        '<footer style="justify-content:space-between;flex-wrap:wrap"><label><input id="ready-auto" type="checkbox"' + (cfg.auto_enabled ? ' checked' : '') +
+        '<footer style="justify-content:space-between;flex-wrap:wrap;gap:10px"><label><input id="ready-use-cache" type="checkbox"' + (cfg.lookup_enabled !== false ? ' checked' : '') +
+        '> Использовать готовые ответы при совпадении запроса</label><label><input id="ready-auto" type="checkbox"' + (cfg.auto_enabled ? ' checked' : '') +
         '> Автогенерация по подготовленным вопросам</label><button type="button" id="ready-save-settings">Сохранить параметры</button></footer></section>' +
         '<h4 class="sec">Добавить один запрос следующим</h4><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="ready-next-query" style="flex:1;min-width:220px" maxlength="2000" placeholder="Запрос, который пойдёт следующим">' +
         '<button type="button" id="ready-add-next">В очередь следующим</button></div>' +
@@ -5289,7 +5290,7 @@
         '<div style="display:flex;justify-content:flex-end;margin:8px 0 18px"><button type="button" id="ready-add-batch">Добавить пачку в подготовленные</button></div>' +
         '<h4 class="sec">Поиск по всем заголовкам</h4><div style="display:flex;gap:8px"><input id="ready-search" style="flex:1;min-width:0" type="search" value="' + esc(currentQuery) +
         '" placeholder="Часть или полный заголовок"><button type="button" id="ready-refresh">Обновить</button></div><div id="ready-results">' + answers + '</div>' +
-        '<h4 class="sec">Запросы и очередь</h4><p class="usage-note">Состояния обновляются при перезагрузке списка.</p><div id="ready-tasks">' + tasks + '</div>' +
+        '<h4 class="sec">Запросы и очередь</h4><p class="usage-note">Активные запросы показываются из очереди; в истории — только последние 3 завершённых или ошибочных запроса.</p><div id="ready-tasks">' + tasks + '</div>' +
         '<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">Подготовленный список (' + seedTotal +
         ' вопросов; ожидают авто: ' + Number(s.prepared_remaining || 0) + ')</summary>' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0">' +
@@ -5332,7 +5333,7 @@
           toast('Параллельность: 1–20; количество заголовков: 10–500.', 'error'); return;
         }
         try {
-          await api.patch('/api/admin/ready-answers/settings', {auto_enabled:$('#ready-auto', root).checked, parallelism, titles_per_answer});
+          await api.patch('/api/admin/ready-answers/settings', {lookup_enabled:$('#ready-use-cache', root).checked, auto_enabled:$('#ready-auto', root).checked, parallelism, titles_per_answer});
           toast('Параметры сохранены'); await rerender(currentQuery);
         } catch (e) { toast('Не удалось сохранить: ' + e.message, 'error'); }
       });

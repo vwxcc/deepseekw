@@ -5368,7 +5368,7 @@
         try { await api.del('/api/admin/ready-answers/tasks/' + b.dataset.readyDeleteTask); await rerender(currentQuery); }
         catch (e) { toast('Не удалось удалить задачу: ' + e.message, 'error'); }
       }));
-      $('[data-ready-delete-answer]', root).forEach(b => b.addEventListener('click', async () => {
+      $$('[data-ready-delete-answer]', root).forEach(b => b.addEventListener('click', async () => {
         if (b.disabled || b.dataset.deleting === '1') return;
         const answerId = b.dataset.readyDeleteAnswer;
         const oldLabel = b.textContent;

@@ -1135,6 +1135,7 @@
     patch(p, b) { return api.req('PATCH', p, b); },
     put(p, b) { return api.req('PUT', p, b === undefined ? {} : b); },
     del(p) { return api.req('DELETE', p); },
+    delTimed(p, timeoutMs) { return api.req('DELETE', p, undefined, false, timeoutMs); },
   };
 
   // ---------- state ----------
@@ -5367,10 +5368,28 @@
         try { await api.del('/api/admin/ready-answers/tasks/' + b.dataset.readyDeleteTask); await rerender(currentQuery); }
         catch (e) { toast('Не удалось удалить задачу: ' + e.message, 'error'); }
       }));
-      $$('[data-ready-delete-answer]', root).forEach(b => b.addEventListener('click', async () => {
-        if (!confirm('Удалить готовый ответ вместе со всеми заголовками?')) return;
-        try { await api.del('/api/admin/ready-answers/answers/' + b.dataset.readyDeleteAnswer); toast('Ответ удалён'); await rerender(currentQuery); }
-        catch (e) { toast('Не удалось удалить ответ: ' + e.message, 'error'); }
+      $('[data-ready-delete-answer]', root).forEach(b => b.addEventListener('click', async () => {
+        if (b.disabled || b.dataset.deleting === '1') return;
+        const answerId = b.dataset.readyDeleteAnswer;
+        const oldLabel = b.textContent;
+        b.disabled = true;
+        b.dataset.deleting = '1';
+        b.textContent = 'Удаление…';
+        b.setAttribute('aria-busy', 'true');
+        try {
+          const result = await api.delTimed('/api/admin/ready-answers/answers/' + encodeURIComponent(answerId), 20000);
+          if (!result || result.ok !== true || result.deleted !== true) {
+            throw new Error('Сервер не подтвердил удаление записи.');
+          }
+          toast('Ответ удалён');
+          await rerender(currentQuery);
+        } catch (e) {
+          b.disabled = false;
+          b.dataset.deleting = '0';
+          b.textContent = oldLabel;
+          b.removeAttribute('aria-busy');
+          toast('Удаление не подтверждено: ' + e.message, 'error');
+        }
       }));
     }
     await rerender('');

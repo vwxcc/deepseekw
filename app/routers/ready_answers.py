@@ -369,25 +369,35 @@ async def delete_task(
     return None
 
 
-@router.delete("/answers/{answer_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/answers/{answer_id}")
 async def delete_answer(
     answer_id: str,
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
-    answer = await db.get(ReadyAnswer, answer_id)
-    if answer is None:
-        return None
-    # Explicitly clear referencing task IDs and delete titles first. This also
-    # handles older SQLite databases whose foreign-key actions predate the current schema.
-    await db.execute(
-        update(ReadyAnswerTask)
-        .where(ReadyAnswerTask.ready_answer_id == answer_id)
-        .values(ready_answer_id=None)
-    )
-    await db.execute(
-        delete(ReadyAnswerTitle).where(ReadyAnswerTitle.answer_id == answer_id)
-    )
-    await db.execute(delete(ReadyAnswer).where(ReadyAnswer.id == answer_id))
-    await db.commit()
-    return None
+    # Use explicit bulk SQL instead of ORM object deletion: this avoids loading
+    # the answer/title relationship and returns a clear result to the browser.
+    try:
+        exists = await db.scalar(
+            select(ReadyAnswer.id).where(ReadyAnswer.id == answer_id).limit(1)
+        )
+        if exists is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Ответ уже удалён или не найден.")
+        await db.execute(
+            update(ReadyAnswerTask)
+            .where(ReadyAnswerTask.ready_answer_id == answer_id)
+            .values(ready_answer_id=None)
+        )
+        await db.execute(
+            delete(ReadyAnswerTitle).where(ReadyAnswerTitle.answer_id == answer_id)
+        )
+        result = await db.execute(
+            delete(ReadyAnswer).where(ReadyAnswer.id == answer_id)
+        )
+        await db.commit()
+        return {"ok": True, "deleted": bool(result.rowcount)}
+    except HTTPException:
+        raise
+    except Exception:
+        await db.rollback()
+        raise

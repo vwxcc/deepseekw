@@ -78,10 +78,33 @@ async def init_db() -> None:
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_chats_share_token ON chats (share_token)"
         )
+        # Existing registered non-admin accounts receive the one-time starter allocation.
+        # New registrations receive it in the registration handler. Guests/admins do not.
+        await conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS app_metadata "
+            "(key VARCHAR(100) PRIMARY KEY, value VARCHAR(255) NOT NULL)"
+        )
+        marker = await conn.exec_driver_sql(
+            "SELECT value FROM app_metadata WHERE key = 'api-token-starter-grant-v1'"
+        )
+        if marker.fetchone() is None:
+            await conn.exec_driver_sql(
+                "UPDATE users SET token_balance = 30000 "
+                "WHERE COALESCE(is_guest, 0) = 0 AND COALESCE(is_admin, 0) = 0 "
+                "AND COALESCE(token_balance, 0) = 0"
+            )
+            await conn.exec_driver_sql(
+                "INSERT INTO app_metadata (key, value) "
+                "VALUES ('api-token-starter-grant-v1', '1')"
+            )
         # Budget checks filter usage by user and rolling timestamp window.
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_usage_events_user_created_at "
             "ON usage_events (user_id, created_at)"
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_usage_events_api_key_id "
+            "ON usage_events (api_key_id)"
         )
 
 
@@ -140,7 +163,11 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "ready_answer_settings": {
         "lookup_enabled": "BOOLEAN DEFAULT 1",
     },
+    "usage_events": {
+        "api_key_id": "VARCHAR(36)",
+    },
     "users": {
+        "token_balance": "INTEGER NOT NULL DEFAULT 0",
         "avatar": "INTEGER DEFAULT 0",
         "github_user": "VARCHAR(120)",
         "github_token": "VARCHAR(255)",

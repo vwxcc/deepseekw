@@ -549,6 +549,11 @@
             <span class="add-chat-action-copy"><strong>Выбор модели</strong><small id="add-chat-model-current">Текущая модель</small></span>
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
+          <button type="button" class="add-chat-action" data-add-chat-action="memory">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
+            <span class="add-chat-action-copy"><strong>Память и предпочтения</strong><small id="add-chat-memory-current">Включена по умолчанию</small></span>
+            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+          </button>
           <button type="button" class="add-chat-action" id="add-chat-project-action" data-add-chat-action="project">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-folder"/></svg></span>
             <span class="add-chat-action-copy"><strong id="add-chat-project-title">Добавить сразу в проект</strong><small id="add-chat-project-current">Не выбрано</small></span>
@@ -582,11 +587,20 @@
           <div id="add-chat-project-picker-content"></div>
         </div>
       </div>
+      <div id="add-chat-memory-view" class="add-chat-subview hidden">
+        <div class="memory-settings-view">
+          <p class="usage-note">При включённой памяти AI CH получает сохранённые факты и предпочтения. Когда память выключена, они не отправляются модели, а новые факты не сохраняются автоматически. Существующие записи не удаляются.</p>
+          <label class="memory-setting-toggle" for="add-chat-memory-enabled">
+            <span><strong>Использовать память</strong><small>По умолчанию включена в главной странице и новых чатах</small></span>
+            <input type="checkbox" id="add-chat-memory-enabled" checked />
+          </label>
+          <button type="button" class="chip-btn" id="add-chat-manage-memory">Управлять фактами и предпочтениями</button>
+          <p id="add-chat-memory-status" class="usage-note" aria-live="polite"></p>
+        </div>
+      </div>
       <div id="add-chat-connectors-view" class="add-chat-subview hidden">
-        <div class="connectors-empty">
-          <span class="connectors-empty-icon"><svg class="ic"><use href="#i-plug"/></svg></span>
-          <strong>Подключения пока не настроены</strong>
-          <p>Здесь появятся подключения к внешним сервисам, когда серверные интеграции будут добавлены.</p>
+        <div id="add-chat-connectors-list" class="connector-catalog-panel" aria-live="polite">
+          <p class="usage-note">Загружаю коннекторы…</p>
         </div>
       </div>
     </section>

@@ -8426,7 +8426,7 @@
       } finally { memoryToggle.disabled = false; }
     });
 
-    $('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
+    $$('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
       try {
         await api.del('/api/memory/' + b.dataset.delMem);
         $('#modal-root').innerHTML = '';

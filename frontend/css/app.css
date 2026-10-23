@@ -4049,29 +4049,27 @@ html, body, #main-screen, #chat-area { max-width: 100%; overflow-x: hidden; }
 .aich-ui-copy {
   flex: 1 1 auto;
   min-width: 0;
-  max-height: none;
-  overflow: visible;
+  max-height: 2.84em;
+  overflow: hidden;
   overflow-wrap: anywhere;
   line-height: 1.42;
 }
 .aich-ui-copy strong {
-  display: -webkit-box;
+  display: block;
   max-width: 100%;
   overflow: hidden;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
   line-height: 1.35;
 }
 .aich-ui-copy > div {
-  display: -webkit-box;
-  max-height: 2.84em;
+  display: block;
+  max-height: 1.42em;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
   line-height: 1.42;
 }
 .aich-ui-actions {

@@ -6423,13 +6423,140 @@
     const openBtn = $('#sidebar-open-btn');
     if (openBtn) openBtn.classList.toggle('hidden', !collapsed);
   }
+  function resetMobileSidebarMotion() {
+    const sb = $('#sidebar');
+    const overlay = $('#sidebar-overlay');
+    if (!sb || !overlay) return;
+    // Remove the drag lock first so clearing the inline position animates to the
+    // class-defined resting position instead of snapping.
+    sb.classList.remove('is-dragging');
+    overlay.classList.remove('is-dragging');
+    sb.style.removeProperty('transform');
+    overlay.style.removeProperty('opacity');
+  }
+  function openMobileSidebar() {
+    if (window.innerWidth > 860) return;
+    const sb = $('#sidebar');
+    const overlay = $('#sidebar-overlay');
+    sb.classList.add('open');
+    overlay.classList.add('show');
+    resetMobileSidebarMotion();
+  }
   function closeMobileSidebar() {
     if (window.innerWidth <= 860) {
       $('#sidebar').classList.remove('open');
       $('#sidebar-overlay').classList.remove('show');
+      resetMobileSidebarMotion();
     }
   }
+  function bindSidebarGestures() {
+    const surface = $('#main-screen');
+    const sidebar = $('#sidebar');
+    const overlay = $('#sidebar-overlay');
+    if (!surface || !sidebar || !overlay || surface.dataset.sidebarGestures === '1') return;
+    surface.dataset.sidebarGestures = '1';
+
+    let gesture = null;
+    const ignoredTargets = 'input, textarea, select, [contenteditable="true"], iframe, video, audio, pre, code';
+
+    function onPointerDown(event) {
+      if (window.innerWidth > 860 || !event.isPrimary || event.button !== 0) return;
+      if (event.target && event.target.closest && event.target.closest(ignoredTargets)) return;
+      const startedOpen = sidebar.classList.contains('open');
+      // Keep the closed-edge gesture narrow so ordinary horizontal interactions
+      // and Safari's back/forward area are not captured accidentally.
+      if (!startedOpen && event.clientX > 28) return;
+      gesture = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startAt: event.timeStamp,
+        lastX: event.clientX,
+        lastAt: event.timeStamp,
+        startedOpen,
+        tracking: false,
+        progress: startedOpen ? 1 : 0,
+      };
+    }
+
+    function renderDrag(progress) {
+      const width = Math.max(1, sidebar.getBoundingClientRect().width);
+      const clamped = Math.max(0, Math.min(1, progress));
+      gesture.progress = clamped;
+      sidebar.style.transform = 'translate3d(' + ((clamped - 1) * width) + 'px, 0, 0)';
+      overlay.style.opacity = String(clamped);
+      if (clamped > 0.015) overlay.classList.add('show');
+      else overlay.classList.remove('show');
+    }
+
+    function finishGesture(open) {
+      const active = gesture;
+      gesture = null;
+      if (!active) return;
+      sidebar.classList.toggle('open', !!open);
+      overlay.classList.toggle('show', !!open);
+      resetMobileSidebarMotion();
+    }
+
+    function onPointerMove(event) {
+      const active = gesture;
+      if (!active || event.pointerId !== active.pointerId || window.innerWidth > 860) return;
+      const dx = event.clientX - active.startX;
+      const dy = event.clientY - active.startY;
+      if (!active.tracking) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+        // Give vertical scroll priority; only claim a clearly horizontal gesture.
+        if (Math.abs(dx) < Math.abs(dy) * 1.2) {
+          gesture = null;
+          return;
+        }
+        if ((active.startedOpen && dx >= 0) || (!active.startedOpen && dx <= 0)) {
+          gesture = null;
+          return;
+        }
+        active.tracking = true;
+        sidebar.classList.add('is-dragging');
+        overlay.classList.add('is-dragging', 'show');
+        try { surface.setPointerCapture(event.pointerId); } catch (_) { /* Pointer capture is best-effort. */ }
+      }
+      if (!active.tracking) return;
+      if (event.cancelable) event.preventDefault();
+      const width = Math.max(1, sidebar.getBoundingClientRect().width);
+      renderDrag(active.startedOpen ? 1 + dx / width : dx / width);
+      active.lastX = event.clientX;
+      active.lastAt = event.timeStamp;
+    }
+
+    function onPointerUp(event) {
+      const active = gesture;
+      if (!active || event.pointerId !== active.pointerId) return;
+      if (!active.tracking) {
+        gesture = null;
+        return;
+      }
+      const dx = event.clientX - active.startX;
+      const width = Math.max(1, sidebar.getBoundingClientRect().width);
+      const progress = Math.max(0, Math.min(1, active.startedOpen ? 1 + dx / width : dx / width));
+      const elapsed = Math.max(1, event.timeStamp - active.startAt);
+      const velocity = dx / elapsed;
+      const flick = Math.abs(dx) > 22 && Math.abs(velocity) > 0.55;
+      const shouldOpen = flick ? velocity > 0 : progress >= (active.startedOpen ? 0.52 : 0.38);
+      finishGesture(shouldOpen);
+    }
+
+    function onPointerCancel(event) {
+      const active = gesture;
+      if (!active || event.pointerId !== active.pointerId) return;
+      finishGesture(active.startedOpen);
+    }
+
+    surface.addEventListener('pointerdown', onPointerDown, {passive: true});
+    surface.addEventListener('pointermove', onPointerMove, {passive: false});
+    surface.addEventListener('pointerup', onPointerUp, {passive: true});
+    surface.addEventListener('pointercancel', onPointerCancel, {passive: true});
+  }
   function bindSidebar() {
+    bindSidebarGestures();
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
     // Code Agent is temporarily unavailable; never create a project/chat from this control.
     $('#sidebar-limits-btn').addEventListener('click', openLimits);
@@ -6445,9 +6572,7 @@
       applySidebar();
     });
     $('#share-btn').addEventListener('click', openShare);
-    $('#menu-btn').addEventListener('click', () => {
-      $('#sidebar').classList.add('open'); $('#sidebar-overlay').classList.add('show');
-    });
+    $('#menu-btn').addEventListener('click', openMobileSidebar);
     $('#sidebar-overlay').addEventListener('click', closeMobileSidebar);
     let t = null;
     $('#search-input').addEventListener('input', (e) => {
@@ -6514,6 +6639,11 @@
     window.addEventListener('resize', () => {
       applySidebar();
       $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
+      if (window.innerWidth > 860) {
+        $('#sidebar').classList.remove('open');
+        $('#sidebar-overlay').classList.remove('show');
+        resetMobileSidebarMotion();
+      }
     });
   }
 

@@ -662,17 +662,30 @@ a { color: var(--accent); }
 #sidebar-overlay { display: none; }
 @media (max-width: 860px) {
   :root { --sidebar-w: min(87vw, 326px); }
+  #main-screen { touch-action: pan-y pinch-zoom; }
   #sidebar {
-    position: fixed; z-index: 40; height: 100vh;
-    margin-left: calc(-1 * var(--sidebar-w)); box-shadow: var(--shadow-lg);
+    position: fixed; z-index: 40; height: 100vh; height: 100dvh;
+    margin-left: 0; transform: translate3d(-100%, 0, 0);
+    transition: transform .36s cubic-bezier(.22, 1, .36, 1);
+    will-change: transform; box-shadow: var(--shadow-lg);
+    touch-action: pan-y pinch-zoom;
   }
-  #sidebar.open { margin-left: 0; }
-  #sidebar.collapsed { margin-left: calc(-1 * var(--sidebar-w)); }
+  #sidebar.open { margin-left: 0; transform: translate3d(0, 0, 0); }
+  #sidebar.collapsed { margin-left: 0; transform: translate3d(-100%, 0, 0); }
+  #sidebar.is-dragging { transition: none !important; }
   #sidebar-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(40,34,24,.32); z-index: 39;
+    display: block; position: fixed; inset: 0;
+    background: rgba(40,34,24,.32); z-index: 39;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .30s cubic-bezier(.22, 1, .36, 1), visibility 0s linear .30s;
+    will-change: opacity;
   }
-  #sidebar-overlay.show { display: block; }
-  #files-panel { position: fixed; right: 0; z-index: 41; height: 100vh; width: 320px; flex-basis: 320px; }
+  #sidebar-overlay.show {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transition: opacity .30s cubic-bezier(.22, 1, .36, 1), visibility 0s;
+  }
+  #sidebar-overlay.is-dragging { transition: none !important; }
+  #files-panel { position: fixed; right: 0; z-index: 41; height: 100vh; height: 100dvh; width: 320px; flex-basis: 320px; }
   .only-mobile { display: grid; }
   .msg-wrap { padding: 8px 16px 22px; }
   #composer { padding: 4px 14px 12px; }
@@ -3753,5 +3766,35 @@ html, body, #main-screen, #chat-area, #sidebar, #messages, #composer { color-sch
     max-height: 100dvh;
     border-radius: 0;
     padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+}
+
+
+/* ============================================================
+   Smooth, native-feeling motion (keeps layout and behavior intact)
+   ============================================================ */
+:root {
+  --motion-ease: cubic-bezier(.22, 1, .36, 1);
+  --motion-fast: 180ms;
+  --motion-ui: 240ms;
+}
+button, a, input, textarea, select,
+.icon-btn, .chip-btn, .side-item, .chat-item,
+.msg .meta button, .modal button, .model-option {
+  transition-duration: var(--motion-ui);
+  transition-timing-function: var(--motion-ease);
+}
+button:active, a:active, .chat-item:active {
+  transform: scale(.985);
+}
+.modal-back { animation-duration: .24s; animation-timing-function: var(--motion-ease); }
+.modal { animation-duration: .34s; animation-timing-function: var(--motion-ease); }
+.toast { animation-timing-function: var(--motion-ease); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
   }
 }

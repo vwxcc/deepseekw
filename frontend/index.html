@@ -239,58 +239,72 @@
 
       <div class="side-top">
         <div class="side-row top-account-actions">
-          <button class="chip-btn context usage-mini sidebar-usage" id="context-btn" type="button" title="Показать использование и лимиты" aria-label="Лимиты использования. Нажмите, чтобы открыть подробности.">
-            <svg class="usage-ring" viewBox="0 0 36 36" aria-hidden="true">
-              <circle class="usage-ring-track" cx="18" cy="18" r="15.5" pathLength="100"/>
-              <circle class="usage-ring-value" id="usage-bar" cx="18" cy="18" r="15.5" pathLength="100"/>
-            </svg>
-          </button>
           <button class="new-chat sidebar-new-chat" id="new-chat-btn" title="Новый чат">
             <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
           </button>
-        </div>
-        <button class="side-item wide sidebar-account-settings" id="settings-btn" title="Настройки и профиль">
-          <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
-        </button>
-        <button class="side-item wide sidebar-limits hidden" id="sidebar-limits-btn" title="Настроить тарифы и лимиты">
-          <svg class="ic"><use href="#i-settings"/></svg><span>Настройки лимитов</span>
-        </button>
-        <div class="side-row sidebar-quick-tools sidebar-api-brain">
-          <button type="button" class="chip-btn context sidebar-memory sidebar-api" id="api-quick-btn" title="OpenAI-совместимый API и расходы">
-            <svg class="ic"><use href="#i-plug"/></svg><span>API</span>
-          </button>
-          <button type="button" class="chip-btn context sidebar-memory sidebar-brain" id="brain-quick-btn" title="Второй мозг: схема блоков и связей">
-            <svg class="ic"><use href="#i-brain"/></svg><span>Второй мозг</span><em class="beta-tag">Бета</em>
+          <button class="side-item wide sidebar-account-settings" id="settings-btn" title="Настройки и профиль">
+            <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
           </button>
         </div>
+
+        <!-- Kept for usage-state updates; detailed limits are now opened from the profile. -->
+        <button class="chip-btn context usage-mini sidebar-usage hidden" id="context-btn" type="button"
+                title="Показать использование и лимиты" aria-label="Лимиты использования. Нажмите, чтобы открыть подробности.">
+          <svg class="usage-ring" viewBox="0 0 36 36" aria-hidden="true">
+            <circle class="usage-ring-track" cx="18" cy="18" r="15.5" pathLength="100"/>
+            <circle class="usage-ring-value" id="usage-bar" cx="18" cy="18" r="15.5" pathLength="100"/>
+          </svg>
+        </button>
+
         <div class="side-row sidebar-quick-tools">
+          <button type="button" class="chip-btn context sidebar-memory sidebar-file-workspace" id="files-quick-btn" title="Все файлы — от вас и AI CH">
+            <svg class="ic"><use href="#i-file"/></svg><span>Файлы</span>
+          </button>
           <button class="chip-btn context mem-quick sidebar-memory" id="mem-quick-btn" title="Память: факты и предпочтения">
             <svg class="ic"><use href="#i-brain"/></svg><span>Память</span>
           </button>
-          <button class="chip-btn context sidebar-memory sidebar-file-workspace" id="files-quick-btn" title="Все файлы — от вас и AI CH">
-            <svg class="ic"><use href="#i-file"/></svg><span>Файлы</span>
-          </button>
         </div>
-        <div class="side-row sidebar-quick-tools sidebar-skills-connectors">
-          <button class="chip-btn context sidebar-memory sidebar-skill" id="skills-quick-btn" title="Системные и пользовательские навыки">
-            <svg class="ic"><use href="#i-sparkle"/></svg><span>Навыки</span>
-          </button>
-          <button type="button" class="chip-btn context sidebar-memory sidebar-connectors" id="connectors-quick-btn" title="Подключения к внешним сервисам">
-            <svg class="ic"><use href="#i-plug"/></svg><span>Коннекторы</span>
-          </button>
-        </div>
+
         <div class="side-row sidebar-section-links">
-          <button type="button" class="chip-btn context sidebar-memory" id="projects-quick-btn" title="Все проекты"><svg class="ic"><use href="#i-folder"/></svg><span>Проекты</span></button>
-          <button type="button" class="chip-btn context sidebar-memory" id="scheduled-quick-btn" title="Календарь и напоминания"><svg class="ic"><use href="#i-calendar"/></svg><span>Запланировано</span></button>
-        </div>
-        <div class="side-row primary-actions">
-          <button class="new-chat capabilities-launch" id="capabilities-btn" title="Возможности AI CH">
-            <svg class="ic"><use href="#i-sparkle"/></svg><span>Возможности</span>
+          <button type="button" class="chip-btn context sidebar-memory" id="scheduled-quick-btn" title="Календарь и напоминания">
+            <svg class="ic"><use href="#i-calendar"/></svg><span>Запланировано</span>
           </button>
-          <button class="new-chat code-mode" id="new-code-btn" title="Код-агент скоро появится" aria-label="Код-агент — скоро" aria-disabled="true" disabled>
-            <svg class="ic"><use href="#i-lock"/></svg><span>Код-агент</span><em class="soon-tag">Скоро</em>
+          <button type="button" class="chip-btn context sidebar-memory" id="projects-quick-btn" title="Все проекты">
+            <svg class="ic"><use href="#i-folder"/></svg><span>Проекты</span>
           </button>
         </div>
+
+        <button type="button" class="chip-btn context sidebar-more-btn" id="sidebar-more-btn"
+                aria-expanded="false" aria-controls="sidebar-more-content">
+          <svg class="ic"><use href="#i-chevron-down"/></svg><span>Ещё</span><span class="sidebar-more-caret" aria-hidden="true">⌄</span>
+        </button>
+        <div id="sidebar-more-content" class="sidebar-more-content hidden">
+          <div class="side-row sidebar-quick-tools sidebar-api-brain">
+            <button type="button" class="chip-btn context sidebar-memory sidebar-api" id="api-quick-btn" title="OpenAI-совместимый API и расходы">
+              <svg class="ic"><use href="#i-plug"/></svg><span>API</span>
+            </button>
+            <button type="button" class="chip-btn context sidebar-memory sidebar-brain" id="brain-quick-btn" title="Второй мозг: схема блоков и связей">
+              <svg class="ic"><use href="#i-brain"/></svg><span>Второй мозг</span><em class="beta-tag">Бета</em>
+            </button>
+          </div>
+          <div class="side-row sidebar-quick-tools sidebar-skills-connectors">
+            <button class="chip-btn context sidebar-memory sidebar-skill" id="skills-quick-btn" title="Системные и пользовательские навыки">
+              <svg class="ic"><use href="#i-sparkle"/></svg><span>Навыки</span>
+            </button>
+            <button type="button" class="chip-btn context sidebar-memory sidebar-connectors" id="connectors-quick-btn" title="Подключения к внешним сервисам">
+              <svg class="ic"><use href="#i-plug"/></svg><span>Коннекторы</span>
+            </button>
+          </div>
+          <div class="side-row primary-actions">
+            <button class="new-chat capabilities-launch" id="capabilities-btn" title="Возможности AI CH">
+              <svg class="ic"><use href="#i-sparkle"/></svg><span>Возможности</span>
+            </button>
+            <button class="new-chat code-mode" id="new-code-btn" title="Код-агент скоро появится" aria-label="Код-агент — скоро" aria-disabled="true" disabled>
+              <svg class="ic"><use href="#i-lock"/></svg><span>Код-агент</span><em class="soon-tag">Скоро</em>
+            </button>
+          </div>
+        </div>
+
         <div class="search-box">
           <svg class="ic"><use href="#i-search"/></svg>
           <input id="search-input" type="search" placeholder="Поиск по чатам" />

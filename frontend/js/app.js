@@ -10130,7 +10130,8 @@
     if (welcomeRenderedEarly) renderMessages();
 
     if (state.user && state.user.is_admin) {
-      $('#sidebar-limits-btn').classList.remove('hidden');
+      const legacyLimitsButton = $('#sidebar-limits-btn');
+      if (legacyLimitsButton) legacyLimitsButton.classList.remove('hidden');
       if (!state.systemPollTimer) {
         state.systemPollTimer = window.setInterval(() => { loadSystem().catch(() => {}); }, 20000);
       }

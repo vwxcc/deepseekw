@@ -4029,3 +4029,216 @@ html, body, #main-screen, #chat-area { max-width: 100%; overflow-x: hidden; }
 .quiz-sent-note{align-self:center;color:var(--fg-muted);font-size:12px}
 .quiz-collapsed-note{margin:0;padding:0 16px 14px;color:var(--fg-muted);font-size:12.5px}
 @media(max-width:600px){.ask-card{padding:13px 12px;border-radius:14px}.ask-option{min-height:39px;padding:8px 11px}.quiz-head{padding:12px;gap:8px}.quiz-body{padding:0 12px}.quiz-question{padding:13px 0}.quiz-footer{padding:11px 12px 13px}.quiz-toggle{gap:4px;padding:7px 8px}}
+
+
+/* Answer cards: prevent late compact rules from clipping text and titles. */
+.aich-ui-callout {
+  box-sizing: border-box;
+  width: min(100%, 760px);
+  min-width: 0;
+  max-width: 100%;
+  align-items: flex-start;
+  gap: 10px;
+}
+.aich-ui-emoji {
+  flex: 0 0 1.45em;
+  width: 1.45em;
+  min-width: 1.45em;
+  line-height: 1.2;
+}
+.aich-ui-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  line-height: 1.42;
+}
+.aich-ui-copy strong {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.35;
+}
+.aich-ui-copy > div {
+  display: -webkit-box;
+  max-height: 2.84em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.42;
+}
+.aich-ui-actions {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.aich-ui-actions-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.aich-ui-actions-heading > span { flex: 0 0 auto; }
+.aich-ui-actions-heading > strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.aich-ui-action,
+.aich-ui-actions-carousel > .aich-ui-action {
+  box-sizing: border-box;
+  min-width: 0;
+}
+.aich-ui-action {
+  min-height: 44px;
+  max-height: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.aich-ui-action-emoji {
+  flex: 0 0 1.35em;
+  width: 1.35em;
+  min-width: 1.35em;
+  font-size: 1.35em;
+  line-height: 1.15;
+}
+.aich-ui-action > span:nth-child(2) {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 2.7em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.aich-ui-action-arrow { flex: 0 0 auto; }
+.aich-ui-actions-carousel {
+  min-width: 0;
+  width: 100%;
+}
+.aich-ui-actions-carousel > .aich-ui-action {
+  flex: 0 0 min(82%, 340px);
+  width: auto;
+  max-width: min(82%, 340px);
+  min-height: 48px;
+}
+
+/* Compact account-file picker used inside the plus sheet. */
+.add-chat-library-toolbar { margin: 0 0 10px; }
+.add-chat-library-toolbar input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.add-chat-library-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-height: min(42dvh, 340px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.add-chat-library-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.add-chat-library-item input { flex: 0 0 auto; margin: 0; }
+.add-chat-library-item-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--fg-muted);
+}
+.add-chat-library-item-icon .ic { width: 16px; height: 16px; }
+.add-chat-library-item-copy {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.add-chat-library-item-copy strong {
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.add-chat-library-item-copy small {
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.add-chat-library-empty {
+  padding: 18px 10px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+.add-chat-library-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.add-chat-library-actions button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+.add-chat-library-actions button.primary {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+}
+.add-chat-project-picker { width: 100%; max-width: 100%; box-sizing: border-box; }
+@media (max-width: 600px) {
+  .aich-ui-action { min-height: 46px; padding: 8px 9px; }
+  .aich-ui-actions-carousel > .aich-ui-action {
+    flex-basis: 86%;
+    max-width: 86%;
+  }
+  .aich-ui-callout { padding: 9px 10px; }
+  .add-chat-library-list { max-height: min(40dvh, 300px); }
+  .add-chat-library-actions button { flex: 1 1 auto; }
+}

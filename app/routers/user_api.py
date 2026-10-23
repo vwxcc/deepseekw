@@ -183,9 +183,13 @@ async def update_personal_api_key(
             expires_days = int(body["expires_days"] or 0)
         except (TypeError, ValueError):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Срок действия должен быть числом дней")
-        if expires_days not in range(0, 3651):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Срок действия: 1–3650 дней или 0 для бессрочного")
-        key.expires_at = (utcnow() + timedelta(days=expires_days)) if expires_days else None
+        if expires_days == -1:
+            # Keep an existing expiry exactly as it is while another key setting changes.
+            pass
+        else:
+            if expires_days not in range(0, 3651):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Срок действия: 1–3650 дней или 0 для бессрочного")
+            key.expires_at = (utcnow() + timedelta(days=expires_days)) if expires_days else None
     if "is_active" in body:
         if not isinstance(body["is_active"], bool):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "is_active должен быть логическим значением")

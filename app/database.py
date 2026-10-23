@@ -94,6 +94,14 @@ async def init_db() -> None:
                 "AND COALESCE(token_balance, 0) = 0"
             )
             await conn.exec_driver_sql(
+                "INSERT INTO token_transactions "
+                "(id, user_id, admin_id, api_key_id, amount, balance_after, action, reason, created_at) "
+                "SELECT lower(hex(randomblob(16))), id, NULL, NULL, 30000, 30000, "
+                "'migration_grant', 'Стартовый баланс после обновления AI CH', CURRENT_TIMESTAMP "
+                "FROM users WHERE token_balance = 30000 "
+                "AND COALESCE(is_guest, 0) = 0 AND COALESCE(is_admin, 0) = 0"
+            )
+            await conn.exec_driver_sql(
                 "INSERT INTO app_metadata (key, value) "
                 "VALUES ('api-token-starter-grant-v1', '1')"
             )

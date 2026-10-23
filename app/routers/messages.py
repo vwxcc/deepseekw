@@ -704,32 +704,64 @@ async def send_message(
         if str(rec.kind or "").lower() == "audio" and not str(rec.extracted_text or "").strip()
     ]
     if audio_records:
+        transcription_model = str(settings.audio_transcription_model or "whisper-1").strip() or "whisper-1"
+        transcription_targets: list[tuple[str, str, float]] = []
+        dedicated_base_url = str(settings.audio_transcription_base_url or "").strip()
+        if dedicated_base_url:
+            transcription_targets.append((
+                dedicated_base_url,
+                str(settings.audio_transcription_api_key or "").strip(),
+                min(max(15, int(settings.audio_transcription_timeout or 75)), 180),
+            ))
+
         try:
             _, _, transcription_entries = await ai_router._resolve_entries(RouteType.MAIN, chat.model_set_id)
         except Exception as exc:
             transcription_entries = []
             log.warning("Could not resolve a provider for audio transcription (%s)", type(exc).__name__)
-        transcription_model = str(os.getenv("AUDIO_TRANSCRIPTION_MODEL", "whisper-1") or "whisper-1").strip()
+
+        # Some chat providers do not expose /audio/transcriptions. Try a dedicated
+        # speech provider first, then the active MAIN chain, skipping duplicate URLs.
+        for entry in transcription_entries:
+            candidate_base = str(getattr(entry, "base_url", "") or "").strip()
+            if not candidate_base:
+                continue
+            if any(candidate_base.rstrip("/") == current[0].rstrip("/") for current in transcription_targets):
+                continue
+            transcription_targets.append((
+                candidate_base,
+                str(getattr(entry, "api_key", "") or "").strip(),
+                min(max(15, int(getattr(entry, "timeout", 75) or 75)), 90),
+            ))
+
         for rec in audio_records:
             transcript = ""
-            failure_reason = "сервис распознавания речи недоступен для выбранного API"
+            failure_reason = (
+                "не настроен совместимый endpoint /audio/transcriptions; "
+                "укажите AUDIO_TRANSCRIPTION_BASE_URL и AUDIO_TRANSCRIPTION_API_KEY"
+            )
             try:
                 payload = Path(rec.storage_path).read_bytes()
                 if not payload:
                     failure_reason = "аудиофайл пуст"
                 elif len(payload) > 25 * 1024 * 1024:
                     failure_reason = "аудиофайл превышает лимит 25 МБ для распознавания"
+                elif not transcription_targets:
+                    failure_reason = (
+                        "не найдена модель с поддержкой /audio/transcriptions; "
+                        "настройте отдельный AUDIO_TRANSCRIPTION_BASE_URL"
+                    )
                 else:
-                    for entry in transcription_entries:
+                    for base_url, api_key, timeout in transcription_targets:
                         try:
                             transcript = await transcribe_audio(
                                 data=payload,
                                 filename=Path(rec.original_name or "voice-message.webm").name,
                                 mime_type=str(rec.mime_type or "application/octet-stream"),
-                                base_url=entry.base_url,
-                                api_key=entry.api_key,
+                                base_url=base_url,
+                                api_key=api_key,
                                 model=transcription_model,
-                                timeout=min(max(15, int(entry.timeout or 75)), 90),
+                                timeout=timeout,
                             )
                             if transcript:
                                 break
@@ -742,8 +774,8 @@ async def send_message(
             if transcript:
                 rec.extracted_text = "[Расшифровка голосового сообщения]\n" + transcript[:100_000]
             else:
-                # Be explicit about the limitation: do not make the model pretend it
-                # heard the binary attachment when this provider cannot transcribe it.
+                # Do not pretend to understand binary audio. Preserve the real failure
+                # cause in the attachment context so the model can report it accurately.
                 rec.extracted_text = (
                     "[Голосовое сообщение прикреплено, но не удалось получить расшифровку: "
                     + failure_reason

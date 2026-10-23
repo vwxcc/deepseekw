@@ -6609,7 +6609,6 @@
         '<label class="brain-wide">Как связаны<textarea id="brain-edge-relation" rows="2" maxlength="600" placeholder="Память передаёт предпочтения основной модели"></textarea></label><button type="button" class="chip-btn" id="brain-add-edge"'+(graph.nodes.length<2?' disabled':'')+'>Добавить связь</button></div>'+
         '<p class="usage-note">Связь можно описать естественным языком; выберите исходный и целевой блоки.</p><label class="brain-wide">Разобрать связи из текста<textarea id="brain-natural-edges" rows="3" maxlength="3000" placeholder="Запрос передаёт данные Памяти&#10;Инструменты возвращают результаты Основной модели"></textarea></label><button type="button" class="chip-btn" id="brain-parse-edges">Разобрать связи из текста</button></details>'+
         '<div id="brain-save-status" class="brain-save-status" role="status">Сохранено</div>';
-      $('#brain-personal-search',root)?.addEventListener('input',()=>{const field=$('#brain-personal-search',root);const a=field.selectionStart,b=field.selectionEnd;render();const next=$('#brain-personal-search',root);if(next){next.focus();try{next.setSelectionRange(a,b);}catch(_){}}});
       $('#brain-add-node',root).addEventListener('click',async()=>{
         const title=$('#brain-node-title',root).value.trim();if(!title){toast('Укажите название блока');return;}if(graph.nodes.length>=50){toast('Максимум 50 блоков');return;}
         graph.nodes.push({id:'node_'+Math.random().toString(36).slice(2,10),title:title.slice(0,100),kind:($('#brain-node-kind',root).value||'Блок').trim().slice(0,40),description:$('#brain-node-description',root).value.trim().slice(0,600)});
@@ -6657,6 +6656,7 @@
       });
     }
     render();
+    $('#brain-personal-search',root)?.addEventListener('input',()=>render());
     // On first opening, persist the default template if the account graph was empty.
     await save();
   }

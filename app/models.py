@@ -305,6 +305,32 @@ class ModelSetEntry(Base):
     model_set: Mapped["ModelSet"] = relationship(back_populates="entries")
 
 
+class ApiGatewayConfig(Base):
+    """OpenAI-compatible /v1 gateway settings; only a hash of the API key is stored."""
+    __tablename__ = "api_gateway_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    model_set_id: Mapped[str] = mapped_column(String(36), default="", nullable=False)
+    api_key_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    api_key_prefix: Mapped[str] = mapped_column(String(24), default="", nullable=False)
+    # None means inherit the selected source model's price.
+    price_in: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    price_out: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    price_cache: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class BrainGraph(Base):
+    """Per-account editable Second Brain graph."""
+    __tablename__ = "brain_graphs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    graph_json: Mapped[str] = mapped_column(Text, default='{"version":1,"nodes":[],"edges":[]}', nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
 class UsageEvent(Base):
     """One billed model call — the source of truth for money limits.
 

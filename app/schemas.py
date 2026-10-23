@@ -163,6 +163,7 @@ class AdminChatOut(BaseModel):
     messages: int = 0
     tokens_in: int = 0
     tokens_out: int = 0
+    tokens_cached: int = 0
     rating_up: int = 0
     rating_down: int = 0
     is_public: bool = False
@@ -431,6 +432,13 @@ class ModelSetEntryUpdate(BaseModel):
     timeout: int | None = None
     is_active: bool | None = None
 
+
+class ApiGatewayConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    model_set_id: str | None = Field(default=None, max_length=36)
+    price_in: float | None = Field(default=None, ge=0)
+    price_out: float | None = Field(default=None, ge=0)
+    price_cache: float | None = Field(default=None, ge=0)
 
 class AuxiliaryModelConfigUpdate(BaseModel):
     provider: str = Field(default="openai", max_length=64)

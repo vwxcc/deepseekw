@@ -204,6 +204,12 @@ git push origin main
 
 ## Mobile interface update — rollback point
 
-The known-good `main` state immediately before the mobile drawer and Add to Chat update is [`87d3ceef7c3f`](https://github.com/vwxcc/deepseekw/commit/87d3ceef7c3f5b9221254d971934ce0be2385a3f). The interface and first-message project changes are committed together; this linked commit is their parent and can be used as the recovery baseline.
+The known-good `main` state immediately before the mobile drawer and Add to Chat update is [`87d3ceef7c3f`](https://github.com/vwxcc/deepseekw/commit/87d3ceef7c3f5b9221254d971934ce0be2385a3f). The feature commit is [`2930f234690b`](https://github.com/vwxcc/deepseekw/commit/2930f234690b288525d398d2a7f48b744149889c); the follow-up fix is [`e6bc923e50be`](https://github.com/vwxcc/deepseekw/commit/e6bc923e50beec551a58c9244ef79c1fa6dfd455).
 
-To undo the interface update without rewriting shared history, create a **Revert** for the interface-update commit on GitHub, or run `git revert <interface-update-commit-sha>` on a checkout of `main`. Avoid force-pushing or resetting the shared `main` branch.
+To undo both changes without rewriting shared history, revert the follow-up fix first and then the feature commit:
+```bash
+git revert e6bc923e50beec551a58c9244ef79c1fa6dfd455
+git revert 2930f234690b288525d398d2a7f48b744149889c
+git push origin main
+```
+Alternatively, create GitHub **Revert** pull requests for those two commits in reverse chronological order. Avoid force-pushing or resetting the shared `main` branch.

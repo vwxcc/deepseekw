@@ -8097,7 +8097,7 @@
           '<button type="button" class="profile-limits-action" id="profile-limits-btn">' +
           '<span class="profile-limits-icon">' + icon('gauge') + '</span>' +
           '<span class="profile-limits-copy"><strong>Лимиты и баланс</strong><small>Расход, остаток и статистика использования</small></span>' +
-          '<span class="profile-limits-arrow">' + icon('chevron-right') + '</span></button>' +
+          '<span class="profile-limits-arrow">' + icon('chevron') + '</span></button>' +
           '<h4 class="sec">Параметры</h4>' +
           '<p class="usage-note">Поиск в интернете: всегда включён · Память: ' +
           ((state.memories || []).length) + ' записей<br/>' +

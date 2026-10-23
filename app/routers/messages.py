@@ -537,6 +537,11 @@ async def _spawn(
     if user_id:
         if memory_enabled:
             system_prompt += await _memory_block(db, user_id)
+        else:
+            system_prompt += (
+                "\n\n[ПАМЯТЬ ВЫКЛЮЧЕНА пользователем: не используй сохранённые факты и предпочтения, "
+                "не добавляй маркеры [[memory: ...]] или [[pref: ...]] и не пытайся сохранять новые записи.]"
+            )
         context_user = await db.get(User, user_id)
         if context_user is not None:
             system_prompt += await _request_context_block(request, db, context_user)

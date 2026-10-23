@@ -239,8 +239,10 @@ async def file_thumbnail(
                 temporary.write_bytes(payload)
                 temporary.replace(thumbnail)
             except OSError:
-                temporary.unlink(missing_ok=True)
-                pass
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
     except HTTPException:
         raise
     except (
@@ -260,6 +262,7 @@ async def file_thumbnail(
         media_type="image/webp",
         headers={
             "Cache-Control": "private, max-age=86400",
+            "Vary": "Cookie",
             "X-Content-Type-Options": "nosniff",
         },
     )

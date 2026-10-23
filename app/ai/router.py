@@ -1773,8 +1773,9 @@ class AIRouter:
         if job.ready_answer_hit:
             return prompts.with_system(job.history_messages, system_prompt), []
         # Public web search is executed only after the model emits an explicit
-        # AICH_WEB_SEARCH command in the bounded action loop. Do not pre-search from
-        # keywords here; it would make the model skip query planning and waste actions.
+        # AICH_WEB_SEARCH command in the bounded action loop. The former preflight call
+        # used `use_model_queries=job.mode != "code"`; it is intentionally replaced by
+        # explicit commands so the search action uses the query written by the assistant.
         history = prompts.with_system(job.history_messages, system_prompt)
         return history, sources
 

@@ -8355,10 +8355,14 @@
         } finally { toggle.disabled = false; }
       });
     }
-    $('#add-chat-manage-memory')?.addEventListener('click', () => {
-      closeAddToChatSheet();
-      openMemory();
-    }, { once: true });
+    const manageButton = $('#add-chat-manage-memory');
+    if (manageButton && manageButton.dataset.bound !== '1') {
+      manageButton.dataset.bound = '1';
+      manageButton.addEventListener('click', () => {
+        closeAddToChatSheet();
+        openMemory();
+      });
+    }
   }
 
   async function openMemory(filterMessageId) {
@@ -8954,7 +8958,7 @@
   function planCompareHtml(lim, compare) {
     const pro = (compare && compare.pro) || {};
     const order = ['budget_usd', 'window_hours', 'price', 'audio_generations', 'file_size', 'user_storage', 'files_count',
-                   'chats_count', 'code_agents', 'agent_steps', 'council_members', 'sandbox_seconds'];
+                   'chats_count', 'code_agents', 'agent_steps', 'agent_actions', 'council_members', 'sandbox_seconds'];
     const labels = {
       budget_usd: 'Бюджет на окно, $',
       window_hours: 'Окно, часов',
@@ -8966,6 +8970,7 @@
       chats_count: 'Чатов всего',
       code_agents: 'Код-агентов',
       agent_steps: 'Шагов агента',
+      agent_actions: 'Действий агента за запрос',
       council_members: 'Участников консилиума',
       sandbox_seconds: 'Секунд на код',
     };

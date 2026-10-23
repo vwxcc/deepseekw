@@ -978,10 +978,13 @@
     const body = cleanText(spec.text, 1600);
     const tone = ['info', 'success', 'warning', 'neutral'].includes(spec.tone) ? spec.tone : 'neutral';
     if (spec.type === 'callout') {
-      return '<aside class="aich-ui-callout tone-' + tone + '" role="note">' +
-        '<span class="aich-ui-emoji" aria-hidden="true">' + emoji + '</span><div class="aich-ui-copy">' +
-        (title ? '<strong>' + escapeHtml(title) + '</strong>' : '') +
-        (body ? '<div>' + escapeHtml(body).replace(/\n/g, '<br>') + '</div>' : '') +
+      // Keep critical geometry inline as a last resort: this block must never
+      // inherit a narrow flex/grid track and wrap a word one character per line.
+      return '<aside class="aich-ui-callout tone-' + tone + '" role="note" style="display:grid;grid-template-columns:1.5rem minmax(0,1fr);align-items:center;gap:10px;box-sizing:border-box;width:100%;max-width:100%;min-width:0;overflow:hidden;writing-mode:horizontal-tb">' +
+        '<span class="aich-ui-emoji" aria-hidden="true" style="grid-column:1;display:flex;align-items:center;justify-content:center;flex:none;width:1.5rem;min-width:1.5rem;max-width:1.5rem;white-space:nowrap;writing-mode:horizontal-tb">' + emoji + '</span>' +
+        '<div class="aich-ui-copy" style="grid-column:2;display:block;width:100%;min-width:0;max-width:100%;overflow:hidden;overflow-wrap:anywhere;word-break:normal;white-space:normal;writing-mode:horizontal-tb">' +
+        (title ? '<strong style="display:block;width:100%;min-width:0;max-width:100%;overflow:hidden;overflow-wrap:anywhere;white-space:normal;writing-mode:horizontal-tb">' + escapeHtml(title) + '</strong>' : '') +
+        (body ? '<div style="display:block;width:100%;min-width:0;max-width:100%;overflow:hidden;overflow-wrap:anywhere;word-break:normal;white-space:normal;writing-mode:horizontal-tb">' + escapeHtml(body).replace(/\n/g, '<br>') + '</div>' : '') +
         '</div></aside>';
     }
     const actionButton = item => {

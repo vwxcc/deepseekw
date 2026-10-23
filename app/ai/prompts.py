@@ -179,7 +179,7 @@ def _scan_command(source: str, opening: int, marker: str) -> tuple[int, dict | N
         if in_string:
             if escaped:
                 escaped = False
-            elif char == "\\\\":
+            elif char == "\\":
                 escaped = True
             elif char == '"':
                 in_string = False

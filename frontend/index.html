@@ -8,7 +8,7 @@
   <link rel="preload" href="/assets/fonts/ys-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/lora-cyrillic-600.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/pt-400.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=67&rev=111" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=68&rev=112" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
@@ -323,15 +323,11 @@
       </aside>
 
       <div id="composer">
-        <div class="model-picker-anchor">
-          <div id="model-picker" class="model-picker hidden" role="listbox" aria-label="Выбор модели"></div>
-        </div>
         <div class="composer-inner">
           <div class="attach-list" id="attach-list"></div>
           <div class="composer-row">
-            <button class="icon-btn round" id="attach-btn" title="Прикрепить файл"><svg class="ic"><use href="#i-plus"/></svg></button>
+            <button class="icon-btn round" id="attach-btn" title="Добавить фото или файл" aria-label="Добавить фото или файл"><svg class="ic"><use href="#i-plus"/></svg></button>
             <textarea id="input" rows="1" placeholder="Введите запрос…"></textarea>
-            <button class="model-select-btn" id="model-select-btn" type="button" title="Выбрать модель" aria-haspopup="listbox" aria-expanded="false"><span class="model-select-label">Выбрать модель</span><svg class="ic"><use href="#i-chevron-down"/></svg></button>
             <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
           </div>
@@ -532,11 +528,11 @@
     <section class="add-to-chat-sheet" role="dialog" aria-modal="true" aria-labelledby="add-to-chat-title" tabindex="-1">
       <div class="add-chat-handle-wrap" data-add-chat-handle aria-hidden="true"><span class="add-chat-handle"></span></div>
       <header class="add-chat-head">
-        <button type="button" class="icon-btn round add-chat-close" data-add-chat-close title="Закрыть" aria-label="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button>
+        <button type="button" class="icon-btn round add-chat-close" id="add-chat-nav" title="Закрыть" aria-label="Закрыть меню"><svg class="ic"><use href="#i-x"/></svg><span class="add-chat-back-label">← Назад</span></button>
         <h2 id="add-to-chat-title">Добавить в чат</h2>
         <button type="button" class="add-chat-head-action" data-add-chat-action="photos">Фото</button>
       </header>
-      <div class="add-chat-sheet-content">
+      <div class="add-chat-sheet-content" id="add-chat-main-view">
         <button type="button" class="add-chat-primary-action" data-add-chat-action="files">
           <span class="add-chat-primary-icon"><svg class="ic"><use href="#i-plus"/></svg></span>
           <span class="add-chat-action-copy"><strong>Добавить фото или файлы</strong><small>С устройства</small></span>
@@ -570,6 +566,16 @@
           </button>
         </div>
       </div>
+      <div id="add-chat-model-view" class="add-chat-subview hidden">
+        <div id="model-picker" class="model-picker hidden" role="listbox" aria-label="Выбор модели"></div>
+      </div>
+      <div id="add-chat-connectors-view" class="add-chat-subview hidden">
+        <div class="connectors-empty">
+          <span class="connectors-empty-icon"><svg class="ic"><use href="#i-plug"/></svg></span>
+          <strong>Подключения пока не настроены</strong>
+          <p>Здесь появятся подключения к внешним сервисам, когда серверные интеграции будут добавлены.</p>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -579,6 +585,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=101&rev=111"></script>
+  <script src="/assets/js/app.js?v=102&rev=112"></script>
 </body>
 </html>

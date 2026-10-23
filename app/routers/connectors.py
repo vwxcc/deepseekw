@@ -24,7 +24,9 @@ async def get_connectors(
 ) -> dict:
     plan = "pro" if user.is_admin else normalize_plan(user.plan)
     limits = await get_limits(db, plan)
-    raw_limit = limits.get("agent_actions", 3)\n    action_limit = max(0, min(50, int(raw_limit if raw_limit is not None else 3)))\n    return await list_connector_cards(db, user, action_limit)
+    raw_limit = limits.get("agent_actions", 3)
+    action_limit = max(0, min(50, int(raw_limit if raw_limit is not None else 3)))
+    return await list_connector_cards(db, user, action_limit)
 
 
 @router.put("/{provider}")

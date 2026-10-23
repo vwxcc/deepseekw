@@ -9,6 +9,7 @@
   let pendingNewChatProjectId = '';
   let pendingNewChatProjectLabel = '';
   let addChatProjects = [];
+  let addChatActiveView = 'main';
   // Keep execution controls scoped to explicitly marked file-generation blocks.
   const actionCarouselTimers = new WeakMap();
 
@@ -5018,13 +5019,27 @@
 
   function renderAttachments() {
     const box = $('#attach-list');
+    if (!box) return;
     state.pendingAttachments = Array.isArray(state.pendingAttachments)
       ? state.pendingAttachments.filter(f => f && typeof f === 'object' && typeof f.id === 'string' && f.id)
       : [];
-    box.innerHTML = state.pendingAttachments.map(f =>
-      '<span class="attach-chip">' + icon('paperclip') + escapeHtml(f.original_name) +
-      '<button data-rm="' + f.id + '" title="Убрать">' + icon('x') + '</button></span>').join('');
-    $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
+    box.innerHTML = state.pendingAttachments.map(f => {
+      const id = String(f.id);
+      const name = String(f.original_name || f.name || 'Файл').slice(0, 180);
+      const mime = String(f.mime_type || f.mime || '').toLowerCase();
+      const isImage = f.kind === 'image' || mime.startsWith('image/') ||
+        /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(name);
+      const visual = isImage
+        ? '<img class="attach-thumb" src="/api/files/' + encodeURIComponent(id) +
+          '/download?inline=1" alt="" loading="lazy" decoding="async" />'
+        : icon('file');
+      return '<span class="attach-chip' + (isImage ? ' has-thumb' : '') + '" title="' +
+        escapeHtml(name) + '">' + visual + '<span class="attach-name">' + escapeHtml(name) +
+        '</span><button type="button" data-rm="' + escapeHtml(id) +
+        '" title="Убрать" aria-label="Убрать ' + escapeHtml(name) + '">' + icon('x') +
+        '</button></span>';
+    }).join('');
+    $('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
       state.pendingAttachments = state.pendingAttachments.filter(x => x.id !== b.dataset.rm);
       renderAttachments();
     }));
@@ -5055,15 +5070,44 @@
     if (projectButton) projectButton.setAttribute('aria-label', projectTitle.textContent);
   }
 
+  function setAddChatView(view) {
+    const shell = $('#add-to-chat-shell');
+    const next = view === 'model' || view === 'connectors' ? view : 'main';
+    addChatActiveView = next;
+    const main = $('#add-chat-main-view');
+    const model = $('#add-chat-model-view');
+    const connectors = $('#add-chat-connectors-view');
+    if (main) main.classList.toggle('hidden', next !== 'main');
+    if (model) model.classList.toggle('hidden', next !== 'model');
+    if (connectors) connectors.classList.toggle('hidden', next !== 'connectors');
+    if (shell) shell.classList.toggle('has-subview', next !== 'main');
+    const title = $('#add-to-chat-title');
+    if (title) title.textContent = next === 'model' ? 'Выбор модели'
+      : next === 'connectors' ? 'Коннекторы' : 'Добавить в чат';
+    const nav = $('#add-chat-nav');
+    if (nav) {
+      nav.innerHTML = next === 'main'
+        ? '<svg class="ic"><use href="#i-x"/></svg><span class="add-chat-back-label">← Назад</span>'
+        : '<span class="add-chat-back-label">← Назад</span>';
+      nav.title = next === 'main' ? 'Закрыть' : 'Назад';
+      nav.setAttribute('aria-label', next === 'main' ? 'Закрыть меню' : 'Назад');
+    }
+    const photos = $('[data-add-chat-action="photos"]');
+    if (photos) photos.classList.toggle('hidden', next !== 'main');
+    $('#add-chat-project-picker')?.classList.toggle('hidden', next !== 'main');
+    state.modelPickerOpen = next === 'model';
+    renderModelPicker();
+    if (next === 'main') renderAddChatActionLabels();
+  }
+
   function openAddToChatSheet() {
     const shell = $('#add-to-chat-shell');
     if (!shell) { $('#file-input')?.click(); return; }
+    setAddChatView('main');
     shell.classList.add('open');
     shell.setAttribute('aria-hidden', 'false');
-    $('#add-chat-project-picker')?.classList.add('hidden');
     $('#attach-btn')?.classList.add('is-active');
-    renderAddChatActionLabels();
-    const sheet = $('.add-to-chat-sheet', shell);
+    const sheet = $('.add-chat-sheet', shell);
     if (sheet) {
       sheet.scrollTop = 0;
       requestAnimationFrame(() => sheet.focus({ preventScroll: true }));
@@ -5073,7 +5117,8 @@
   function closeAddToChatSheet() {
     const shell = $('#add-to-chat-shell');
     if (!shell) return;
-    const sheet = $('.add-to-chat-sheet', shell);
+    setAddChatView('main');
+    const sheet = $('.add-chat-sheet', shell);
     if (sheet) {
       sheet.style.removeProperty('transition');
       sheet.style.removeProperty('transform');
@@ -5177,32 +5222,33 @@
     const shell = $('#add-to-chat-shell');
     if (!shell || shell.dataset.bound === '1') return;
     shell.dataset.bound = '1';
-    $$('[data-add-chat-close]', shell).forEach(button =>
+    $('[data-add-chat-close]', shell).forEach(button =>
       button.addEventListener('click', closeAddToChatSheet));
+    $('#add-chat-nav')?.addEventListener('click', () => {
+      if (addChatActiveView !== 'main') setAddChatView('main');
+      else closeAddToChatSheet();
+    });
     shell.addEventListener('click', event => {
       const button = event.target.closest('[data-add-chat-action]');
       if (!button) return;
       const action = button.dataset.addChatAction;
       if (action === 'files' || action === 'photos') {
-        closeAddToChatSheet();
         workspaceUploadIntent = false;
         const input = $('#file-input');
         if (!input) return;
         if (action === 'photos') input.setAttribute('accept', 'image/*');
         else input.removeAttribute('accept');
+        // Keep the "+" sheet open while the native picker is shown and after it returns.
         input.click();
       } else if (action === 'library') {
         closeAddToChatSheet();
         openFilesWorkspace();
       } else if (action === 'model') {
-        closeAddToChatSheet();
-        state.modelPickerOpen = true;
-        renderModelPicker();
+        setAddChatView('model');
       } else if (action === 'project') {
         openAddChatProjectPicker();
       } else if (action === 'connectors') {
-        closeAddToChatSheet();
-        openConnectors();
+        setAddChatView('connectors');
       }
     });
     const handle = $('[data-add-chat-handle]', shell);
@@ -5249,7 +5295,7 @@
     const input = $('#input');
     bindAddToChatSheet();
     const modelButton = $('#model-select-btn'), modelPanel = $('#model-picker');
-    if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); state.modelPickerOpen = !state.modelPickerOpen; renderModelPicker(); });
+    if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); setAddChatView(state.modelPickerOpen ? 'main' : 'model'); });
     if (modelPanel) modelPanel.addEventListener('click', async event => {
       const option = event.target.closest('[data-model-index]'); if (!option) return;
       const modelIndex = Number(option.dataset.modelIndex);
@@ -5260,10 +5306,9 @@
         state.modelSetId = cluster.id; localStorage.setItem('aich_model_set_id', cluster.id);
         const current = state.chats.find(c => c && c.id === state.currentChatId);
         if (current) { current.model_set_id = cluster.id; current.model_name = cluster.name; }
-        state.modelPickerOpen = false; renderModelPicker(); renderAddChatActionLabels(); renderChatList();
+        setAddChatView('main'); renderAddChatActionLabels(); renderChatList();
       } catch (error) { toast('Не удалось выбрать модель: ' + usefulErrorMessage(error, 'ошибка сохранения'), 'error'); }
     });
-    document.addEventListener('click', event => { if (state.modelPickerOpen && !event.target.closest('.composer-inner, .model-picker-anchor, #add-to-chat-shell')) { state.modelPickerOpen = false; renderModelPicker(); } });
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
@@ -5706,19 +5751,24 @@
   }
 
   function renderModelPicker() {
-    const button = $('#model-select-btn'), panel = $('#model-picker'); if (!button || !panel) return;
+    const button = $('#model-select-btn'), panel = $('#model-picker');
+    if (!panel) return;
     let selected = state.modelSets.find(s => s.id === state.modelSetId && modelSetCanUse(s));
     if (!selected) {
       selected = state.modelSets.find(modelSetCanUse) || null; state.modelSetId = selected ? selected.id : '';
       if (selected) localStorage.setItem('aich_model_set_id', selected.id); else localStorage.removeItem('aich_model_set_id');
     }
-    button.innerHTML = '<span class="model-select-label">' + escapeHtml(selected ? selected.name : 'Нет доступных моделей') + '</span>' +
-      (selected && modelSetRequiresPro(selected) ? '<span class="model-pro-badge model-select-pro-badge">Доступно на Pro</span>' : '') +
-      icon('chevron-down');
-    button.title = selected ? ((modelSetRequiresPro(selected) ? 'Доступно на Pro · ' : '') + (selected.description || selected.name)) : 'Нет активных моделей';
-    button.style.width = 'max-content'; button.style.maxWidth = 'min(44vw,260px)';
-    button.setAttribute('aria-expanded', String(!!state.modelPickerOpen)); panel.classList.toggle('hidden', !state.modelPickerOpen);
-    if (!state.modelPickerOpen) { panel.innerHTML = ''; return; }
+    if (button) {
+      button.innerHTML = '<span class="model-select-label">' + escapeHtml(selected ? selected.name : 'Нет доступных моделей') + '</span>' +
+        (selected && modelSetRequiresPro(selected) ? '<span class="model-pro-badge model-select-pro-badge">Доступно на Pro</span>' : '') +
+        icon('chevron-down');
+      button.title = selected ? ((modelSetRequiresPro(selected) ? 'Доступно на Pro · ' : '') + (selected.description || selected.name)) : 'Нет активных моделей';
+      button.style.width = 'max-content'; button.style.maxWidth = 'min(44vw,260px)';
+      button.setAttribute('aria-expanded', String(!!state.modelPickerOpen));
+    }
+    const isOpen = !!state.modelPickerOpen && addChatActiveView === 'model';
+    panel.classList.toggle('hidden', !isOpen);
+    if (!isOpen) { panel.innerHTML = ''; return; }
     if (!state.modelSets.length) { panel.innerHTML = '<div class="model-picker-empty">Нет активных кластеров моделей.</div>'; return; }
     panel.innerHTML = state.modelSets.map((set, modelIndex) => {
       const requiresPro = modelSetRequiresPro(set);
@@ -6354,7 +6404,7 @@
     }));
     $$('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
       const f = state.files.find(x => x.id === b.dataset.attach);
-      if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
+      if (f && !state.pendingAttachments.some(x => x && x.id === f.id)) {
         state.pendingAttachments.push(f);
         renderAttachments();
       }
@@ -6363,18 +6413,36 @@
   }
 
   async function uploadFiles(files, options) {
+    const selectedFiles = Array.from(files || []).filter(file => file instanceof File);
+    if (!selectedFiles.length) return;
     const fd = new FormData();
-    files.forEach(f => fd.append('files', f));
+    selectedFiles.forEach(file => fd.append('files', file, file.name));
     try {
-      const out = await api.postForm('/api/files', fd);
-      state.files = out.concat(state.files);
+      const response = await api.postForm('/api/files', fd);
+      const uploaded = Array.isArray(response)
+        ? response.filter(file => file && typeof file.id === 'string' && file.id)
+        : [];
+      if (!uploaded.length) throw new Error('Сервер не подтвердил загрузку файлов');
+      const fileMap = new Map();
+      uploaded.concat(Array.isArray(state.files) ? state.files : []).forEach(file => {
+        if (file && file.id) fileMap.set(String(file.id), file);
+      });
+      state.files = Array.from(fileMap.values());
       renderFiles();
       renderFilesWorkspace();
       if (!(options && options.libraryOnly)) {
-        out.forEach(f => state.pendingAttachments.push(f));
+        const attachedMap = new Map((Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [])
+          .filter(file => file && file.id).map(file => [String(file.id), file]));
+        uploaded.forEach(file => attachedMap.set(String(file.id), file));
+        state.pendingAttachments = Array.from(attachedMap.values());
         renderAttachments();
+        toast(uploaded.length === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
+      } else {
+        toast(uploaded.length === 1 ? 'Файл загружен в библиотеку' : 'Файлы загружены в библиотеку');
       }
-    } catch (err) { toast('Ошибка загрузки: ' + err.message, 'error'); }
+    } catch (err) {
+      toast('Ошибка загрузки: ' + usefulErrorMessage(err, 'не удалось загрузить файлы'), 'error');
+    }
   }
 
   function toggleFiles(force) {

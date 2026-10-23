@@ -6554,7 +6554,24 @@
         const lines=$('#brain-natural-edges',root).value.split(/[\n;]+/).map(x=>x.trim()).filter(Boolean);if(!lines.length){toast('Введите связи — по одной на строку');return;}
         let added=0;
         for(const line of lines){
-          const lower=line.toLocaleLowerCase(), found=graph.nodes.map(n=>({n,at:lower.indexOf(String(n.title||'').toLocaleLowerCase())})).filter(x=>x.at>=0).sort((a,b)=>a.at-b.at);
+          const normalizeText=value=>String(value||'').toLocaleLowerCase().replace(/ё/g,'е');
+          const tokenize=value=>[...normalizeText(value).matchAll(/[a-zа-я0-9]+/gi)].map(m=>({word:m[0],at:m.index}));
+          const textTokens=tokenize(line), normalizedLine=normalizeText(line);
+          const found=graph.nodes.map(node=>{
+            const title=normalizeText(node.title||'');
+            const direct=normalizedLine.indexOf(title);
+            if(title&&direct>=0)return {n:node,at:direct,score:100+title.length};
+            const wanted=tokenize(title).map(x=>x.word.length>4?x.word.slice(0,5):x.word);
+            if(!wanted.length)return null;
+            let cursor=-1,firstAt=-1;
+            for(const root of wanted){
+              const index=textTokens.findIndex((token,i)=>i>cursor&&(token.word.startsWith(root)||root.startsWith(token.word)));
+              if(index<0)return null;
+              if(firstAt<0)firstAt=textTokens[index].at;
+              cursor=index;
+            }
+            return {n:node,at:firstAt,score:wanted.join('').length};
+          }).filter(Boolean).sort((a,b)=>a.at-b.at||b.score-a.score);
           const distinct=[];for(const x of found)if(!distinct.some(y=>y.n.id===x.n.id))distinct.push(x);
           if(distinct.length<2||graph.edges.length>=120)continue;
           const from=distinct[0].n,to=distinct[1].n;if(graph.edges.some(e=>e.from===from.id&&e.to===to.id&&e.relation===line))continue;

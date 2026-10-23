@@ -5039,7 +5039,7 @@
         '" title="Убрать" aria-label="Убрать ' + escapeHtml(name) + '">' + icon('x') +
         '</button></span>';
     }).join('');
-    $('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
+    $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
       state.pendingAttachments = state.pendingAttachments.filter(x => x.id !== b.dataset.rm);
       renderAttachments();
     }));
@@ -5222,7 +5222,7 @@
     const shell = $('#add-to-chat-shell');
     if (!shell || shell.dataset.bound === '1') return;
     shell.dataset.bound = '1';
-    $('[data-add-chat-close]', shell).forEach(button =>
+    $$('[data-add-chat-close]', shell).forEach(button =>
       button.addEventListener('click', closeAddToChatSheet));
     $('#add-chat-nav')?.addEventListener('click', () => {
       if (addChatActiveView !== 'main') setAddChatView('main');

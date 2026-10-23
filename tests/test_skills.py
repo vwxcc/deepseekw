@@ -28,6 +28,7 @@ class BundledSkillTests(unittest.TestCase):
         prompt = skills_for("Создай картинку с котом")
         self.assertIn("Создание художественного изображения", prompt)
         self.assertIn("максимально детализированной", prompt)
+        self.assertNotIn("Специализированный навык: drawing", prompt)
         svg = skills_for("Нарисуй SVG-иллюстрацию")
         self.assertIn("Специализированный навык: drawing", svg)
         self.assertNotIn("Создание художественного изображения", svg)

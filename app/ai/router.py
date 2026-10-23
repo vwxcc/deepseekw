@@ -442,13 +442,21 @@ _RESPONSE_CACHE: OrderedDict[str, tuple[float, str]] = OrderedDict()
 
 
 def _job_wants_web_search(job: "Job") -> bool:
-    """Search only when requested or when freshness/source verification matters."""
+    """Classify intent for cache exclusion and UI tests; this does not execute a search."""
     if not job.web_search:
         return False
     query = str(job.search_query or job.user_text or "").strip()
-    # Every public web search now requires an explicit AI_CH_WEB_SEARCH command from the model.
-    # Keep this preflight disabled so search is never silently run by keyword heuristics.
-    return False
+    if not query or _SEARCH_SETUP_RE.search(query):
+        return False
+    # The first message from the Search quick-action merely asks what to find.
+    # Only the user's following query should be classified as a search request.
+    for item in reversed((job.history_messages or [])[:-1][-8:]):
+        if not isinstance(item, dict) or item.get("role") != "user":
+            continue
+        content = item.get("content")
+        if isinstance(content, str) and _SEARCH_SETUP_RE.search(content):
+            return True
+    return bool(_WEB_SEARCH_TRIGGER_RE.search(query))
 
 
 def _response_cache_key(job: "Job", entry: EntryConfig, messages: list[dict]) -> str | None:
@@ -1764,20 +1772,9 @@ class AIRouter:
         # while account/context data was being assembled.
         if job.ready_answer_hit:
             return prompts.with_system(job.history_messages, system_prompt), []
-        if _job_wants_web_search(job):
-            await job.output.put(("stage", json.dumps({"stage": "search"})))
-            # The Code Agent uses a locally extracted query so search does not
-            # consume an extra model turn from its 2-3 request budget.
-            search_started_at = time.monotonic()
-            try:
-                sources, _ = await self._smart_search(
-                    job, entry, use_model_queries=job.mode != "code"
-                )
-            finally:
-                job.search_ms += (time.monotonic() - search_started_at) * 1000
-            ctx = format_context(sources)
-            if ctx:
-                system_prompt = f"{system_prompt}\n\n{ctx}"
+        # Public web search is executed only after the model emits an explicit
+        # AICH_WEB_SEARCH command in the bounded action loop. Do not pre-search from
+        # keywords here; it would make the model skip query planning and waste actions.
         history = prompts.with_system(job.history_messages, system_prompt)
         return history, sources
 

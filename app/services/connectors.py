@@ -39,7 +39,7 @@ async def list_connector_cards(db: AsyncSession, user: User, action_limit: int) 
     states = await connection_state(db, user.id)
     return {
         "plan": "pro" if user.is_admin else (user.plan if user.plan == "pro" else "free"),
-        "action_limit": max(1, int(action_limit)),
+        "action_limit": max(0, int(action_limit)),
         "catalog": [
             {**item, "connected": states.get(item["provider"], False)}
             for item in CONNECTOR_CATALOG

@@ -127,3 +127,16 @@
 .personal-api-secret code{min-width:0;flex:1;overflow-wrap:anywhere;font-size:12px;color:var(--fg)}
 .personal-api-secret button{flex:0 0 auto}
 @media(max-width:540px){.personal-api-secret>div{align-items:flex-start;flex-direction:column}.personal-api-secret button{align-self:flex-start}}
+
+/* Daily token and provider-cost charts share the analytics section. */
+.personal-api-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.personal-api-chart-grid .personal-api-chart-card{min-width:0;overflow:hidden}
+.personal-api-chart-legend .is-cost{background:#8194b6}
+.personal-api-cost-bars{display:flex;align-items:stretch;gap:4px;min-width:490px;height:190px;padding:10px 4px 0;overflow-x:auto}
+.personal-api-cost-bar-column{display:flex;align-items:center;flex:1 0 27px;min-width:27px;flex-direction:column;gap:5px;min-height:0}
+.personal-api-cost-bar-value{height:12px;flex:0 0 12px;color:var(--fg-muted);font-size:8px;line-height:12px;white-space:nowrap;max-width:100%;overflow:hidden}
+.personal-api-cost-bar-track{position:relative;display:flex;justify-content:center;align-items:flex-end;flex:1;width:100%;min-height:0;border-radius:5px 5px 0 0;background:var(--bg)}
+.personal-api-cost-bar-track i{display:block;min-height:0;width:min(20px,80%);border-radius:5px 5px 0 0;background:linear-gradient(180deg,#8194b6,#526b91);transition:height .3s ease}
+.personal-api-cost-bar-column>span{flex:0 0 14px;color:var(--fg-muted);font-size:8px;white-space:nowrap}
+.token-amount-positive{color:#238357!important}.token-amount-negative{color:#b44f4f!important}
+@media(max-width:850px){.personal-api-chart-grid{grid-template-columns:1fr}}

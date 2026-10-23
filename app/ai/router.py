@@ -991,6 +991,7 @@ class AIRouter:
         usage: dict | None = None,
         tool_runs: list[dict] | None = None,
         sources: list[dict] | None = None,
+        ui_state: dict | None = None,
     ) -> None:
         if not message_id:
             return
@@ -1013,6 +1014,8 @@ class AIRouter:
                     msg.sources = (
                         json.dumps(sources, ensure_ascii=False) if sources else None
                     )
+                if ui_state is not None:
+                    msg.ui_state = json.dumps(ui_state, ensure_ascii=False) if ui_state else None
                 if usage:
                     # Preserve tokens that title/search helpers already added to the same assistant message.
                     msg.tokens_in = int(msg.tokens_in or 0) + int(usage.get("prompt_tokens") or 0)
@@ -2099,6 +2102,7 @@ class AIRouter:
                         usage=usage,
                         tool_runs=all_runs or None,
                         sources=sources,
+                        ui_state={"ask": ask, "quiz": quiz} if ask or quiz else None,
                     )
                     if (
                         cache_key

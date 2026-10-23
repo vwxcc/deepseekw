@@ -204,7 +204,7 @@ git push origin main
 
 ## Mobile interface update — rollback point
 
-The known-good `main` state immediately before the mobile drawer and Add to Chat update is [`87d3ceef7c3f`](https://github.com/vwxcc/deepseekw/commit/87d3ceef7c3f5b9221254d971934ce0be2385a3f). The UI update, its selector correction, and the JavaScript syntax correction are in [`2930f234690b`](https://github.com/vwxcc/deepseekw/commit/2930f234690b288525d398d2a7f48b744149889c), [`e6bc923e50be`](https://github.com/vwxcc/deepseekw/commit/e6bc923e50beec551a58c9244ef79c1fa6dfd455), and [`fde33c398698`](https://github.com/vwxcc/deepseekw/commit/fde33c398698bd7fab410039f8b6491b67c86fec).
+The known-good `main` state immediately before the mobile drawer and Add to Chat update is [`87d3ceef7c3f`](https://github.com/vwxcc/deepseekw/commit/87d3ceef7c3f5b9221254d971934ce0be2385a3f). The UI update, selector correction, JavaScript syntax correction, and file-picker compatibility fix are in [\`2930f234690b\`](https://github.com/vwxcc/deepseekw/commit/2930f234690b288525d398d2a7f48b744149889c), [\`e6bc923e50be\`](https://github.com/vwxcc/deepseekw/commit/e6bc923e50beec551a58c9244ef79c1fa6dfd455), [\`fde33c398698\`](https://github.com/vwxcc/deepseekw/commit/fde33c398698bd7fab410039f8b6491b67c86fec), and [\`a39e23c82a95\`](https://github.com/vwxcc/deepseekw/commit/a39e23c82a955f8c8c54ff110dc35812ba32c207).
 
 To undo the UI changes without rewriting shared history, revert those three commits newest first:
 ```bash

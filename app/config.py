@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     code_agent_max_steps: int = 3
     code_agent_timeout: int = 60
 
+    # --- Incoming audio transcription (OpenAI-compatible /audio/transcriptions endpoint) ---
+    # Optional dedicated endpoint; MAIN model providers remain fallback candidates.
+    audio_transcription_base_url: str = ""
+    audio_transcription_api_key: str = ""
+    audio_transcription_model: str = "whisper-1"
+    audio_transcription_timeout: int = Field(default=75, ge=5, le=180)
+
     # --- Text-to-speech (OpenAI-compatible /audio/speech endpoint) ---
     tts_base_url: str = ""
     tts_api_key: str = ""

@@ -909,9 +909,11 @@
       const name = String(file.name || file.original_name || 'Созданный файл').slice(0, 180);
       const url = '/api/files/' + encodeURIComponent(file.file_id) + '/download';
       const mime = String(file.mime_type || file.mime || '').toLowerCase();
-      const image = file.kind === 'image' || mime.indexOf('image/') === 0;
+      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml';
+      const image = !isSvg && (file.kind === 'image' || mime.indexOf('image/') === 0);
       const visual = image
-        ? '<img class="aich-output-file-preview" src="' + url + '?inline=1" alt="' + escapeHtml(name) + '" loading="lazy" />'
+        ? '<img class="aich-output-file-preview" src="/api/files/' + encodeURIComponent(file.file_id) +
+          '/thumbnail" alt="' + escapeHtml(name) + '" loading="lazy" decoding="async" />'
         : outputFileIconHtml(name);
       return '<a class="aich-output-file" href="' + url + '" target="_blank" rel="noopener noreferrer">' +
         visual + '<span class="aich-output-file-copy"><strong>' + escapeHtml(name) + '</strong><small>' +
@@ -1684,12 +1686,17 @@
   function attsHtml(atts) {
     if (!Array.isArray(atts) || !atts.length) return '';
     return '<div class="msg-atts">' + atts.map(a => {
-      const url = '/api/files/' + a.file_id + '/download';
+      const fileId = encodeURIComponent(String(a.file_id || ''));
+      const url = '/api/files/' + fileId + '/download';
       const name = String(a.name || a.original_name || '');
-      const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);
-      if (a.kind === 'image' || isSvg) {
-        return '<a class="msg-att img' + (isSvg ? ' svg' : '') + '" href="' + url + '" target="_blank" rel="noopener" title="' +
-          escapeHtml(name) + '"><img src="' + url + '?inline=1" alt="' + escapeHtml(name) + '" loading="lazy" /></a>';
+      const isSvg = a.kind === 'svg' || /\.svg$/i.test(name) ||
+        String(a.mime_type || '').toLowerCase() === 'image/svg+xml';
+      const isImage = !isSvg && (a.kind === 'image' ||
+        String(a.mime_type || '').toLowerCase().startsWith('image/'));
+      if (isImage) {
+        return '<a class="msg-att img" href="' + url + '" target="_blank" rel="noopener" title="' +
+          escapeHtml(name) + '"><img src="/api/files/' + fileId + '/thumbnail" alt="' + escapeHtml(name) +
+          '" loading="lazy" decoding="async" /></a>';
       }
       return '<a class="msg-att" href="' + url + '" target="_blank" rel="noopener" title="' +
         escapeHtml(a.name) + '">' +
@@ -5027,11 +5034,12 @@
       const id = String(f.id);
       const name = String(f.original_name || f.name || 'Файл').slice(0, 180);
       const mime = String(f.mime_type || f.mime || '').toLowerCase();
-      const isImage = f.kind === 'image' || mime.startsWith('image/') ||
-        /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(name);
+      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml';
+      const isImage = !isSvg && (f.kind === 'image' || mime.startsWith('image/') ||
+        /\.(png|jpe?g|gif|webp|avif|bmp|tiff|ico)$/i.test(name));
       const visual = isImage
         ? '<img class="attach-thumb" src="/api/files/' + encodeURIComponent(id) +
-          '/download?inline=1" alt="" loading="lazy" decoding="async" />'
+          '/thumbnail" alt="" loading="lazy" decoding="async" />'
         : icon('file');
       return '<span class="attach-chip' + (isImage ? ' has-thumb' : '') + '" title="' +
         escapeHtml(name) + '">' + visual + '<span class="attach-name">' + escapeHtml(name) +
@@ -5874,9 +5882,11 @@
       const source = file.source === 'ai' ? 'ai' : 'user';
       const created = file.created_at ? new Date(file.created_at) : null;
       const date = created && Number.isFinite(created.getTime()) ? created.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-      const isImage = kind === 'image';
+      const fileMime = String(file.mime_type || '').toLowerCase();
+      const isSvg = /\.svg$/i.test(name) || fileMime === 'image/svg+xml';
+      const isImage = kind === 'image' && !isSvg;
       const image = isImage
-        ? '<img class="workspace-file-image" src="/api/files/' + id + '/download?inline=1" alt="' + escapeHtml(name) +
+        ? '<img class="workspace-file-image" src="/api/files/' + id + '/thumbnail" alt="' + escapeHtml(name) +
           '" loading="lazy" decoding="async" />'
         : '<span class="workspace-file-glyph">' + icon(kind === 'slide' ? 'file-text' : kind === 'table' ? 'table' : kind === 'code' ? 'code' : kind === 'doc' ? 'file-text' : 'file') + '</span>';
       return '<article class="workspace-file-card">' +

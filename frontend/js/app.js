@@ -4418,7 +4418,7 @@
     state.streaming = on;
     const sendButton = $('#send-btn');
     if (sendButton) sendButton.disabled = !!(on || state.sending || state.chatLoading);
-    $('#send-btn').classList.toggle('hidden', on);
+    $('#send-btn').classList.remove('hidden');
     $('#stop-btn').classList.toggle('hidden', !on);
     $('#input').disabled = false;
     updateComposerActionButton();
@@ -5840,6 +5840,46 @@
     }
   }
 
+  function openComposerEmojiPicker() {
+    const input = $('#input');
+    if (!input) return;
+    const selectionStart = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length;
+    const selectionEnd = Number.isInteger(input.selectionEnd) ? input.selectionEnd : selectionStart;
+    const emojis = [
+      '😀','😃','😄','😁','😆','😅','😂','🤣',
+      '🙂','🙃','😉','😊','😇','🥰','😍','😘',
+      '😋','😎','🤔','🫡','🤗','🤩','🥳','😴',
+      '😭','😢','😡','🤯','😱','😬','😌','🫠',
+      '👍','👎','👏','🙌','🙏','🤝','💪','🫶',
+      '❤️','🧡','💛','💚','💙','💜','🖤','🤍',
+      '🔥','✨','⭐','💯','✅','❌','🎉','🚀',
+      '📌','💡','📎','🎯','🌍','☀️','🌧️','🐱'
+    ];
+    openModal({
+      title: 'Эмодзи',
+      okText: 'Закрыть',
+      extraClass: 'bottom-sheet composer-emoji-sheet',
+      body: '<div class="composer-emoji-grid" role="group" aria-label="Выберите эмодзи">' +
+        emojis.map(emoji => '<button type="button" data-composer-emoji="' + emoji + '" aria-label="' + emoji + '">' + emoji + '</button>').join('') +
+        '</div>',
+      onOk: () => true,
+    });
+    const root = $('#modal-root');
+    $$('.composer-emoji-grid [data-composer-emoji]', root).forEach(button => {
+      button.addEventListener('click', () => {
+        const emoji = button.dataset.composerEmoji || '';
+        const value = input.value;
+        input.value = value.slice(0, selectionStart) + emoji + value.slice(selectionEnd);
+        const caret = selectionStart + emoji.length;
+        input.focus();
+        input.setSelectionRange(caret, caret);
+        autoGrow();
+        updateComposerActionButton();
+        closeModal();
+      });
+    });
+  }
+
   function bindComposer() {
     const input = $('#input');
     updateComposerActionButton();
@@ -5874,6 +5914,7 @@
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
+    $('#emoji-btn')?.addEventListener('click', openComposerEmojiPicker);
     $('#attach-btn').addEventListener('click', () => {
       workspaceUploadIntent = false;
       const shell = $('#add-to-chat-shell');

@@ -382,7 +382,18 @@
     }, 3400);
   }
 
-  async function copyWithFeedback(btn, text, okLabel) {
+  function copyableAnswerText(value) {
+    let text = String(value == null ? '' : value).replace(/\r\n?/g, '\n');
+    const fence = String.fromCharCode(96).repeat(3);
+    text = text.replace(new RegExp(fence + '[ \\t]*(?:draw|aich-ui|ui|svg)(?:[ \\t][^\\n]*)?\\n[\\s\\S]*?' + fence, 'gi'), '');
+    text = text.replace(/<svg\b[^>]*>[\s\S]*?<\/svg\s*>/gi, '');
+    text = text.replace(/<picture\b[^>]*>[\s\S]*?<\/picture\s*>/gi, '');
+    text = text.replace(/<img\b[^>]*\/?>/gi, '');
+    text = text.replace(/!\[([^\]]*)\]\(\s*[^)]+\)/g, '$1');
+    return text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  async function copyWithFeedback(btn, text, okLabel)
     const ok = await copyText(text);
     if (btn && btn.hasAttribute('data-icon-only')) {
       if (ok) {
@@ -2371,7 +2382,7 @@
   }
 
   function quizCardHtml(message) {
-    if (!message || message.status !== 'completed' || !Array.isArray(message.quiz) || !message.quiz.length) return '';
+    if (!message || !Array.isArray(message.quiz) || !message.quiz.length) return '';
     const items=message.quiz.slice(0,20), submitted=!!message.quizSubmitted, collapsed=!!message.quizCollapsed;
     const score=message.quizScore||{correct:0,total:items.length};
     const heading=submitted?'Тест завершён · '+Number(score.correct||0)+'/'+Number(score.total||items.length):'Проверьте себя';
@@ -4165,10 +4176,10 @@
         const id = btn.dataset.id, act = btn.dataset.mact;
       if (act === 'copy') {
         const n = findNode(state.tree, id);
-        if (n) await copyWithFeedback(btn, n.content || '');
+        if (n) await copyWithFeedback(btn, copyableAnswerText(n.content || ''));
       } else if (act === 'copy-user') {
         const n = findNode(state.tree, id);
-        if (n) await copyWithFeedback(btn, n.content || '');
+        if (n) await copyWithFeedback(btn, copyableAnswerText(n.content || ''));
       } else if (act === 'listen-answer') {
         openAudioPlayer(id, !!state.audioReady[id]);
       } else if (act === 'generate-audio') {
@@ -4811,13 +4822,30 @@
           renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
         } else if (ev === 'ask') {
-          const n = findNode(state.tree, state.activeAssistantId);
-          if (n) n.ask = Array.isArray(data.questions) ? data.questions : (data.question ? [{ question: data.question, options: [] }] : null);
-          renderMessageInPlace(state.activeAssistantId);
-          bindStreamRefs();
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
+          if (n) {
+            n.ask = Array.isArray(data.questions) ? data.questions
+              : (data.question ? [{ question: data.question, options: [] }] : []);
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(n.id);
+              bindStreamRefs();
+            }
+          }
         } else if (ev === 'quiz') {
-          const n=(state.currentChatId===streamContext.chatId?findNode(state.tree,streamContext.assistantId):null)||streamContext.node;
-          if(n){n.quiz=Array.isArray(data.questions)?data.questions:[];n.quizCollapsed=false;n.quizSubmitted=false;n.quizAnswers=[];n.quizCustom=[];}
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
+          if (n) {
+            n.quiz = Array.isArray(data.questions) ? data.questions : [];
+            n.quizCollapsed = false;
+            n.quizSubmitted = false;
+            n.quizAnswers = [];
+            n.quizCustom = [];
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(n.id);
+              bindStreamRefs();
+            }
+          }
         } else if (ev === 'done') {
           stopPreviewStatuses();
           const n = (state.currentChatId === streamContext.chatId
@@ -7137,7 +7165,7 @@
       const node = entry && entry.node;
       if (!node) return '';
       const label = node.role === 'user' ? 'Вы' : (node.role === 'system' ? 'Система' : 'AI-Ch');
-      const content = String(node.content || '').trim();
+      const content = copyableAnswerText(node.content || '');
       const attachments = Array.isArray(node.attachments) ? node.attachments
         .map(item => item && item.original_name ? String(item.original_name) : '')
         .filter(Boolean) : [];
@@ -7480,8 +7508,7 @@
     $$('[data-share-copy-answer]').forEach(button => button.addEventListener('click', async () => {
       const node = findNode(state.tree, button.dataset.shareCopyAnswer);
       if (!node) return;
-      const rendered = $('.msg[data-mid="' + node.id + '"] .content.md');
-      const ok = await copyText((rendered ? rendered.innerText : String(node.content || '')).trim());
+      const ok = await copyText(copyableAnswerText(node.content || ''));
       toast(ok ? 'Ответ скопирован' : 'Не удалось скопировать ответ', ok ? '' : 'error');
     }));
     $$('[data-share-copy-readable]').forEach(button => button.addEventListener('click', async () => {

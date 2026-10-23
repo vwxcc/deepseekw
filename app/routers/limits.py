@@ -67,7 +67,7 @@ async def my_limits(
             + func.coalesce(func.sum(UsageEvent.tokens_out), 0)
         ).where(
             UsageEvent.user_id == user.id,
-            UsageEvent.action.in_(("readable_text", "status_generation")),
+            UsageEvent.action.in_(("readable_text", "status_generation", "api_v1")),
         )
     )
     reqs = await db.scalar(
@@ -174,7 +174,7 @@ async def users_overview(
             func.coalesce(func.sum(UsageEvent.cost_usd), 0.0).label("cost"),
             func.count(UsageEvent.id).label("calls"),
         )
-        .where(UsageEvent.action.in_(("readable_text", "status_generation")))
+        .where(UsageEvent.action.in_(("readable_text", "status_generation", "api_v1")))
         .group_by(UsageEvent.user_id)
         .subquery()
     )
@@ -263,6 +263,8 @@ async def top_up_user_tokens(
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+    if user.is_guest:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Гостевому профилю нельзя пополнять API-баланс")
     reason = str((data or {}).get("reason") or "Пополнение администратором").strip()[:240]
     user.token_balance = max(0, int(user.token_balance or 0)) + amount
     db.add(TokenTransaction(

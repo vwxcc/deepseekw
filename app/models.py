@@ -173,6 +173,7 @@ class Message(Base):
     rating: Mapped[int] = mapped_column(Integer, default=0)
     sources: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_runs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ui_state: Mapped[str | None] = mapped_column(Text, nullable=True)
     execution_target: Mapped[str] = mapped_column(String(16), default="site")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

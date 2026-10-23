@@ -23,7 +23,7 @@ def _key_public(key: UserApiKey) -> dict[str, Any]:
         "tokens_used": int(key.tokens_used or 0),
         "tokens_reserved": int(key.tokens_reserved or 0),
         "max_output_tokens": int(key.max_output_tokens or 2048),
-        "is_active": bool(key.is_active),
+        "is_active": bool(key.is_active), "is_revoked": bool(key.is_revoked),
         "expires_at": key.expires_at.isoformat() if key.expires_at else None,
         "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
         "created_at": key.created_at.isoformat() if key.created_at else None,
@@ -109,7 +109,9 @@ async def create_personal_api_key(
 ) -> dict:
     if user.is_guest:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Сначала зарегистрируйте аккаунт, чтобы создавать API-ключи")
-    count = await db.scalar(select(func.count()).select_from(UserApiKey).where(UserApiKey.user_id == user.id))
+    count = await db.scalar(select(func.count()).select_from(UserApiKey).where(
+        UserApiKey.user_id == user.id, UserApiKey.is_revoked.is_(False)
+    ))
     if int(count or 0) >= 20:
         raise HTTPException(status.HTTP_409_CONFLICT, "Можно создать не более 20 API-ключей")
     body = data if isinstance(data, dict) else {}
@@ -154,6 +156,8 @@ async def update_personal_api_key(
     )).scalar_one_or_none()
     if key is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "API-ключ не найден")
+    if key.is_revoked:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Отозванный ключ нельзя включить или изменить")
     body = data if isinstance(data, dict) else {}
     if "name" in body:
         name = str(body.get("name") or "").strip()
@@ -210,5 +214,6 @@ async def revoke_personal_api_key(
     if key is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "API-ключ не найден")
     key.is_active = False
+    key.is_revoked = True
     await db.commit()
-    return {"ok": True, "id": key.id, "is_active": False}
+    return {"ok": True, "id": key.id, "is_active": False, "is_revoked": True}

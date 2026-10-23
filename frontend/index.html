@@ -8,7 +8,7 @@
   <link rel="preload" href="/assets/fonts/ys-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/lora-cyrillic-600.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/pt-400.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=67&rev=104" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=67&rev=111" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
@@ -295,10 +295,10 @@
     </aside>
 
     <main id="chat-area">
-      <button class="icon-btn floating hidden" id="sidebar-open-btn" title="Показать панель"><svg class="ic"><use href="#i-logo"/></svg></button>
+      <button class="icon-btn floating hidden" id="sidebar-open-btn" title="Показать панель" aria-label="Открыть боковую панель"><svg class="ic"><use href="#i-menu"/></svg></button>
       <header id="chat-header">
         <div class="head-left">
-          <button class="icon-btn only-mobile" id="menu-btn" title="Меню"><svg class="ic"><use href="#i-logo"/></svg></button>
+          <button class="icon-btn only-mobile" id="menu-btn" title="Открыть боковую панель" aria-label="Открыть боковую панель"><svg class="ic"><use href="#i-menu"/></svg></button>
         </div>
         <div class="chat-title" id="chat-title" title="Нажмите, чтобы переименовать">AI CH</div>
         <div class="head-right">
@@ -526,12 +526,59 @@
     </section>
   </div>
 
+
+  <div id="add-to-chat-shell" class="add-to-chat-shell" aria-hidden="true">
+    <button type="button" class="add-to-chat-scrim" data-add-chat-close aria-label="Закрыть меню добавления"></button>
+    <section class="add-to-chat-sheet" role="dialog" aria-modal="true" aria-labelledby="add-to-chat-title" tabindex="-1">
+      <div class="add-chat-handle-wrap" data-add-chat-handle aria-hidden="true"><span class="add-chat-handle"></span></div>
+      <header class="add-chat-head">
+        <button type="button" class="icon-btn round add-chat-close" data-add-chat-close title="Закрыть" aria-label="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button>
+        <h2 id="add-to-chat-title">Добавить в чат</h2>
+        <button type="button" class="add-chat-head-action" data-add-chat-action="photos">Фото</button>
+      </header>
+      <div class="add-chat-sheet-content">
+        <button type="button" class="add-chat-primary-action" data-add-chat-action="files">
+          <span class="add-chat-primary-icon"><svg class="ic"><use href="#i-plus"/></svg></span>
+          <span class="add-chat-action-copy"><strong>Добавить фото или файлы</strong><small>С устройства</small></span>
+          <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+        </button>
+        <div class="add-chat-action-group">
+          <button type="button" class="add-chat-action" data-add-chat-action="library">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-folder-open"/></svg></span>
+            <span class="add-chat-action-copy"><strong>Добавить из библиотеки файлов</strong><small>Ваши файлы и файлы, созданные AI CH</small></span>
+            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+          </button>
+          <button type="button" class="add-chat-action" data-add-chat-action="model">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-layers"/></svg></span>
+            <span class="add-chat-action-copy"><strong>Выбор модели</strong><small id="add-chat-model-current">Текущая модель</small></span>
+            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+          </button>
+          <button type="button" class="add-chat-action" id="add-chat-project-action" data-add-chat-action="project">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-folder"/></svg></span>
+            <span class="add-chat-action-copy"><strong id="add-chat-project-title">Добавить сразу в проект</strong><small id="add-chat-project-current">Не выбрано</small></span>
+            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+          </button>
+        </div>
+        <div id="add-chat-project-picker" class="add-chat-project-picker hidden">
+          <div id="add-chat-project-picker-content"></div>
+        </div>
+        <div class="add-chat-action-group add-chat-connectors-group">
+          <button type="button" class="add-chat-action" data-add-chat-action="connectors">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-plug"/></svg></span>
+            <span class="add-chat-action-copy"><strong>Коннекторы</strong><small>Подключения к внешним сервисам</small></span>
+            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <input type="file" id="file-input" multiple class="hidden-file" />
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=101&rev=110"></script>
+  <script src="/assets/js/app.js?v=101&rev=111"></script>
 </body>
 </html>

@@ -6,6 +6,9 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   let workspaceUploadIntent = false;
+  let pendingNewChatProjectId = '';
+  let pendingNewChatProjectLabel = '';
+  let addChatProjects = [];
   // Keep execution controls scoped to explicitly marked file-generation blocks.
   const actionCarouselTimers = new WeakMap();
 
@@ -1476,6 +1479,15 @@
         throw new Error('Сервер не вернул созданный чат с корректным ID');
       }
       upsertChat(chat);
+      if (pendingNewChatProjectId) {
+        const projectId = pendingNewChatProjectId;
+        const updated = await api.patch('/api/chats/' + encodeURIComponent(chat.id), { project_id: projectId });
+        chat = { ...chat, ...updated };
+        upsertChat(chat);
+        pendingNewChatProjectId = '';
+        pendingNewChatProjectLabel = '';
+        renderAddChatActionLabels();
+      }
       // Respect a later user selection made while the create request was in flight.
       if (selectionToken === state.chatOpenToken) {
         const opened = await openChat(chat.id);
@@ -1560,6 +1572,7 @@
         if (selectedCluster) { state.modelSetId = selectedCluster.id; localStorage.setItem('aich_model_set_id', selectedCluster.id); }
       }
       renderModelPicker();
+      renderAddChatActionLabels();
       $('#chat-title').textContent = chat ? (chat.title || 'Новый чат') : 'Чат';
       renderChatList();
       renderMessages();
@@ -4402,6 +4415,11 @@
               (state.currentChatId === streamContext.startChatId ||
                 (!streamContext.startChatId && !state.currentChatId));
             upsertChat(data);
+            if (!streamContext.startChatId && pendingNewChatProjectId && String(data.project_id || '') === pendingNewChatProjectId) {
+              pendingNewChatProjectId = '';
+              pendingNewChatProjectLabel = '';
+              renderAddChatActionLabels();
+            }
             renderChatList();
             if (ownsOpenView) {
               state.currentChatId = data.id;
@@ -4947,6 +4965,7 @@
         parent_message_id: parentId,
         attachment_ids: attachments,
         model_set_id: state.modelSetId || null,
+        project_id: isNewChat ? (pendingNewChatProjectId || null) : null,
         web_search: true,
         execution_target: selectedExecutionTarget,
         effort: state.effort,
@@ -5011,8 +5030,224 @@
     }));
   }
 
+  function renderAddChatActionLabels() {
+    const modelLabel = $('#add-chat-model-current');
+    if (modelLabel) {
+      const selected = (state.modelSets || []).find(item => item && item.id === state.modelSetId);
+      modelLabel.textContent = selected ? selected.name : 'Модель по умолчанию';
+    }
+    const projectTitle = $('#add-chat-project-title');
+    const projectLabel = $('#add-chat-project-current');
+    const projectButton = $('#add-chat-project-action');
+    if (!projectLabel || !projectTitle) return;
+    if (state.currentChatId) {
+      const chat = (state.chats || []).find(item => item && item.id === state.currentChatId);
+      const projectId = String(chat && chat.project_id || '');
+      const project = addChatProjects.find(item => String(item.id) === projectId);
+      projectTitle.textContent = 'Изменить проект чата';
+      projectLabel.textContent = projectId ? (project ? project.title || 'Выбранный проект' : 'Текущий проект') : 'Не добавлен в проект';
+    } else {
+      projectTitle.textContent = 'Добавить сразу в проект';
+      projectLabel.textContent = pendingNewChatProjectId
+        ? (pendingNewChatProjectLabel || 'Проект выбран для нового чата')
+        : 'Не выбрано';
+    }
+    if (projectButton) projectButton.setAttribute('aria-label', projectTitle.textContent);
+  }
+
+  function openAddToChatSheet() {
+    const shell = $('#add-to-chat-shell');
+    if (!shell) { $('#file-input')?.click(); return; }
+    shell.classList.add('open');
+    shell.setAttribute('aria-hidden', 'false');
+    $('#add-chat-project-picker')?.classList.add('hidden');
+    $('#attach-btn')?.classList.add('is-active');
+    renderAddChatActionLabels();
+    const sheet = $('.add-to-chat-sheet', shell);
+    if (sheet) {
+      sheet.scrollTop = 0;
+      requestAnimationFrame(() => sheet.focus({ preventScroll: true }));
+    }
+  }
+
+  function closeAddToChatSheet() {
+    const shell = $('#add-to-chat-shell');
+    if (!shell) return;
+    const sheet = $('.add-to-chat-sheet', shell);
+    if (sheet) {
+      sheet.style.removeProperty('transition');
+      sheet.style.removeProperty('transform');
+    }
+    shell.classList.remove('open');
+    shell.setAttribute('aria-hidden', 'true');
+    $('#attach-btn')?.classList.remove('is-active');
+  }
+
+  async function openAddChatProjectPicker() {
+    const picker = $('#add-chat-project-picker');
+    const content = $('#add-chat-project-picker-content');
+    if (!picker || !content) return;
+    const chatIdAtOpen = state.currentChatId;
+    picker.classList.remove('hidden');
+    content.innerHTML = '<p>Загружаю проекты…</p>';
+    try {
+      const projects = await api.get('/api/projects');
+      addChatProjects = Array.isArray(projects) ? projects.filter(item => item && item.id) : [];
+      let activeChat = (state.chats || []).find(item => item && item.id === chatIdAtOpen) || null;
+      if (chatIdAtOpen && !activeChat) {
+        try { activeChat = await api.get('/api/chats/' + encodeURIComponent(chatIdAtOpen)); } catch (_) {}
+      }
+      const activeProjectId = chatIdAtOpen
+        ? String(activeChat && activeChat.project_id || '')
+        : String(pendingNewChatProjectId || '');
+      content.innerHTML =
+        '<p>' + (chatIdAtOpen
+          ? 'Выберите проект для этого чата. При переносе AI CH попросит подтверждение.'
+          : 'Проект будет назначен новому чату при создании или отправке первого сообщения.') + '</p>' +
+        '<label for="add-chat-project-select">Проект</label>' +
+        '<select id="add-chat-project-select"><option value="">Без проекта</option>' +
+        addChatProjects.map(project =>
+          '<option value="' + escapeHtml(String(project.id)) + '"' +
+          (String(project.id) === activeProjectId ? ' selected' : '') + '>' +
+          escapeHtml(project.title || 'Без названия') + '</option>'
+        ).join('') + '</select>' +
+        (!addChatProjects.length ? '<p class="add-chat-project-empty-note">Проектов пока нет. Сначала создайте проект или оставьте этот чат без проекта.</p>' : '') +
+        '<div class="add-chat-project-picker-actions">' +
+          '<button type="button" id="add-chat-project-cancel">Отмена</button>' +
+          '<button type="button" class="primary" id="add-chat-project-save">Сохранить</button>' +
+        '</div>' +
+        '<button type="button" class="chip-btn add-chat-create-project" id="add-chat-create-project">' +
+          '<svg class="ic"><use href="#i-plus"/></svg> Создать проект</button>';
+
+      $('#add-chat-project-cancel')?.addEventListener('click', () => picker.classList.add('hidden'));
+      $('#add-chat-create-project')?.addEventListener('click', () => {
+        closeAddToChatSheet();
+        openProjectsWorkspace().then(() => {
+          projectWorkspaceEditor = { id: '', title: '', description: '' };
+          renderProjectsWorkspace();
+          $('#workspace-project-name')?.focus();
+        });
+      });
+      $('#add-chat-project-save')?.addEventListener('click', async event => {
+        const save = event.currentTarget;
+        const nextId = String($('#add-chat-project-select')?.value || '');
+        if (!chatIdAtOpen) {
+          pendingNewChatProjectId = nextId;
+          pendingNewChatProjectLabel = (addChatProjects.find(item => String(item.id) === nextId) || {}).title || '';
+          picker.classList.add('hidden');
+          renderAddChatActionLabels();
+          toast(nextId ? 'Проект выбран для нового чата' : 'Новый чат будет без проекта');
+          return;
+        }
+        const currentChat = (state.chats || []).find(item => item && item.id === chatIdAtOpen) || activeChat;
+        const previousId = String(currentChat && currentChat.project_id || '');
+        if (nextId === previousId) {
+          picker.classList.add('hidden');
+          return;
+        }
+        const previousName = addChatProjects.find(item => String(item.id) === previousId)?.title || 'Без проекта';
+        const nextName = addChatProjects.find(item => String(item.id) === nextId)?.title || 'Без проекта';
+        if (!confirm('Изменить проект чата с «' + previousName + '» на «' + nextName + '»?')) return;
+        save.disabled = true;
+        try {
+          const updated = await api.patch('/api/chats/' + encodeURIComponent(chatIdAtOpen), {
+            project_id: nextId || null,
+          });
+          const index = state.chats.findIndex(item => item && item.id === updated.id);
+          if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
+          else state.chats.push(updated);
+          state.chatListVersion += 1;
+          renderChatList();
+          picker.classList.add('hidden');
+          renderAddChatActionLabels();
+          toast(nextId ? 'Чат перемещён в проект «' + nextName + '»' : 'Чат убран из проекта');
+        } catch (error) {
+          save.disabled = false;
+          toast('Не удалось изменить проект: ' + usefulErrorMessage(error, 'ошибка сохранения'), 'error');
+        }
+      });
+    } catch (error) {
+      content.innerHTML = '<p>Не удалось загрузить проекты: ' + escapeHtml(error.message || 'ошибка') + '</p>' +
+        '<div class="add-chat-project-picker-actions"><button type="button" id="add-chat-project-cancel">Закрыть</button></div>';
+      $('#add-chat-project-cancel')?.addEventListener('click', () => picker.classList.add('hidden'));
+    }
+  }
+
+  function bindAddToChatSheet() {
+    const shell = $('#add-to-chat-shell');
+    if (!shell || shell.dataset.bound === '1') return;
+    shell.dataset.bound = '1';
+    $('[data-add-chat-close]', shell).forEach(button =>
+      button.addEventListener('click', closeAddToChatSheet));
+    shell.addEventListener('click', event => {
+      const button = event.target.closest('[data-add-chat-action]');
+      if (!button) return;
+      const action = button.dataset.addChatAction;
+      if (action === 'files' || action === 'photos') {
+        closeAddToChatSheet();
+        workspaceUploadIntent = false;
+        const input = $('#file-input');
+        if (!input) return;
+        if (action === 'photos') input.setAttribute('accept', 'image/*');
+        else input.removeAttribute('accept');
+        input.click();
+      } else if (action === 'library') {
+        closeAddToChatSheet();
+        openFilesWorkspace();
+      } else if (action === 'model') {
+        closeAddToChatSheet();
+        state.modelPickerOpen = true;
+        renderModelPicker();
+      } else if (action === 'project') {
+        openAddChatProjectPicker();
+      } else if (action === 'connectors') {
+        closeAddToChatSheet();
+        openConnectors();
+      }
+    });
+    const handle = $('[data-add-chat-handle]', shell);
+    const sheet = $('.add-to-chat-sheet', shell);
+    let drag = null;
+    if (handle && sheet) {
+      handle.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        drag = { id: event.pointerId, x: event.clientX, y: event.clientY, dy: 0 };
+        try { handle.setPointerCapture(event.pointerId); } catch (_) {}
+      });
+      handle.addEventListener('pointermove', event => {
+        if (!drag || drag.id !== event.pointerId) return;
+        const dx = event.clientX - drag.x;
+        const dy = event.clientY - drag.y;
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy)) return;
+        drag.dy = dy;
+        if (dy > 8) {
+          sheet.style.transition = 'none';
+          sheet.style.transform = 'translate(-50%, ' + dy + 'px)';
+          if (event.cancelable) event.preventDefault();
+        }
+      });
+      const finish = event => {
+        if (!drag || drag.id !== event.pointerId) return;
+        const dy = drag.dy;
+        drag = null;
+        if (dy > 72) closeAddToChatSheet();
+        else {
+          sheet.style.removeProperty('transform');
+          sheet.style.removeProperty('transition');
+        }
+      };
+      handle.addEventListener('pointerup', finish);
+      handle.addEventListener('pointercancel', finish);
+    }
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && shell.classList.contains('open')) closeAddToChatSheet();
+    });
+    renderAddChatActionLabels();
+  }
+
   function bindComposer() {
     const input = $('#input');
+    bindAddToChatSheet();
     const modelButton = $('#model-select-btn'), modelPanel = $('#model-picker');
     if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); state.modelPickerOpen = !state.modelPickerOpen; renderModelPicker(); });
     if (modelPanel) modelPanel.addEventListener('click', async event => {
@@ -5025,10 +5260,10 @@
         state.modelSetId = cluster.id; localStorage.setItem('aich_model_set_id', cluster.id);
         const current = state.chats.find(c => c && c.id === state.currentChatId);
         if (current) { current.model_set_id = cluster.id; current.model_name = cluster.name; }
-        state.modelPickerOpen = false; renderModelPicker(); renderChatList();
+        state.modelPickerOpen = false; renderModelPicker(); renderAddChatActionLabels(); renderChatList();
       } catch (error) { toast('Не удалось выбрать модель: ' + usefulErrorMessage(error, 'ошибка сохранения'), 'error'); }
     });
-    document.addEventListener('click', event => { if (state.modelPickerOpen && !event.target.closest('.composer-inner, .model-picker-anchor')) { state.modelPickerOpen = false; renderModelPicker(); } });
+    document.addEventListener('click', event => { if (state.modelPickerOpen && !event.target.closest('.composer-inner, .model-picker-anchor, #add-to-chat-shell')) { state.modelPickerOpen = false; renderModelPicker(); } });
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
@@ -5037,9 +5272,14 @@
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
-    $('#attach-btn').addEventListener('click', () => { workspaceUploadIntent = false; $('#file-input').click(); });
-    $('#file-input').addEventListener('cancel', () => { workspaceUploadIntent = false; });
+    $('#attach-btn').addEventListener('click', () => {
+      workspaceUploadIntent = false;
+      const shell = $('#add-to-chat-shell');
+      if (shell && shell.classList.contains('open')) closeAddToChatSheet(); else openAddToChatSheet();
+    });
+    $('#file-input').addEventListener('cancel', () => { workspaceUploadIntent = false; $('#file-input').removeAttribute('accept'); });
     $('#file-input').addEventListener('change', async (e) => {
+      $('#file-input').removeAttribute('accept');
       const files = Array.from(e.target.files || []);
       const options = { libraryOnly: workspaceUploadIntent };
       workspaceUploadIntent = false;
@@ -5595,7 +5835,7 @@
           (source === 'ai' ? 'AI CH' : 'Вы') + '</span><span class="workspace-file-kind">' + workspaceFileKindLabel(kind) + '</span></div>' +
         '<strong class="workspace-file-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</strong>' +
         '<div class="workspace-file-meta"><span>' + escapeHtml(date) + '</span><span>' + formatSize(Number(file.size) || 0) + '</span></div>' +
-        '<div class="workspace-file-actions"><a class="chip-btn workspace-file-download" href="/api/files/' + id + '/download" download="' + escapeHtml(name) + '">' +
+        '<div class="workspace-file-actions"><button type="button" class="chip-btn workspace-file-attach" data-workspace-file-attach="' + escapeHtml(String(file.id)) + '">' + icon('plus') + 'В чат</button><a class="chip-btn workspace-file-download" href="/api/files/' + id + '/download" download="' + escapeHtml(name) + '">' +
         icon('download') + 'Скачать</a><button type="button" class="icon-btn workspace-file-delete" data-workspace-file-delete="' + escapeHtml(String(file.id)) + '" title="Удалить файл" aria-label="Удалить файл">' + icon('trash') + '</button></div></div></article>';
     }).join('');
   }
@@ -6036,6 +6276,19 @@
       renderFilesWorkspace();
     });
     $('#workspace-files-list')?.addEventListener('click', async event => {
+      const attachButton = event.target.closest('[data-workspace-file-attach]');
+      if (attachButton) {
+        const id = String(attachButton.dataset.workspaceFileAttach || '');
+        const file = (state.files || []).find(item => String(item.id) === id);
+        if (!file) { toast('Файл больше недоступен. Обновите библиотеку.', 'error'); return; }
+        if (!(state.pendingAttachments || []).some(item => item && String(item.id) === id)) {
+          state.pendingAttachments.push(file);
+          renderAttachments();
+        }
+        closeFilesWorkspace();
+        toast('Файл добавлен к сообщению');
+        return;
+      }
       const button = event.target.closest('[data-workspace-file-delete]');
       if (!button) return;
       const id = String(button.dataset.workspaceFileDelete || '');
@@ -6457,15 +6710,12 @@
     surface.dataset.sidebarGestures = '1';
 
     let gesture = null;
-    const ignoredTargets = 'input, textarea, select, [contenteditable="true"], iframe, video, audio, pre, code';
 
     function onPointerDown(event) {
       if (window.innerWidth > 860 || !event.isPrimary || event.button !== 0) return;
-      if (event.target && event.target.closest && event.target.closest(ignoredTargets)) return;
       const startedOpen = sidebar.classList.contains('open');
-      // Keep the closed-edge gesture narrow so ordinary horizontal interactions
-      // and Safari's back/forward area are not captured accidentally.
-      if (!startedOpen && event.clientX > 28) return;
+      // The requested drawer gesture may start anywhere in the chat surface.
+      // Vertical movement still keeps priority, so ordinary scrolling stays natural.
       gesture = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -6562,6 +6812,7 @@
     $('#sidebar-limits-btn').addEventListener('click', openLimits);
     // Консилиум намеренно не возвращаем: восстановлен только режим Код-агента.
     $('#collapse-btn').addEventListener('click', () => {
+      if (window.innerWidth <= 860) { closeMobileSidebar(); return; }
       state.sidebarCollapsed = true;
       localStorage.setItem('cs_sidebar', '1');
       applySidebar();
@@ -6572,7 +6823,9 @@
       applySidebar();
     });
     $('#share-btn').addEventListener('click', openShare);
-    $('#menu-btn').addEventListener('click', openMobileSidebar);
+    $('#menu-btn').addEventListener('click', () => {
+      if ($('#sidebar').classList.contains('open')) closeMobileSidebar(); else openMobileSidebar();
+    });
     $('#sidebar-overlay').addEventListener('click', closeMobileSidebar);
     let t = null;
     $('#search-input').addEventListener('input', (e) => {
@@ -6833,22 +7086,27 @@
     openModal({
       title: 'Добавить чат в проект',
       body: '<p>Выберите проект для текущего чата.</p><label for="chat-project-choice">Проект</label>' +
-        '<select id="chat-project-choice" class="model-select">' + projects.map(project =>
+        '<select id="chat-project-choice" class="model-select"><option value="">Без проекта</option>' + projects.map(project =>
           '<option value="' + escapeHtml(project.id) + '"' +
           (activeChat && String(activeChat.project_id || '') === String(project.id) ? ' selected' : '') + '>' +
           escapeHtml(project.title || 'Без названия') + '</option>'
         ).join('') + '</select>',
       onOk: async root => {
         const projectId = String($('#chat-project-choice', root)?.value || '');
-        if (!projectId) return false;
+        const previousId = String(activeChat && activeChat.project_id || '');
+        if (projectId !== previousId) {
+          const previousName = projects.find(item => String(item.id) === previousId)?.title || 'Без проекта';
+          const nextName = projects.find(item => String(item.id) === projectId)?.title || 'Без проекта';
+          if (!confirm('Изменить проект чата с «' + previousName + '» на «' + nextName + '»?')) return false;
+        }
         try {
-          const updated = await api.patch('/api/chats/' + encodeURIComponent(chatId), { project_id: projectId });
+          const updated = await api.patch('/api/chats/' + encodeURIComponent(chatId), { project_id: projectId || null });
           const index = state.chats.findIndex(item => item && item.id === updated.id);
           if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
           state.chatListVersion += 1;
           renderChatList();
           const project = projects.find(item => String(item.id) === projectId);
-          toast('Чат добавлен в проект «' + (project && project.title || 'Проект') + '»');
+          toast(projectId ? 'Чат перемещён в проект «' + (project && project.title || 'Проект') + '»' : 'Чат убран из проекта');
           return true;
         } catch (error) {
           toast('Не удалось добавить чат: ' + error.message, 'error');

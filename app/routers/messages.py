@@ -32,6 +32,7 @@ from ..models import (
     Chat,
     File,
     Memory,
+    Project,
     Message,
     MessageStatus,
     ReadableTextGeneration,
@@ -798,9 +799,16 @@ async def send_first_message(
         if rec is None or rec.user_id != user.id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Файл {fid} не найден")
 
+    project_id = None
+    if data.project_id:
+        project = await db.get(Project, data.project_id)
+        if project is None or project.user_id != user.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Проект не найден")
+        project_id = project.id
+
     # A new chat is always a new root branch.
     data.parent_message_id = None
-    chat = Chat(user_id=user.id, title="Новый чат", mode="chat", model_set_id=data.model_set_id)
+    chat = Chat(user_id=user.id, title="Новый чат", mode="chat", model_set_id=data.model_set_id, project_id=project_id)
     db.add(chat)
     await db.commit()
     await db.refresh(chat)

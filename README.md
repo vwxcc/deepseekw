@@ -200,3 +200,10 @@ git push origin main
 - Изменения интерфейса вносите согласованно с соответствующими API и backend-логикой.
 - После изменений проверяйте затронутые сценарии в тестовой песочнице.
 - Не считайте состояние локальной копии, GitHub и работающего сервера одинаковым без отдельной проверки.
+
+
+## Mobile interface update — rollback point
+
+The known-good `main` state immediately before the mobile drawer and Add to Chat update is [`87d3ceef7c3f`](https://github.com/vwxcc/deepseekw/commit/87d3ceef7c3f5b9221254d971934ce0be2385a3f). The interface and first-message project changes are committed together; this linked commit is their parent and can be used as the recovery baseline.
+
+To undo the interface update without rewriting shared history, create a **Revert** for the interface-update commit on GitHub, or run `git revert <interface-update-commit-sha>` on a checkout of `main`. Avoid force-pushing or resetting the shared `main` branch.

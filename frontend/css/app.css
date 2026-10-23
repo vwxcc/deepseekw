@@ -4697,3 +4697,151 @@ html, body, #main-screen, #chat-area { max-width: 100%; overflow-x: hidden; }
   .composer-emoji-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .composer-emoji-grid button { min-height: 38px; font-size: 21px; }
 }
+
+
+/* Keep themed emoji glyphs atomic so they cannot shrink a text/flex column. */
+.aich-themed-emoji {
+  display: inline-flex;
+  flex: 0 0 1.08em;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.08em;
+  max-width: 1.08em;
+  vertical-align: -0.16em;
+}
+.content.md,
+.content.md > *,
+.content.md p,
+.content.md li,
+.content.md blockquote,
+.content.md td,
+.content.md th,
+.aich-ui-callout,
+.aich-ui-action,
+.aich-ui-block,
+.aich-ui-card,
+.aich-ui-row,
+.aich-ui-column,
+.aich-ui-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.content.md p,
+.content.md li,
+.content.md blockquote,
+.aich-ui-callout,
+.aich-ui-action,
+.aich-ui-text {
+  white-space: normal;
+}
+.content.md table { width: 100%; table-layout: fixed; }
+.content.md pre, .content.md code { overflow-wrap: anywhere; }
+
+/* + and Share use one common bottom-sheet layout; Share content can scroll independently. */
+#add-chat-share-view { min-width: 0; }
+#add-chat-share-content, .share-sheet-body { min-width: 0; }
+.share-sheet-body { display: flex; flex-direction: column; gap: 12px; }
+.share-link-section, .share-answer-actions {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  padding: 2px 0;
+}
+.share-link-section > strong, .share-answer-actions > strong {
+  font-size: 13px; font-weight: 650; color: var(--fg-muted);
+}
+.share-link-actions { display: flex; flex-direction: column; min-width: 0; gap: 0; }
+.share-link-section #share-url { box-sizing: border-box; width: 100%; min-width: 0; margin: 8px 0; }
+.share-answer-row { display: flex; flex-direction: column; min-width: 0; }
+.share-answer-row .add-chat-action { width: 100%; }
+.share-loading { padding: 8px 2px; }
+.share-answer-action { text-decoration: none; }
+
+/* The device upload is the primary action in the plus sheet. */
+.add-chat-primary-action { min-height: 76px; padding: 12px 13px; }
+.add-chat-primary-icon {
+  flex-basis: 44px; width: 44px; height: 44px; border-radius: 13px;
+}
+.add-chat-primary-icon .ic { width: 27px; height: 27px; stroke-width: 2.1; }
+
+/* Selected quiz answers have an unmistakable dot/check and a stronger row outline. */
+.quiz-option.is-selected {
+  border: 2px solid var(--accent);
+  padding: 8px 10px;
+  background: var(--bg-user);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.quiz-option.is-selected .quiz-choice-mark {
+  border: 2px solid var(--accent);
+  background: var(--accent);
+}
+.quiz-choice-mark::after { pointer-events: none; }
+.quiz-option.is-selected .quiz-choice-mark::after {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+.quiz-option[data-quiz-multiple="true"].is-selected .quiz-choice-mark::after {
+  content: "";
+  inset: 2px 4px 4px 2px;
+  width: 6px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  border-radius: 0;
+  transform: rotate(45deg);
+  background: transparent;
+}
+.quiz-option:not([data-quiz-multiple="true"]).is-selected .quiz-choice-mark::after {
+  content: "";
+  inset: 4px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* Compact square usage button with a circular progress ring. */
+.chip-btn.usage-mini {
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 4px;
+  gap: 0;
+  border-radius: 12px;
+}
+.chip-btn.usage-mini .usage-ring { display: block; width: 34px; height: 34px; overflow: visible; }
+.usage-ring circle { fill: none; stroke-width: 3; }
+.usage-ring-track { stroke: var(--border-soft); }
+.usage-ring-value {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transform: rotate(-90deg);
+  transform-origin: 18px 18px;
+  transition: stroke-dashoffset .45s ease, stroke .25s ease;
+}
+.chip-btn.usage-mini b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  width: 100%;
+  font-size: 10.5px;
+  line-height: 1;
+  text-align: center;
+  color: var(--fg);
+  pointer-events: none;
+}
+.chip-btn.usage-mini.warn .usage-ring-value { stroke: #b2762c; }
+.chip-btn.usage-mini.full .usage-ring-value { stroke: #b4432f; }
+@media (max-width: 720px) {
+  .add-chat-primary-action { min-height: 76px; }
+  .share-sheet-body { gap: 10px; }
+}

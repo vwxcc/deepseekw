@@ -619,8 +619,23 @@
     const w = Number.isFinite(Number(spec.width)) ? Math.max(1, Math.min(2000, Number(spec.width))) : 420;
     const h = Number.isFinite(Number(spec.height)) ? Math.max(1, Math.min(1600, Number(spec.height))) : 300;
     const bg = spec.background == null ? 'transparent' : spec.background;
-    const shapes = (Array.isArray(spec.shapes) ? spec.shapes : []).map(shape => {
+    const legacyElements = !Array.isArray(spec.shapes) && Array.isArray(spec.elements);
+    const sourceShapes = Array.isArray(spec.shapes) ? spec.shapes : (legacyElements ? spec.elements : []);
+    const shapes = sourceShapes.map(shape => {
       const item = Object.assign({}, shape || {});
+      if (legacyElements && item.type === 'rect') {
+        if (item.w == null && item.width != null) item.w = item.width;
+        if (item.h == null && item.height != null) item.h = item.height;
+        item.width = item.strokeWidth != null ? item.strokeWidth : 1.5;
+      } else if (item.type === 'rect') {
+        if (item.w == null && item.width != null) item.w = item.width;
+        if (item.h == null && item.height != null) item.h = item.height;
+      }
+      if (item.type === 'text') {
+        if (item.size == null && item.fontSize != null) item.size = item.fontSize;
+        if (item.anchor == null && item.textAnchor != null) item.anchor = item.textAnchor;
+        if (item.weight == null && item.fontWeight != null) item.weight = item.fontWeight;
+      }
       if (item.stroke == null) item.stroke = '#77756e';
       if (item.width == null) item.width = 1.5;
       if (item.type === 'text') {
@@ -630,8 +645,10 @@
       }
       return shapeSvg(item);
     }).join('');
-    return '<div class="draw-block"><svg viewBox="0 0 ' + w + ' ' + h +
-      '" width="100%" style="max-width:' + w + 'px;background:' + bg + '">' + shapes + '</svg></div>';
+    return shapes
+      ? '<div class="draw-block"><svg viewBox="0 0 ' + w + ' ' + h +
+        '" width="100%" style="max-width:' + w + 'px;background:' + bg + '">' + shapes + '</svg></div>'
+      : '<div class="draw-block draw-block-empty" role="note">Схема не содержит поддерживаемых элементов.</div>';
   }
 
   function languageLabel(lang) {

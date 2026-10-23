@@ -4855,7 +4855,7 @@
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           if (n) {
             n.quiz = Array.isArray(data.questions) ? data.questions : [];
-            n.quizCollapsed = false;
+            n.quizCollapsed = Array.isArray(data.questions) && data.questions.length > 2;
             n.quizSubmitted = false;
             n.quizAnswers = [];
             n.quizCustom = [];
@@ -8156,7 +8156,8 @@
                 await api.put('/api/connectors/' + encodeURIComponent(provider), { token });
                 const result = await api.post('/api/connectors/' + encodeURIComponent(provider) + '/test', {});
                 if (!result || !result.ok) {
-                  toast('Подключение сохранено, но проверка не пройдена: ' + ((result && result.message) || 'проверьте токен и разрешения'), 'error');
+                  try { await api.del('/api/connectors/' + encodeURIComponent(provider)); } catch (rollbackError) { /* server may already have removed it */ }
+                  toast('Проверка не пройдена: ' + ((result && result.message) || 'проверьте токен и разрешения') + '. Токен не оставлен подключённым.', 'error');
                   await renderConnectorsInto(container);
                   return false;
                 }

@@ -526,7 +526,7 @@ async def _spawn(
             memory_enabled = bool(preference_row.memory_enabled) if preference_row is not None else True
             plan_for_limits = "pro" if current_user.is_admin else normalize_plan(current_user.plan)
             effective_limits = await get_limits(db, plan_for_limits)
-            action_limit = max(1, min(50, int(effective_limits.get("agent_actions", 3) or 3)))
+            raw_action_limit = effective_limits.get("agent_actions", 3)\n            action_limit = max(0, min(50, int(raw_action_limit if raw_action_limit is not None else 3)))
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
     if chat.summary:

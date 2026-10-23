@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 
@@ -88,33 +89,55 @@ def _format_http_error(status_code: int, body: str, model: str, env_prefix: str 
 
 async def transcribe_audio(
     *,
-    data: bytes,
     filename: str,
     mime_type: str,
     base_url: str,
     api_key: str,
     model: str = "whisper-1",
     timeout: float = 75.0,
+    data: bytes | None = None,
+    file_path: str | Path | None = None,
 ) -> str:
-    """Transcribe an uploaded audio file using an OpenAI-compatible audio endpoint."""
+    """Transcribe audio; prefer file_path to avoid loading the whole recording into RAM."""
     base = (base_url or "").strip().rstrip("/")
     if not base:
         raise ProviderError("Не задан base_url для распознавания речи")
+    if file_path is None and data is None:
+        raise ProviderError("Не передан аудиофайл для распознавания")
     if base.endswith("/v1"):
         url = base + "/audio/transcriptions"
     else:
         url = base + "/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    fields = {"model": (model or "whisper-1").strip(), "response_format": "json"}
+    client = _get_provider_client()
     try:
-        response = await _get_provider_client().post(
-            url,
-            headers=headers,
-            data={"model": (model or "whisper-1").strip(), "response_format": "json"},
-            files={"file": (filename or "voice-message.webm", data, mime_type or "application/octet-stream")},
-            timeout=timeout,
-        )
+        if file_path is not None:
+            path = Path(file_path)
+            # Keep the handle open through the request; HTTPX reads the multipart body
+            # from disk instead of creating a second in-memory copy of the audio.
+            with path.open("rb") as audio_file:
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    data=fields,
+                    files={"file": (filename or path.name or "voice-message.webm", audio_file,
+                                    mime_type or "application/octet-stream")},
+                    timeout=timeout,
+                )
+        else:
+            response = await client.post(
+                url,
+                headers=headers,
+                data=fields,
+                files={"file": (filename or "voice-message.webm", data,
+                                mime_type or "application/octet-stream")},
+                timeout=timeout,
+            )
     except httpx.HTTPError as exc:
         raise ProviderError(f"Не удалось подключиться к сервису распознавания речи: {type(exc).__name__}") from exc
+    except OSError as exc:
+        raise ProviderError("Не удалось прочитать аудиофайл для распознавания") from exc
     if response.status_code < 200 or response.status_code >= 300:
         body = (response.text or "").strip().replace("\\n", " ")[:300]
         raise ProviderError(f"Сервис распознавания речи вернул HTTP {response.status_code}: {body}")
@@ -126,7 +149,6 @@ async def transcribe_audio(
     if not text:
         raise ProviderError("Сервис распознавания речи не вернул текст")
     return text[:100_000]
-
 
 def _endpoint(base_url: str) -> str:
     base = (base_url or "").strip().rstrip("/")

@@ -5083,7 +5083,7 @@
     $('#attach-btn')?.classList.remove('is-active');
   }
 
-  async async function openAddChatProjectPicker() {
+  async function openAddChatProjectPicker() {
     const picker = $('#add-chat-project-picker');
     const content = $('#add-chat-project-picker-content');
     if (!picker || !content) return;

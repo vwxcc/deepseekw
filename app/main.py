@@ -38,6 +38,7 @@ from .routers import (
     scheduled as scheduled_router,
     system,
     skills as skills_router,
+    user_api,
 )
 from .services.storage import disk_free, enforce_disk_floor
 from .services.ready_answers import start_ready_answer_workers, stop_ready_answer_workers
@@ -134,6 +135,7 @@ app.include_router(connectors.router)
 app.include_router(skills_router.router)
 app.include_router(projects_router.router)
 app.include_router(scheduled_router.router)
+app.include_router(user_api.router)
 
 
 @app.get("/api/health")

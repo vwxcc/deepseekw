@@ -422,7 +422,29 @@
     </section>
   </div>
 
-  <div id="files-workspace-shell" class="files-workspace-shell" aria-hidden="true">
+  <div id="api-workspace-shell" class="files-workspace-shell" aria-hidden="true">
+    <section class="files-workspace api-page-workspace" role="region" aria-labelledby="api-workspace-title" tabindex="-1">
+      <header class="files-workspace-header">
+        <button type="button" class="icon-btn" id="api-workspace-back" title="Вернуться в чат" aria-label="Вернуться в чат"><svg class="ic"><use href="#i-chevron"/></svg></button>
+        <div class="files-workspace-title"><h2 id="api-workspace-title">API AI CH</h2><p>Подключайте свои приложения к AI CH через совместимый интерфейс</p></div>
+        <button type="button" class="chip-btn" id="api-workspace-refresh"><svg class="ic"><use href="#i-refresh"/></svg><span>Обновить статус</span></button>
+      </header>
+      <div id="api-workspace-content" class="api-page-content" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <div id="brain-workspace-shell" class="files-workspace-shell" aria-hidden="true">
+    <section class="files-workspace brain-page-workspace" role="region" aria-labelledby="brain-workspace-title" tabindex="-1">
+      <header class="files-workspace-header">
+        <button type="button" class="icon-btn" id="brain-workspace-back" title="Вернуться в чат" aria-label="Вернуться в чат"><svg class="ic"><use href="#i-chevron"/></svg></button>
+        <div class="files-workspace-title"><h2 id="brain-workspace-title">Второй мозг</h2><p>Связывайте идеи, заметки и знания в собственную карту</p></div>
+        <span class="brain-page-user-chip"><svg class="ic"><use href="#i-brain"/></svg> Личное пространство</span>
+      </header>
+      <div id="brain-workspace-content" class="brain-page-content" aria-live="polite"></div>
+    </section>
+  </div>
+
+<div id="files-workspace-shell" class="files-workspace-shell" aria-hidden="true">
     <section class="files-workspace" role="dialog" aria-modal="true" aria-labelledby="files-workspace-title" tabindex="-1">
       <header class="files-workspace-header">
         <button type="button" class="icon-btn" data-files-workspace-close title="Вернуться в чат" aria-label="Вернуться в чат"><svg class="ic"><use href="#i-x"/></svg></button>

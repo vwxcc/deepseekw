@@ -6418,18 +6418,88 @@
     await load();
   }
 
-  async function openApiWorkspace(adminMode) {
+  function openDedicatedWorkspace(shell) {
+    $$('.files-workspace-shell.open').forEach(other => {
+      if (other === shell) return;
+      other.classList.remove('open');
+      other.classList.add('hidden');
+      other.setAttribute('aria-hidden','true');
+    });
+    document.body.classList.remove('files-workspace-open');
+    shell.classList.remove('hidden');
+    shell.classList.add('open');
+    shell.setAttribute('aria-hidden','false');
+    document.body.classList.add('files-workspace-open');
+    requestAnimationFrame(() => $('.files-workspace',shell)?.focus());
+  }
+
+  function closeDedicatedWorkspace(id) {
+    const shell=$('#'+id);
+    if(!shell)return;
+    shell.classList.remove('open');
+    shell.classList.add('hidden');
+    shell.setAttribute('aria-hidden','true');
+    if(!$$('.files-workspace-shell.open').length)document.body.classList.remove('files-workspace-open');
+  }
+
+  function closeApiWorkspace() { closeDedicatedWorkspace('api-workspace-shell'); }
+  function closeBrainWorkspace() { closeDedicatedWorkspace('brain-workspace-shell'); }
+
+  async function openApiWorkspace() {
+    const shell=$('#api-workspace-shell'), body=$('#api-workspace-content');
+    if(!shell||!body)return;
+    openDedicatedWorkspace(shell);
     const endpoint=location.origin+'/v1';
-    const apiDocs='<pre class="api-code"><code>Authorization: Bearer YOUR_API_KEY\nPOST '+escapeHtml(endpoint)+'/chat/completions\nContent-Type: application/json</code></pre>';
-    if(!adminMode){
-      openModal({title:'API AI CH',okText:'Закрыть',extraClass:'wide api-workspace-modal',
-        body:'<section class="api-hero"><div class="api-hero-icon">'+icon('plug')+'</div><div><h4>OpenAI-совместимый API</h4><p>Адрес подключения AI CH к совместимым клиентам.</p></div></section>'+
-          '<div class="api-endpoint-card"><span>Base URL</span><code>'+escapeHtml(endpoint)+'</code><button class="chip-btn" type="button" data-copy-api-endpoint>Копировать адрес</button></div>'+
-          '<p class="usage-note">API-ключ создаётся и управляется администратором. Не публикуйте секретные ключи в чате или открытом коде.</p>'+apiDocs+
-          '<p class="usage-note">Маршруты: <code>/v1/models</code> и <code>/v1/chat/completions</code>; модель в запросе — <code>ai-ch</code>; поддерживается <code>stream: true</code>.</p>',onOk:()=>true});
-      const root=$('#modal-root');root.addEventListener('click',async e=>{if(!e.target.closest('[data-copy-api-endpoint]'))return;try{await navigator.clipboard.writeText(endpoint);toast('Адрес API скопирован');}catch(_){toast(endpoint);}});
-      return;
+    body.innerHTML =
+      '<section class="api-page-hero"><div class="api-page-kicker">AI CH · DEVELOPERS</div><div class="api-page-hero-grid"><div><h1>AI CH в ваших приложениях</h1><p>Используйте привычный OpenAI-совместимый интерфейс, не привязываясь к внутреннему ID модели.</p><div class="api-page-hero-actions"><button type="button" class="api-primary-action" data-api-copy="base-url">'+icon('copy')+'Копировать Base URL</button><span class="api-page-model-pill">'+icon('network')+' Модель <code>ai-ch</code></span></div></div><div class="api-page-hero-art" aria-hidden="true"><div class="api-orbit api-orbit-a"></div><div class="api-orbit api-orbit-b"></div><div class="api-art-core">'+icon('brain')+'</div><span class="api-art-node api-art-node-a">/v1</span><span class="api-art-node api-art-node-b">SSE</span><span class="api-art-node api-art-node-c">AI</span></div></div></section>'+
+      '<section class="api-page-status" id="api-page-status"><span class="api-status-dot"></span><div><b>Проверяем конфигурацию API…</b><p>Статус шлюза и доступные возможности обновятся автоматически.</p></div></section>'+
+      '<section class="api-page-section"><div class="api-section-heading"><div><span class="api-page-eyebrow">01 · Подключение</span><h2>Один адрес. Стандартный формат.</h2><p>Настройки маршрутизации находятся в административной панели.</p></div></div><div class="api-endpoint-large"><div><span>Base URL</span><code>'+escapeHtml(endpoint)+'</code></div><button type="button" class="api-copy-icon" data-api-copy="base-url" title="Копировать адрес">'+icon('copy')+'</button></div><div class="api-page-cards">'+
+      '<article class="api-info-card"><span class="api-info-icon">'+icon('file-text')+'</span><h3>Chat Completions</h3><code>POST /v1/chat/completions</code><p>Обычный JSON-ответ и сообщения в формате roles/content.</p></article>'+
+      '<article class="api-info-card"><span class="api-info-icon">'+icon('layers')+'</span><h3>Список моделей</h3><code>GET /v1/models</code><p>Клиент видит публичный псевдоним <code>ai-ch</code>.</p></article>'+
+      '<article class="api-info-card"><span class="api-info-icon">'+icon('chart-line')+'</span><h3>Потоковая генерация</h3><code>stream: true</code><p>Ответ передаётся постепенно через серверные события SSE.</p></article></div></section>'+
+      '<section class="api-page-section api-example-section"><div class="api-section-heading"><div><span class="api-page-eyebrow">02 · Пример запроса</span><h2>Подключение за несколько строк</h2><p>Выберите язык и скопируйте готовый пример.</p></div></div><div class="api-example-panel"><div class="api-example-toolbar"><div class="api-example-tabs"><button type="button" class="active" data-api-language="python">Python</button><button type="button" data-api-language="javascript">JavaScript</button><button type="button" data-api-language="curl">cURL</button></div><button type="button" class="api-copy-code" data-api-copy="example">'+icon('copy')+' Копировать код</button></div><pre class="api-page-code"><code id="api-example-code"></code></pre></div><p class="api-page-note">'+icon('shield-check')+' Авторизация выполняется через <code>Authorization: Bearer YOUR_API_KEY</code>. Не размещайте секретный ключ в открытом коде.</p></section>'+
+      '<section class="api-page-section api-connect-steps"><div class="api-section-heading"><div><span class="api-page-eyebrow">03 · Перед началом</span><h2>Что нужно для работы</h2></div></div><div class="api-step-grid"><article><span>1</span><div><h3>Получите API-ключ</h3><p>Ключ выдаётся администратором AI CH. Эта страница не показывает секретные ключи.</p></div></article><article><span>2</span><div><h3>Укажите Base URL</h3><p>Используйте адрес выше, без повторного добавления <code>/v1</code>.</p></div></article><article><span>3</span><div><h3>Выберите модель</h3><p>В запросе указывайте публичный псевдоним <code>ai-ch</code>; настоящий ID провайдера не требуется.</p></div></article></div></section>';
+
+    let exampleLanguage='python';
+    function renderExample(){
+      const code=$('#api-example-code',body);
+      if(!code)return;
+      const examples={
+        python:'from openai import OpenAI\n\nclient = OpenAI(\n    base_url = '+JSON.stringify(endpoint)+',\n    api_key = "YOUR_API_KEY",\n)\n\nresponse = client.chat.completions.create(\n    model="ai-ch",\n    messages=[{"role": "user", "content": "Привет!"}],\n)\nprint(response.choices[0].message.content)',
+        javascript:'import OpenAI from "openai";\n\nconst client = new OpenAI({\n  baseURL: '+JSON.stringify(endpoint)+',\n  apiKey: "YOUR_API_KEY",\n});\n\nconst response = await client.chat.completions.create({\n  model: "ai-ch",\n  messages: [{ role: "user", content: "Привет!" }],\n});\nconsole.log(response.choices[0].message.content);',
+        curl:'curl '+endpoint+'/chat/completions \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"ai-ch","messages":[{"role":"user","content":"Привет!"}],"stream":false}\''
+      };
+      code.textContent=examples[exampleLanguage]||examples.python;
+      $$('[data-api-language]',body).forEach(b=>b.classList.toggle('active',b.dataset.apiLanguage===exampleLanguage));
     }
+    renderExample();
+    body.onclick=async event=>{
+      const language=event.target.closest('[data-api-language]');
+      if(language){exampleLanguage=language.dataset.apiLanguage;renderExample();return;}
+      const button=event.target.closest('[data-api-copy]');
+      if(!button)return;
+      const text=button.dataset.apiCopy==='base-url'?endpoint:($('#api-example-code',body)?.textContent||'');
+      try{await navigator.clipboard.writeText(text);toast(button.dataset.apiCopy==='base-url'?'Base URL скопирован':'Пример кода скопирован');}
+      catch(_){const area=document.createElement('textarea');area.value=text;body.appendChild(area);area.select();document.execCommand('copy');area.remove();toast('Текст подготовлен к копированию');}
+    };
+    async function loadPublicApiInfo(){
+      const box=$('#api-page-status',body);if(!box)return;
+      try{
+        const info=await api.get('/v1/info');
+        const available=!!(info&&info.enabled);
+        box.innerHTML='<span class="api-status-dot '+(available?'is-online':'is-offline')+'"></span><div><b>'+(available?'API включён':'API пока не включён')+'</b><p>'+escapeHtml(info.message||'')+
+          (info.model_set_name?' · Кластер: '+escapeHtml(info.model_set_name):'')+'</p></div><span class="api-status-badge '+(available?'is-online':'is-offline')+'">'+(available?'ДОСТУПЕН':'ОЖИДАЕТ НАСТРОЙКИ')+'</span>';
+      }catch(error){
+        box.innerHTML='<span class="api-status-dot is-offline"></span><div><b>Статус недоступен</b><p>Не удалось получить состояние шлюза. '+escapeHtml(error.message)+'</p></div>';
+      }
+    }
+    const refresh=$('#api-workspace-refresh');
+    if(refresh)refresh.onclick=loadPublicApiInfo;
+    await loadPublicApiInfo();
+  }
+
+  async function openApiAdminSettings() {
+    const endpoint=location.origin+'/v1';
     let sets,config;
     try{
       const data=await Promise.all([api.get('/api/admin/model-sets'),api.get('/api/admin/api-gateway')]);
@@ -6475,7 +6545,7 @@
         await api.patch('/api/admin/api-gateway',{enabled:$('#gateway-enabled',root).checked,model_set_id:select?(select.value||null):null,
           price_in:Math.max(0,Number($('#gateway-price-in',root).value)||0),price_out:Math.max(0,Number($('#gateway-price-out',root).value)||0),
           price_cache:Math.max(0,Number($('#gateway-price-cache',root).value)||0)});
-        toast('Настройки API сохранены');await openApiWorkspace(true);
+        toast('Настройки API сохранены');await openApiAdminSettings();
       }catch(err){toast('Не удалось сохранить: '+err.message,'error');button.disabled=false;}
     });
     $('#gateway-new-key',root).addEventListener('click',async e=>{
@@ -6494,7 +6564,7 @@
   }
 
   async function openSecondBrain() {
-    const root=$('#modal-root');
+    const root=$('#brain-workspace-shell'), body=$('#brain-workspace-content');
     const starter=()=>({version:1,nodes:[
       {id:'input',title:'Запрос',kind:'Вход',description:'Текст вопроса и прикреплённые файлы'},
       {id:'memory',title:'Память',kind:'Контекст',description:'Сохранённые факты и предпочтения'},
@@ -6513,13 +6583,112 @@
     try{const result=await api.get('/api/brain-graph');if(result&&result.graph&&Array.isArray(result.graph.nodes)&&result.graph.nodes.length)graph=result.graph;}
     catch(e){toast('Не удалось загрузить Второй мозг: '+e.message,'error');return;}
     graph.nodes=Array.isArray(graph.nodes)?graph.nodes:[];graph.edges=Array.isArray(graph.edges)?graph.edges:[];
-    openModal({title:'Второй мозг · схема блоков и связей',okText:'Закрыть',extraClass:'wide second-brain-modal',body:'<div id="brain-graph-editor"></div>',onOk:()=>true});
+    body.innerHTML='<section class="brain-page-intro"><div class="brain-page-kicker">PERSONAL KNOWLEDGE MAP</div><h1>Ваша карта знаний</h1><p>Собирайте связанные заметки и идеи. Эта карта хранится в вашем аккаунте; системные связи AI CH настраиваются отдельно в административной панели.</p><div class="brain-page-benefits"><span>'+icon('network')+' Узлы и связи</span><span>'+icon('database')+' Личное хранение</span><span>'+icon('search')+' Поиск по карте</span></div><div class="brain-page-toolbar"><label class="brain-page-search">'+icon('search')+'<input id="brain-personal-search" type="search" placeholder="Найти блок или связь…"></label><span class="brain-page-private">'+icon('lock')+' Только вы видите личную карту</span></div><div id="brain-graph-editor"></div></section>';
+    openDedicatedWorkspace(root);
     let revision=0;
     const esc=x=>escapeHtml(String(x==null?'':x));
     const label=id=>{const node=graph.nodes.find(n=>n.id===id);return node?node.title:'Неизвестный блок';};
     async function save(){
       const current=++revision, status=$('#brain-save-status',root);if(status)status.textContent='Сохранение…';
       try{await api.put('/api/brain-graph',{graph});if(current===revision&&$('#brain-save-status',root))$('#brain-save-status',root).textContent='Сохранено';}
+      catch(err){if($('#brain-save-status',root))$('#brain-save-status',root).textContent='Ошибка сохранения';toast('Не удалось сохранить схему: '+err.message,'error');}
+    }
+    function render(){
+      const needle=($('#brain-personal-search',root)?.value||'').trim().toLocaleLowerCase();
+      const visibleNodes=needle?graph.nodes.filter(n=>(String(n.title||'')+' '+String(n.kind||'')+' '+String(n.description||'')).toLocaleLowerCase().includes(needle)):graph.nodes;
+      const visibleIds=new Set(visibleNodes.map(n=>String(n.id)));
+      const visibleEdges=needle?graph.edges.filter(e=>(String(e.relation||'')).toLocaleLowerCase().includes(needle)||(visibleIds.has(String(e.from))&&visibleIds.has(String(e.to)))):graph.edges;
+      const nodes=visibleNodes.map(n=>'<article class="brain-node"><div class="brain-node-head"><span>'+esc(n.kind||'Блок')+'</span><button type="button" data-brain-delete-node="'+esc(n.id)+'" title="Удалить блок">×</button></div><h4>'+esc(n.title)+'</h4><p>'+esc(n.description||'')+'</p></article>').join('');
+      const options=graph.nodes.map(n=>'<option value="'+esc(n.id)+'">'+esc(n.title)+'</option>').join('');
+      const edges=visibleEdges.map(e=>'<div class="brain-edge"><div class="brain-edge-route"><b>'+esc(label(e.from))+'</b><span>→</span><b>'+esc(label(e.to))+'</b><button type="button" data-brain-delete-edge="'+esc(e.id)+'" aria-label="Удалить связь">×</button></div><p>'+esc(e.relation||'Без описания')+'</p></div>').join('');
+      $('#brain-graph-editor',root).innerHTML='<p class="usage-note">Блок — узел системы. Связь описывает, что именно передаётся между узлами. Изменения хранятся в аккаунте.</p>'+
+        '<div class="brain-graph-canvas">'+(nodes||'<p>Нет блоков.</p>')+'</div><h4 class="sec">Связи</h4><div class="brain-edges">'+(edges||'<p class="usage-note">Нет связей.</p>')+'</div>'+
+        '<details class="brain-add-details" open><summary>Добавить блок</summary><div class="brain-add-grid"><label>Название<input id="brain-node-title" maxlength="100" placeholder="Например, Проверка фактов"></label><label>Тип<input id="brain-node-kind" maxlength="40" placeholder="Например, Инструмент"></label>'+
+        '<label class="brain-wide">Что делает блок<textarea id="brain-node-description" rows="2" maxlength="600" placeholder="Назначение блока обычным языком"></textarea></label><button type="button" class="chip-btn" id="brain-add-node">Добавить блок</button></div></details>'+
+        '<details class="brain-add-details" open><summary>Добавить связь</summary><div class="brain-add-grid"><label>Откуда<select id="brain-edge-from">'+options+'</select></label><label>Куда<select id="brain-edge-to">'+options+'</select></label>'+
+        '<label class="brain-wide">Как связаны<textarea id="brain-edge-relation" rows="2" maxlength="600" placeholder="Память передаёт предпочтения основной модели"></textarea></label><button type="button" class="chip-btn" id="brain-add-edge"'+(graph.nodes.length<2?' disabled':'')+'>Добавить связь</button></div>'+
+        '<p class="usage-note">Связь можно описать естественным языком; выберите исходный и целевой блоки.</p><label class="brain-wide">Разобрать связи из текста<textarea id="brain-natural-edges" rows="3" maxlength="3000" placeholder="Запрос передаёт данные Памяти&#10;Инструменты возвращают результаты Основной модели"></textarea></label><button type="button" class="chip-btn" id="brain-parse-edges">Разобрать связи из текста</button></details>'+
+        '<div id="brain-save-status" class="brain-save-status" role="status">Сохранено</div>';
+      $('#brain-add-node',root).addEventListener('click',async()=>{
+        const title=$('#brain-node-title',root).value.trim();if(!title){toast('Укажите название блока');return;}if(graph.nodes.length>=50){toast('Максимум 50 блоков');return;}
+        graph.nodes.push({id:'node_'+Math.random().toString(36).slice(2,10),title:title.slice(0,100),kind:($('#brain-node-kind',root).value||'Блок').trim().slice(0,40),description:$('#brain-node-description',root).value.trim().slice(0,600)});
+        render();await save();
+      });
+      $('#brain-add-edge',root).addEventListener('click',async()=>{
+        const from=$('#brain-edge-from',root).value,to=$('#brain-edge-to',root).value,relation=$('#brain-edge-relation',root).value.trim();
+        if(!from||!to||from===to){toast('Выберите два разных блока');return;}if(!relation){toast('Опишите связь');return;}if(graph.edges.length>=120){toast('Максимум 120 связей');return;}
+        graph.edges.push({id:'edge_'+Math.random().toString(36).slice(2,10),from,to,relation:relation.slice(0,600)});render();await save();
+      });
+      $$('[data-brain-delete-node]',root).forEach(b=>b.addEventListener('click',async()=>{
+        const id=b.dataset.brainDeleteNode;graph.nodes=graph.nodes.filter(n=>n.id!==id);graph.edges=graph.edges.filter(e=>e.from!==id&&e.to!==id);render();await save();
+      }));
+      $$('[data-brain-delete-edge]',root).forEach(b=>b.addEventListener('click',async()=>{
+        graph.edges=graph.edges.filter(e=>e.id!==b.dataset.brainDeleteEdge);render();await save();
+      }));
+      $('#brain-parse-edges',root).addEventListener('click',async()=>{
+        const lines=$('#brain-natural-edges',root).value.split(/[\n;]+/).map(x=>x.trim()).filter(Boolean);if(!lines.length){toast('Введите связи — по одной на строку');return;}
+        let added=0;
+        for(const line of lines){
+          const normalizeText=value=>String(value||'').toLocaleLowerCase().replace(/ё/g,'е');
+          const tokenize=value=>[...normalizeText(value).matchAll(/[a-zа-я0-9]+/gi)].map(m=>({word:m[0],at:m.index}));
+          const textTokens=tokenize(line), normalizedLine=normalizeText(line);
+          const found=graph.nodes.map(node=>{
+            const title=normalizeText(node.title||'');
+            const direct=normalizedLine.indexOf(title);
+            if(title&&direct>=0)return {n:node,at:direct,score:100+title.length};
+            const wanted=tokenize(title).map(x=>x.word.length>4?x.word.slice(0,5):x.word);
+            if(!wanted.length)return null;
+            let cursor=-1,firstAt=-1;
+            for(const root of wanted){
+              const index=textTokens.findIndex((token,i)=>i>cursor&&(token.word.startsWith(root)||root.startsWith(token.word)));
+              if(index<0)return null;
+              if(firstAt<0)firstAt=textTokens[index].at;
+              cursor=index;
+            }
+            return {n:node,at:firstAt,score:wanted.join('').length};
+          }).filter(Boolean).sort((a,b)=>a.at-b.at||b.score-a.score);
+          const distinct=[];for(const x of found)if(!distinct.some(y=>y.n.id===x.n.id))distinct.push(x);
+          if(distinct.length<2||graph.edges.length>=120)continue;
+          const from=distinct[0].n,to=distinct[1].n;if(graph.edges.some(e=>e.from===from.id&&e.to===to.id&&e.relation===line))continue;
+          graph.edges.push({id:'edge_'+Math.random().toString(36).slice(2,10),from:from.id,to:to.id,relation:line.slice(0,600)});added++;
+        }
+        if(!added){toast('Не распознаны два названия блоков. Используйте точные названия из схемы.');return;}render();await save();toast('Добавлено связей: '+added);
+      });
+    }
+    render();
+    $('#brain-personal-search',root)?.addEventListener('input',()=>render());
+    // On first opening, persist the default template if the account graph was empty.
+    await save();
+  }
+
+
+  async function openBrainAdminSettings() {
+    const root=$('#modal-root');
+    const starter=()=>({version:1,nodes:[
+      {id:'input',title:'Запрос',kind:'Вход',description:'Текст вопроса и прикреплённые файлы'},
+      {id:'memory',title:'Память',kind:'Контекст',description:'Сохранённые факты и предпочтения'},
+      {id:'model',title:'Основная модель',kind:'ИИ',description:'Обрабатывает вопрос и строит ответ'},
+      {id:'tools',title:'Инструменты',kind:'Действия',description:'Поиск, код, файлы и коннекторы'},
+      {id:'check',title:'Проверка результата',kind:'Контроль',description:'Проверяет полноту и формат'},
+      {id:'output',title:'Ответ',kind:'Результат',description:'Текст, интерактивные блоки и файлы'}],
+      edges:[
+      {id:'e1',from:'input',to:'memory',relation:'По запросу подбирается подходящий контекст'},
+      {id:'e2',from:'memory',to:'model',relation:'Память передаёт факты и предпочтения основной модели'},
+      {id:'e3',from:'model',to:'tools',relation:'Модель вызывает нужный инструмент'},
+      {id:'e4',from:'tools',to:'model',relation:'Результаты инструмента возвращаются модели'},
+      {id:'e5',from:'model',to:'check',relation:'Черновик проверяется на полноту'},
+      {id:'e6',from:'check',to:'output',relation:'Проверенный результат показывается пользователю'}]});
+    let graph=starter();
+    try{const result=await api.get('/api/admin/brain-config');if(result&&result.graph&&Array.isArray(result.graph.nodes)&&result.graph.nodes.length)graph=result.graph;}
+    catch(e){toast('Не удалось загрузить Второй мозг: '+e.message,'error');return;}
+    graph.nodes=Array.isArray(graph.nodes)?graph.nodes:[];graph.edges=Array.isArray(graph.edges)?graph.edges:[];
+    openModal({title:'Админка · связи блоков Второго мозга',okText:'Закрыть',extraClass:'wide second-brain-modal',body:'<div id="brain-graph-editor"></div>',onOk:()=>true});
+    let revision=0;
+    const esc=x=>escapeHtml(String(x==null?'':x));
+    const label=id=>{const node=graph.nodes.find(n=>n.id===id);return node?node.title:'Неизвестный блок';};
+    async function save(){
+      const current=++revision, status=$('#brain-save-status',root);if(status)status.textContent='Сохранение…';
+      try{await api.put('/api/admin/brain-config',{graph});if(current===revision&&$('#brain-save-status',root))$('#brain-save-status',root).textContent='Сохранено';}
       catch(err){if($('#brain-save-status',root))$('#brain-save-status',root).textContent='Ошибка сохранения';toast('Не удалось сохранить схему: '+err.message,'error');}
     }
     function render(){
@@ -7747,9 +7916,16 @@
     bindSidebarGestures();
     $('#new-chat-btn').addEventListener('click', () => newChat('chat'));
     const apiQuick = $('#api-quick-btn');
-    if (apiQuick) apiQuick.addEventListener('click', () => openApiWorkspace(!!(state.user && state.user.is_admin)));
+    if (apiQuick) apiQuick.addEventListener('click', () => openApiWorkspace());
     const brainQuick = $('#brain-quick-btn');
     if (brainQuick) brainQuick.addEventListener('click', () => openSecondBrain());
+    $('#api-workspace-back')?.addEventListener('click', closeApiWorkspace);
+    $('#brain-workspace-back')?.addEventListener('click', closeBrainWorkspace);
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if ($('#api-workspace-shell')?.classList.contains('open')) closeApiWorkspace();
+      if ($('#brain-workspace-shell')?.classList.contains('open')) closeBrainWorkspace();
+    });
     // Code Agent is temporarily unavailable; never create a project/chat from this control.
     $('#sidebar-limits-btn').addEventListener('click', openLimits);
     // Консилиум намеренно не возвращаем: восстановлен только режим Код-агента.
@@ -7808,7 +7984,8 @@
           '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
           (isAdmin
             ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
-              '<button class="chip-btn" id="open-api-gateway">' + icon('plug') + 'API</button>' +
+              '<button class="chip-btn" id="open-api-gateway">' + icon('plug') + 'Настройки API</button>' +
+              '<button class="chip-btn" id="open-brain-config">' + icon('brain') + 'Настройки Второго мозга</button>' +
               '<button class="chip-btn" id="open-ready-answers">' + icon('book') + 'База готовых ответов</button>' +
               '<button class="chip-btn" id="open-stats">' + icon('chart') + 'Статистика</button>' +
               '<button class="chip-btn" id="open-allchats">' + icon('file') + 'Все чаты</button>'
@@ -7823,7 +8000,8 @@
       on('#set-links', () => { closeModal(); openLinks(); });
       on('#set-files', () => { closeModal(); toggleFiles(true); });
       on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
-      on('#open-api-gateway', () => { closeModal(); openApiWorkspace(true); });
+      on('#open-api-gateway', () => { closeModal(); openApiAdminSettings(); });
+      on('#open-brain-config', () => { closeModal(); openBrainAdminSettings(); });
       on('#open-ready-answers', () => { closeModal(); openReadyAnswersAdmin(); });
       on('#open-stats', () => { closeModal(); openAdminStats(); });
       on('#open-allchats', () => { closeModal(); openAdminChats(); });

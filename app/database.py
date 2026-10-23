@@ -90,7 +90,7 @@ async def init_db() -> None:
         if marker.fetchone() is None:
             await conn.exec_driver_sql(
                 "UPDATE users SET token_balance = 30000 "
-                "WHERE COALESCE(is_guest, 0) = 0 AND COALESCE(is_admin, 0) = 0 "
+                "WHERE COALESCE(is_guest, 0) = 0 "
                 "AND COALESCE(token_balance, 0) = 0"
             )
             await conn.exec_driver_sql(
@@ -99,7 +99,7 @@ async def init_db() -> None:
                 "SELECT lower(hex(randomblob(16))), id, NULL, NULL, 30000, 30000, "
                 "'migration_grant', 'Стартовый баланс после обновления AI CH', CURRENT_TIMESTAMP "
                 "FROM users WHERE token_balance = 30000 "
-                "AND COALESCE(is_guest, 0) = 0 AND COALESCE(is_admin, 0) = 0"
+                "AND COALESCE(is_guest, 0) = 0"
             )
             await conn.exec_driver_sql(
                 "INSERT INTO app_metadata (key, value) "

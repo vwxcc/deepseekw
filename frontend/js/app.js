@@ -10,6 +10,7 @@
   let pendingNewChatProjectLabel = '';
   let addChatProjects = [];
   let addChatActiveView = 'main';
+  let addChatSelectedFileIds = new Set();
   // Keep execution controls scoped to explicitly marked file-generation blocks.
   const actionCarouselTimers = new WeakMap();
 
@@ -5263,20 +5264,98 @@
     if (projectButton) projectButton.setAttribute('aria-label', projectTitle.textContent);
   }
 
+  function renderAddChatLibraryFiles() {
+    const box = $('#add-chat-library-list');
+    if (!box) return;
+    const query = String($('#add-chat-library-search')?.value || '').trim().toLocaleLowerCase('ru-RU');
+    const files = (Array.isArray(state.files) ? state.files : []).filter(file =>
+      file && file.id && (!query || String(file.original_name || '').toLocaleLowerCase('ru-RU').includes(query))
+    );
+    if (!files.length) {
+      box.innerHTML = '<div class="add-chat-library-empty">' +
+        (query ? 'По этому запросу файлов нет.' : 'В библиотеке пока нет файлов. Сначала добавьте их с устройства.') +
+        '</div>';
+      const count = $('#add-chat-library-selected-count');
+      if (count) count.textContent = String(addChatSelectedFileIds.size);
+      return;
+    }
+    box.innerHTML = files.map(file => {
+      const id = String(file.id);
+      const name = String(file.original_name || 'Файл');
+      const checked = addChatSelectedFileIds.has(id);
+      return '<label class="add-chat-library-item">' +
+        '<input type="checkbox" data-library-file-id="' + escapeHtml(id) + '"' + (checked ? ' checked' : '') + ' />' +
+        '<span class="add-chat-library-item-icon">' + icon(workspaceFileKind(file) === 'image' ? 'image' : 'file') + '</span>' +
+        '<span class="add-chat-library-item-copy"><strong>' + escapeHtml(name) + '</strong><small>' +
+        escapeHtml(workspaceFileKindLabel(workspaceFileKind(file))) + ' · ' + escapeHtml(formatSize(Number(file.size) || 0)) +
+        (file.source === 'ai' ? ' · создан AI CH' : '') + '</small></span></label>';
+    }).join('');
+    const count = $('#add-chat-library-selected-count');
+    if (count) count.textContent = String(addChatSelectedFileIds.size);
+  }
+
+  async function openAddChatLibrary() {
+    setAddChatView('library');
+    addChatSelectedFileIds = new Set();
+    const box = $('#add-chat-library-list');
+    if (box) box.innerHTML = '<div class="add-chat-library-empty">Загружаю файлы аккаунта…</div>';
+    const search = $('#add-chat-library-search');
+    if (search) search.value = '';
+    try {
+      const result = await api.get('/api/files');
+      state.files = Array.isArray(result) ? result : [];
+      renderFiles();
+      renderFilesWorkspace();
+      renderAddChatLibraryFiles();
+    } catch (error) {
+      if (box) box.innerHTML = '<div class="add-chat-library-empty">Не удалось загрузить файлы: ' +
+        escapeHtml(usefulErrorMessage(error, 'ошибка загрузки')) + '</div>';
+    }
+  }
+
+  function attachSelectedLibraryFiles() {
+    const selected = new Set(addChatSelectedFileIds);
+    const files = (Array.isArray(state.files) ? state.files : []).filter(file =>
+      file && file.id && selected.has(String(file.id))
+    );
+    if (!files.length) {
+      toast('Выберите файлы для добавления.', 'error');
+      return;
+    }
+    const pending = new Map((Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [])
+      .filter(file => file && file.id).map(file => [String(file.id), file]));
+    let added = 0;
+    files.forEach(file => {
+      const id = String(file.id);
+      if (!pending.has(id)) { pending.set(id, file); added += 1; }
+    });
+    state.pendingAttachments = Array.from(pending.values());
+    renderAttachments();
+    setAddChatView('main');
+    toast(added ? (added === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению') : 'Выбранные файлы уже прикреплены');
+  }
+
   function setAddChatView(view) {
     const shell = $('#add-to-chat-shell');
-    const next = view === 'model' || view === 'connectors' ? view : 'main';
+    const allowed = ['model', 'connectors', 'library', 'project'];
+    const next = allowed.includes(view) ? view : 'main';
     addChatActiveView = next;
     const main = $('#add-chat-main-view');
     const model = $('#add-chat-model-view');
     const connectors = $('#add-chat-connectors-view');
+    const library = $('#add-chat-library-view');
+    const project = $('#add-chat-project-view');
     if (main) main.classList.toggle('hidden', next !== 'main');
     if (model) model.classList.toggle('hidden', next !== 'model');
     if (connectors) connectors.classList.toggle('hidden', next !== 'connectors');
+    if (library) library.classList.toggle('hidden', next !== 'library');
+    if (project) project.classList.toggle('hidden', next !== 'project');
     if (shell) shell.classList.toggle('has-subview', next !== 'main');
     const title = $('#add-to-chat-title');
     if (title) title.textContent = next === 'model' ? 'Выбор модели'
-      : next === 'connectors' ? 'Коннекторы' : 'Добавить в чат';
+      : next === 'connectors' ? 'Коннекторы'
+      : next === 'library' ? 'Файлы аккаунта'
+      : next === 'project' ? 'Добавить в проект' : 'Добавить в чат';
     const nav = $('#add-chat-nav');
     if (nav) {
       nav.innerHTML = next === 'main'
@@ -5287,7 +5366,6 @@
     }
     const photos = $('[data-add-chat-action="photos"]');
     if (photos) photos.classList.toggle('hidden', next !== 'main');
-    $('#add-chat-project-picker')?.classList.add('hidden');
     state.modelPickerOpen = next === 'model';
     renderModelPicker();
     if (next === 'main') renderAddChatActionLabels();
@@ -5325,6 +5403,7 @@
     const picker = $('#add-chat-project-picker');
     const content = $('#add-chat-project-picker-content');
     if (!picker || !content) return;
+    setAddChatView('project');
     const chatIdAtOpen = state.currentChatId;
     picker.classList.remove('hidden');
     content.innerHTML = '<p>Загружаю проекты…</p>';
@@ -5357,7 +5436,7 @@
         '<button type="button" class="chip-btn add-chat-create-project" id="add-chat-create-project">' +
           '<svg class="ic"><use href="#i-plus"/></svg> Создать проект</button>';
 
-      $('#add-chat-project-cancel')?.addEventListener('click', () => picker.classList.add('hidden'));
+      $('#add-chat-project-cancel')?.addEventListener('click', () => setAddChatView('main'));
       $('#add-chat-create-project')?.addEventListener('click', () => {
         closeAddToChatSheet();
         openProjectsWorkspace().then(() => {
@@ -5372,7 +5451,7 @@
         if (!chatIdAtOpen) {
           pendingNewChatProjectId = nextId;
           pendingNewChatProjectLabel = (addChatProjects.find(item => String(item.id) === nextId) || {}).title || '';
-          picker.classList.add('hidden');
+          setAddChatView('main');
           renderAddChatActionLabels();
           toast(nextId ? 'Проект выбран для нового чата' : 'Новый чат будет без проекта');
           return;
@@ -5380,7 +5459,7 @@
         const currentChat = (state.chats || []).find(item => item && item.id === chatIdAtOpen) || activeChat;
         const previousId = String(currentChat && currentChat.project_id || '');
         if (nextId === previousId) {
-          picker.classList.add('hidden');
+          setAddChatView('main');
           return;
         }
         const previousName = addChatProjects.find(item => String(item.id) === previousId)?.title || 'Без проекта';
@@ -5396,7 +5475,7 @@
           else state.chats.push(updated);
           state.chatListVersion += 1;
           renderChatList();
-          picker.classList.add('hidden');
+          setAddChatView('main');
           renderAddChatActionLabels();
           toast(nextId ? 'Чат перемещён в проект «' + nextName + '»' : 'Чат убран из проекта');
         } catch (error) {
@@ -5407,7 +5486,7 @@
     } catch (error) {
       content.innerHTML = '<p>Не удалось загрузить проекты: ' + escapeHtml(error.message || 'ошибка') + '</p>' +
         '<div class="add-chat-project-picker-actions"><button type="button" id="add-chat-project-cancel">Закрыть</button></div>';
-      $('#add-chat-project-cancel')?.addEventListener('click', () => picker.classList.add('hidden'));
+      $('#add-chat-project-cancel')?.addEventListener('click', () => setAddChatView('main'));
     }
   }
 
@@ -5425,15 +5504,16 @@
       const button = event.target.closest('[data-add-chat-action]');
       if (!button) return;
       const action = button.dataset.addChatAction;
-      if (action === 'files' || action === 'photos' || action === 'library') {
+      if (action === 'files' || action === 'photos') {
         workspaceUploadIntent = false;
         const input = $('#file-input');
         if (!input) { toast('Выбор файлов недоступен в этом окне.', 'error'); return; }
         if (action === 'photos') input.setAttribute('accept', 'image/*');
         else input.removeAttribute('accept');
-        // All file entry points use the native picker and attach uploaded files to this message.
-        // Keep the "+" sheet open while the native picker is shown and after it returns.
+        // Keep the plus sheet open while the native picker is shown and after it returns.
         input.click();
+      } else if (action === 'library') {
+        openAddChatLibrary();
       } else if (action === 'model') {
         setAddChatView('model');
       } else if (action === 'project') {
@@ -5442,6 +5522,20 @@
         setAddChatView('connectors');
       }
     });
+    $('#add-chat-library-search')?.addEventListener('input', renderAddChatLibraryFiles);
+    $('#add-chat-library-list')?.addEventListener('change', event => {
+      const checkbox = event.target.closest('[data-library-file-id]');
+      if (!checkbox) return;
+      const id = String(checkbox.dataset.libraryFileId || '');
+      if (!id) return;
+      if (checkbox.checked) addChatSelectedFileIds.add(id);
+      else addChatSelectedFileIds.delete(id);
+      const count = $('#add-chat-library-selected-count');
+      if (count) count.textContent = String(addChatSelectedFileIds.size);
+    });
+    $('#add-chat-library-cancel')?.addEventListener('click', () => setAddChatView('main'));
+    $('#add-chat-library-attach')?.addEventListener('click', attachSelectedLibraryFiles);
+
     const handle = $('[data-add-chat-handle]', shell);
     const sheet = $('.add-to-chat-sheet', shell);
     let drag = null;

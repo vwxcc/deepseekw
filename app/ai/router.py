@@ -412,6 +412,13 @@ _WEB_SEARCH_TRIGGER_RE = re.compile(
     r"обзор\w*\s+(?:рынка|сервис|товар)))\b|\b202[5-9]\b",
     re.IGNORECASE,
 )
+_CONNECTOR_INTENT_RE = re.compile(
+    r"\b(?:github|git\s*hub|гитхаб|youtube|ютуб|spotify|спотиф|gitlab|гитлаб|"
+    r"notion|ноушн|slack|слак|google\s+drive|гугл\s+диск|linear|линеар|"
+    r"hugging\s*face|huggingface|discord|дискорд|коннектор|репозиторий|"
+    r"pull\s+request|api[- ]?токен|api[- ]?key)\b",
+    re.IGNORECASE,
+)
 _SEARCH_SETUP_RE = re.compile(
     r"(?:\*\*\s*поиск\s*\.\s*\*\*|"
     r"что именно найти\?.{0,160}(?:поищу в интернете|со ссылками))",
@@ -456,6 +463,7 @@ def _response_cache_key(job: "Job", entry: EntryConfig, messages: list[dict]) ->
         or _job_wants_web_search(job)
         or _WEB_SEARCH_TRIGGER_RE.search(query)
         or _SEARCH_SETUP_RE.search(query)
+        or _CONNECTOR_INTENT_RE.search(query)
         or _CACHE_SIDE_EFFECT_RE.search(query)
         or _CACHE_TIME_SENSITIVE_RE.search(query)
         or is_artifact_request(query)
@@ -1600,6 +1608,12 @@ class AIRouter:
         connected = [item["provider"] for item in CONNECTOR_CATALOG if connector_flags.get(item["provider"])]
         unavailable = [item["provider"] for item in CONNECTOR_CATALOG if not connector_flags.get(item["provider"])]
         system_prompt += "\n\n" + prompts.TOOL_COMMAND_SKILL.replace("{action_limit}", str(max(0, int(job.action_limit))))
+        system_prompt += (
+            "\n\n[НАСТРОЙКА ВЕБ-ПОИСКА]\n"
+            + ("Веб-поиск включён пользователем. При необходимости используй AICH_WEB_SEARCH."
+               if job.web_search else
+               "Веб-поиск выключен пользователем. НЕ вызывай AICH_WEB_SEARCH, даже если запрос обычно требует актуальной проверки; честно сообщи, что live-поиск отключён.")
+        )
         system_prompt += "\n\n[ДОСТУП КОННЕКТОРАМ]\n" + json.dumps({"connected": connected, "not_connected": unavailable}, ensure_ascii=False)
         if job.user_id:
             # Private skills are loaded only for the owning account and are never exposed by system-skill APIs.
@@ -1891,7 +1905,19 @@ class AIRouter:
                             ("stage", json.dumps({"stage": "generation"}))
                         )
                         response_entry = entry
-                        got = await self._stream_once(job, entry, messages)
+                        external_intent = bool(
+                            _WEB_SEARCH_TRIGGER_RE.search(job.user_text or "")
+                            or _CONNECTOR_INTENT_RE.search(job.user_text or "")
+                        )
+                        defer_external_output = (
+                            external_intent and not code_mode and not artifact_work_request and not agent_on
+                        )
+                        deferred_stream_events: list[tuple[str, str]] = []
+                        got = await self._stream_once(
+                            job, entry, messages,
+                            defer_output=defer_external_output,
+                            deferred_events=deferred_stream_events,
+                        )
                         if got is None:
                             return
                         full, thinking, usage = got
@@ -1919,6 +1945,11 @@ class AIRouter:
                                 if signature in seen_tool_signatures:
                                     feedback_parts.append(
                                         f"{action_key}: этот же запрос уже выполнялся; не повторяй его, используй предыдущий результат."
+                                    )
+                                    continue
+                                if command_kind == "WEB_SEARCH" and not job.web_search:
+                                    feedback_parts.append(
+                                        "Веб-поиск выключен настройкой пользователя; не вызывай его повторно и ответь без live-поиска."
                                     )
                                     continue
                                 if actions_used >= max(0, int(job.action_limit)):
@@ -1997,6 +2028,14 @@ class AIRouter:
                             break
                         if not agent_blocks:
                             answer = full if full.strip() else thinking
+                            if defer_external_output:
+                                # Only likely search/connector requests are buffered, so command markers never leak.
+                                for event_kind, event_payload in deferred_stream_events:
+                                    await job.output.put((event_kind, event_payload))
+                                visible = prompts.strip_tool_commands(answer)
+                                if visible:
+                                    await job.output.put(("delta", visible))
+                                answer = visible
                             break
                         # This response is an additional paid agent turn. Bill it
                         # immediately so the next budget check sees the real spend.

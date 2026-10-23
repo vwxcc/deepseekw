@@ -109,7 +109,7 @@ async def _reserve_tokens(db: AsyncSession, user: User, key: UserApiKey, payload
                UserApiKey.max_output_tokens, UserApiKey.is_active)
         .where(UserApiKey.id == key.id, UserApiKey.user_id == user.id)
     )).one_or_none()
-    if fresh is None or not fresh.is_active:
+    if fresh is None or not fresh[4]:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "API-ключ отозван")
     token_limit, used, reserved, configured_output, _ = fresh
     key_remaining = max(0, int(token_limit) - int(used or 0) - int(reserved or 0)) if token_limit is not None else 2_147_483_647

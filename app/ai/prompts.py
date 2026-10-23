@@ -191,6 +191,66 @@ def strip_tool_commands(text: str) -> str:
     clean = TOOL_COMMAND_RE.sub("", text or "")
     return re.sub(r"\n{3,}", "\n\n", clean).strip()
 
+
+class ToolCommandStreamFilter:
+    """Hide internal command markers from streamed UI text without buffering normal prose."""
+    _MARKERS = ("[[aich_connector:", "[[aich_web_search:")
+
+    def __init__(self) -> None:
+        self._pending = ""
+        self._inside_command = False
+
+    def feed(self, chunk: str) -> str:
+        text = self._pending + str(chunk or "")
+        self._pending = ""
+        visible: list[str] = []
+        while text:
+            if self._inside_command:
+                end = text.find("]]")
+                if end < 0:
+                    self._pending = text
+                    break
+                text = text[end + 2:]
+                self._inside_command = False
+                continue
+
+            folded = text.casefold()
+            hits = [(folded.find(marker), marker) for marker in self._MARKERS if folded.find(marker) >= 0]
+            if hits:
+                position, _ = min(hits, key=lambda item: item[0])
+                if position:
+                    visible.append(text[:position])
+                text = text[position:]
+                end = text.find("]]")
+                if end < 0:
+                    self._pending = text
+                    self._inside_command = True
+                    break
+                text = text[end + 2:]
+                continue
+
+            hold = 0
+            for marker in self._MARKERS:
+                maximum = min(len(marker) - 1, len(text))
+                for size in range(maximum, 0, -1):
+                    if text[-size:].casefold() == marker[:size]:
+                        hold = max(hold, size)
+                        break
+            if hold:
+                visible.append(text[:-hold])
+                self._pending = text[-hold:]
+            else:
+                visible.append(text)
+            break
+        return "".join(visible)
+
+    def finish(self) -> str:
+        if self._inside_command:
+            self._pending = ""
+            return ""
+        tail, self._pending = self._pending, ""
+        return tail
+
 RUN_SKILL = (
     "Исполнение и проверка. Не запускай код до того, как сформирован полный ответ. "
     "Для обычных вычислений отвечай по существу и показывай код при необходимости; не создавай отдельную "

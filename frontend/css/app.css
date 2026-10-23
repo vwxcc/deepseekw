@@ -4845,3 +4845,88 @@ html, body, #main-screen, #chat-area { max-width: 100%; overflow-x: hidden; }
   .add-chat-primary-action { min-height: 76px; }
   .share-sheet-body { gap: 10px; }
 }
+
+
+/* Keep compact emoji/text blocks readable on narrow screens and in flex/grid containers. */
+.aich-ui-callout {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.aich-ui-emoji {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  width: 1.7rem;
+  max-width: 1.7rem;
+  flex: 0 0 1.7rem;
+  font-size: 1.3em;
+  line-height: 1.2;
+  overflow: hidden;
+}
+.aich-ui-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.aich-ui-copy > strong, .aich-ui-copy > div {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: normal;
+}
+.aich-ui-copy > div {
+  display: -webkit-box;
+  max-height: 2.8em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.4;
+}
+.aich-ui-action {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.aich-ui-action-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.28em;
+  max-width: 1.28em;
+  min-width: 0;
+  overflow: hidden;
+}
+.aich-ui-action > span:nth-child(2) {
+  display: -webkit-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+@media (max-width: 420px) {
+  .aich-ui-callout { grid-template-columns: 1.4rem minmax(0, 1fr); gap: 8px; padding: 12px; }
+  .aich-ui-emoji { width: 1.4rem; max-width: 1.4rem; flex-basis: 1.4rem; font-size: 1.15em; }
+}

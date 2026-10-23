@@ -5049,3 +5049,131 @@ html, body, #main-screen, #chat-area { max-width: 100%; overflow-x: hidden; }
     max-width: 1.2rem;
   }
 }
+
+
+/* One consistent, polished scrollbar design throughout AI CH. */
+:root * {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg-muted) 42%, var(--bg-panel)) transparent;
+}
+:root *::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+:root *::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+  margin: 4px;
+}
+:root *::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--fg-muted) 46%, var(--bg-panel)),
+    color-mix(in srgb, var(--fg-muted) 64%, var(--bg-panel))
+  );
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+:root *::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--fg-muted), var(--accent));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+:root *::-webkit-scrollbar-corner { background: transparent; }
+
+/* The message column must keep its real width; text cards are not allowed to shrink to a glyph. */
+#messages .msg.assistant .content.md {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+#messages .msg.assistant .content.md .aich-ui-callout {
+  display: grid !important;
+  grid-template-columns: 1.5rem minmax(0, 1fr) !important;
+  align-items: center;
+  width: min(100%, 760px) !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+#messages .msg.assistant .content.md .aich-ui-copy,
+#messages .msg.assistant .content.md .aich-ui-copy > strong,
+#messages .msg.assistant .content.md .aich-ui-copy > div {
+  grid-column: 2;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  direction: ltr;
+}
+#messages .msg.assistant .content.md .aich-ui-copy {
+  display: block !important;
+  flex: none !important;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+#messages .msg.assistant .content.md .aich-ui-copy > strong,
+#messages .msg.assistant .content.md .aich-ui-copy > div {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+}
+#messages .msg.assistant .content.md .aich-ui-copy > div {
+  display: -webkit-box !important;
+  max-height: 2.6em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* Accessible, non-native looking range sliders (audio progress and other sliders). */
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  accent-color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-soft), var(--bg-hover));
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  margin-top: -7px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg-panel);
+  box-shadow: 0 1px 5px rgba(30, 30, 30, .18);
+}
+input[type="range"]::-moz-range-track {
+  height: 5px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-soft), var(--bg-hover));
+}
+input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg-panel);
+  box-shadow: 0 1px 5px rgba(30, 30, 30, .18);
+}

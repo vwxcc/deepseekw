@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_user, get_db, require_csrf
-from ..models import ApiGatewayConfig, UsageEvent, User, UserApiKey, utcnow
+from ..models import ApiGatewayConfig, TokenTransaction, UsageEvent, User, UserApiKey, utcnow
 
 router = APIRouter(prefix="/api/my-api", tags=["personal API"])
 
@@ -79,6 +79,10 @@ async def personal_api_overview(
         select(UserApiKey).where(UserApiKey.user_id == user.id)
         .order_by(UserApiKey.created_at.desc())
     )).scalars().all()
+    transactions = (await db.execute(
+        select(TokenTransaction).where(TokenTransaction.user_id == user.id)
+        .order_by(TokenTransaction.created_at.desc()).limit(50)
+    )).scalars().all()
     config = await db.get(ApiGatewayConfig, 1)
     return {
         "can_create_keys": not bool(user.is_guest),
@@ -91,6 +95,11 @@ async def personal_api_overview(
             "cost_usd": round(float(totals[4] or 0), 8),
         },
         "chart": chart, "keys": [_key_public(key) for key in keys],
+        "transactions": [{
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "amount": int(item.amount or 0), "balance_after": int(item.balance_after or 0),
+            "action": item.action, "reason": item.reason or "",
+        } for item in transactions],
         "recent": [{
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "model": "ai-ch", "tokens_in": int(item.tokens_in or 0),

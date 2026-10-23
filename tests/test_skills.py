@@ -24,6 +24,14 @@ class BundledSkillTests(unittest.TestCase):
         self.assertIn("Специализированный навык: humanize-text", humanize)
         self.assertNotIn("Специализированный навык: essays", humanize)
 
+    def test_art_image_uses_detailed_image_skill_not_svg_drawing(self) -> None:
+        prompt = skills_for("Создай картинку с котом")
+        self.assertIn("Создание художественного изображения", prompt)
+        self.assertIn("максимально детализированной", prompt)
+        svg = skills_for("Нарисуй SVG-иллюстрацию")
+        self.assertIn("Специализированный навык: drawing", svg)
+        self.assertNotIn("Создание художественного изображения", svg)
+
     def test_irrelevant_request_does_not_load_skills(self) -> None:
         self.assertEqual(skills_for("Объясни, что такое интеграл"), "")
 

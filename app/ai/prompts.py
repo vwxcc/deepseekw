@@ -77,6 +77,9 @@ def skills_for(user_text: str | None) -> str:
         r".{0,70}(?:картин\w*|изображен\w*|иллюстрац\w*|постер\w*|обложк\w*|wallpaper|picture|image|illustration|poster|cover|логотип\w*|logo|аватар\w*|avatar)",
         text,
     )) and not any(term in text for term in ("технический черт", "чертёж", "чертеж", "блок-схем", "svg-иллюстрац", "svg-схем", "диаграмм", "техническая схема"))
+    if is_image_creation:
+        matched.discard("drawing")
+        chunks = [chunk for chunk in chunks if not chunk.startswith("## Специализированный навык: drawing\n")]
     is_file = "file-generation" in matched or is_image_creation
     is_code = bool(re.search(
         r"\b(python|javascript|typescript|java|rust|sql|bash|код|программир|скрипт|алгоритм|"

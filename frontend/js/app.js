@@ -1689,9 +1689,9 @@
       const fileId = encodeURIComponent(String(a.file_id || ''));
       const url = '/api/files/' + fileId + '/download';
       const name = String(a.name || a.original_name || '');
-      const isSvg = a.kind === 'svg' || /\.svg$/i.test(name) ||
-        String(a.mime_type || '').toLowerCase() === 'image/svg+xml';
-      const isImage = !isSvg && (a.kind === 'image' ||
+      const isSvg = a.kind === 'svg' || /\.svg$/i.test(name);
+      const isSvgMime = String(a.mime_type || '').toLowerCase() === 'image/svg+xml';
+      const isImage = !isSvg && !isSvgMime && (a.kind === 'image' ||
         String(a.mime_type || '').toLowerCase().startsWith('image/'));
       if (isImage) {
         return '<a class="msg-att img" href="' + url + '" target="_blank" rel="noopener" title="' +

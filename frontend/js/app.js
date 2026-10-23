@@ -5083,7 +5083,7 @@
     $('#attach-btn')?.classList.remove('is-active');
   }
 
-  async function openAddChatProjectPicker() {
+  async async function openAddChatProjectPicker() {
     const picker = $('#add-chat-project-picker');
     const content = $('#add-chat-project-picker-content');
     if (!picker || !content) return;
@@ -5177,7 +5177,7 @@
     const shell = $('#add-to-chat-shell');
     if (!shell || shell.dataset.bound === '1') return;
     shell.dataset.bound = '1';
-    $('[data-add-chat-close]', shell).forEach(button =>
+    $$('[data-add-chat-close]', shell).forEach(button =>
       button.addEventListener('click', closeAddToChatSheet));
     shell.addEventListener('click', event => {
       const button = event.target.closest('[data-add-chat-action]');

@@ -6450,52 +6450,110 @@
     if(!shell||!body)return;
     openDedicatedWorkspace(shell);
     const endpoint=location.origin+'/v1';
-    body.innerHTML =
-      '<section class="api-page-hero"><div class="api-page-kicker">AI CH · DEVELOPERS</div><div class="api-page-hero-grid"><div><h1>AI CH в ваших приложениях</h1><p>Используйте привычный OpenAI-совместимый интерфейс, не привязываясь к внутреннему ID модели.</p><div class="api-page-hero-actions"><button type="button" class="api-primary-action" data-api-copy="base-url">'+icon('copy')+'Копировать Base URL</button><span class="api-page-model-pill">'+icon('network')+' Модель <code>ai-ch</code></span></div></div><div class="api-page-hero-art" aria-hidden="true"><div class="api-orbit api-orbit-a"></div><div class="api-orbit api-orbit-b"></div><div class="api-art-core">'+icon('brain')+'</div><span class="api-art-node api-art-node-a">/v1</span><span class="api-art-node api-art-node-b">SSE</span><span class="api-art-node api-art-node-c">AI</span></div></div></section>'+
-      '<section class="api-page-status" id="api-page-status"><span class="api-status-dot"></span><div><b>Проверяем конфигурацию API…</b><p>Статус шлюза и доступные возможности обновятся автоматически.</p></div></section>'+
-      '<section class="api-page-section"><div class="api-section-heading"><div><span class="api-page-eyebrow">01 · Подключение</span><h2>Один адрес. Стандартный формат.</h2><p>Настройки маршрутизации находятся в административной панели.</p></div></div><div class="api-endpoint-large"><div><span>Base URL</span><code>'+escapeHtml(endpoint)+'</code></div><button type="button" class="api-copy-icon" data-api-copy="base-url" title="Копировать адрес">'+icon('copy')+'</button></div><div class="api-page-cards">'+
-      '<article class="api-info-card"><span class="api-info-icon">'+icon('file-text')+'</span><h3>Chat Completions</h3><code>POST /v1/chat/completions</code><p>Обычный JSON-ответ и сообщения в формате roles/content.</p></article>'+
-      '<article class="api-info-card"><span class="api-info-icon">'+icon('layers')+'</span><h3>Список моделей</h3><code>GET /v1/models</code><p>Клиент видит публичный псевдоним <code>ai-ch</code>.</p></article>'+
-      '<article class="api-info-card"><span class="api-info-icon">'+icon('chart-line')+'</span><h3>Потоковая генерация</h3><code>stream: true</code><p>Ответ передаётся постепенно через серверные события SSE.</p></article></div></section>'+
-      '<section class="api-page-section api-example-section"><div class="api-section-heading"><div><span class="api-page-eyebrow">02 · Пример запроса</span><h2>Подключение за несколько строк</h2><p>Выберите язык и скопируйте готовый пример.</p></div></div><div class="api-example-panel"><div class="api-example-toolbar"><div class="api-example-tabs"><button type="button" class="active" data-api-language="python">Python</button><button type="button" data-api-language="javascript">JavaScript</button><button type="button" data-api-language="curl">cURL</button></div><button type="button" class="api-copy-code" data-api-copy="example">'+icon('copy')+' Копировать код</button></div><pre class="api-page-code"><code id="api-example-code"></code></pre></div><p class="api-page-note">'+icon('shield-check')+' Авторизация выполняется через <code>Authorization: Bearer YOUR_API_KEY</code>. Не размещайте секретный ключ в открытом коде.</p></section>'+
-      '<section class="api-page-section api-connect-steps"><div class="api-section-heading"><div><span class="api-page-eyebrow">03 · Перед началом</span><h2>Что нужно для работы</h2></div></div><div class="api-step-grid"><article><span>1</span><div><h3>Получите API-ключ</h3><p>Ключ выдаётся администратором AI CH. Эта страница не показывает секретные ключи.</p></div></article><article><span>2</span><div><h3>Укажите Base URL</h3><p>Используйте адрес выше, без повторного добавления <code>/v1</code>.</p></div></article><article><span>3</span><div><h3>Выберите модель</h3><p>В запросе указывайте публичный псевдоним <code>ai-ch</code>; настоящий ID провайдера не требуется.</p></div></article></div></section>';
-
-    let exampleLanguage='python';
-    function renderExample(){
-      const code=$('#api-example-code',body);
-      if(!code)return;
-      const examples={
-        python:'from openai import OpenAI\n\nclient = OpenAI(\n    base_url = '+JSON.stringify(endpoint)+',\n    api_key = "YOUR_API_KEY",\n)\n\nresponse = client.chat.completions.create(\n    model="ai-ch",\n    messages=[{"role": "user", "content": "Привет!"}],\n)\nprint(response.choices[0].message.content)',
-        javascript:'import OpenAI from "openai";\n\nconst client = new OpenAI({\n  baseURL: '+JSON.stringify(endpoint)+',\n  apiKey: "YOUR_API_KEY",\n});\n\nconst response = await client.chat.completions.create({\n  model: "ai-ch",\n  messages: [{ role: "user", content: "Привет!" }],\n});\nconsole.log(response.choices[0].message.content);',
-        curl:'curl '+endpoint+'/chat/completions \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"ai-ch","messages":[{"role":"user","content":"Привет!"}],"stream":false}\''
-      };
-      code.textContent=examples[exampleLanguage]||examples.python;
-      $$('[data-api-language]',body).forEach(b=>b.classList.toggle('active',b.dataset.apiLanguage===exampleLanguage));
-    }
-    renderExample();
-    body.onclick=async event=>{
-      const language=event.target.closest('[data-api-language]');
-      if(language){exampleLanguage=language.dataset.apiLanguage;renderExample();return;}
-      const button=event.target.closest('[data-api-copy]');
-      if(!button)return;
-      const text=button.dataset.apiCopy==='base-url'?endpoint:($('#api-example-code',body)?.textContent||'');
-      try{await navigator.clipboard.writeText(text);toast(button.dataset.apiCopy==='base-url'?'Base URL скопирован':'Пример кода скопирован');}
-      catch(_){const area=document.createElement('textarea');area.value=text;body.appendChild(area);area.select();document.execCommand('copy');area.remove();toast('Текст подготовлен к копированию');}
+    let latestOverview=null, latestInfo=null;
+    const number=n=>fmtNum(Math.max(0,Number(n)||0));
+    const shortDate=value=>{try{return new Date(value+'T12:00:00').toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'});}catch(_){return value;}};
+    const renderChart=chart=>{
+      const points=(Array.isArray(chart)?chart:[]).map((d,i)=>({x:34+i*(692/13),v:Math.max(0,Number(d.input)||0)+Math.max(0,Number(d.output)||0),day:d.day}));
+      const max=Math.max(1,...points.map(p=>p.v)), y=p=>142-(p.v/max)*108;
+      const path=points.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+y(p).toFixed(1)).join(' ');
+      const area=path+' L '+points[points.length-1].x.toFixed(1)+' 150 L '+points[0].x.toFixed(1)+' 150 Z';
+      return '<div class="personal-api-chart-wrap"><svg class="personal-api-chart" viewBox="0 0 760 190" role="img" aria-label="Использование токенов за 14 дней"><defs><linearGradient id="api-token-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#6c7d9d" stop-opacity=".24"/><stop offset="100%" stop-color="#6c7d9d" stop-opacity=".01"/></linearGradient></defs>'+
+        [34,70,106,142].map(gy=>'<line x1="28" x2="736" y1="'+gy+'" y2="'+gy+'" stroke="currentColor" stroke-opacity=".10"/>').join('')+
+        '<path d="'+area+'" fill="url(#api-token-gradient)"/><path d="'+path+'" fill="none" stroke="#526b91" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+
+        points.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+y(p).toFixed(1)+'" r="3.1" fill="#526b91"><title>'+shortDate(p.day)+': '+number(p.v)+' токенов</title></circle>').join('')+
+        points.filter((p,i)=>i%2===0||i===13).map(p=>'<text x="'+p.x.toFixed(1)+'" y="174" text-anchor="middle" fill="currentColor" fill-opacity=".58" font-size="10">'+shortDate(p.day)+'</text>').join('')+'</svg></div>';
     };
-    async function loadPublicApiInfo(){
-      const box=$('#api-page-status',body);if(!box)return;
+    function renderDashboard(data,info,secret){
+      latestOverview=data;latestInfo=info;
+      const t=data.totals||{},balance=Math.max(0,Number(data.balance_tokens)||0);
+      const chart=Array.isArray(data.chart)?data.chart:[];
+      const rows=Array.isArray(data.recent)?data.recent:[];
+      const keys=Array.isArray(data.keys)?data.keys:[];
+      const guest=!data.can_create_keys;
+      const statusText=info&&info.enabled?'API доступен для запросов':'API ожидает включения администратором';
+      const keyMarkup=keys.length?keys.map(k=>{
+        const used=Math.max(0,Number(k.tokens_used)||0), limit=k.token_limit===null||k.token_limit===undefined?null:Math.max(0,Number(k.token_limit)||0);
+        const pct=limit===null?0:Math.min(100,limit?used/limit*100:100);
+        const days=k.expires_at?Math.max(0,Math.ceil((Date.parse(k.expires_at)-Date.now())/86400000)):0;
+        return '<article class="personal-api-key-card '+(!k.is_active?'is-disabled':'')+'" data-api-key-card="'+escapeHtml(k.id)+'">'+
+          '<div class="personal-api-key-head"><span class="personal-api-key-icon">'+icon('key')+'</span><div class="personal-api-key-title"><b>'+escapeHtml(k.name)+'</b><small><code>'+escapeHtml(k.prefix)+'••••••••</code> · '+(k.is_active?'Активен':'Отключён')+'</small></div><span class="personal-api-key-status '+(k.is_active?'is-on':'')+'"></span></div>'+
+          '<div class="personal-api-key-stats"><span>Использовано <b>'+number(used)+'</b></span><span>Лимит <b>'+(limit===null?'без отдельного лимита':number(limit))+'</b></span></div>'+
+          '<div class="personal-api-key-progress"><i style="width:'+(limit===null?(used?'3':'0'):pct)+'%"></i></div>'+
+          '<div class="personal-api-key-foot"><span>Ответ до '+number(k.max_output_tokens)+' токенов</span><span>'+(k.expires_at?(days?'Истекает через '+days+' дн.':'Срок истёк'):'Без срока действия')+'</span></div>'+
+          '<div class="personal-api-key-actions"><button type="button" class="chip-btn" data-key-config="'+escapeHtml(k.id)+'">'+icon('settings')+' Настроить</button><button type="button" class="chip-btn" data-key-toggle="'+escapeHtml(k.id)+'">'+(k.is_active?'Отключить':'Включить')+'</button><button type="button" class="chip-btn api-key-revoke" data-key-revoke="'+escapeHtml(k.id)+'">Отозвать</button></div>'+
+          '<form class="personal-api-key-edit hidden" data-key-edit="'+escapeHtml(k.id)+'"><label>Название<input name="name" maxlength="80" required value="'+escapeHtml(k.name)+'"/></label><label>Лимит токенов<input name="token_limit" type="number" min="'+Math.max(1,used+Number(k.tokens_reserved||0))+'" max="1000000000" placeholder="Без отдельного лимита" value="'+(limit===null?'':limit)+'"/></label><label>Максимум токенов ответа<input name="max_output_tokens" type="number" min="1" max="32768" required value="'+number(k.max_output_tokens)+'"/></label><label>Срок действия<select name="expires_days"><option value="0" '+(!k.expires_at?'selected':'')+'>Без срока</option><option value="1" '+(days===1?'selected':'')+'>1 день</option><option value="7" '+(days===7?'selected':'')+'>7 дней</option><option value="30" '+(days===30?'selected':'')+'>30 дней</option><option value="90" '+(days===90?'selected':'')+'>90 дней</option><option value="365" '+(days===365?'selected':'')+'>1 год</option></select></label><button class="api-primary-action" type="submit">'+icon('check')+' Сохранить параметры</button></form></article>';
+      }).join(''):'<div class="personal-api-empty"><span>'+icon('key')+'</span><b>Здесь появятся ваши API-ключи</b><p>Создайте отдельный ключ для своего приложения и установите для него собственный предел.</p></div>';
+      const recentMarkup=rows.length?'<div class="personal-api-table-wrap"><table class="personal-api-table"><thead><tr><th>Время</th><th>Ключ</th><th>Вход</th><th>Выход</th><th>Всего</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(String(r.created_at||'').replace('T',' ').slice(0,16))+'</td><td><code>'+escapeHtml(r.key_prefix||'—')+'</code></td><td>'+number(r.tokens_in)+'</td><td>'+number(r.tokens_out)+'</td><td><b>'+number(r.tokens_total)+'</b></td></tr>').join('')+'</tbody></table></div>':'<p class="personal-api-muted">Запросов пока нет. После первого обращения статистика появится здесь.</p>';
+      body.innerHTML='<div class="personal-api-shell">'+
+        '<section class="personal-api-hero"><div class="personal-api-eyebrow">AI CH · API WORKSPACE</div><div class="personal-api-hero-grid"><div><h1>Ваш AI CH API</h1><p>Личные ключи, расход токенов и контроль каждого подключения в одном месте. Настоящие модели и маршрутизация остаются на стороне AI CH.</p><div class="personal-api-status"><span class="personal-api-status-dot '+(info&&info.enabled?'is-on':'')+'"></span><span>'+escapeHtml(statusText)+'</span><span class="personal-api-public-model">Модель <code>ai-ch</code></span></div></div><div class="personal-api-wallet"><span>'+icon('wallet')+' Доступный баланс</span><b>'+number(balance)+'</b><small>токенов</small><div class="personal-api-wallet-track"><i style="width:'+(balance?Math.min(100,balance/30000*100):0)+'%"></i></div><p>Стартовые 30 000 токенов выдаются после регистрации. Дальнейшее пополнение — через администратора.</p></div></div></section>'+
+        (guest?'<section class="personal-api-register"><div><b>Зарегистрируйтесь, чтобы создать личный ключ</b><p>Гостевой режим не получает стартовый API-баланс и не позволяет создавать ключи.</p></div><button type="button" class="api-primary-action" data-api-register>Зарегистрироваться</button></section>':'')+
+        '<section class="personal-api-metrics"><article><span>Всего запросов</span><b>'+number(t.calls)+'</b><small>по личным ключам</small></article><article><span>Израсходовано токенов</span><b>'+number(t.tokens_total)+'</b><small>вход + выход</small></article><article><span>Входные токены</span><b>'+number(t.tokens_in)+'</b><small>история запросов</small></article><article><span>Выходные токены</span><b>'+number(t.tokens_out)+'</b><small>ответы модели</small></article></section>'+
+        '<section class="personal-api-section"><div class="personal-api-section-head"><div><span class="personal-api-overline">01 · АНАЛИТИКА</span><h2>История расхода</h2><p>Потребление токенов по дням за последние 14 дней.</p></div><button type="button" class="chip-btn" data-api-refresh>'+icon('refresh')+' Обновить</button></div><div class="personal-api-chart-card"><div class="personal-api-chart-legend"><span><i></i> Вход + выход, токены</span><b>Всего: '+number(t.tokens_total)+'</b></div>'+renderChart(chart)+'</div></section>'+
+        '<section class="personal-api-section"><div class="personal-api-section-head"><div><span class="personal-api-overline">02 · ДОСТУП</span><h2>Ваши API-ключи</h2><p>Создавайте отдельные ключи для приложений, ограничивайте расход и отключайте ненужные.</p></div><span class="personal-api-count">'+keys.length+' / 20</span></div>'+
+        (!guest?'<form class="personal-api-create" id="personal-api-create"><div class="personal-api-create-intro"><span class="personal-api-create-icon">'+icon('key')+'</span><div><b>Создать новый ключ</b><p>Полный секрет появится один раз — сразу скопируйте его и сохраните в безопасном месте.</p></div></div><div class="personal-api-form-grid"><label>Название ключа<input name="name" maxlength="80" required placeholder="Например, мой сайт" /></label><label>Лимит ключа, токенов<input name="token_limit" type="number" min="1" max="1000000000" placeholder="Ограничить расход (необязательно)" /></label><label>Максимальный ответ<select name="max_output_tokens"><option value="512">512 токенов</option><option value="1024">1 024 токена</option><option value="2048" selected>2 048 токенов</option><option value="4096">4 096 токенов</option><option value="8192">8 192 токена</option><option value="16384">16 384 токена</option><option value="32768">32 768 токенов</option></select></label><label>Срок действия<select name="expires_days"><option value="0" selected>Без срока</option><option value="1">1 день</option><option value="7">7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option><option value="365">1 год</option></select></label></div><div class="personal-api-create-footer"><span>Лимит ключа не может увеличить баланс аккаунта.</span><button type="submit" class="api-primary-action" '+(keys.length>=20?'disabled':'')+'>'+icon('plus')+' Создать ключ</button></div><div id="personal-api-created-secret">'+(secret?'<div class="personal-api-secret"><b>'+icon('shield-check')+' Скопируйте новый ключ сейчас</b><p>После закрытия этого сообщения восстановить секрет будет нельзя.</p><div><code>'+escapeHtml(secret)+'</code><button type="button" class="api-primary-action" data-copy-created-key>'+icon('copy')+' Копировать</button></div></div>':'')+'</div></form>':'')+
+        '<div class="personal-api-key-list">'+keyMarkup+'</div></section>'+
+        '<section class="personal-api-section"><div class="personal-api-section-head"><div><span class="personal-api-overline">03 · ЖУРНАЛ</span><h2>Последние запросы</h2><p>Каждый запрос привязан к вашему аккаунту и, если возможно, к ключу-источнику.</p></div></div>'+recentMarkup+'</section>'+
+        '<section class="personal-api-connection"><span class="personal-api-overline">04 · ПОДКЛЮЧЕНИЕ</span><h2>Готово к интеграции</h2><p>Совместимый интерфейс Chat Completions. Запросы списывают токены с баланса и ограничиваются настройками ключа.</p><div class="personal-api-endpoint"><div><span>Base URL</span><code>'+escapeHtml(endpoint)+'</code></div><button class="chip-btn" type="button" data-copy-base-url>'+icon('copy')+' Копировать</button></div><div class="personal-api-protocol-grid"><article><span>01</span><b>Личная авторизация</b><p>Используйте созданный в этой странице ключ в заголовке Bearer.</p></article><article><span>02</span><b>Контроль токенов</b><p>Баланс и лимит отдельного ключа проверяются до обращения к модели.</p></article><article><span>03</span><b>Потоковый ответ</b><p>Поддерживается обычный JSON-ответ и потоковая передача SSE.</p></article></div><details class="personal-api-example"><summary>Показать пример запроса</summary><pre><code>curl '+escapeHtml(endpoint)+'/chat/completions \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"ai-ch","messages":[{"role":"user","content":"Привет"}],"max_tokens":512}'</code></pre></details></section></div>';
+    }
+    async function loadDashboard(secret){
       try{
-        const info=await api.get('/v1/info');
-        const available=!!(info&&info.enabled);
-        box.innerHTML='<span class="api-status-dot '+(available?'is-online':'is-offline')+'"></span><div><b>'+(available?'API включён':'API пока не включён')+'</b><p>'+escapeHtml(info.message||'')+
-          (info.model_set_name?' · Кластер: '+escapeHtml(info.model_set_name):'')+'</p></div><span class="api-status-badge '+(available?'is-online':'is-offline')+'">'+(available?'ДОСТУПЕН':'ОЖИДАЕТ НАСТРОЙКИ')+'</span>';
+        const results=await Promise.all([api.get('/api/my-api/overview'),api.get('/v1/info')]);
+        renderDashboard(results[0],results[1],secret||'');
       }catch(error){
-        box.innerHTML='<span class="api-status-dot is-offline"></span><div><b>Статус недоступен</b><p>Не удалось получить состояние шлюза. '+escapeHtml(error.message)+'</p></div>';
+        body.innerHTML='<section class="personal-api-error"><span>'+icon('alert-circle')+'</span><h2>Не удалось загрузить API</h2><p>'+escapeHtml(error.message||'Ошибка загрузки')+'</p><button type="button" class="api-primary-action" data-api-refresh>Повторить</button></section>';
       }
     }
-    const refresh=$('#api-workspace-refresh');
-    if(refresh)refresh.onclick=loadPublicApiInfo;
-    await loadPublicApiInfo();
+    body.onclick=async event=>{
+      const target=event.target;
+      const refresh=target.closest('[data-api-refresh]');if(refresh){await loadDashboard();return;}
+      if(target.closest('[data-api-register]')){$('#register-btn')?.click();return;}
+      const copyKey=target.closest('[data-copy-created-key]');
+      if(copyKey){const secret=$('#personal-api-created-secret code',body)?.textContent||'';try{await navigator.clipboard.writeText(secret);toast('Ключ скопирован');}catch(_){toast('Не удалось скопировать ключ','error');}return;}
+      if(target.closest('[data-copy-base-url]')){try{await navigator.clipboard.writeText(endpoint);toast('Base URL скопирован');}catch(_){toast(endpoint);}return;}
+      const configure=target.closest('[data-key-config]');
+      if(configure){const form=$('[data-key-edit="'+configure.dataset.keyConfig+'"]',body);if(form)form.classList.toggle('hidden');return;}
+      const toggle=target.closest('[data-key-toggle]');
+      if(toggle){
+        const key=latestOverview&&latestOverview.keys.find(k=>k.id===toggle.dataset.keyToggle);if(!key)return;
+        toggle.disabled=true;try{await api.patch('/api/my-api/keys/'+encodeURIComponent(key.id),{is_active:!key.is_active});toast(!key.is_active?'Ключ включён':'Ключ отключён');await loadDashboard();}catch(e){toast('Ошибка: '+e.message,'error');toggle.disabled=false;}return;
+      }
+      const revoke=target.closest('[data-key-revoke]');
+      if(revoke){const key=latestOverview&&latestOverview.keys.find(k=>k.id===revoke.dataset.keyRevoke);if(!key)return;
+        if(!window.confirm('Отозвать ключ «'+key.name+'»? Все приложения с этим ключом потеряют доступ.'))return;
+        revoke.disabled=true;try{await api.del('/api/my-api/keys/'+encodeURIComponent(key.id));toast('Ключ отозван');await loadDashboard();}catch(e){toast('Ошибка: '+e.message,'error');revoke.disabled=false;}return;
+      }
+      const admin=target.closest('[data-api-admin-config]');if(admin)openApiAdminSettings();
+    };
+    body.onsubmit=async event=>{
+      const form=event.target.closest('#personal-api-create,[data-key-edit]');
+      if(!form)return;
+      event.preventDefault();
+      const submit=$('button[type="submit"]',form);if(submit)submit.disabled=true;
+      const values=new FormData(form);
+      try{
+        if(form.id==='personal-api-create'){
+          const payload={name:String(values.get('name')||'').trim(),token_limit:String(values.get('token_limit')||'').trim()||null,max_output_tokens:Number(values.get('max_output_tokens')||2048),expires_days:Number(values.get('expires_days')||0)};
+          const result=await api.post('/api/my-api/keys',payload);
+          toast('API-ключ создан. Сохраните его сейчас.');
+          await loadDashboard(result.api_key);
+        }else{
+          const id=form.dataset.keyEdit;
+          await api.patch('/api/my-api/keys/'+encodeURIComponent(id),{
+            name:String(values.get('name')||'').trim(),
+            token_limit:String(values.get('token_limit')||'').trim()||null,
+            max_output_tokens:Number(values.get('max_output_tokens')||2048),
+            expires_days:Number(values.get('expires_days')||0)
+          });
+          toast('Параметры ключа сохранены');await loadDashboard();
+        }
+      }catch(error){toast('Не удалось сохранить: '+error.message,'error');if(submit)submit.disabled=false;}
+    };
+    const refresh=$('#api-workspace-refresh');if(refresh)refresh.onclick=()=>loadDashboard();
+    await loadDashboard();
   }
 
   async function openApiAdminSettings() {

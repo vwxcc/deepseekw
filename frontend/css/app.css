@@ -5177,3 +5177,92 @@ input[type="range"]::-moz-range-thumb {
   background: var(--bg-panel);
   box-shadow: 0 1px 5px rgba(30, 30, 30, .18);
 }
+
+
+/* Emoji callouts occupy the message column; short title+body are capped at two lines. */
+#messages .msg.assistant .content.md { display:block!important;width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;writing-mode:horizontal-tb!important;direction:ltr!important; }
+#messages .msg.assistant .content.md .aich-ui-callout {
+  display:grid!important;grid-template-columns:2rem minmax(0,1fr)!important;align-items:center!important;justify-items:stretch!important;
+  width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;flex:0 0 100%!important;align-self:stretch!important;
+  gap:10px!important;padding:9px 12px!important;overflow:hidden!important;writing-mode:horizontal-tb!important;text-orientation:mixed!important;direction:ltr!important;
+}
+#messages .msg.assistant .content.md .aich-ui-callout .aich-ui-emoji { grid-column:1!important;width:2rem!important;min-width:2rem!important;max-width:2rem!important;flex:0 0 2rem!important;font-size:1.55rem!important;line-height:1!important;white-space:nowrap!important; }
+#messages .msg.assistant .content.md .aich-ui-callout .aich-ui-copy { grid-column:2!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:center!important;gap:3px!important;width:100%!important;min-width:0!important;max-width:100%!important;padding:0!important;overflow:hidden!important;writing-mode:horizontal-tb!important;text-orientation:mixed!important;direction:ltr!important; }
+#messages .msg.assistant .content.md .aich-ui-callout .aich-ui-copy>strong,
+#messages .msg.assistant .content.md .aich-ui-callout .aich-ui-copy>div { display:block!important;grid-column:auto!important;width:100%!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important;writing-mode:horizontal-tb!important;text-orientation:mixed!important;direction:ltr!important;line-height:1.35!important; }
+#messages .msg.assistant .content.md .aich-ui-callout .aich-ui-copy>strong { font-size:14px!important;font-weight:700!important; }
+#messages .msg.assistant .content.md .aich-ui-callout .aich-ui-copy>div { font-size:13px!important;opacity:.84; }
+
+/* Wrap the toolbar on mobile so a Python "Запустить" button cannot be clipped out of view. */
+.code-block .code-head { gap:7px;min-width:0;flex-wrap:wrap; }
+.code-block .code-head>span:first-child { min-width:0;max-width:100%; }
+.code-acts { display:flex;flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;min-width:0;max-width:100%; }
+.code-acts>button { flex:0 0 auto; }
+.code-acts button.file-code-run { display:inline-flex!important;visibility:visible!important;opacity:1!important; }
+@media(max-width:620px){.code-block .code-head{align-items:flex-start}.code-acts{justify-content:flex-start;gap:4px}.code-acts button{min-height:30px;padding:5px 7px}.code-acts button.file-code-run{min-height:32px;}}
+
+#sidebar .sidebar-api-brain { display:flex;gap:6px; }
+#sidebar .sidebar-api-brain .chip-btn { flex:1 1 0;min-width:0;justify-content:center;padding-left:8px;padding-right:8px;white-space:nowrap; }
+#sidebar .sidebar-api-brain .chip-btn span { overflow:hidden;text-overflow:ellipsis; }
+
+#modal-root .admin-chats-modal { width:min(1100px,96vw);max-width:min(1100px,96vw); }
+#modal-root .admin-chat-filters { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px; }
+#modal-root .admin-chat-filters label { display:flex;flex-direction:column;gap:5px;min-width:0;font-size:12px;color:var(--fg-muted); }
+#modal-root .admin-chat-filters label span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+#modal-root .admin-chat-filters input,#modal-root .admin-chat-filters select { width:100%;min-width:0;box-sizing:border-box; }
+#modal-root .admin-chat-filters .admin-chat-q { grid-column:span 2; }
+#modal-root .admin-chat-results { max-height:min(52vh,600px);overflow-y:auto;overscroll-behavior:contain;margin-top:10px; }
+#modal-root .admin-chat-row { align-items:flex-start;gap:10px; }
+#modal-root .admin-chat-row .link-info { min-width:0; }
+#modal-root .admin-chat-row .link-info small { display:block;margin-top:3px;color:var(--fg-muted);overflow-wrap:anywhere; }
+#modal-root .admin-chat-row>button { flex:0 0 auto; }
+@media(max-width:720px){#modal-root .admin-chats-modal{width:96vw;max-width:96vw}#modal-root .admin-chat-filters{grid-template-columns:repeat(2,minmax(0,1fr))}#modal-root .admin-chat-filters .admin-chat-q{grid-column:1/-1}#modal-root .admin-chat-results{max-height:46vh;}}
+
+#modal-root .api-workspace-modal { width:min(1000px,96vw);max-width:min(1000px,96vw); }
+#modal-root .api-hero { display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--border-soft);border-radius:14px;background:var(--bg-panel); }
+#modal-root .api-hero-icon { flex:0 0 42px;width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--border-soft);border-radius:12px; }
+#modal-root .api-hero-icon .ic { width:22px;height:22px; }
+#modal-root .api-hero h4 { margin:0 0 4px;font-size:15px; }
+#modal-root .api-hero p { margin:0;font-size:13px;color:var(--fg-muted);line-height:1.5;overflow-wrap:anywhere; }
+#modal-root .api-settings-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px; }
+#modal-root .api-settings-grid label { display:flex;flex-direction:column;gap:5px;min-width:0;font-size:12px;color:var(--fg-muted); }
+#modal-root .api-settings-grid input,#modal-root .api-settings-grid select { width:100%;box-sizing:border-box;min-width:0; }
+#modal-root .api-settings-grid .api-enabled-setting { grid-column:span 3; }
+#modal-root .api-enabled-setting>span:last-child { display:flex;align-items:center;gap:8px;color:var(--fg); }
+#modal-root .api-enabled-setting input { width:auto; }
+#modal-root .api-form-actions { display:flex;flex-wrap:wrap;justify-content:flex-start;margin-top:10px; }
+#modal-root .api-endpoint-card { display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-soft);border-radius:10px;min-width:0; }
+#modal-root .api-endpoint-card span { color:var(--fg-muted);font-size:12px; }
+#modal-root .api-endpoint-card code { flex:1 1 auto;min-width:0;overflow-wrap:anywhere; }
+#modal-root .api-code { max-width:100%;box-sizing:border-box;overflow:auto;padding:12px;border-radius:10px;background:var(--bg-code);white-space:pre; }
+#modal-root .api-key-output { margin-top:10px;padding:10px;border-radius:10px;background:var(--bg-panel);overflow-wrap:anywhere; }
+#modal-root .api-key-warning { color:var(--danger);font-weight:600; }
+#modal-root .api-key-reveal { display:flex;flex-wrap:wrap;align-items:center;gap:8px; }
+#modal-root .api-key-reveal code { flex:1 1 280px;overflow-wrap:anywhere;user-select:all; }
+#modal-root .api-recent-list { max-height:260px;overflow:auto; }
+#modal-root .api-recent-row { display:grid;grid-template-columns:minmax(125px,.9fr) minmax(150px,1fr) auto;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12px; }
+#modal-root .api-recent-row>span:first-child small { display:block;color:var(--fg-muted);margin-top:2px; }
+#modal-root .api-recent-row b { white-space:nowrap; }
+@media(max-width:700px){#modal-root .api-settings-grid{grid-template-columns:minmax(0,1fr)}#modal-root .api-settings-grid .api-enabled-setting{grid-column:auto}#modal-root .api-recent-row{grid-template-columns:minmax(0,1fr);gap:3px}#modal-root .api-endpoint-card{align-items:flex-start;flex-wrap:wrap;}}
+
+#modal-root .second-brain-modal { width:min(1050px,96vw);max-width:min(1050px,96vw); }
+#modal-root .brain-graph-canvas { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px; }
+#modal-root .brain-node { border:1px solid var(--border-soft);background:var(--bg-panel);border-radius:12px;padding:10px;min-width:0; }
+#modal-root .brain-node-head { display:flex;align-items:center;justify-content:space-between;gap:7px;color:var(--fg-muted);font-size:11px; }
+#modal-root .brain-node-head button,#modal-root .brain-edge-route button { flex:0 0 auto;border:0;border-radius:7px;background:var(--bg-hover);color:var(--fg-muted);cursor:pointer;width:26px;height:26px; }
+#modal-root .brain-node h4 { margin:7px 0 4px;font-size:14px;overflow-wrap:anywhere; }
+#modal-root .brain-node p,#modal-root .brain-edge p { margin:0;color:var(--fg-muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere; }
+#modal-root .brain-edges { display:grid;gap:7px; }
+#modal-root .brain-edge { border:1px solid var(--border-soft);background:var(--bg-panel);border-radius:10px;padding:9px 11px; }
+#modal-root .brain-edge-route { display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:5px;font-size:12px; }
+#modal-root .brain-edge-route b { overflow-wrap:anywhere; }
+#modal-root .brain-edge-route>span { color:var(--accent); }
+#modal-root .brain-add-details { margin-top:12px;border:1px solid var(--border-soft);border-radius:12px;padding:10px; }
+#modal-root .brain-add-details summary { cursor:pointer;font-weight:600; }
+#modal-root .brain-add-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px; }
+#modal-root .brain-add-grid label,#modal-root .brain-add-details>label { display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--fg-muted);min-width:0;margin-top:9px; }
+#modal-root .brain-add-grid input,#modal-root .brain-add-grid textarea,#modal-root .brain-add-grid select,#modal-root .brain-add-details>label textarea { width:100%;min-width:0;box-sizing:border-box; }
+#modal-root .brain-add-grid .brain-wide,#modal-root .brain-wide { grid-column:1/-1; }
+#modal-root .brain-save-status { text-align:right;color:var(--fg-muted);font-size:12px;margin-top:10px; }
+@media(max-width:720px){#modal-root .brain-graph-canvas{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:460px){#modal-root .brain-graph-canvas,#modal-root .brain-add-grid{grid-template-columns:minmax(0,1fr)}#modal-root .brain-add-grid .brain-wide,#modal-root .brain-wide{grid-column:auto;}}

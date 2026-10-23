@@ -76,7 +76,7 @@ async def test_provider(
         "google_drive": ("search_files", {"query": "AI"}),
         "linear": ("search_issues", {"query": "AI"}),
         "huggingface": ("search_models", {"query": "bert"}),
-        "discord": ("list_guilds", {}),
+        "discord": ("check_bot", {}),
     }
     if provider not in defaults:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Неизвестный коннектор")

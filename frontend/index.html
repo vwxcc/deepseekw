@@ -541,7 +541,7 @@
         <div class="add-chat-action-group">
           <button type="button" class="add-chat-action" data-add-chat-action="library">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-folder-open"/></svg></span>
-            <span class="add-chat-action-copy"><strong>Добавить из файлов</strong><small>Выбрать с устройства</small></span>
+            <span class="add-chat-action-copy"><strong>Выбрать из файлов аккаунта</strong><small>Ранее загруженные и созданные файлы</small></span>
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
           <button type="button" class="add-chat-action" data-add-chat-action="model">
@@ -555,9 +555,7 @@
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
         </div>
-        <div id="add-chat-project-picker" class="add-chat-project-picker hidden">
-          <div id="add-chat-project-picker-content"></div>
-        </div>
+        
         <div class="add-chat-action-group add-chat-connectors-group">
           <button type="button" class="add-chat-action" data-add-chat-action="connectors">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-plug"/></svg></span>
@@ -568,6 +566,21 @@
       </div>
       <div id="add-chat-model-view" class="add-chat-subview hidden">
         <div id="model-picker" class="model-picker hidden" role="listbox" aria-label="Выбор модели"></div>
+      </div>
+      <div id="add-chat-library-view" class="add-chat-subview hidden">
+        <div class="add-chat-library-toolbar">
+          <input id="add-chat-library-search" type="search" placeholder="Найти файл аккаунта…" aria-label="Поиск файлов аккаунта" autocomplete="off" />
+        </div>
+        <div id="add-chat-library-list" class="add-chat-library-list" aria-live="polite"></div>
+        <div class="add-chat-library-actions">
+          <button type="button" id="add-chat-library-cancel">Назад</button>
+          <button type="button" id="add-chat-library-attach" class="primary">Добавить выбранные (<span id="add-chat-library-selected-count">0</span>)</button>
+        </div>
+      </div>
+      <div id="add-chat-project-view" class="add-chat-subview hidden">
+        <div id="add-chat-project-picker" class="add-chat-project-picker">
+          <div id="add-chat-project-picker-content"></div>
+        </div>
       </div>
       <div id="add-chat-connectors-view" class="add-chat-subview hidden">
         <div class="connectors-empty">
@@ -585,6 +598,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=102&rev=114"></script>
+  <script src="/assets/js/app.js?v=102&rev=115"></script>
 </body>
 </html>

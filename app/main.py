@@ -19,6 +19,8 @@ from .config import settings
 from .database import init_db
 from .routers import (
     admin,
+    api_v1,
+    brain,
     auth,
     avatars,
     chats,
@@ -118,6 +120,8 @@ app.include_router(messages.router)
 app.include_router(files.router)
 app.include_router(models.router)
 app.include_router(admin.router)
+app.include_router(api_v1.router)
+app.include_router(brain.router)
 app.include_router(ready_answers_router.router)
 app.include_router(public.router)
 app.include_router(memory.router)

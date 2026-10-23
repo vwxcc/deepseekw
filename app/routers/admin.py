@@ -1,16 +1,19 @@
 """Admin API: Model Sets and their model entries."""
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select, text
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import get_current_admin, get_db, require_csrf
-from ..models import Chat, File, Message, ModelSet, ModelSetEntry, ReadableTextModelConfig, RouteType, StatusModelConfig, UsageEvent, User
+from ..models import ApiGatewayConfig, Chat, File, Message, ModelSet, ModelSetEntry, ReadableTextModelConfig, RouteType, StatusModelConfig, UsageEvent, User
 from ..schemas import (
     AdminChatOut,
     AdminStatsOut,
@@ -22,6 +25,7 @@ from ..schemas import (
     ModelSetUpdate,
     ShareOut,
     AuxiliaryModelConfigUpdate,
+    ApiGatewayConfigUpdate,
 )
 from ..services.model_sets_view import entry_out, model_set_out
 
@@ -305,6 +309,126 @@ async def delete_entry(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+# ---------- OpenAI-compatible API gateway administration ----------
+
+async def _get_api_gateway_config(db: AsyncSession) -> ApiGatewayConfig:
+    config = await db.get(ApiGatewayConfig, 1)
+    if config is None:
+        config = ApiGatewayConfig(id=1)
+        db.add(config)
+        await db.commit()
+        await db.refresh(config)
+    return config
+
+
+async def _api_gateway_payload(db: AsyncSession, config: ApiGatewayConfig) -> dict:
+    model_set = None
+    if (config.model_set_id or "").strip():
+        model_set = (await db.execute(
+            select(ModelSet).options(selectinload(ModelSet.entries)).where(ModelSet.id == config.model_set_id)
+        )).scalar_one_or_none()
+    if model_set is None:
+        model_set = (await db.execute(
+            select(ModelSet).options(selectinload(ModelSet.entries)).where(
+                ModelSet.is_active.is_(True), ModelSet.is_router.is_(False),
+                ModelSet.route_type == RouteType.MAIN, ModelSet.is_default.is_(True)
+            ).limit(1)
+        )).scalars().first()
+    if model_set is None:
+        model_set = (await db.execute(
+            select(ModelSet).options(selectinload(ModelSet.entries)).where(
+                ModelSet.is_active.is_(True), ModelSet.is_router.is_(False),
+                ModelSet.route_type == RouteType.MAIN
+            ).order_by(ModelSet.name).limit(1)
+        )).scalars().first()
+    entries = [e for e in (model_set.entries if model_set else []) if e.is_active and e.base_url.strip() and e.model.strip()]
+    primary = entries[0] if entries else None
+    pin = config.price_in if config.price_in is not None else (float(primary.price_in or 0) if primary else 0.0)
+    pout = config.price_out if config.price_out is not None else (float(primary.price_out or 0) if primary else 0.0)
+    pcache = config.price_cache if config.price_cache is not None else (float(primary.price_cache or 0) if primary else 0.0)
+    totals = (await db.execute(select(
+        func.count(UsageEvent.id),
+        func.coalesce(func.sum(UsageEvent.tokens_in), 0),
+        func.coalesce(func.sum(UsageEvent.tokens_out), 0),
+        func.coalesce(func.sum(UsageEvent.tokens_cached), 0),
+        func.coalesce(func.sum(UsageEvent.cost_usd), 0.0),
+    ).where(UsageEvent.action == "api_v1"))).one()
+    recent = (await db.execute(
+        select(UsageEvent).where(UsageEvent.action == "api_v1")
+        .order_by(UsageEvent.created_at.desc()).limit(40)
+    )).scalars().all()
+    return {
+        "enabled": bool(config.enabled),
+        "model_set_id": model_set.id if model_set else (config.model_set_id or ""),
+        "model_set_name": model_set.name if model_set else "",
+        "has_api_key": bool(config.api_key_hash),
+        "api_key_prefix": config.api_key_prefix or "",
+        "endpoint": "/v1",
+        "public_model": "ai-ch",
+        "provider_model": primary.model if primary else "",
+        "prices": {"input": float(pin or 0), "output": float(pout or 0), "cache_read": float(pcache or 0),
+                   "unit": "USD per 1M tokens",
+                   "custom": {"input": config.price_in is not None, "output": config.price_out is not None, "cache_read": config.price_cache is not None}},
+        "models": [{"id": e.id, "model": e.model, "provider": e.provider,
+                    "price_in": float(e.price_in or 0), "price_out": float(e.price_out or 0),
+                    "price_cache": float(e.price_cache or 0), "max_tokens": int(e.max_tokens or 0)} for e in entries],
+        "usage": {"calls": int(totals[0] or 0), "tokens_in": int(totals[1] or 0),
+                  "tokens_out": int(totals[2] or 0), "tokens_cached": int(totals[3] or 0),
+                  "cost_usd": round(float(totals[4] or 0.0), 8)},
+        "recent": [{"created_at": e.created_at.isoformat() if e.created_at else "",
+                    "model": e.model or "", "tokens_in": int(e.tokens_in or 0),
+                    "tokens_out": int(e.tokens_out or 0), "tokens_cached": int(e.tokens_cached or 0),
+                    "cost_usd": round(float(e.cost_usd or 0), 8)} for e in recent],
+    }
+
+
+@router.get("/api-gateway")
+async def get_api_gateway_config(db: AsyncSession = Depends(get_db)):
+    return await _api_gateway_payload(db, await _get_api_gateway_config(db))
+
+
+@router.patch("/api-gateway")
+async def patch_api_gateway_config(data: ApiGatewayConfigUpdate, _csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)):
+    config = await _get_api_gateway_config(db)
+    if "model_set_id" in data.model_fields_set:
+        next_id = (data.model_set_id or "").strip()
+        if next_id:
+            selected = (await db.execute(
+                select(ModelSet).options(selectinload(ModelSet.entries)).where(ModelSet.id == next_id)
+            )).scalar_one_or_none()
+            usable = bool(selected and selected.is_active and not selected.is_router and selected.route_type == RouteType.MAIN and
+                          any(e.is_active and e.base_url.strip() and e.model.strip() for e in (selected.entries or [])))
+            if not usable:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Выберите активный MAIN-кластер с настроенной моделью")
+            config.model_set_id = selected.id
+        elif data.enabled is True or config.enabled:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя очистить модель, пока API включён")
+        else:
+            config.model_set_id = ""
+    if data.enabled is not None:
+        if data.enabled and not config.model_set_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Сначала выберите модель для API")
+        config.enabled = data.enabled
+    for field in ("price_in", "price_out", "price_cache"):
+        if field in data.model_fields_set:
+            setattr(config, field, getattr(data, field))
+    await db.commit()
+    await db.refresh(config)
+    return await _api_gateway_payload(db, config)
+
+
+@router.post("/api-gateway/key")
+async def regenerate_api_gateway_key(_csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)):
+    config = await _get_api_gateway_config(db)
+    key = "aich_" + secrets.token_urlsafe(36)
+    config.api_key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    config.api_key_prefix = key[:13]
+    await db.commit()
+    return {"api_key": key, **(await _api_gateway_payload(db, config))}
+
+
+
+
 # ---------- statistics ----------
 
 @router.get("/stats", response_model=AdminStatsOut)
@@ -368,58 +492,91 @@ async def stats(db: AsyncSession = Depends(get_db)):
     )
 
 
+def _chat_filter_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный формат даты фильтра") from exc
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
 @router.get("/chats", response_model=list[AdminChatOut])
-async def admin_chats(limit: int = 100, db: AsyncSession = Depends(get_db)):
-    limit = max(1, min(limit, 500))
-    result = await db.execute(
-        select(Chat)
-        .where(Chat.deleted_at.is_(None))
-        .order_by(Chat.updated_at.desc())
-        .limit(limit)
-    )
-    out: list[AdminChatOut] = []
-    for c in result.scalars().all():
-        owner = await db.get(User, c.user_id)
-        cnt = await db.scalar(
-            select(func.count()).select_from(Message).where(Message.chat_id == c.id)
-        )
-        tin = await db.scalar(
-            select(func.coalesce(func.sum(Message.tokens_in), 0)).where(
-                Message.chat_id == c.id
-            )
-        )
-        tout = await db.scalar(
-            select(func.coalesce(func.sum(Message.tokens_out), 0)).where(
-                Message.chat_id == c.id
-            )
-        )
-        up = await db.scalar(
-            select(func.count())
-            .select_from(Message)
-            .where(Message.chat_id == c.id, Message.rating > 0)
-        )
-        down = await db.scalar(
-            select(func.count())
-            .select_from(Message)
-            .where(Message.chat_id == c.id, Message.rating < 0)
-        )
-        out.append(
-            AdminChatOut(
-                id=c.id,
-                title=c.title,
-                owner=(owner.name or owner.email) if owner else "",
-                messages=cnt or 0,
-                tokens_in=int(tin or 0),
-                tokens_out=int(tout or 0),
-                rating_up=up or 0,
-                rating_down=down or 0,
-                is_public=c.is_public,
-                share_token=c.share_token,
-                created_at=c.created_at,
-                updated_at=c.updated_at,
-            )
-        )
-    return out
+async def admin_chats(
+    limit: int = 10000, offset: int = 0, q: str = "", owner_q: str = "", model_q: str = "",
+    sort_by: str = "updated_at", order: str = "desc",
+    created_from: str | None = None, created_to: str | None = None,
+    updated_from: str | None = None, updated_to: str | None = None,
+    min_messages: int | None = None, max_messages: int | None = None,
+    min_tokens: int | None = None, max_tokens: int | None = None,
+    rating: str = "any", is_public: bool | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Search all non-deleted chats, apply filters, then sort and paginate."""
+    limit = max(1, min(int(limit or 10000), 10000))
+    offset = max(0, int(offset or 0))
+    q, owner_q, model_q = (q or "").strip()[:300], (owner_q or "").strip()[:200], (model_q or "").strip()[:200]
+    totals = select(
+        Message.chat_id.label("chat_id"),
+        func.count(Message.id).label("messages"),
+        func.coalesce(func.sum(Message.tokens_in), 0).label("tokens_in"),
+        func.coalesce(func.sum(Message.tokens_out), 0).label("tokens_out"),
+        func.coalesce(func.sum(Message.tokens_cached), 0).label("tokens_cached"),
+        func.coalesce(func.sum(case((Message.rating > 0, 1), else_=0)), 0).label("rating_up"),
+        func.coalesce(func.sum(case((Message.rating < 0, 1), else_=0)), 0).label("rating_down"),
+    ).group_by(Message.chat_id).subquery()
+    query = (select(Chat, User, totals.c.messages, totals.c.tokens_in, totals.c.tokens_out,
+                    totals.c.tokens_cached, totals.c.rating_up, totals.c.rating_down)
+             .outerjoin(User, User.id == Chat.user_id)
+             .outerjoin(totals, totals.c.chat_id == Chat.id)
+             .where(Chat.deleted_at.is_(None)))
+    if q:
+        pattern = "%" + q.replace("%", r"\%").replace("_", r"\_") + "%"
+        message_match = select(Message.id).where(Message.chat_id == Chat.id, Message.content.ilike(pattern)).exists()
+        model_match = select(ModelSet.id).where(ModelSet.name.ilike(pattern))
+        query = query.where(or_(Chat.title.ilike(pattern), Chat.id.ilike(pattern),
+                                User.name.ilike(pattern), User.email.ilike(pattern),
+                                message_match, Chat.model_set_id.in_(model_match)))
+    if owner_q:
+        pattern = "%" + owner_q.replace("%", r"\%").replace("_", r"\_") + "%"
+        query = query.where(or_(User.name.ilike(pattern), User.email.ilike(pattern)))
+    if model_q:
+        pattern = "%" + model_q.replace("%", r"\%").replace("_", r"\_") + "%"
+        model_match = select(ModelSet.id).where(ModelSet.name.ilike(pattern))
+        query = query.where(or_(Chat.model_set_id.in_(model_match),
+            select(Message.id).where(Message.chat_id == Chat.id, Message.model_set_id.in_(model_match)).exists()))
+    c0,c1,u0,u1 = map(_chat_filter_time,(created_from,created_to,updated_from,updated_to))
+    if c0: query=query.where(Chat.created_at >= c0)
+    if c1: query=query.where(Chat.created_at <= c1)
+    if u0: query=query.where(Chat.updated_at >= u0)
+    if u1: query=query.where(Chat.updated_at <= u1)
+    if is_public is not None: query=query.where(Chat.is_public.is_(is_public))
+    result: list[AdminChatOut] = []
+    for row in (await db.execute(query)).all():
+        chat, owner, n, tin, tout, cached, up, down = row
+        n,tin,tout,cached,up,down = (int(x or 0) for x in (n,tin,tout,cached,up,down))
+        total_tokens = tin+tout
+        if min_messages is not None and n < max(0,min_messages): continue
+        if max_messages is not None and n > max(0,max_messages): continue
+        if min_tokens is not None and total_tokens < max(0,min_tokens): continue
+        if max_tokens is not None and total_tokens > max(0,max_tokens): continue
+        if rating == "up" and up == 0: continue
+        if rating == "down" and down == 0: continue
+        result.append(AdminChatOut(
+            id=chat.id, title=chat.title or "Новый чат",
+            owner=((owner.name or "").strip() or owner.email) if owner else "",
+            messages=n, tokens_in=tin, tokens_out=tout, tokens_cached=cached,
+            rating_up=up, rating_down=down, is_public=bool(chat.is_public),
+            share_token=chat.share_token, created_at=chat.created_at, updated_at=chat.updated_at))
+    allowed={"title","owner","messages","tokens_in","tokens_out","tokens_cached","rating_up","rating_down","created_at","updated_at"}
+    sort_by = sort_by if sort_by in allowed else "updated_at"
+    result.sort(key=lambda item: (getattr(item,sort_by).casefold() if isinstance(getattr(item,sort_by),str)
+                                  else (getattr(item,sort_by) if getattr(item,sort_by) is not None else "")),
+                reverse=(order or "desc").lower() != "asc")
+    return result[offset:offset+limit]
 
 
 @router.post("/chats/{chat_id}/share", response_model=ShareOut)

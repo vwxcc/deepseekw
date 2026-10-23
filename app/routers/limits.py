@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_current_user, get_db, require_csrf
-from ..models import AudioGeneration, Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, UsageEvent, User, utcnow
+from ..models import AudioGeneration, Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, TokenTransaction, UsageEvent, User, utcnow
 from ..services.limits import (
     LABELS,
     PLANS,
@@ -219,6 +219,7 @@ async def users_overview(
                 "name": user.name or "",
                 "plan": effective_plan,
                 "is_admin": bool(user.is_admin),
+                "token_balance": max(0, int(user.token_balance or 0)),
                 "avatar": user.avatar or 0,
                 "requests": int(requests or 0),
                 "tokens_in": int(tin or 0) + int(aux_tin or 0),
@@ -242,6 +243,35 @@ async def users_overview(
             }
         )
     return out
+
+
+@router.post("/user/{user_id}/tokens")
+async def top_up_user_tokens(
+    user_id: str,
+    data: dict,
+    admin: User = Depends(get_current_admin),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Credit a user's prepaid API token wallet. This route is administrator-only."""
+    try:
+        amount = int((data or {}).get("amount"))
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Количество токенов должно быть целым числом")
+    if amount < 1 or amount > 1_000_000_000:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пополнение должно быть от 1 до 1 000 000 000 токенов")
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+    reason = str((data or {}).get("reason") or "Пополнение администратором").strip()[:240]
+    user.token_balance = max(0, int(user.token_balance or 0)) + amount
+    db.add(TokenTransaction(
+        user_id=user.id, admin_id=admin.id, amount=amount,
+        balance_after=user.token_balance, action="admin_grant",
+        reason=reason or "Пополнение администратором",
+    ))
+    await db.commit()
+    return {"ok": True, "user_id": user.id, "token_balance": int(user.token_balance)}
 
 
 @router.post("/{plan}/reset")

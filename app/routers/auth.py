@@ -179,6 +179,7 @@ async def register(
         name=data.name.strip(),
         password_hash=hash_password(data.password),
         avatar=random.randrange(AVATAR_COUNT),
+        token_balance=30_000,
     )
     db.add(user)
     await db.commit()

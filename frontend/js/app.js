@@ -6505,12 +6505,15 @@
         '<section class="personal-api-section"><div class="personal-api-section-head"><div><span class="personal-api-overline">04 · БАЛАНС</span><h2>История баланса</h2><p>Начисления, пополнения и списания API по вашему аккаунту.</p></div></div>'+transactionMarkup+'</section>'+
         '<section class="personal-api-connection"><span class="personal-api-overline">04 · ПОДКЛЮЧЕНИЕ</span><h2>Готово к интеграции</h2><p>Совместимый интерфейс Chat Completions. Запросы списывают токены с баланса и ограничиваются настройками ключа.</p><div class="personal-api-endpoint"><div><span>Base URL</span><code>'+escapeHtml(endpoint)+'</code></div><button class="chip-btn" type="button" data-copy-base-url>'+icon('copy')+' Копировать</button></div><div class="personal-api-protocol-grid"><article><span>01</span><b>Личная авторизация</b><p>Используйте созданный в этой странице ключ в заголовке Bearer.</p></article><article><span>02</span><b>Контроль токенов</b><p>Баланс и лимит отдельного ключа проверяются до обращения к модели.</p></article><article><span>03</span><b>Потоковый ответ</b><p>Поддерживается обычный JSON-ответ и потоковая передача SSE.</p></article></div>'+'<details class="personal-api-example"><summary>Показать пример запроса</summary><pre><code>curl '+escapeHtml(endpoint)+'/chat/completions -H &quot;Authorization: Bearer YOUR_API_KEY&quot; -H &quot;Content-Type: application/json&quot; -d &quot;{&#92;&quot;model&#92;&quot;:&#92;&quot;ai-ch&#92;&quot;,&#92;&quot;messages&#92;&quot;:[{&#92;&quot;role&#92;&quot;:&#92;&quot;user&#92;&quot;,&#92;&quot;content&#92;&quot;:&#92;&quot;Привет&#92;&quot;}],&#92;&quot;max_tokens&#92;&quot;:512}&quot;</code></pre></details></section></div>';
     }
+    let pendingCreatedSecret='';
     async function loadDashboard(secret){
+      if(secret)pendingCreatedSecret=secret;
       try{
         const results=await Promise.all([api.get('/api/my-api/overview'),api.get('/v1/info')]);
-        renderDashboard(results[0],results[1],secret||'');
+        renderDashboard(results[0],results[1],pendingCreatedSecret);
       }catch(error){
-        body.innerHTML='<section class="personal-api-error"><span>'+icon('alert')+'</span><h2>Не удалось загрузить API</h2><p>'+escapeHtml(error.message||'Ошибка загрузки')+'</p><button type="button" class="api-primary-action" data-api-refresh>Повторить</button></section>';
+        const secretMarkup=pendingCreatedSecret?'<div class="personal-api-secret" id="personal-api-created-secret"><b>'+icon('shield-check')+' Сохраните созданный API-ключ</b><p>Секрет показывается только после создания. Скопируйте его до закрытия страницы.</p><div><code>'+escapeHtml(pendingCreatedSecret)+'</code><button type="button" class="api-primary-action" data-copy-created-key>'+icon('copy')+' Копировать</button></div></div>':'';
+        body.innerHTML='<section class="personal-api-error"><span>'+icon('alert')+'</span><h2>Не удалось загрузить API</h2><p>'+escapeHtml(error.message||'Ошибка загрузки')+'</p><button type="button" class="api-primary-action" data-api-refresh>Повторить</button>'+secretMarkup+'</section>';
       }
     }
     body.onclick=async event=>{

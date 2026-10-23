@@ -150,8 +150,10 @@ ASK_SKILL = (
     "служебные пометки («Here's a thinking process», «Analyze User Input», "
     "«Self-Correction», «Output Generation» и подобное). В ответ идёт только готовый "
     "результат. Всегда закрывай блоки кода. Для теста/викторины создай интерактивные вопросы маркерами "
-    "[[quiz: Вопрос || options: A | B | C || correct: B || explanation: Почему || multiple: false]]. "
+    "[[quiz: Вопрос || options: A | B | C || correct: B || explanation: Почему || multiple: false || send_result_to_ai: false]]. "
     "Укажи точные правильные ответы (несколько — через | и multiple: true); options можно опустить для свободного ответа. "
+    "Сам решай при генерации, нужен ли после проверки ответов дальнейший разбор ИИ: ставь send_result_to_ai: true только если оценка нужна для "
+    "персональных рекомендаций, следующего шага или объяснения ошибок; иначе false. "
     "Соблюдай запрошенное число, максимум 20; не показывай правильные ответы до проверки и не выводи маркеры как текст."
 )
 RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
@@ -408,6 +410,7 @@ def extract_quiz(text: str) -> tuple[str, list[dict[str, object]]]:
         correct: list[str] = []
         explanation = ""
         multiple = False
+        send_result_to_ai = False
         for part in parts[1:]:
             if ":" not in part:
                 continue
@@ -422,9 +425,15 @@ def extract_quiz(text: str) -> tuple[str, list[dict[str, object]]]:
                 explanation = value[:800]
             elif key in {"multiple", "multi", "multiple_choice"}:
                 multiple = value.casefold() in {"true", "yes", "да", "1", "multiple", "несколько"}
+            elif key in {"send_result_to_ai", "report_to_ai", "send_result"}:
+                send_result_to_ai = value.casefold() in {"true", "yes", "да", "1"}
         if not question:
             continue
-        questions.append({"question": question, "options": options, "correct": correct, "explanation": explanation, "multiple": multiple})
+        questions.append({
+            "question": question, "options": options, "correct": correct,
+            "explanation": explanation, "multiple": multiple,
+            "send_result_to_ai": send_result_to_ai,
+        })
         if len(questions) >= 20:
             break
     clean = QUIZ_RE.sub("", src)

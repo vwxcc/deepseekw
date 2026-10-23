@@ -5876,7 +5876,7 @@
       const date = created && Number.isFinite(created.getTime()) ? created.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
       const isImage = kind === 'image';
       const image = isImage
-        ? '<img class="workspace-file-image" src="/api/files/' + id + '/download" alt="' + escapeHtml(name) +
+        ? '<img class="workspace-file-image" src="/api/files/' + id + '/download?inline=1" alt="' + escapeHtml(name) +
           '" loading="lazy" decoding="async" />'
         : '<span class="workspace-file-glyph">' + icon(kind === 'slide' ? 'file-text' : kind === 'table' ? 'table' : kind === 'code' ? 'code' : kind === 'doc' ? 'file-text' : 'file') + '</span>';
       return '<article class="workspace-file-card">' +

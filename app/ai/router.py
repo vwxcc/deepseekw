@@ -51,6 +51,7 @@ from . import prompts
 from .prompts import (
     extract_ask,
     extract_memories,
+    extract_quiz,
     extract_agent_blocks,
     extract_run_blocks,
     strip_agent_blocks,
@@ -2058,6 +2059,7 @@ class AIRouter:
 
                     # pull [[memory: ...]] commands out of the visible answer
                     answer, memories = extract_memories(answer)
+                    answer, quiz = extract_quiz(answer)
                     answer, ask = extract_ask(answer)
                     answer = strip_cot(answer)
                     if not ask and len(answer) <= 500:
@@ -2101,12 +2103,17 @@ class AIRouter:
                     if (
                         cache_key
                         and not ask
+                        and not quiz
                         and not memories
                         and not all_runs
                         and not sources
                         and not SCHEDULE_MARKER_RE.search(full)
                     ):
                         _store_cached_response(cache_key, answer)
+                    if quiz:
+                        await job.output.put(
+                            ("quiz", json.dumps({"questions": quiz}, ensure_ascii=False))
+                        )
                     if ask:
                         await job.output.put(
                             ("ask", json.dumps({"questions": ask}, ensure_ascii=False))

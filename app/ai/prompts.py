@@ -7,12 +7,15 @@ from pathlib import Path
 MEMORY_RE = re.compile(r"\[\[\s*memory\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 PREF_RE = re.compile(r"\[\[\s*pref\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 ASK_RE = re.compile(r"\[\[\s*ask\s*:\s*(.+?)\s*\]\]", re.S | re.I)
+QUIZ_RE = re.compile(r"\[\[\s*quiz\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 
 _SKILL_ROOT = Path(__file__).resolve().parent / "skills"
 _SKILL_TRIGGERS: dict[str, tuple[str, ...]] = {
     "drawing": (
         "рисуй", "нарисуй", "нарисовать", "рисунок", "иллюстрац", "постер",
         "визуализируй", "svg-схема", "инфограф", "illustration", "draw ",
+        "создай картин", "создай изображ", "сгенерируй картин", "сгенерируй изображ",
+        "нарисуй картин", "обложка", "wallpaper", "create an image", "generate an image",
     ),
     "blueprints": (
         "чертеж", "чертёж", "blueprint", "технический эскиз", "техническая схема",
@@ -68,7 +71,12 @@ def skills_for(user_text: str | None) -> str:
                 chunks.append(f"## Специализированный навык: {name}\n{content}")
 
     builtins: list[tuple[str, str]] = []
-    is_file = "file-generation" in matched
+    is_image_creation = bool(re.search(
+        r"(?:созда\w*|сгенерируй|нарисуй|нарисовать|изобрази|подготовь|сделай|create|generate|draw|paint|make)"
+        r".{0,70}(?:картин\w*|изображен\w*|иллюстрац\w*|постер\w*|обложк\w*|wallpaper|picture|image|illustration|poster|cover)",
+        text,
+    ))
+    is_file = "file-generation" in matched or is_image_creation
     is_code = bool(re.search(
         r"\b(python|javascript|typescript|java|rust|sql|bash|код|программир|скрипт|алгоритм|"
         r"вычисли|посчитай|рассчитай|запусти|отлад|исправи код)\w*\b", text
@@ -90,6 +98,8 @@ def skills_for(user_text: str | None) -> str:
         builtins.append(("Исполнение и проверка", RUN_SKILL))
     if is_drawing:
         builtins.append(("SVG и чертежи", DRAW_SKILL))
+    if is_image_creation:
+        builtins.append(("Создание художественного изображения", IMAGE_CREATION_SKILL))
     if is_html:
         builtins.extend([("Веб-страницы", HTML_SKILL), ("Оформление", STYLE_SKILL)])
     seen: set[str] = set()
@@ -134,7 +144,14 @@ ASK_SKILL = (
     "НИКОГДА не показывай пользователю свои рассуждения, план анализа, черновики и "
     "служебные пометки («Here's a thinking process», «Analyze User Input», "
     "«Self-Correction», «Output Generation» и подобное). В ответ идёт только готовый "
-    "результат. Всегда закрывай блоки кода — незакрытый ``` ломает отображение."
+    "результат. Всегда закрывай блоки кода — незакрытый ``` ломает отображение. "
+    "Если пользователь прямо просит тест, викторину или контрольные вопросы, не выдавай вопросы только списком Markdown: "
+    "создавай интерактивный тест, добавляя в конец ответа по одной служебной строке на вопрос: "
+    "[[quiz: Вопрос? || options: Вариант A | Вариант B | Вариант C || correct: Вариант B || explanation: Краткое объяснение || multiple: false]]. "
+    "В correct указывай точный текст правильного варианта; для нескольких правильных вариантов используй multiple: true "
+    "и перечисли все верные варианты через |. Для вопроса со свободным ответом можно не указывать options, но укажи correct и explanation. "
+    "Добавляй не более 20 вопросов, соблюдай запрошенное количество, не печатай маркеры теста обычным текстом и не показывай правильные ответы "
+    "в видимом тексте до блока результата."
 )
 RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
 FILEPLAN_RE = re.compile(r"```fileplan[^\n]*\n([\s\S]*?)```", re.I)
@@ -201,6 +218,44 @@ def strip_cot(text: str) -> str:
     out = COT_BLOCK_RE.sub("", out)
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
     return out
+
+
+def extract_quiz(text: str) -> tuple[str, list[dict[str, object]]]:
+    """Extract structured quiz questions from [[quiz: ...]] markers."""
+    src = text or ""
+    questions: list[dict[str, object]] = []
+    for match in QUIZ_RE.finditer(src):
+        raw = " ".join((match.group(1) or "").split()).strip()
+        if not raw:
+            continue
+        parts = re.split(r"\s*\|\|\s*", raw)
+        question = parts[0].strip()[:500]
+        options: list[str] = []
+        correct: list[str] = []
+        explanation = ""
+        multiple = False
+        for part in parts[1:]:
+            if ":" not in part:
+                continue
+            key, value = part.split(":", 1)
+            key = key.strip().casefold()
+            value = re.sub(r"\s+", " ", value).strip()
+            if key == "options":
+                options = [item.strip()[:180] for item in re.split(r"[|;]", value) if item.strip()][:12]
+            elif key in {"correct", "answer", "answers"}:
+                correct = [item.strip()[:180] for item in re.split(r"[|;]", value) if item.strip()][:12]
+            elif key in {"explanation", "explain"}:
+                explanation = value[:800]
+            elif key in {"multiple", "multi", "multiple_choice"}:
+                multiple = value.casefold() in {"true", "yes", "да", "1", "multiple", "несколько"}
+        if not question:
+            continue
+        questions.append({"question": question, "options": options, "correct": correct, "explanation": explanation, "multiple": multiple})
+        if len(questions) >= 20:
+            break
+    clean = QUIZ_RE.sub("", src)
+    clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
+    return clean, questions
 
 
 def extract_ask(text: str) -> tuple[str, list[dict[str, object]]]:
@@ -308,7 +363,7 @@ def extract_memories(text: str) -> tuple[str, list[tuple[str, str]]]:
 DRAW_SKILL = (
     "\n\nСкилл графики и чертежей (SVG). Если для понимания полезны схема, чертёж, " 
     "план помещения, блок-схема, последовательность, инженерный эскиз или объясняющий рисунок, " 
-    "построй SVG-подобное описание через JSON в блоке кода с языком draw. По умолчанию это " 
+    "построй SVG-подобное описание через JSON в блоке кода с языком draw. Для технических схем используй " 
     "минималистичный монохромный line-art: только контуры и линии оттенка #77756e, текст #66645d, " 
     "толщина 1–1.8 px, прозрачный фон, никакой заливки, цветных акцентов, теней, градиентов, рамки " 
     "вокруг всей схемы или декоративного фона. Ясные метки, аккуратные выравнивания и размерные " 
@@ -329,6 +384,18 @@ DRAW_SKILL = (
     "fill='none' фигурам, указывай серый stroke и прозрачный background. Координаты — пиксели "
     "внутри width/height. Чертёж должен быть содержательным, с ровными линиями и читаемыми "
     "размерами; не добавляй лишних фигур. Для числовых графиков используй run + matplotlib."
+)
+
+IMAGE_CREATION_SKILL = (
+    "Создание художественного изображения — это именно готовая картинка, а не чертёж, блок-схема или описание. "
+    "Если пользователь просит картинку, иллюстрацию, обложку, постер или обои, создай настоящий PNG-файл, "
+    "если не запрошен другой формат. Сделай композицию максимально детализированной и законченной: "
+    "ясный главный объект, передний/средний/задний планы, тематический фон, цельная палитра, выразительный свет, "
+    "объёмные тени, фактуры, мелкие содержательные детали и аккуратные поля; текст добавляй только если он уместен. "
+    "Не заменяй картинку монохромной схемой, редкими линиями, набором простых фигур, эмодзи или пустым шаблоном. "
+    "Сначала создай итоговый визуал, затем проверь размеры, композицию, контраст, обрезание и читаемость. "
+    "Для PNG используй доступный путь через Python/Pillow или поддерживаемые графические инструменты; "
+    "не выдумывай, что использован отдельный генератор изображений, если его нет."
 )
 
 COUNCIL_PERSONAS: dict[str, tuple[str, str]] = {

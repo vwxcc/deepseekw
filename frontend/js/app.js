@@ -2339,6 +2339,81 @@
     renderActivityPopup(n);
   }
 
+  function askCardHtml(message) {
+    if (!message || !message.ask) return '';
+    const items = (Array.isArray(message.ask) ? message.ask : [{ question: String(message.ask), options: [] }])
+      .slice(0,6).map(item => item && typeof item === 'object' ? item : { question:String(item || ''), options:[] })
+      .filter(item => String(item.question || '').trim());
+    if (!items.length) return '';
+    const saved = Array.isArray(message.askAnswers) ? message.askAnswers : [];
+    if (message.askAnswered && message.askCollapsed) {
+      const summary = saved.filter(item=>item&&item.value).map(item=>String(item.question||'')+': '+String(item.value||'')).join(' · ').slice(0,360);
+      return '<section class="ask-card ask-card-collapsed"><div class="ask-q">'+icon('question')+'<span>Ответ отправлен</span></div>'+
+        (summary?'<div class="ask-collapsed-summary">'+escapeHtml(summary)+'</div>':'')+
+        '<button type="button" class="chip-btn ask-expand">'+icon('chevron-down')+'Развернуть вопросы</button></section>';
+    }
+    const questionHtml = items.map((item,index)=>{
+      const question=String(item.question||'').slice(0,500);
+      const options=Array.isArray(item.options)?item.options.map(value=>String(value||'').trim()).filter(Boolean).slice(0,8):[];
+      const savedValue=String((saved[index]||{}).value||'');
+      return '<section class="ask-question" data-ask-index="'+index+'"><div class="ask-question-label">'+
+        (items.length>1?(index+1)+'. ':'')+escapeHtml(question)+'</div>'+
+        (options.length?'<div class="ask-options" role="group" aria-label="'+escapeHtml(question)+'">'+options.map(option=>
+          '<button type="button" class="ask-option'+(savedValue===option?' is-selected':'')+'" data-ask-option="'+escapeHtml(option)+
+          '" aria-pressed="'+String(savedValue===option)+'">'+escapeHtml(option)+'</button>').join('')+'</div>':'')+
+        '<input type="text" class="ask-input" value="'+escapeHtml(savedValue)+'" placeholder="'+
+        (options.length?'Или напишите свой вариант…':'Введите свой ответ…')+'" aria-label="'+escapeHtml(question)+'" /></section>';
+    }).join('');
+    return '<section class="ask-card"><div class="ask-q">'+icon('question')+'<span>'+
+      (items.length>1?'Пару уточнений':'Уточним один момент')+'</span></div>'+
+      '<div class="ask-intro">Ответьте, чтобы AI CH точнее выполнил запрос.</div>'+questionHtml+
+      '<div class="ask-row"><button type="button" class="chip-btn ask-send">'+icon('arrow-up')+'Ответить</button></div></section>';
+  }
+
+  function quizCardHtml(message) {
+    if (!message || message.status !== 'completed' || !Array.isArray(message.quiz) || !message.quiz.length) return '';
+    const items=message.quiz.slice(0,20), submitted=!!message.quizSubmitted, collapsed=!!message.quizCollapsed;
+    const score=message.quizScore||{correct:0,total:items.length};
+    const heading=submitted?'Тест завершён · '+Number(score.correct||0)+'/'+Number(score.total||items.length):'Проверьте себя';
+    const toggle=collapsed?'expand':'collapse';
+    const header='<header class="quiz-head"><div class="quiz-heading-copy"><strong>'+escapeHtml(heading)+'</strong><span>'+
+      items.length+(items.length===1?' вопрос':items.length<5?' вопроса':' вопросов')+'</span></div>'+
+      '<button type="button" class="quiz-toggle" data-quiz-toggle="'+toggle+'" aria-expanded="'+String(!collapsed)+'">'+
+      icon(collapsed?'chevron-down':'chevron-up')+'<span>'+(collapsed?'Развернуть тест':'Свернуть')+'</span></button></header>';
+    if (collapsed) return '<section class="quiz-card is-collapsed">'+header+'<p class="quiz-collapsed-note">'+
+      (submitted?'Ответы проверены. Результат можно открыть в любой момент.':'Тест свёрнут, выбранные варианты сохранены.')+'</p></section>';
+    const chosen=Array.isArray(message.quizAnswers)?message.quizAnswers:[], customAnswers=Array.isArray(message.quizCustom)?message.quizCustom:[];
+    const questionHtml=items.map((item,index)=>{
+      const q=item&&typeof item==='object'?item:{question:String(item||''),options:[]};
+      const question=String(q.question||'').slice(0,500), options=Array.isArray(q.options)?q.options.map(String).slice(0,12):[];
+      const selected=Array.isArray(chosen[index])?chosen[index]:[], correct=Array.isArray(q.correct)?q.correct:(q.correct?[q.correct]:[]);
+      const result=Array.isArray(message.quizResults)?message.quizResults[index]:null;
+      const resultClass=submitted&&result?(result.correct?' is-correct':' is-incorrect'):'';
+      const norm=value=>String(value||'').trim().toLocaleLowerCase('ru-RU').replace(/ё/g,'е').replace(/\s+/g,' ');
+      const optionsHtml=options.length?'<div class="quiz-options" role="group" aria-label="'+escapeHtml(question)+'">'+options.map(option=>{
+        const picked=selected.includes(option), isCorrect=submitted&&correct.some(value=>norm(value)===norm(option)), isWrong=submitted&&picked&&!isCorrect;
+        return '<button type="button" class="quiz-option'+(picked?' is-selected':'')+(isCorrect?' is-answer-correct':'')+(isWrong?' is-answer-wrong':'')+
+          '" data-quiz-option="'+escapeHtml(option)+'" data-quiz-index="'+index+'" data-quiz-multiple="'+String(!!q.multiple)+
+          '" aria-pressed="'+String(picked)+'"'+(submitted?' disabled':'')+'><span class="quiz-choice-mark" aria-hidden="true"></span>'+
+          '<span class="quiz-choice-label">'+escapeHtml(option)+'</span></button>';
+      }).join('')+'</div>'+(q.multiple&&!submitted?'<div class="quiz-hint">Можно выбрать несколько вариантов.</div>':''):'';
+      const feedback=submitted&&result?'<div class="quiz-feedback '+(result.correct?'is-correct':'is-incorrect')+'"><strong>'+
+        (result.correct?'Верно':'Не совсем')+'</strong>'+(!result.correct&&correct.length?'<span>Правильный ответ: '+escapeHtml(correct.join(', '))+'</span>':'')+
+        (q.explanation?'<p>'+escapeHtml(String(q.explanation).slice(0,500))+'</p>':'')+'</div>':'';
+      return '<section class="quiz-question'+resultClass+'" data-quiz-question="'+index+'"><div class="quiz-question-title"><span>'+
+        (index+1)+'</span><strong>'+escapeHtml(question)+'</strong></div>'+optionsHtml+
+        '<label class="quiz-custom-wrap"><span>'+(options.length?'Или свой ответ':'Ваш ответ')+'</span><input type="text" class="quiz-custom-answer" data-quiz-custom="'+index+
+        '" value="'+escapeHtml(String(customAnswers[index]||''))+'" placeholder="Введите свой вариант…" aria-label="Свой ответ на вопрос '+(index+1)+'"'+
+        (submitted?' disabled':'')+' /></label>'+feedback+'</section>';
+    }).join('');
+    const summary=submitted?'<div class="quiz-result-summary">'+icon('check-circle')+'<span>Правильных ответов: <strong>'+
+      Number(score.correct||0)+' из '+Number(score.total||items.length)+'</strong></span></div>':'';
+    const footer=submitted?(message.quizResultSent?'<span class="quiz-sent-note">Результат отправлен в чат</span>':
+      '<button type="button" class="chip-btn quiz-send-result" data-quiz-send-result>'+icon('arrow-up')+'Отправить результат в чат</button>'):
+      '<button type="button" class="chip-btn quiz-submit" data-quiz-submit>'+icon('check-circle')+'Проверить ответы</button>';
+    return '<section class="quiz-card">'+header+'<div class="quiz-body">'+questionHtml+'</div>'+summary+'<footer class="quiz-footer">'+footer+'</footer></section>';
+  }
+
   function msgHtml(entry, isLast) {
     const n = entry.node;
     const isUser = n.role === 'user';
@@ -2420,28 +2495,8 @@
         '<span>Запомнил: ' + escapeHtml(n.memories.join('; ').slice(0, 140)) + '</span></div>';
     }
 
-    let askCard = '';
-    if (!isUser && n.ask) {
-      const askItems = (Array.isArray(n.ask) ? n.ask : [{ question: String(n.ask), options: [] }])
-        .slice(0, 6).map(item => item && typeof item === 'object' ? item : { question: String(item || ''), options: [] })
-        .filter(item => String(item.question || '').trim());
-      if (askItems.length) {
-        const questionHtml = askItems.map((item, index) => {
-          const question = String(item.question || '').slice(0, 500);
-          const options = Array.isArray(item.options) ? item.options.map(value => String(value || '').trim()).filter(Boolean).slice(0, 8) : [];
-          return '<section class="ask-question" data-ask-index="' + index + '">' +
-            (askItems.length > 1 ? '<b class="ask-question-label">' + escapeHtml(question) + '</b>' : '<span class="ask-question-label">' + escapeHtml(question) + '</span>') +
-            (options.length ? '<div class="ask-options" role="group" aria-label="' + escapeHtml(question) + '">' +
-              options.map(option => '<button type="button" class="ask-option" data-ask-option="' + escapeHtml(option) +
-                '" aria-pressed="false">' + escapeHtml(option) + '</button>').join('') + '</div>' : '') +
-            '<input type="text" class="ask-input" placeholder="' + (options.length ? 'Или свой ответ…' : 'Ваш ответ…') +
-            '" aria-label="' + escapeHtml(question) + '" /></section>';
-        }).join('');
-        askCard = '<div class="ask-card"><div class="ask-q">' + icon('sparkle') +
-          '<span>' + (askItems.length > 1 ? 'Ответьте на вопросы' : 'Уточнение') + '</span></div>' +
-          questionHtml + '<div class="ask-row"><button class="chip-btn ask-send">' + icon('arrow-up') + 'Ответить</button></div></div>';
-      }
-    }
+    const askCard = askCardHtml(n);
+    const quizCard = quizCardHtml(n);
 
     const hasSpeechActions = !isUser && !state.readonly &&
       n.status === 'completed' && String(n.content || '').trim();
@@ -2450,7 +2505,7 @@
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'AI CH') + '</div>' +
-      inner + askCard + actionsRow + memLine + '</div>';
+      inner + askCard + quizCard + actionsRow + memLine + '</div>';
   }
 
   function audioQuotaSnapshot() {
@@ -3964,7 +4019,7 @@
       if (label) label.textContent = expanded ? 'Свернуть' : 'Развернуть';
     }));
     $$( '.ask-card', scope).forEach(card => {
-      const questions = $('.ask-question', card);
+      const questions = $$('.ask-question', card);
       const send = () => {
         const answers = questions.map(question => {
           const label = $('.ask-question-label', question), input = $('.ask-input', question);
@@ -3973,7 +4028,12 @@
         if (!answers.length) return;
         if (answers.some(answer => !answer.value)) { toast(answers.length > 1 ? 'Ответьте на каждый вопрос или выберите вариант.' : 'Выберите вариант или введите ответ.', 'error'); return; }
         $('#input').value = answers.map(answer => answer.question + ': ' + answer.value).join('\n');
-        autoGrow(); sendCurrent();
+        const messageEl = card.closest('.msg');
+        const messageNode = messageEl ? findNode(state.tree, messageEl.dataset.mid) : null;
+        if (messageNode) { messageNode.askAnswers = answers; messageNode.askAnswered = true; messageNode.askCollapsed = true; }
+        autoGrow();
+        if (messageNode && state.currentChatId) renderMessageInPlace(messageNode.id);
+        sendCurrent();
       };
       $$( '.ask-option', card).forEach(option => option.addEventListener('click', () => {
         const question = option.closest('.ask-question');
@@ -3996,6 +4056,75 @@
       if (btn) btn.addEventListener('click', send);
     });
 
+    $$('.ask-expand', scope).forEach(button => button.addEventListener('click', () => {
+      const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
+      if (!message) return; message.askCollapsed=false; renderMessageInPlace(message.id);
+    }));
+    $$('.quiz-card [data-quiz-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+      const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
+      if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id);
+    }));
+    $$('.quiz-option[data-quiz-option]', scope).forEach(button => button.addEventListener('click', () => {
+      const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null, question=button.closest('.quiz-question');
+      if (!message||!question||message.quizSubmitted) return;
+      const index=Number(button.dataset.quizIndex); if(!Number.isInteger(index)||index<0)return;
+      const value=String(button.dataset.quizOption||''), multi=button.dataset.quizMultiple==='true';
+      const current=Array.isArray(message.quizAnswers[index])?message.quizAnswers[index].slice():[];
+      let next;
+      if(multi)next=current.includes(value)?current.filter(item=>item!==value):current.concat(value);
+      else{
+        next=[value]; message.quizCustom=Array.isArray(message.quizCustom)?message.quizCustom:[];
+        message.quizCustom[index]='';
+        const custom=$('.quiz-custom-answer[data-quiz-custom="'+index+'"]',question);if(custom)custom.value='';
+      }
+      message.quizAnswers=Array.isArray(message.quizAnswers)?message.quizAnswers:[];
+      message.quizAnswers[index]=next;
+      $$('[data-quiz-option]',question).forEach(option=>{
+        const picked=next.includes(String(option.dataset.quizOption||''));
+        option.classList.toggle('is-selected',picked);option.setAttribute('aria-pressed',String(picked));
+      });
+    }));
+    $$('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
+      const el=input.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null,index=Number(input.dataset.quizCustom);
+      if(!message||!Number.isInteger(index)||index<0||message.quizSubmitted)return;
+      message.quizCustom=Array.isArray(message.quizCustom)?message.quizCustom:[];
+      message.quizCustom[index]=input.value;
+      if(input.value.trim()){
+        message.quizAnswers=Array.isArray(message.quizAnswers)?message.quizAnswers:[];
+        message.quizAnswers[index]=[];
+        const question=input.closest('.quiz-question');
+        if(question)$$('[data-quiz-option]',question).forEach(option=>{option.classList.remove('is-selected');option.setAttribute('aria-pressed','false');});
+      }
+    }));
+    $$('.quiz-submit', scope).forEach(button => button.addEventListener('click', () => {
+      const el=button.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null;
+      if(!message||!Array.isArray(message.quiz)||message.quizSubmitted)return;
+      const items=message.quiz.slice(0,20),answers=Array.isArray(message.quizAnswers)?message.quizAnswers:[],custom=Array.isArray(message.quizCustom)?message.quizCustom:[];
+      const norm=value=>String(value||'').normalize('NFKC').trim().toLocaleLowerCase('ru-RU').replace(/ё/g,'е').replace(/[.,;:!?()[\]{}'"]/g,'').replace(/\s+/g,' ');
+      const responses=[];
+      const results=items.map((item,index)=>{
+        const q=item&&typeof item==='object'?item:{question:String(item||'')};
+        const free=String(custom[index]||'').trim(),picked=Array.isArray(answers[index])?answers[index].filter(Boolean):[];
+        const values=free?[free]:picked,expected=Array.isArray(q.correct)?q.correct:(q.correct?[q.correct]:[]);
+        const exp=expected.map(norm).filter(Boolean),actual=values.map(norm).filter(Boolean);
+        const correct=exp.length>0&&(q.multiple?actual.length===exp.length&&exp.every(value=>actual.includes(value)):actual.length===1&&exp.includes(actual[0]));
+        responses.push({question:String(q.question||''),values,expected});return{correct,values,expected};
+      });
+      const score=results.filter(item=>item.correct).length;
+      message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=true;message.quizResponses=responses;message.quizResultSent=false;
+      renderMessageInPlace(message.id);toast('Результат: '+score+' из '+items.length);
+    }));
+    $$('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
+      const el=button.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null;
+      if(!message||!Array.isArray(message.quiz)||!message.quizSubmitted||message.quizResultSent)return;
+      const rows=Array.isArray(message.quizResponses)?message.quizResponses:[],score=message.quizScore||{correct:0,total:message.quiz.length};
+      const report=['Проверь мой результат теста: '+score.correct+' из '+score.total+'.'].concat(
+        rows.map((row,i)=>(i+1)+'. '+row.question+'\nМой ответ: '+(row.values.length?row.values.join(', '):'нет ответа')+
+        '\nПравильный ответ: '+(row.expected.length?row.expected.join(', '):'не задан')+'\nРезультат: '+(message.quizResults[i]&&message.quizResults[i].correct?'верно':'неверно'))
+      ).join('\n\n');
+      const input=$('#input');if(!input)return;
+      message.quizResultSent=true;message.quizCollapsed=true;input.value=report;autoGrow();renderMessageInPlace(message.id);sendCurrent();
+    }));
     $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
     $$('.think-head', scope).forEach(h => h.addEventListener('click', () => {
@@ -4686,6 +4815,9 @@
           if (n) n.ask = Array.isArray(data.questions) ? data.questions : (data.question ? [{ question: data.question, options: [] }] : null);
           renderMessageInPlace(state.activeAssistantId);
           bindStreamRefs();
+        } else if (ev === 'quiz') {
+          const n=(state.currentChatId===streamContext.chatId?findNode(state.tree,streamContext.assistantId):null)||streamContext.node;
+          if(n){n.quiz=Array.isArray(data.questions)?data.questions:[];n.quizCollapsed=false;n.quizSubmitted=false;n.quizAnswers=[];n.quizCustom=[];}
         } else if (ev === 'done') {
           stopPreviewStatuses();
           const n = (state.currentChatId === streamContext.chatId
@@ -4893,7 +5025,7 @@
     const draft = input.value;
     const content = draft.trim();
     if (!content || state.streaming || state.sending || state.chatLoading) return;
-    const asksForArtifact = /(?:файл|документ|презентац|таблиц|excel|powerpoint|word|xlsx?|pptx?|docx?|pdf|svg|png|csv|json|markdown|\bmd\b|\btxt\b|отч[её]т|инфограф|диаграмм|изображени|presentation|spreadsheet|report)/i.test(content) &&
+    const asksForArtifact = /(?:файл|документ|презентац|таблиц|excel|powerpoint|word|xlsx?|pptx?|docx?|pdf|svg|png|csv|json|markdown|\bmd\b|\btxt\b|отч[её]т|инфограф|диаграмм|изображени|картинк|иллюстрац|обложк|постер|presentation|spreadsheet|report)/i.test(content) &&
       /(?:созда|сгенер|подготов|сделай|сформир|состав|собери|пришли|выгруз|экспорт|запиши|сохрани|конверт|преобраз|нарисуй|построй|оформи|генер|разработ|нужн|хочу|create|generate|prepare|make|build|export|save|convert|draw|render)/i.test(content);
     // File creation is serialized: let the server try first when enabled, then use the device only if needed.
     // Target "both" would launch the browser runner on tool_start and create duplicate files.
@@ -5248,17 +5380,15 @@
       const button = event.target.closest('[data-add-chat-action]');
       if (!button) return;
       const action = button.dataset.addChatAction;
-      if (action === 'files' || action === 'photos') {
+      if (action === 'files' || action === 'photos' || action === 'library') {
         workspaceUploadIntent = false;
         const input = $('#file-input');
-        if (!input) return;
+        if (!input) { toast('Выбор файлов недоступен в этом окне.', 'error'); return; }
         if (action === 'photos') input.setAttribute('accept', 'image/*');
         else input.removeAttribute('accept');
+        // All file entry points use the native picker and attach uploaded files to this message.
         // Keep the "+" sheet open while the native picker is shown and after it returns.
         input.click();
-      } else if (action === 'library') {
-        closeAddToChatSheet();
-        openFilesWorkspace();
       } else if (action === 'model') {
         setAddChatView('model');
       } else if (action === 'project') {
@@ -6815,6 +6945,7 @@
         lastAt: event.timeStamp,
         startedOpen,
         tracking: false,
+        axisLocked: null,
         progress: startedOpen ? 1 : 0,
       };
     }
@@ -6844,12 +6975,18 @@
       const dx = event.clientX - active.startX;
       const dy = event.clientY - active.startY;
       if (!active.tracking) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
-        // Give vertical scroll priority; only claim a clearly horizontal gesture.
-        if (Math.abs(dx) < Math.abs(dy) * 1.2) {
+        const absX = Math.abs(dx), absY = Math.abs(dy);
+        // Ignore diagonal finger jitter before locking the axis.
+        if (Math.max(absX, absY) < 13) return;
+        const clearVertical = absY >= 22 && absY > absX * 1.5;
+        const clearHorizontal = absX >= 13 && absX > absY * 1.12;
+        if (clearVertical) {
+          active.axisLocked = 'vertical';
           gesture = null;
           return;
         }
+        if (!clearHorizontal) return;
+        active.axisLocked = 'horizontal';
         if ((active.startedOpen && dx >= 0) || (!active.startedOpen && dx <= 0)) {
           gesture = null;
           return;
@@ -6859,7 +6996,8 @@
         overlay.classList.add('is-dragging', 'show');
         try { surface.setPointerCapture(event.pointerId); } catch (_) { /* Pointer capture is best-effort. */ }
       }
-      if (!active.tracking) return;
+      if (active.axisLocked !== 'horizontal' || !active.tracking) return;
+      // After horizontal locking, vertical drift cannot hand the gesture back to page scrolling.
       if (event.cancelable) event.preventDefault();
       const width = Math.max(1, sidebar.getBoundingClientRect().width);
       renderDrag(active.startedOpen ? 1 + dx / width : dx / width);

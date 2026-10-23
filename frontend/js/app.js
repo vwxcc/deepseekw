@@ -4176,7 +4176,7 @@
         sendQuizResultToAI(message);
       }
     }));
-    $('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
+    $$('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null;
       if(!message||!Array.isArray(message.quiz)||!message.quizSubmitted||message.quizResultSent)return;
       sendQuizResultToAI(message);

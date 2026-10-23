@@ -4070,13 +4070,13 @@
       const index=Number(button.dataset.quizIndex); if(!Number.isInteger(index)||index<0)return;
       const value=String(button.dataset.quizOption||''), multi=button.dataset.quizMultiple==='true';
       const current=Array.isArray(message.quizAnswers[index])?message.quizAnswers[index].slice():[];
+      // Selecting any option clears a custom answer too, otherwise grading would ignore this selection.
+      message.quizCustom=Array.isArray(message.quizCustom)?message.quizCustom:[];
+      message.quizCustom[index]='';
+      const custom=$('.quiz-custom-answer[data-quiz-custom="'+index+'"]',question);if(custom)custom.value='';
       let next;
       if(multi)next=current.includes(value)?current.filter(item=>item!==value):current.concat(value);
-      else{
-        next=[value]; message.quizCustom=Array.isArray(message.quizCustom)?message.quizCustom:[];
-        message.quizCustom[index]='';
-        const custom=$('.quiz-custom-answer[data-quiz-custom="'+index+'"]',question);if(custom)custom.value='';
-      }
+      else next=[value];
       message.quizAnswers=Array.isArray(message.quizAnswers)?message.quizAnswers:[];
       message.quizAnswers[index]=next;
       $$('[data-quiz-option]',question).forEach(option=>{

@@ -741,10 +741,11 @@ async def send_message(
                 "укажите AUDIO_TRANSCRIPTION_BASE_URL и AUDIO_TRANSCRIPTION_API_KEY"
             )
             try:
-                payload = Path(rec.storage_path).read_bytes()
-                if not payload:
+                audio_path = Path(rec.storage_path)
+                audio_size = audio_path.stat().st_size
+                if audio_size <= 0:
                     failure_reason = "аудиофайл пуст"
-                elif len(payload) > 25 * 1024 * 1024:
+                elif audio_size > 25 * 1024 * 1024:
                     failure_reason = "аудиофайл превышает лимит 25 МБ для распознавания"
                 elif not transcription_targets:
                     failure_reason = (
@@ -755,7 +756,7 @@ async def send_message(
                     for base_url, api_key, timeout in transcription_targets:
                         try:
                             transcript = await transcribe_audio(
-                                data=payload,
+                                file_path=audio_path,
                                 filename=Path(rec.original_name or "voice-message.webm").name,
                                 mime_type=str(rec.mime_type or "application/octet-stream"),
                                 base_url=base_url,

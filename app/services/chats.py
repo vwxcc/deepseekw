@@ -33,11 +33,24 @@ def _json_list(raw: str | None) -> list:
     return val if isinstance(val, list) else []
 
 
+def _json_object(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def message_out(
     m: Message,
     suggestions: list[str] | None = None,
     attachments: list[AttachmentOut] | None = None,
 ) -> MessageOut:
+    ui_state = _json_object(getattr(m, "ui_state", None))
+    ask = ui_state.get("ask", [])
+    quiz = ui_state.get("quiz", [])
     return MessageOut(
         id=m.id,
         chat_id=m.chat_id,
@@ -55,6 +68,8 @@ def message_out(
         attachments=attachments or [],
         sources=_json_list(m.sources),
         tool_runs=_json_list(m.tool_runs),
+        ask=ask if isinstance(ask, list) else [],
+        quiz=quiz if isinstance(quiz, list) else [],
         execution_target=getattr(m, "execution_target", "site") or "site",
     )
 

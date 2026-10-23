@@ -1,8 +1,12 @@
 """File library endpoints: upload, list, download, delete."""
 from __future__ import annotations
 
+import io
 import uuid
+import warnings
 from pathlib import Path
+
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from fastapi import (
     APIRouter,
@@ -175,6 +179,95 @@ async def download_file(
     return FileResponse(p, filename=rec.original_name, media_type=media)
 
 
+@router.get("/{file_id}/thumbnail")
+async def file_thumbnail(
+    file_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a small, cached WebP thumbnail for a user's raster image."""
+    rec = await db.get(File, file_id)
+    if rec is None or rec.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл не найден")
+
+    original = Path(rec.storage_path)
+    if not original.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл отсутствует на диске")
+
+    name = str(rec.original_name or "")
+    media = str(rec.mime_type or "").lower()
+    if (
+        str(rec.kind or "").lower() != "image"
+        or original.suffix.lower() == ".svg"
+        or name.lower().endswith(".svg")
+        or media == "image/svg+xml"
+    ):
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            "Миниатюры доступны только для растровых изображений",
+        )
+
+    thumbnail = original.with_name(original.name + ".thumb.webp")
+    try:
+        if (
+            thumbnail.is_file()
+            and thumbnail.stat().st_mtime >= original.stat().st_mtime
+            and thumbnail.stat().st_size > 0
+        ):
+            payload = thumbnail.read_bytes()
+        else:
+            output = io.BytesIO()
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(original) as opened:
+                    opened.seek(0)
+                    width, height = opened.size
+                    if width <= 0 or height <= 0 or width * height > 40_000_000:
+                        raise HTTPException(
+                            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            "Изображение слишком большое для создания миниатюры",
+                        )
+                    image = ImageOps.exif_transpose(opened)
+                    image.thumbnail((256, 192), Image.Resampling.LANCZOS)
+                    has_alpha = "A" in image.getbands() or "transparency" in image.info
+                    if image.mode not in ("RGB", "RGBA"):
+                        image = image.convert("RGBA" if has_alpha else "RGB")
+                    image.save(output, format="WEBP", quality=72, method=4)
+            payload = output.getvalue()
+            temporary = thumbnail.with_name(thumbnail.name + "." + uuid.uuid4().hex + ".tmp")
+            try:
+                temporary.write_bytes(payload)
+                temporary.replace(thumbnail)
+            except OSError:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+    except HTTPException:
+        raise
+    except (
+        UnidentifiedImageError,
+        Image.DecompressionBombWarning,
+        Image.DecompressionBombError,
+        OSError,
+        ValueError,
+    ):
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            "Не удалось создать миниатюру для этого изображения",
+        ) from None
+
+    return Response(
+        content=payload,
+        media_type="image/webp",
+        headers={
+            "Cache-Control": "private, max-age=86400",
+            "Vary": "Cookie",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_file(
     file_id: str,
@@ -185,10 +278,12 @@ async def delete_file(
     rec = await db.get(File, file_id)
     if rec is None or rec.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл не найден")
-    try:
-        Path(rec.storage_path).unlink(missing_ok=True)
-    except Exception:
-        pass
+    source = Path(rec.storage_path)
+    for path in (source, source.with_name(source.name + ".thumb.webp")):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
     await db.delete(rec)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -15,7 +15,7 @@ from ..database import SessionLocal
 from ..deps import COOKIE_NAME, get_current_user, get_db
 from ..models import (
     AudioGeneration, Chat, File, Memory, Message, Project, ReadableTextGeneration,
-    ScheduledItem, Session, UsageEvent, User, UserSkill,
+    ScheduledItem, Session, TokenTransaction, UsageEvent, User, UserSkill,
 )
 from ..schemas import AuthOut, LoginIn, RegisterIn, UserOut
 from ..security import (
@@ -179,8 +179,14 @@ async def register(
         name=data.name.strip(),
         password_hash=hash_password(data.password),
         avatar=random.randrange(AVATAR_COUNT),
+        token_balance=30_000,
     )
     db.add(user)
+    await db.flush()
+    db.add(TokenTransaction(
+        user_id=user.id, amount=30_000, balance_after=30_000,
+        action="signup_grant", reason="Стартовый баланс после регистрации",
+    ))
     await db.commit()
     await db.refresh(user)
 

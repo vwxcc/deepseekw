@@ -66,6 +66,7 @@ async def record(
     tokens_in: int = 0,
     tokens_out: int = 0,
     tokens_cached: int = 0,
+    api_key_id: str | None = None,
 ) -> float:
     """Append one billed call to the journal. Returns its cost in dollars."""
     tin = max(0, int(tokens_in or 0))
@@ -79,6 +80,7 @@ async def record(
             user_id=user_id,
             chat_id=chat_id,
             message_id=message_id,
+            api_key_id=api_key_id,
             model_set_id=getattr(entry, "model_set_id", None),
             entry_id=getattr(entry, "id", None),
             model=getattr(entry, "model", "") or "",

@@ -67,6 +67,8 @@ class User(Base):
     usage_reset_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Prepaid API token wallet. A registration receives 30,000 tokens.
+    token_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     chats: Mapped[list["Chat"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
@@ -322,6 +324,41 @@ class ApiGatewayConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class UserApiKey(Base):
+    """User-owned API credential; only a hash is stored, never the secret."""
+    __tablename__ = "user_api_keys"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), default="Мой API-ключ", nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(24), default="", nullable=False)
+    token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_reserved: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_output_tokens: Mapped[int] = mapped_column(Integer, default=2048, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TokenTransaction(Base):
+    """Audit trail for user token grants and API consumption."""
+    __tablename__ = "token_transactions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    admin_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    api_key_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str] = mapped_column(String(240), default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class BrainSystemConfig(Base):
     """Admin-managed wiring of AI CH components shown as the system's Second Brain."""
     __tablename__ = "brain_system_config"
@@ -359,6 +396,7 @@ class UsageEvent(Base):
     )
     chat_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    api_key_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     model_set_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     entry_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     model: Mapped[str] = mapped_column(String(255), default="")

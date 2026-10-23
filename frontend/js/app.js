@@ -6006,13 +6006,21 @@
     const btn = $('#context-btn');
     if (!btn) return;
     const label = $('#usage-pct');
-    const bar = $('#usage-bar');
-    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    const ring = $('#usage-bar');
+    const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
     if (label) label.textContent = p + '%';
-    if (bar) bar.style.width = p + '%';
+    if (ring) {
+      if (ring.tagName && ring.tagName.toLowerCase() === 'circle') {
+        ring.style.strokeDasharray = '100';
+        ring.style.strokeDashoffset = String(100 - p);
+      } else {
+        ring.style.width = p + '%';
+      }
+    }
     btn.classList.toggle('warn', p >= 80);
     btn.classList.toggle('full', p >= 100);
     btn.title = note;
+    btn.setAttribute('aria-label', 'Использование лимитов: ' + p + '%. ' + String(note || 'Нажмите, чтобы открыть лимиты.'));
   }
 
   async function loadUsage() {

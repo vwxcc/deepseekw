@@ -582,7 +582,7 @@ a { color: var(--accent); }
    ============================================================ */
 .modal-back {
   position: fixed; inset: 0; background: rgba(40, 34, 24, .34);
-  display: grid; place-items: center; z-index: 1800; padding: 20px;
+  display: grid; place-items: center; z-index: 12000; padding: 20px;
   animation: fadeIn 0.19s ease;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -4435,4 +4435,229 @@ html, body, #main-screen, #chat-area { max-width: 100%; overflow-x: hidden; }
   #messages .msg .aich-ui-copy { font-size: 12px; }
   #messages .msg .aich-ui-copy strong { font-size: 12px; }
   #messages .msg .aich-ui-action > span:nth-child(2) { font-size: 12px; }
+}
+
+
+/* Bottom-sheet dialogs use the same visual language as the plus panel. */
+.modal-back-sheet {
+  align-items: end;
+  justify-items: center;
+  padding: 8px 12px 0;
+}
+.modal-back-sheet .modal {
+  display: flex;
+  flex-direction: column;
+  width: min(780px, calc(100vw - 24px));
+  max-width: 780px;
+  max-height: min(82dvh, 720px);
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--border-soft);
+  border-bottom: 0;
+  border-radius: 30px 30px 0 0;
+  background: var(--bg-panel);
+}
+.modal-sheet-handle-wrap {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  height: 24px;
+  margin: 0 -4px;
+}
+.modal-sheet-handle {
+  display: block;
+  width: 48px;
+  height: 5px;
+  border-radius: 999px;
+  background: #bfc0c2;
+}
+.modal-sheet-title-row {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 0 14px;
+}
+.modal-sheet-title-row h3 {
+  min-width: 0;
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+  font-weight: 650;
+}
+.modal-sheet-close {
+  display: grid;
+  flex: 0 0 38px;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 50%;
+  background: var(--bg-panel);
+  color: var(--fg);
+}
+.modal-sheet-close .ic { width: 17px; height: 17px; }
+.modal-back-sheet .modal-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.modal-back-sheet .modal > .row {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.modal-back-sheet .modal input,
+.modal-back-sheet .modal textarea,
+.modal-back-sheet .modal select {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* Assistant emoji cards: one stable flex row, with a real text column. */
+#messages .msg .aich-ui-callout {
+  display: flex !important;
+  flex-flow: row nowrap;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: 72px;
+  overflow: hidden;
+}
+#messages .msg .aich-ui-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 1.2em;
+  width: 1.2em;
+  min-width: 1.2em;
+  max-width: 1.2em;
+}
+#messages .msg .aich-ui-copy {
+  display: block !important;
+  flex: 1 1 0% !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100%;
+  max-height: 2.75em;
+  overflow: hidden;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  line-height: 1.35;
+}
+#messages .msg .aich-ui-copy strong {
+  display: block !important;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 0 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.35;
+}
+#messages .msg .aich-ui-copy > div {
+  display: block !important;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 1.35em;
+  overflow: hidden;
+  white-space: normal !important;
+  text-overflow: clip;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  line-height: 1.35;
+}
+@media (max-width: 620px) {
+  .modal-back-sheet { padding-inline: 8px; }
+  .modal-back-sheet .modal { width: calc(100vw - 16px); padding-inline: 13px; }
+  #messages .msg .aich-ui-callout { max-height: 68px; }
+}
+
+/* Voice-note recording controls in the composer. */
+.voice-recorder-ui {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 0 2px;
+}
+.composer-row.is-recording #input,
+.composer-row.is-recording #attach-btn { display: none !important; }
+.voice-control {
+  display: grid;
+  flex: 0 0 34px;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.voice-control .ic { width: 17px; height: 17px; }
+.voice-cancel { background: transparent; color: var(--fg-muted); }
+.voice-wave-wrap {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+.voice-waveform {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  height: 32px;
+  overflow: hidden;
+}
+.voice-waveform span {
+  display: block;
+  flex: 0 0 3px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--fg-muted);
+  opacity: .72;
+  transform-origin: center;
+  animation: voiceWave .65s ease-in-out infinite alternate;
+}
+.voice-waveform span:nth-child(3n) { animation-delay: -.43s; }
+.voice-waveform span:nth-child(3n + 1) { animation-delay: -.2s; }
+.voice-waveform span:nth-child(4n) { animation-duration: .85s; }
+.voice-waveform.is-paused span { animation-play-state: paused; transform: scaleY(.45); }
+@keyframes voiceWave {
+  from { transform: scaleY(.35); }
+  to { transform: scaleY(1.45); }
+}
+.voice-recording-time {
+  flex: 0 0 auto;
+  min-width: 42px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-waveform span { animation: none; transform: scaleY(.7); }
 }

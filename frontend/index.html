@@ -32,6 +32,7 @@
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8v14.4L19 12z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM15 5h4v14h-4z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6"/></symbol>
     <symbol id="i-back-10" viewBox="0 0 24 24"><path d="M4 7v5h5"/><path d="M4.5 12a8 8 0 1 1 1.9 5.2"/><text x="12" y="15" font-size="6.6" fill="currentColor" stroke="none" text-anchor="middle">10</text></symbol>
     <symbol id="i-forward-10" viewBox="0 0 24 24"><path d="M20 7v5h-5"/><path d="M19.5 12a8 8 0 1 0-1.9 5.2"/><text x="12" y="15" font-size="6.6" fill="currentColor" stroke="none" text-anchor="middle">10</text></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4.5V10h-5.5"/></symbol>
@@ -328,8 +329,16 @@
           <div class="composer-row">
             <button class="icon-btn round" id="attach-btn" title="Добавить фото или файл" aria-label="Добавить фото или файл"><svg class="ic"><use href="#i-plus"/></svg></button>
             <textarea id="input" rows="1" placeholder="Введите запрос…"></textarea>
-            <button class="send-btn" id="send-btn" title="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
+            <div id="voice-recorder-ui" class="voice-recorder-ui hidden" aria-label="Запись голосового сообщения">
+              <button type="button" class="voice-control voice-cancel" id="voice-cancel-btn" title="Отменить запись" aria-label="Отменить запись"><svg class="ic"><use href="#i-x"/></svg></button>
+              <div class="voice-wave-wrap">
+                <div class="voice-waveform" id="voice-waveform" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="voice-recording-time" id="voice-recording-time">00:00</span>
+              </div>
+              <button type="button" class="voice-control" id="voice-pause-btn" title="Пауза" aria-label="Поставить запись на паузу"><svg class="ic"><use href="#i-pause"/></svg></button>
+            </div>
             <button class="send-btn stop hidden" id="stop-btn" title="Остановить"><svg class="ic"><use href="#i-stop"/></svg></button>
+            <button class="send-btn" id="send-btn" title="Отправить" aria-label="Отправить"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
           </div>
         </div>
       </div>

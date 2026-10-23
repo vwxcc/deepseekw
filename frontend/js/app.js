@@ -4421,6 +4421,7 @@
     $('#send-btn').classList.toggle('hidden', on);
     $('#stop-btn').classList.toggle('hidden', !on);
     $('#input').disabled = false;
+    updateComposerActionButton();
   }
 
   async function streamRequest(path, body, opts) {
@@ -5583,8 +5584,265 @@
     renderAddChatActionLabels();
   }
 
+  let activeVoiceRecorder = null;
+  let activeVoiceStream = null;
+  let activeVoiceChunks = [];
+  let activeVoiceRecognition = null;
+  let activeVoiceTimer = null;
+  let voicePaused = false;
+  let voiceElapsedBeforePause = 0;
+  let voiceSegmentStartedAt = 0;
+  let voiceTranscript = '';
+  let voiceUploadInProgress = false;
+
+  function updateComposerActionButton() {
+    const button = $('#send-btn');
+    const input = $('#input');
+    if (!button || !input) return;
+    const useMic = !activeVoiceRecorder && !voiceUploadInProgress && !input.value.trim();
+    const targetIcon = useMic ? 'mic' : 'arrow-up';
+    button.innerHTML = '<svg class="ic"><use href="#i-' + targetIcon + '"/></svg>';
+    button.title = useMic ? 'Записать голосовое сообщение' :
+      (activeVoiceRecorder ? 'Отправить голосовое сообщение' : 'Отправить');
+    button.setAttribute('aria-label', button.title);
+  }
+
+  function currentVoiceElapsedMs() {
+    return voiceElapsedBeforePause +
+      (voicePaused || !voiceSegmentStartedAt ? 0 : Math.max(0, Date.now() - voiceSegmentStartedAt));
+  }
+
+  function updateVoiceRecordingDisplay() {
+    const time = $('#voice-recording-time');
+    if (time) {
+      const seconds = Math.floor(currentVoiceElapsedMs() / 1000);
+      time.textContent = String(Math.floor(seconds / 60)).padStart(2, '0') + ':' +
+        String(seconds % 60).padStart(2, '0');
+    }
+    const waveform = $('#voice-waveform');
+    if (waveform) waveform.classList.toggle('is-paused', voicePaused);
+    const pauseButton = $('#voice-pause-btn');
+    if (pauseButton) {
+      pauseButton.innerHTML = '<svg class="ic"><use href="#i-' + (voicePaused ? 'play' : 'pause') + '"/></svg>';
+      pauseButton.title = voicePaused ? 'Продолжить запись' : 'Пауза';
+      pauseButton.setAttribute('aria-label', pauseButton.title);
+    }
+  }
+
+  function showVoiceRecordingUi(show) {
+    const row = $('.composer-row');
+    const panel = $('#voice-recorder-ui');
+    if (row) row.classList.toggle('is-recording', !!show);
+    if (panel) panel.classList.toggle('hidden', !show);
+    const attach = $('#attach-btn');
+    if (attach) attach.disabled = !!show;
+    updateComposerActionButton();
+  }
+
+  function startVoiceTranscriptionIfAvailable() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (typeof Recognition !== 'function') return;
+    try {
+      const recognition = new Recognition();
+      recognition.lang = 'ru-RU';
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = event => {
+        for (let i = event.resultIndex || 0; i < event.results.length; i += 1) {
+          const result = event.results[i];
+          const spoken = result && result.isFinal && result[0] ? String(result[0].transcript || '').trim() : '';
+          if (spoken) voiceTranscript = (voiceTranscript + ' ' + spoken).trim();
+        }
+      };
+      recognition.onerror = () => { /* Audio upload remains available if browser speech recognition is not supported. */ };
+      recognition.onend = () => {
+        if (activeVoiceRecorder && !voicePaused && activeVoiceRecognition === recognition) {
+          try { recognition.start(); } catch (_) { /* recognition can stop between browser audio segments */ }
+        }
+      };
+      activeVoiceRecognition = recognition;
+      recognition.start();
+    } catch (_) {
+      activeVoiceRecognition = null;
+    }
+  }
+
+  function stopVoiceTranscription() {
+    const recognition = activeVoiceRecognition;
+    activeVoiceRecognition = null;
+    if (recognition) {
+      recognition.onend = null;
+      try { recognition.stop(); } catch (_) { /* recognition may already be stopped */ }
+    }
+  }
+
+  function resetVoiceRecordingUi() {
+    if (activeVoiceTimer) clearInterval(activeVoiceTimer);
+    activeVoiceTimer = null;
+    stopVoiceTranscription();
+    if (activeVoiceStream) activeVoiceStream.getTracks().forEach(track => {
+      try { track.stop(); } catch (_) { /* device track already stopped */ }
+    });
+    activeVoiceStream = null;
+    activeVoiceRecorder = null;
+    activeVoiceChunks = [];
+    voicePaused = false;
+    voiceElapsedBeforePause = 0;
+    voiceSegmentStartedAt = 0;
+    showVoiceRecordingUi(false);
+  }
+
+  async function startVoiceRecording() {
+    if (activeVoiceRecorder || voiceUploadInProgress || state.streaming || state.sending || state.chatLoading) return;
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function' ||
+        typeof window.MediaRecorder !== 'function') {
+      toast('Запись голосовых сообщений не поддерживается этим браузером.', 'error');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+      activeVoiceStream = stream;
+      const mimeChoices = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'];
+      const mimeType = typeof window.MediaRecorder.isTypeSupported === 'function'
+        ? (mimeChoices.find(type => window.MediaRecorder.isTypeSupported(type)) || '')
+        : '';
+      const recorder = mimeType ? new window.MediaRecorder(stream, { mimeType }) : new window.MediaRecorder(stream);
+      const chunks = [];
+      activeVoiceRecorder = recorder;
+      activeVoiceChunks = chunks;
+      activeVoiceRecognition = null;
+      voiceTranscript = '';
+      voicePaused = false;
+      voiceElapsedBeforePause = 0;
+      voiceSegmentStartedAt = Date.now();
+      recorder.addEventListener('dataavailable', event => {
+        if (event.data && event.data.size > 0) chunks.push(event.data);
+      });
+      recorder.addEventListener('error', () => {
+        if (activeVoiceRecorder === recorder) {
+          toast('Во время записи произошла ошибка.', 'error');
+          cancelVoiceRecording();
+        }
+      });
+      recorder.start(250);
+      showVoiceRecordingUi(true);
+      updateVoiceRecordingDisplay();
+      if (activeVoiceTimer) clearInterval(activeVoiceTimer);
+      activeVoiceTimer = setInterval(updateVoiceRecordingDisplay, 200);
+      startVoiceTranscriptionIfAvailable();
+    } catch (error) {
+      resetVoiceRecordingUi();
+      toast('Не удалось начать запись: ' + usefulErrorMessage(error, 'проверьте разрешение на микрофон'), 'error');
+    }
+  }
+
+  function toggleVoiceRecordingPause() {
+    const recorder = activeVoiceRecorder;
+    if (!recorder || recorder.state === 'inactive') return;
+    try {
+      if (recorder.state === 'recording') {
+        recorder.pause();
+        voiceElapsedBeforePause += Math.max(0, Date.now() - voiceSegmentStartedAt);
+        voiceSegmentStartedAt = 0;
+        voicePaused = true;
+        if (activeVoiceRecognition) {
+          try { activeVoiceRecognition.stop(); } catch (_) { /* recognition already stopped */ }
+        }
+      } else if (recorder.state === 'paused') {
+        recorder.resume();
+        voicePaused = false;
+        voiceSegmentStartedAt = Date.now();
+        if (activeVoiceRecognition) {
+          try { activeVoiceRecognition.start(); } catch (_) { /* recognition may still be shutting down */ }
+        }
+      }
+      updateVoiceRecordingDisplay();
+    } catch (error) {
+      toast('Не удалось изменить состояние записи: ' + usefulErrorMessage(error, 'ошибка записи'), 'error');
+    }
+  }
+
+  function cancelVoiceRecording() {
+    const recorder = activeVoiceRecorder;
+    if (recorder && recorder.state !== 'inactive') {
+      try { recorder.stop(); } catch (_) { /* recorder already stopped */ }
+    }
+    voiceTranscript = '';
+    resetVoiceRecordingUi();
+    const send = $('#send-btn');
+    if (send) send.disabled = false;
+  }
+
+  async function finishVoiceRecordingAndSend() {
+    const recorder = activeVoiceRecorder;
+    if (!recorder || voiceUploadInProgress) return;
+    voiceUploadInProgress = true;
+    const chunks = activeVoiceChunks;
+    const transcript = voiceTranscript.trim();
+    const mimeType = recorder.mimeType || 'audio/webm';
+    stopVoiceTranscription();
+    try {
+      let blob;
+      if (recorder.state === 'inactive') {
+        blob = new Blob(chunks, { type: mimeType });
+      } else {
+        const stopped = new Promise(resolve => {
+          recorder.addEventListener('stop', () => resolve(new Blob(chunks, { type: mimeType })), { once: true });
+        });
+        recorder.stop();
+        blob = await stopped;
+      }
+      resetVoiceRecordingUi();
+      if (!blob || !blob.size) throw new Error('Запись пустая. Запишите голосовое сообщение ещё раз.');
+      const mediaType = String(blob.type || mimeType).split(';')[0] || 'audio/webm';
+      const extension = mediaType === 'audio/mp4' ? 'm4a' :
+        (mediaType === 'audio/ogg' ? 'ogg' : (mediaType === 'audio/wav' ? 'wav' : 'webm'));
+      const audioFile = new File([blob], 'voice-message-' + Date.now() + '.' + extension, { type: mediaType });
+      const form = new FormData();
+      form.append('files', audioFile, audioFile.name);
+      const response = await api.postForm('/api/files', form);
+      const uploaded = Array.isArray(response)
+        ? response.find(file => file && typeof file.id === 'string' && file.id)
+        : null;
+      if (!uploaded) throw new Error('Сервер не подтвердил сохранение голосового сообщения.');
+      const fileMap = new Map((Array.isArray(state.files) ? state.files : []).filter(file => file && file.id)
+        .map(file => [String(file.id), file]));
+      fileMap.set(String(uploaded.id), uploaded);
+      state.files = Array.from(fileMap.values());
+      const pendingMap = new Map((Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [])
+        .filter(file => file && file.id).map(file => [String(file.id), file]));
+      pendingMap.set(String(uploaded.id), uploaded);
+      state.pendingAttachments = Array.from(pendingMap.values());
+      renderFiles();
+      renderFilesWorkspace();
+      renderAttachments();
+      const input = $('#input');
+      if (input) {
+        input.value = transcript || 'Прослушай прикреплённое голосовое сообщение и ответь на него.';
+        autoGrow();
+      }
+      voiceUploadInProgress = false;
+      const send = $('#send-btn');
+      if (send) send.disabled = false;
+      updateComposerActionButton();
+      if (input) input.focus();
+      await sendCurrent();
+    } catch (error) {
+      voiceUploadInProgress = false;
+      const send = $('#send-btn');
+      if (send) send.disabled = false;
+      updateComposerActionButton();
+      if (activeVoiceRecorder) cancelVoiceRecording();
+      toast('Не удалось отправить голосовое сообщение: ' + usefulErrorMessage(error, 'ошибка загрузки'), 'error');
+    }
+  }
+
   function bindComposer() {
     const input = $('#input');
+    updateComposerActionButton();
     bindAddToChatSheet();
     const modelButton = $('#model-select-btn'), modelPanel = $('#model-picker');
     if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); setAddChatView(state.modelPickerOpen ? 'main' : 'model'); });
@@ -5601,11 +5859,18 @@
         setAddChatView('main'); renderAddChatActionLabels(); renderChatList();
       } catch (error) { toast('Не удалось выбрать модель: ' + usefulErrorMessage(error, 'ошибка сохранения'), 'error'); }
     });
-    input.addEventListener('input', autoGrow);
+    input.addEventListener('input', () => { autoGrow(); updateComposerActionButton(); });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
     });
-    $('#send-btn').addEventListener('click', () => sendCurrent());
+    $('#send-btn').addEventListener('click', async () => {
+      if (voiceUploadInProgress) return;
+      if (activeVoiceRecorder) await finishVoiceRecordingAndSend();
+      else if (!input.value.trim()) await startVoiceRecording();
+      else await sendCurrent();
+    });
+    $('#voice-cancel-btn')?.addEventListener('click', cancelVoiceRecording);
+    $('#voice-pause-btn')?.addEventListener('click', toggleVoiceRecordingPause);
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
@@ -6782,8 +7047,16 @@
     const root = $('#modal-root');
     const infoOnly = (okText || '') === 'Закрыть';
     const modalClasses = (infoOnly ? ' wide' : '') + (extraClass ? ' ' + extraClass : '');
-    root.innerHTML = '<div class="modal-back"><div class="modal' + modalClasses +
-      '"><h3>' + escapeHtml(title) + '</h3>' +
+    const sheetMode = String(extraClass || '').split(/\s+/).includes('bottom-sheet');
+    const backClass = 'modal-back' + (sheetMode ? ' modal-back-sheet' : '');
+    const sheetHandle = sheetMode
+      ? '<div class="modal-sheet-handle-wrap" aria-hidden="true"><span class="modal-sheet-handle"></span></div>'
+      : '';
+    const titleHeader = sheetMode
+      ? '<div class="modal-sheet-title-row"><h3>' + escapeHtml(title) + '</h3><button type="button" class="modal-sheet-close" data-sheet-close title="Закрыть" aria-label="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></div>'
+      : '<h3>' + escapeHtml(title) + '</h3>';
+    root.innerHTML = '<div class="' + backClass + '"><div class="modal' + modalClasses +
+      '">' + sheetHandle + titleHeader +
       '<div class="modal-body">' + body + '</div>' +
       '<div class="row">' +
       (infoOnly ? '' : '<button class="ghost" data-cancel>Отмена</button>') +
@@ -6792,6 +7065,8 @@
     const close = () => { root.innerHTML = ''; };
     const cancel = $('[data-cancel]', root);
     if (cancel) cancel.addEventListener('click', close);
+    const sheetClose = $('[data-sheet-close]', root);
+    if (sheetClose) sheetClose.addEventListener('click', close);
     back.addEventListener('click', (e) => { if (e.target === back) close(); });
     $('[data-ok]', root).addEventListener('click', async () => {
       try { const ok = onOk ? await onOk(root) : true; if (ok !== false) close(); }
@@ -7221,6 +7496,7 @@
       openModal({
         title: 'Настройки и профиль',
         okText: 'Закрыть',
+        extraClass: 'profile-sheet bottom-sheet',
         body:
           '<div class="profile-box">' +
           '<img class="profile-ava" src="/api/avatars/' + (u.avatar || 0) + '.svg" alt="" />' +
@@ -7232,8 +7508,6 @@
           '<p class="usage-note">Поиск в интернете: всегда включён · Память: ' +
           ((state.memories || []).length) + ' записей<br/>' +
           'Тема: тёплая светлая (Claude-like); тёмная — автоматически по системе.</p>' +
-          (isAdmin ? '<h4 class="sec">Состояние сервера</h4>' : '') +
-          (isAdmin ? '<div id="sys-block">' + systemRowsHtml() + '</div>' : '') +
           '<h4 class="sec">Разделы</h4>' +
           '<div class="settings-grid">' +
           '<button class="chip-btn" id="set-memory">' + icon('sparkle') + 'Память</button>' +
@@ -7547,7 +7821,7 @@
     openModal({
       title: 'Действия чата',
       okText: 'Закрыть',
-      extraClass: 'share-wide',
+      extraClass: 'share-wide bottom-sheet',
       body:
         '<div class="chat-actions-primary">' +
         '<button type="button" class="chip-btn" id="chat-action-new">' + icon('plus') + 'Новый чат</button>' +
@@ -8145,6 +8419,7 @@
             openModal({
               title: (item && item.title ? item.title : provider) + ' · подключение',
               okText: 'Сохранить и проверить',
+              extraClass: 'bottom-sheet connector-token-sheet',
               body: '<p class="usage-note">Вставьте API-токен или ключ, созданный в настройках сервиса. AI CH не может расширить права выданного токена.</p>' +
                 '<input id="connector-token-input" type="password" autocomplete="new-password" spellcheck="false" placeholder="API-токен / ключ" />' +
                 (help ? '<p class="usage-note"><a href="' + escapeHtml(help) + '" target="_blank" rel="noopener noreferrer">Открыть страницу токенов сервиса ↗</a></p>' : '') +

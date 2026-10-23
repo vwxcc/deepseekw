@@ -5337,22 +5337,25 @@
 
   function setAddChatView(view) {
     const shell = $('#add-to-chat-shell');
-    const allowed = ['model', 'connectors', 'library', 'project'];
+    const allowed = ['model', 'memory', 'connectors', 'library', 'project'];
     const next = allowed.includes(view) ? view : 'main';
     addChatActiveView = next;
     const main = $('#add-chat-main-view');
     const model = $('#add-chat-model-view');
+    const memory = $('#add-chat-memory-view');
     const connectors = $('#add-chat-connectors-view');
     const library = $('#add-chat-library-view');
     const project = $('#add-chat-project-view');
     if (main) main.classList.toggle('hidden', next !== 'main');
     if (model) model.classList.toggle('hidden', next !== 'model');
+    if (memory) memory.classList.toggle('hidden', next !== 'memory');
     if (connectors) connectors.classList.toggle('hidden', next !== 'connectors');
     if (library) library.classList.toggle('hidden', next !== 'library');
     if (project) project.classList.toggle('hidden', next !== 'project');
     if (shell) shell.classList.toggle('has-subview', next !== 'main');
     const title = $('#add-to-chat-title');
     if (title) title.textContent = next === 'model' ? 'Выбор модели'
+      : next === 'memory' ? 'Память и предпочтения'
       : next === 'connectors' ? 'Коннекторы'
       : next === 'library' ? 'Файлы аккаунта'
       : next === 'project' ? 'Добавить в проект' : 'Добавить в чат';
@@ -5368,6 +5371,8 @@
     if (photos) photos.classList.toggle('hidden', next !== 'main');
     state.modelPickerOpen = next === 'model';
     renderModelPicker();
+    if (next === 'memory') renderAddChatMemoryView();
+    if (next === 'connectors') renderConnectorsInto($('#add-chat-connectors-list'));
     if (next === 'main') renderAddChatActionLabels();
   }
 
@@ -5516,6 +5521,8 @@
         openAddChatLibrary();
       } else if (action === 'model') {
         setAddChatView('model');
+      } else if (action === 'memory') {
+        setAddChatView('memory');
       } else if (action === 'project') {
         openAddChatProjectPicker();
       } else if (action === 'connectors') {
@@ -8084,18 +8091,108 @@
     });
   }
 
+  const connectorHelpUrls = {
+    github: 'https://github.com/settings/tokens',
+    youtube: 'https://console.cloud.google.com/apis/credentials',
+    spotify: 'https://developer.spotify.com/dashboard',
+    gitlab: 'https://gitlab.com/-/user_settings/personal_access_tokens',
+    notion: 'https://www.notion.so/profile/integrations',
+    slack: 'https://api.slack.com/apps',
+    google_drive: 'https://console.cloud.google.com/apis/credentials',
+    linear: 'https://linear.app/settings/api',
+    huggingface: 'https://huggingface.co/settings/tokens',
+    discord: 'https://discord.com/developers/applications'
+  };
+
+  async function renderConnectorsInto(container) {
+    if (!container) return;
+    container.innerHTML = '<p class="usage-note">Загружаю список коннекторов…</p>';
+    try {
+      const payload = await api.get('/api/connectors');
+      const catalog = Array.isArray(payload.catalog) ? payload.catalog : [];
+      container.innerHTML =
+        '<div class="connector-catalog-intro"><strong>Подключения к внешним сервисам</strong>' +
+        '<p>Токены хранятся на сервере аккаунта и не показываются в интерфейсе после сохранения. Доступные действия ограничены правами самого токена.</p>' +
+        '<p class="usage-note">Лимит действий агента в одном запросе: <b>' + Number(payload.action_limit || 3) +
+        '</b> для текущего тарифа.</p></div>' +
+        '<div class="connector-catalog">' + catalog.map(item => {
+          const provider = String(item.provider || '');
+          const connected = !!item.connected;
+          const actions = Array.isArray(item.actions) ? item.actions : [];
+          const help = connectorHelpUrls[provider] || '';
+          return '<article class="connector-card" data-provider="' + escapeHtml(provider) + '">' +
+            '<div class="connector-card-head"><strong>' + escapeHtml(item.title || provider) + '</strong>' +
+            '<span class="connector-status ' + (connected ? 'is-connected' : '') + '">' +
+            (connected ? 'Подключён' : 'Не подключён') + '</span></div>' +
+            '<p>' + escapeHtml(item.description || '') + '</p>' +
+            '<div class="connector-actions-list">Действия: ' + escapeHtml(actions.join(' · ')) + '</div>' +
+            '<div class="connector-card-controls">' +
+            '<button type="button" class="chip-btn" data-connector-config="' + escapeHtml(provider) + '">' +
+            (connected ? 'Заменить токен' : 'Подключить') + '</button>' +
+            (connected ? '<button type="button" class="chip-btn connector-disconnect" data-connector-disconnect="' + escapeHtml(provider) + '">Отключить</button>' : '') +
+            (help ? '<a class="connector-help-link" href="' + escapeHtml(help) + '" target="_blank" rel="noopener noreferrer">Получить токен ↗</a>' : '') +
+            '</div></article>';
+        }).join('') + '</div>';
+      if (container.dataset.connectorBound !== '1') {
+        container.dataset.connectorBound = '1';
+        container.addEventListener('click', async event => {
+          const configButton = event.target.closest('[data-connector-config]');
+          const disconnectButton = event.target.closest('[data-connector-disconnect]');
+          if (configButton) {
+            const provider = configButton.dataset.connectorConfig;
+            const item = catalog.find(row => row.provider === provider);
+            const help = connectorHelpUrls[provider] || '';
+            openModal({
+              title: (item && item.title ? item.title : provider) + ' · подключение',
+              okText: 'Сохранить и проверить',
+              body: '<p class="usage-note">Вставьте API-токен или ключ, созданный в настройках сервиса. AI CH не может расширить права выданного токена.</p>' +
+                '<input id="connector-token-input" type="password" autocomplete="new-password" spellcheck="false" placeholder="API-токен / ключ" />' +
+                (help ? '<p class="usage-note"><a href="' + escapeHtml(help) + '" target="_blank" rel="noopener noreferrer">Открыть страницу токенов сервиса ↗</a></p>' : '') +
+                '<p class="usage-note">Секрет не будет повторно показан после сохранения.</p>',
+              onOk: async root => {
+                const tokenInput = $('#connector-token-input', root);
+                const token = tokenInput ? tokenInput.value.trim() : '';
+                if (!token) { toast('Введите токен или API-ключ', 'error'); return false; }
+                await api.put('/api/connectors/' + encodeURIComponent(provider), { token });
+                const result = await api.post('/api/connectors/' + encodeURIComponent(provider) + '/test', {});
+                if (!result || !result.ok) {
+                  toast('Подключение сохранено, но проверка не пройдена: ' + ((result && result.message) || 'проверьте токен и разрешения'), 'error');
+                  await renderConnectorsInto(container);
+                  return false;
+                }
+                await renderConnectorsInto(container);
+                toast('Коннектор ' + ((item && item.title) || provider) + ' подключён');
+                return true;
+              }
+            });
+          } else if (disconnectButton) {
+            const provider = disconnectButton.dataset.connectorDisconnect;
+            const item = catalog.find(row => row.provider === provider);
+            if (!confirm('Отключить ' + ((item && item.title) || provider) + '? Сохранённый токен будет удалён.')) return;
+            try {
+              await api.del('/api/connectors/' + encodeURIComponent(provider));
+              await renderConnectorsInto(container);
+              toast('Коннектор отключён');
+            } catch (error) {
+              toast('Не удалось отключить коннектор: ' + error.message, 'error');
+            }
+          }
+        });
+      }
+    } catch (error) {
+      container.innerHTML = '<div class="connectors-empty"><span class="connectors-empty-icon">' + icon('plug') +
+        '</span><strong>Не удалось загрузить коннекторы</strong><p>' + escapeHtml(error.message || 'Ошибка сервера') + '</p></div>';
+    }
+  }
+
   function openConnectors() {
     openModal({
       title: 'Коннекторы',
       okText: 'Закрыть',
-      body:
-        '<div class="connectors-empty">' +
-          '<span class="connectors-empty-icon">' + icon('plug') + '</span>' +
-          '<strong>Подключения пока не настроены</strong>' +
-          '<p>Здесь появятся подключения к внешним сервисам, когда серверные интеграции будут добавлены.</p>' +
-        '</div>',
+      body: '<div id="connector-settings-modal-list" class="connector-catalog-panel"><p class="usage-note">Загружаю…</p></div>',
       onOk: () => true,
     });
+    renderConnectorsInto($('#connector-settings-modal-list'));
   }
 
   async function openSkills() {
@@ -8221,9 +8318,57 @@
     };
   }
 
+  async function renderAddChatMemoryView() {
+    const toggle = $('#add-chat-memory-enabled');
+    const status = $('#add-chat-memory-status');
+    try {
+      const data = await api.get('/api/memory/settings');
+      const enabled = data && data.memory_enabled !== false;
+      if (toggle) toggle.checked = enabled;
+      const label = $('#add-chat-memory-current');
+      if (label) label.textContent = enabled ? 'Включена' : 'Выключена';
+      if (status) status.textContent = enabled
+        ? 'Сохранённые факты и предпочтения доступны AI CH.'
+        : 'Персональная память не отправляется модели и новые записи не сохраняются.';
+    } catch (error) {
+      if (status) status.textContent = 'Не удалось загрузить настройку памяти: ' + (error.message || '');
+    }
+    if (toggle && toggle.dataset.bound !== '1') {
+      toggle.dataset.bound = '1';
+      toggle.addEventListener('change', async () => {
+        const previous = !toggle.checked;
+        toggle.disabled = true;
+        try {
+          const data = await api.put('/api/memory/settings', { memory_enabled: toggle.checked });
+          const enabled = !!data.memory_enabled;
+          toggle.checked = enabled;
+          const label = $('#add-chat-memory-current');
+          if (label) label.textContent = enabled ? 'Включена' : 'Выключена';
+          if (status) status.textContent = enabled
+            ? 'Память включена. Сохранённые сведения снова доступны модели.'
+            : 'Выключено: сведения не отправляются модели, новые факты не сохраняются. Записи не удалены.';
+          toast(enabled ? 'Память включена' : 'Память выключена');
+        } catch (error) {
+          toggle.checked = previous;
+          if (status) status.textContent = 'Не удалось сохранить настройку.';
+          toast('Не удалось сохранить настройку памяти: ' + error.message, 'error');
+        } finally { toggle.disabled = false; }
+      });
+    }
+    $('#add-chat-manage-memory')?.addEventListener('click', () => {
+      closeAddToChatSheet();
+      openMemory();
+    }, { once: true });
+  }
+
   async function openMemory(filterMessageId) {
     let items = [];
+    let memoryEnabled = true;
     try { items = await api.get('/api/memory'); } catch (e) { items = []; }
+    try {
+      const settings = await api.get('/api/memory/settings');
+      memoryEnabled = settings && settings.memory_enabled !== false;
+    } catch (e) { /* Keep the legacy default until settings are available. */ }
     if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
     const facts = items.filter(m => (m.kind || 'fact') === 'fact');
     const prefs = items.filter(m => m.kind === 'preference');
@@ -8234,7 +8379,10 @@
       title: filterMessageId ? 'Что записано по этому ответу' : 'Память о вас',
       okText: 'Закрыть',
       body:
-        '<h4 class="sec">Предпочтения · уходят в каждый запрос</h4>' +
+        (!filterMessageId
+          ? '<label class="memory-setting-toggle modal-memory-toggle" for="mem-memory-enabled"><span><strong>Использовать память</strong><small>Выключение останавливает передачу и автосохранение; существующие записи остаются в аккаунте.</small></span><input type="checkbox" id="mem-memory-enabled" ' + (memoryEnabled ? 'checked' : '') + ' /></label><p id="mem-memory-note" class="usage-note" aria-live="polite">' + (memoryEnabled ? 'Память включена.' : 'Память выключена — сведения не отправляются модели.') + '</p>'
+          : '') +
+        '<h4 class="sec">Предпочтения · учитываются только при включённой памяти</h4>' +
         (prefs.length
           ? '<div class="mem-list">' + prefs.map(row).join('') + '</div>'
           : '<p class="usage-note">Пока нет. Например: «отвечай кратко», «всегда с примерами кода».</p>') +
@@ -8252,7 +8400,28 @@
       onOk: () => true,
     });
 
-    $$('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
+    const memoryToggle = $('#mem-memory-enabled');
+    if (memoryToggle) memoryToggle.addEventListener('change', async () => {
+      const previous = !memoryToggle.checked;
+      memoryToggle.disabled = true;
+      try {
+        const data = await api.put('/api/memory/settings', { memory_enabled: memoryToggle.checked });
+        const enabled = !!data.memory_enabled;
+        memoryToggle.checked = enabled;
+        const note = $('#mem-memory-note');
+        if (note) note.textContent = enabled
+          ? 'Память включена. Сохранённые факты и предпочтения доступны модели.'
+          : 'Память выключена. Сохранённые записи остаются в аккаунте, но не отправляются модели; новые записи не сохраняются автоматически.';
+        const quickLabel = $('#add-chat-memory-current');
+        if (quickLabel) quickLabel.textContent = enabled ? 'Включена' : 'Выключена';
+        toast(enabled ? 'Память включена' : 'Память выключена');
+      } catch (error) {
+        memoryToggle.checked = previous;
+        toast('Не удалось сохранить настройку памяти: ' + error.message, 'error');
+      } finally { memoryToggle.disabled = false; }
+    });
+
+    $('[data-del-mem]').forEach(b => b.addEventListener('click', async () => {
       try {
         await api.del('/api/memory/' + b.dataset.delMem);
         $('#modal-root').innerHTML = '';

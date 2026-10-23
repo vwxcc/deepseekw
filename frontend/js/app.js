@@ -5599,7 +5599,11 @@
     const button = $('#send-btn');
     const input = $('#input');
     if (!button || !input) return;
-    const useMic = !activeVoiceRecorder && !voiceUploadInProgress && !input.value.trim();
+    const emptyComposer = !input.value.trim();
+    const useMic = emptyComposer && !activeVoiceRecorder && !voiceUploadInProgress &&
+      !state.streaming && !state.sending && !state.chatLoading;
+    const emojiButton = $('#emoji-btn');
+    if (emojiButton) emojiButton.classList.toggle('hidden', !useMic);
     const targetIcon = useMic ? 'mic' : 'arrow-up';
     button.innerHTML = '<svg class="ic"><use href="#i-' + targetIcon + '"/></svg>';
     button.title = useMic ? 'Записать голосовое сообщение' :

@@ -41,6 +41,7 @@ from ..models import (
     Role,
     RouteType,
     User,
+    UserPreference,
     utcnow,
 )
 from ..schemas import (
@@ -514,11 +515,18 @@ async def _spawn(
 ) -> StreamingResponse:
     execution_target = execution_target if execution_target in {"site", "device", "both"} else "site"
     selected_model_set_id = chat.model_set_id
+    memory_enabled = True
+    action_limit = 3
     if user_id:
         current_user = await db.get(User, user_id)
         if current_user is not None:
             selected_model_set_id = await _choose_model_set(db, current_user, current_id=chat.model_set_id)
             chat.model_set_id = selected_model_set_id
+            preference_row = await db.get(UserPreference, user_id)
+            memory_enabled = bool(preference_row.memory_enabled) if preference_row is not None else True
+            plan_for_limits = "pro" if current_user.is_admin else normalize_plan(current_user.plan)
+            effective_limits = await get_limits(db, plan_for_limits)
+            action_limit = max(1, min(50, int(effective_limits.get("agent_actions", 3) or 3)))
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
     if chat.summary:
@@ -526,7 +534,8 @@ async def _spawn(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
     if user_id:
-        system_prompt += await _memory_block(db, user_id)
+        if memory_enabled:
+            system_prompt += await _memory_block(db, user_id)
         context_user = await db.get(User, user_id)
         if context_user is not None:
             system_prompt += await _request_context_block(request, db, context_user)
@@ -578,6 +587,8 @@ async def _spawn(
         user_text=_last_user_text(history_messages),
         system_prompt=system_prompt,
         history_messages=history_messages,
+        memory_enabled=memory_enabled,
+        action_limit=action_limit,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(

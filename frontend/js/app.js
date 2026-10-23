@@ -700,7 +700,8 @@
       (!actionMarker && looksLikeHtmlDocument && ['python', 'py', 'python3', 'run', 'text', 'plaintext', ''].includes(key));
     const displayLang = isHtml ? 'html' : (lang || '');
     const displaySource = isHtml ? cleanedHtml : rawCode;
-    const isFileGenerationBlock = !isHtml && ['python', 'py', 'run'].includes(key) && actionMarker;
+    const isRunnablePythonBlock = !isHtml && ['python', 'py', 'python3', 'py3', 'run'].includes(key);
+    const isFileGenerationBlock = isRunnablePythonBlock && actionMarker;
     const displayCode = isFileGenerationBlock
       ? displaySource
           .replace(/^\s*#\s*AI_CH_ACTION:\s*[^\r\n]+\s*(?:\r?\n|$)/i, '')
@@ -727,9 +728,9 @@
           '<iframe sandbox="" loading="lazy" title="Предпросмотр SVG" srcdoc="' +
           escapeHtml(svgDocument) + '"></iframe></div>'
         : '';
-    const runButton = isFileGenerationBlock
+    const runButton = isRunnablePythonBlock
       ? '<button type="button" class="file-code-run" data-run-device="1" data-run-file-block="' + id +
-        '" title="Выполнить код и создать файл">' + icon('play') + '<span>Выполнить</span></button>'
+        '" title="Запустить Python-код в песочнице">' + icon('play') + '<span>Запустить</span></button>'
       : '';
     const lines = displayCode.split('\n');
     const collapsed = lines.length > 5;

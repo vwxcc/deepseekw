@@ -96,7 +96,7 @@ def skills_for(user_text: str | None) -> str:
         ])
     elif is_code:
         builtins.append(("Исполнение и проверка", RUN_SKILL))
-    if is_drawing:
+    if is_drawing and not is_image_creation:
         builtins.append(("SVG и чертежи", DRAW_SKILL))
     if is_image_creation:
         builtins.append(("Создание художественного изображения", IMAGE_CREATION_SKILL))

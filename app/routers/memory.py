@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_user, get_db, require_csrf
-from ..models import Memory, User
+from ..models import Memory, User, UserPreference
 from ..schemas import MemoryIn, MemoryOut
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -22,6 +22,35 @@ async def list_memory(
         .order_by(Memory.created_at.desc())
     )
     return [MemoryOut.model_validate(m) for m in result.scalars().all()]
+
+
+@router.get("/settings")
+async def get_memory_settings(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Memory is on by default until a user explicitly turns it off."""
+    setting = await db.get(UserPreference, user.id)
+    return {"memory_enabled": bool(setting.memory_enabled) if setting is not None else True}
+
+
+@router.put("/settings")
+async def update_memory_settings(
+    data: dict,
+    user: User = Depends(get_current_user),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    enabled = (data or {}).get("memory_enabled")
+    if not isinstance(enabled, bool):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "memory_enabled должен быть true или false")
+    setting = await db.get(UserPreference, user.id)
+    if setting is None:
+        setting = UserPreference(user_id=user.id, memory_enabled=enabled)
+        db.add(setting)
+    else:
+        setting.memory_enabled = enabled
+    await db.commit()
+    return {"memory_enabled": enabled}
 
 
 @router.post("", response_model=MemoryOut, status_code=status.HTTP_201_CREATED)

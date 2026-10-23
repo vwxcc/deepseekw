@@ -23,6 +23,7 @@ from .routers import (
     avatars,
     chats,
     council,
+    connectors,
     files,
     github,
     limits,
@@ -125,6 +126,7 @@ app.include_router(avatars.router)
 app.include_router(system.router)
 app.include_router(limits.router)
 app.include_router(github.router)
+app.include_router(connectors.router)
 app.include_router(skills_router.router)
 app.include_router(projects_router.router)
 app.include_router(scheduled_router.router)

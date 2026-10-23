@@ -41,6 +41,7 @@ from ..models import (
     Role,
     RouteType,
     User,
+    UserPreference,
     utcnow,
 )
 from ..schemas import (
@@ -514,11 +515,19 @@ async def _spawn(
 ) -> StreamingResponse:
     execution_target = execution_target if execution_target in {"site", "device", "both"} else "site"
     selected_model_set_id = chat.model_set_id
+    memory_enabled = True
+    action_limit = 3
     if user_id:
         current_user = await db.get(User, user_id)
         if current_user is not None:
             selected_model_set_id = await _choose_model_set(db, current_user, current_id=chat.model_set_id)
             chat.model_set_id = selected_model_set_id
+            preference_row = await db.get(UserPreference, user_id)
+            memory_enabled = bool(preference_row.memory_enabled) if preference_row is not None else True
+            plan_for_limits = "pro" if current_user.is_admin else normalize_plan(current_user.plan)
+            effective_limits = await get_limits(db, plan_for_limits)
+            raw_action_limit = effective_limits.get("agent_actions", 3)
+            action_limit = max(0, min(50, int(raw_action_limit if raw_action_limit is not None else 3)))
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
     if chat.summary:
@@ -526,7 +535,13 @@ async def _spawn(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
     if user_id:
-        system_prompt += await _memory_block(db, user_id)
+        if memory_enabled:
+            system_prompt += await _memory_block(db, user_id)
+        else:
+            system_prompt += (
+                "\n\n[ПАМЯТЬ ВЫКЛЮЧЕНА пользователем: не используй сохранённые факты и предпочтения, "
+                "не добавляй маркеры [[memory: ...]] или [[pref: ...]] и не пытайся сохранять новые записи.]"
+            )
         context_user = await db.get(User, user_id)
         if context_user is not None:
             system_prompt += await _request_context_block(request, db, context_user)
@@ -578,6 +593,8 @@ async def _spawn(
         user_text=_last_user_text(history_messages),
         system_prompt=system_prompt,
         history_messages=history_messages,
+        memory_enabled=memory_enabled,
+        action_limit=action_limit,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -691,8 +708,20 @@ async def send_message(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
 
-    system_prompt += await _memory_block(db, user.id)
+    preference_row = await db.get(UserPreference, user.id)
+    memory_enabled = bool(preference_row.memory_enabled) if preference_row is not None else True
+    if memory_enabled:
+        system_prompt += await _memory_block(db, user.id)
+    else:
+        system_prompt += (
+            "\n\n[ПАМЯТЬ ВЫКЛЮЧЕНА пользователем: не используй сохранённые факты и предпочтения, "
+            "не добавляй маркеры [[memory: ...]] или [[pref: ...]] и не пытайся сохранять новые записи.]"
+        )
     system_prompt += await _request_context_block(request, db, user, data.client_context)
+    plan_for_limits = "pro" if user.is_admin else normalize_plan(user.plan)
+    effective_limits = await get_limits(db, plan_for_limits)
+    raw_action_limit = effective_limits.get("agent_actions", 3)
+    action_limit = max(0, min(50, int(raw_action_limit if raw_action_limit is not None else 3)))
     if execution_target == "device":
         system_prompt += (
             "\n\n[Запуск кода: НА УСТРОЙСТВЕ пользователя. Не выполняй код на сервере "
@@ -751,8 +780,9 @@ async def send_message(
         search_query=content,
         web_search=bool(data.web_search),
         first_exchange=first_exchange,
-        max_steps=int((await get_limits(db, user.plan or "free")).get("agent_steps") or 0)
-        or None,
+        max_steps=int(effective_limits.get("agent_steps") or 0) or None,
+        memory_enabled=memory_enabled,
+        action_limit=action_limit,
     )
     # Start the normal AI job first. The exact-title lookup runs only after it has
     # entered the router; on a hit, cancel that work and return the prepared answer.

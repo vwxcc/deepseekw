@@ -5266,3 +5266,76 @@ input[type="range"]::-moz-range-thumb {
 #modal-root .brain-save-status { text-align:right;color:var(--fg-muted);font-size:12px;margin-top:10px; }
 @media(max-width:720px){#modal-root .brain-graph-canvas{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:460px){#modal-root .brain-graph-canvas,#modal-root .brain-add-grid{grid-template-columns:minmax(0,1fr)}#modal-root .brain-add-grid .brain-wide,#modal-root .brain-wide{grid-column:auto;}}
+
+
+/* Consistent non-native range sliders across settings, modals and chat controls. */
+input[type="range"] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 100%;
+  min-width: 0;
+  height: 5px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--fg-soft), var(--border));
+  outline: none;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+input[type="range"]::-moz-range-track {
+  height: 5px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--border);
+}
+input[type="range"]::-moz-range-progress {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--fg-soft);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 16px;
+  height: 16px;
+  margin-top: -5.5px;
+  border: 2px solid var(--fg);
+  border-radius: 50%;
+  background: var(--bg-panel);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--fg);
+  border-radius: 50%;
+  background: var(--bg-panel);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+input[type="range"]:hover::-moz-range-thumb,
+input[type="range"]:focus-visible::-moz-range-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--fg-soft);
+  outline-offset: 5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  input[type="range"]::-webkit-slider-thumb,
+  input[type="range"]::-moz-range-thumb { transition: none; }
+}

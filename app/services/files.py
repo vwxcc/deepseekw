@@ -39,23 +39,26 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def image_to_data_url(path: str, mime: str = "", max_side: int = 1400) -> str | None:
-    """Downscale + base64-encode an image so a vision model can consume it."""
+def image_to_data_url(path: str, mime: str = "", max_side: int = 2560) -> str | None:
+    """Downscale for vision models without building a second full-resolution raster."""
     try:
         import base64
         import io
 
-        from PIL import Image
+        from PIL import Image, ImageOps
 
         with Image.open(path) as im:
-            if im.mode in ("P", "RGBA", "LA", "CMYK"):
+            width, height = im.size
+            if width <= 0 or height <= 0:
+                return None
+            # In-place thumbnailing can use decoder-level JPEG reduction where available.
+            im.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+            im = ImageOps.exif_transpose(im)
+            if im.mode != "RGB":
                 im = im.convert("RGB")
-            w, h = im.size
-            scale = min(1.0, max_side / max(w, h)) if max(w, h) else 1.0
-            if scale < 1.0:
-                im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))))
             buf = io.BytesIO()
-            im.save(buf, format="JPEG", quality=85)
+            # Avoid chroma subsampling to preserve text and thin lines in screenshots.
+            im.save(buf, format="JPEG", quality=90, subsampling=0)
             b64 = base64.b64encode(buf.getvalue()).decode()
         return f"data:image/jpeg;base64,{b64}"
     except Exception:
@@ -68,7 +71,6 @@ def image_to_data_url(path: str, mime: str = "", max_side: int = 1400) -> str | 
         return f"data:{mime or 'image/png'};base64,{b64}"
     except Exception:
         return None
-
 
 def decode_text(data: bytes) -> str:
     try:

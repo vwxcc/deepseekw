@@ -2399,6 +2399,35 @@
       '<div class="ask-row"><button type="button" class="chip-btn ask-send">'+icon('arrow-up')+'Ответить</button></div></section>';
   }
 
+  function quizResultReport(message) {
+    const rows = Array.isArray(message && message.quizResponses) ? message.quizResponses : [];
+    const score = (message && message.quizScore) || { correct: 0, total: (message && message.quiz || []).length };
+    const results = Array.isArray(message && message.quizResults) ? message.quizResults : [];
+    return ['Проверь мой результат теста: ' + Number(score.correct || 0) + ' из ' + Number(score.total || 0) + '.'].concat(
+      rows.map((row, index) =>
+        (index + 1) + '. ' + String(row.question || '') +
+        '\nМой ответ: ' + (Array.isArray(row.values) && row.values.length ? row.values.join(', ') : 'нет ответа') +
+        '\nПравильный ответ: ' + (Array.isArray(row.expected) && row.expected.length ? row.expected.join(', ') : 'не задан') +
+        '\nРезультат: ' + (results[index] && results[index].correct ? 'верно' : 'неверно')
+      )
+    ).join('\n\n');
+  }
+
+  function sendQuizResultToAI(message) {
+    const input = $('#input');
+    if (!input || !message || state.streaming || state.sending || state.chatLoading) {
+      toast('Результат сохранён. Отправьте его в чат, когда текущий ответ завершится.', 'info');
+      return false;
+    }
+    input.value = quizResultReport(message);
+    autoGrow();
+    message.quizResultSent = true;
+    message.quizCollapsed = true;
+    renderMessageInPlace(message.id);
+    void sendCurrent();
+    return true;
+  }
+
   function quizCardHtml(message) {
     if (!message || !Array.isArray(message.quiz) || !message.quiz.length) return '';
     const items=message.quiz.slice(0,20), submitted=!!message.quizSubmitted, collapsed=!!message.quizCollapsed;
@@ -4142,17 +4171,15 @@
       const score=results.filter(item=>item.correct).length;
       message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=true;message.quizResponses=responses;message.quizResultSent=false;
       renderMessageInPlace(message.id);toast('Результат: '+score+' из '+items.length);
+      // The model opts in during quiz generation only when its follow-up needs the score.
+      if(items.some(item=>item&&typeof item==='object'&&item.send_result_to_ai===true)){
+        sendQuizResultToAI(message);
+      }
     }));
-    $$('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
+    $('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null;
       if(!message||!Array.isArray(message.quiz)||!message.quizSubmitted||message.quizResultSent)return;
-      const rows=Array.isArray(message.quizResponses)?message.quizResponses:[],score=message.quizScore||{correct:0,total:message.quiz.length};
-      const report=['Проверь мой результат теста: '+score.correct+' из '+score.total+'.'].concat(
-        rows.map((row,i)=>(i+1)+'. '+row.question+'\nМой ответ: '+(row.values.length?row.values.join(', '):'нет ответа')+
-        '\nПравильный ответ: '+(row.expected.length?row.expected.join(', '):'не задан')+'\nРезультат: '+(message.quizResults[i]&&message.quizResults[i].correct?'верно':'неверно'))
-      ).join('\n\n');
-      const input=$('#input');if(!input)return;
-      message.quizResultSent=true;message.quizCollapsed=true;input.value=report;autoGrow();renderMessageInPlace(message.id);sendCurrent();
+      sendQuizResultToAI(message);
     }));
     $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 

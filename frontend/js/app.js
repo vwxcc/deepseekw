@@ -5094,7 +5094,7 @@
     }
     const photos = $('[data-add-chat-action="photos"]');
     if (photos) photos.classList.toggle('hidden', next !== 'main');
-    $('#add-chat-project-picker')?.classList.toggle('hidden', next !== 'main');
+    $('#add-chat-project-picker')?.classList.add('hidden');
     state.modelPickerOpen = next === 'model';
     renderModelPicker();
     if (next === 'main') renderAddChatActionLabels();

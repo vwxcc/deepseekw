@@ -394,7 +394,7 @@
     return text.replace(/\n{3,}/g, '\n\n').trim();
   }
 
-  async function copyWithFeedback(btn, text, okLabel)
+  async function copyWithFeedback(btn, text, okLabel) {
     const ok = await copyText(text);
     if (btn && btn.hasAttribute('data-icon-only')) {
       if (ok) {

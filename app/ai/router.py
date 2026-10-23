@@ -449,7 +449,8 @@ def _job_wants_web_search(job: "Job") -> bool:
         content = item.get("content")
         if isinstance(content, str) and _SEARCH_SETUP_RE.search(content):
             return True
-    # Ordinary prompts no longer trigger a search from keyword heuristics. The model must emit an explicit AICH_WEB_SEARCH command.\n    return False
+    # Search quick-action is an explicit user intent; ordinary prompts require an AI_CH_WEB_SEARCH command.
+    return False
 
 
 def _response_cache_key(job: "Job", entry: EntryConfig, messages: list[dict]) -> str | None:
@@ -1808,7 +1809,7 @@ class AIRouter:
             max_steps = 1
         elif not agent_on:
             # Ordinary chat may issue bounded search/connector commands and then synthesize a final answer.
-            max_steps = max(2, max(1, int(job.action_limit)) + 2)
+            max_steps = max(2, max(0, int(job.action_limit)) + 2)
         else:
             max_steps = max(1, int(base_steps))
         run_timeout = settings.code_agent_timeout if code_mode else settings.agent_timeout
@@ -1915,7 +1916,7 @@ class AIRouter:
                                     sort_keys=True, ensure_ascii=False, default=str,
                                 )
                                 signature = hashlib.sha256(signature_payload.encode("utf-8")).hexdigest()
-                                if actions_used >= max(1, int(job.action_limit)):
+                                if actions_used >= max(0, int(job.action_limit)):
                                     feedback_parts.append(
                                         f"{action_key}: лимит действий этого запроса исчерпан; больше ничего не запускай, подготовь итоговый ответ."
                                     )

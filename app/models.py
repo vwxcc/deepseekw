@@ -322,6 +322,18 @@ class ApiGatewayConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class BrainSystemConfig(Base):
+    """Admin-managed wiring of AI CH components shown as the system's Second Brain."""
+    __tablename__ = "brain_system_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    graph_json: Mapped[str] = mapped_column(
+        Text, default='{"version":1,"nodes":[],"edges":[]}', nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
 class BrainGraph(Base):
     """Per-account editable Second Brain graph."""
     __tablename__ = "brain_graphs"

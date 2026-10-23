@@ -93,6 +93,47 @@ async def _record_usage(db, config, entry, payload, usage, output=""):
     await db.commit()
 
 
+@router.get("/v1/info")
+async def public_api_info(db: AsyncSession = Depends(get_db)):
+    """Safe public metadata for the product UI; never expose API keys or provider model IDs."""
+    config = await db.get(ApiGatewayConfig, 1)
+    if config is None:
+        return {"enabled": False, "configured": False, "public_model": "ai-ch",
+                "base_path": "/v1", "message": "API пока не настроен администратором"}
+    model_set = None
+    if config.model_set_id:
+        model_set = (await db.execute(
+            select(ModelSet).options(selectinload(ModelSet.entries)).where(ModelSet.id == config.model_set_id)
+        )).scalar_one_or_none()
+    if model_set is None:
+        model_set = (await db.execute(
+            select(ModelSet).options(selectinload(ModelSet.entries)).where(
+                ModelSet.is_active.is_(True), ModelSet.is_router.is_(False), ModelSet.route_type == RouteType.MAIN,
+                ModelSet.is_default.is_(True)
+            ).limit(1)
+        )).scalars().first()
+    entry = next((e for e in sorted(model_set.entries or [], key=lambda x: x.position)
+                  if e.is_active and e.model.strip() and e.base_url.strip()), None) if model_set else None
+    is_configured = bool(model_set and model_set.is_active and entry)
+    pin = config.price_in if config.price_in is not None else (float(entry.price_in or 0) if entry else 0.0)
+    pout = config.price_out if config.price_out is not None else (float(entry.price_out or 0) if entry else 0.0)
+    pcache = config.price_cache if config.price_cache is not None else (float(entry.price_cache or 0) if entry else 0.0)
+    return {
+        "enabled": bool(config.enabled and is_configured),
+        "configured": is_configured,
+        "public_model": "ai-ch",
+        "base_path": "/v1",
+        "model_set_name": model_set.name if model_set else "",
+        "prices": {"input": float(pin or 0), "output": float(pout or 0), "cache_read": float(pcache or 0),
+                   "unit": "USD per 1M tokens"},
+        "endpoints": ["/v1/models", "/v1/chat/completions"],
+        "features": ["chat_completions", "streaming_sse"],
+        "message": "API готов к подключениям" if config.enabled and is_configured else "API пока не включён администратором",
+    }
+
+
+
+
 @router.get("/v1/models")
 async def list_models(request: Request, db: AsyncSession = Depends(get_db)):
     _, selected, _ = await _authenticate(request,db)

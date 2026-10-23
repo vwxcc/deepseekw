@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import get_current_admin, get_db, require_csrf
-from ..models import ApiGatewayConfig, Chat, File, Message, ModelSet, ModelSetEntry, ReadableTextModelConfig, RouteType, StatusModelConfig, UsageEvent, User
+from ..models import ApiGatewayConfig, BrainSystemConfig, Chat, File, Message, ModelSet, ModelSetEntry, ReadableTextModelConfig, RouteType, StatusModelConfig, UsageEvent, User
 from ..schemas import (
     AdminChatOut,
     AdminStatsOut,
@@ -425,6 +425,82 @@ async def regenerate_api_gateway_key(_csrf=Depends(require_csrf), db: AsyncSessi
     config.api_key_prefix = key[:13]
     await db.commit()
     return {"api_key": key, **(await _api_gateway_payload(db, config))}
+
+
+
+
+# ---------- System Second Brain configuration (admin only) ----------
+
+def _default_system_brain_graph() -> dict:
+    return {
+        "version": 1,
+        "nodes": [
+            {"id": "input", "title": "Запрос", "kind": "Вход", "description": "Сообщение пользователя, история диалога и файлы"},
+            {"id": "memory", "title": "Память", "kind": "Контекст", "description": "Релевантные сохранённые факты и предпочтения"},
+            {"id": "model", "title": "Основная модель", "kind": "ИИ", "description": "Планирует ответ и выбирает нужные действия"},
+            {"id": "tools", "title": "Инструменты", "kind": "Действия", "description": "Поиск, код, файлы и разрешённые коннекторы"},
+            {"id": "check", "title": "Проверка результата", "kind": "Контроль", "description": "Проверка результата перед показом пользователю"},
+            {"id": "output", "title": "Ответ", "kind": "Результат", "description": "Текст, блоки, интерактивные элементы и файлы"},
+        ],
+        "edges": [
+            {"id": "e1", "from": "input", "to": "memory", "relation": "Запрос помогает подобрать подходящий контекст памяти"},
+            {"id": "e2", "from": "memory", "to": "model", "relation": "Память передаёт релевантные факты основной модели"},
+            {"id": "e3", "from": "model", "to": "tools", "relation": "Модель формирует вызов инструмента, когда он нужен"},
+            {"id": "e4", "from": "tools", "to": "model", "relation": "Инструменты возвращают результат основной модели"},
+            {"id": "e5", "from": "model", "to": "check", "relation": "Ответ проверяется на полноту, формат и ограничения"},
+            {"id": "e6", "from": "check", "to": "output", "relation": "Проверенный результат передаётся интерфейсу"},
+        ],
+    }
+
+
+@router.get("/brain-config")
+async def get_brain_system_config(db: AsyncSession = Depends(get_db)):
+    row = await db.get(BrainSystemConfig, 1)
+    if row is None:
+        return {"graph": _default_system_brain_graph(), "updated_at": None, "is_default": True}
+    try:
+        graph = json.loads(row.graph_json or "{}")
+    except (ValueError, TypeError):
+        graph = _default_system_brain_graph()
+    if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list) or not isinstance(graph.get("edges"), list):
+        graph = _default_system_brain_graph()
+    return {"graph": graph, "updated_at": row.updated_at.isoformat() if row.updated_at else None, "is_default": False}
+
+
+@router.put("/brain-config")
+async def save_brain_system_config(
+    data: dict,
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    graph = data.get("graph") if isinstance(data, dict) else None
+    if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list) or not isinstance(graph.get("edges"), list):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нужен граф с массивами nodes и edges")
+    nodes, edges = graph["nodes"], graph["edges"]
+    if len(nodes) > 50 or len(edges) > 120:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Максимум 50 блоков и 120 связей")
+    node_ids = set()
+    for node in nodes:
+        if not isinstance(node, dict) or not str(node.get("id") or "").strip() or not str(node.get("title") or "").strip():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "У каждого блока должны быть id и название")
+        node_ids.add(str(node["id"]))
+    for edge in edges:
+        if not isinstance(edge, dict) or str(edge.get("from") or "") not in node_ids or str(edge.get("to") or "") not in node_ids:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Каждая связь должна соединять существующие блоки")
+        if not str(edge.get("relation") or "").strip():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Опишите смысл каждой связи")
+    encoded = json.dumps(graph, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > 100_000:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Схема не должна превышать 100 КБ")
+    row = await db.get(BrainSystemConfig, 1)
+    if row is None:
+        row = BrainSystemConfig(id=1, graph_json=encoded)
+        db.add(row)
+    else:
+        row.graph_json = encoded
+    await db.commit()
+    await db.refresh(row)
+    return {"ok": True, "updated_at": row.updated_at.isoformat() if row.updated_at else None}
 
 
 

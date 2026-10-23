@@ -439,17 +439,8 @@ def _job_wants_web_search(job: "Job") -> bool:
     if not job.web_search:
         return False
     query = str(job.search_query or job.user_text or "").strip()
-    if not query or _SEARCH_SETUP_RE.search(query):
-        return False
-    # The first message produced by the Search quick-action is only a prompt asking
-    # what to search for. Apply search to the user's subsequent answer instead.
-    for item in reversed((job.history_messages or [])[:-1][-8:]):
-        if not isinstance(item, dict) or item.get("role") != "user":
-            continue
-        content = item.get("content")
-        if isinstance(content, str) and _SEARCH_SETUP_RE.search(content):
-            return True
-    # Search quick-action is an explicit user intent; ordinary prompts require an AI_CH_WEB_SEARCH command.
+    # Every public web search now requires an explicit AI_CH_WEB_SEARCH command from the model.
+    # Keep this preflight disabled so search is never silently run by keyword heuristics.
     return False
 
 
@@ -1148,6 +1139,7 @@ class AIRouter:
         full = ""
         thinking = ""
         usage: dict | None = None
+        command_stream_filter = prompts.ToolCommandStreamFilter()
         markup = ActivityMarkupParser()
         answer_status_sent = False
 
@@ -1160,9 +1152,11 @@ class AIRouter:
                     if text:
                         full += text
                         if not defer_output:
-                            if not job.first_token_at:
-                                job.first_token_at = time.monotonic()
-                            await job.output.put(("delta", text))
+                            safe_text = command_stream_filter.feed(text)
+                            if safe_text:
+                                if not job.first_token_at:
+                                    job.first_token_at = time.monotonic()
+                                await job.output.put(("delta", safe_text))
                 elif kind == "status":
                     event = ("ui_status", str(item["text"]))
                     if defer_output:
@@ -1238,6 +1232,12 @@ class AIRouter:
             await job.output.put(("cancelled", ""))
             return None
         await emit_items(markup.finish())
+        if not defer_output:
+            safe_tail = command_stream_filter.finish()
+            if safe_tail:
+                if not job.first_token_at:
+                    job.first_token_at = time.monotonic()
+                await job.output.put(("delta", safe_tail))
         usage = _usage_or_estimate(usage, messages, full + ("\n" + thinking if thinking else ""))
         return full, thinking, usage
 
@@ -1916,17 +1916,17 @@ class AIRouter:
                                     sort_keys=True, ensure_ascii=False, default=str,
                                 )
                                 signature = hashlib.sha256(signature_payload.encode("utf-8")).hexdigest()
+                                if signature in seen_tool_signatures:
+                                    feedback_parts.append(
+                                        f"{action_key}: этот же запрос уже выполнялся; не повторяй его, используй предыдущий результат."
+                                    )
+                                    continue
                                 if actions_used >= max(0, int(job.action_limit)):
                                     feedback_parts.append(
                                         f"{action_key}: лимит действий этого запроса исчерпан; больше ничего не запускай, подготовь итоговый ответ."
                                     )
                                     continue
                                 actions_used += 1
-                                if signature in seen_tool_signatures:
-                                    feedback_parts.append(
-                                        f"{action_key}: этот же запрос уже выполнялся; не повторяй его, используй предыдущий результат."
-                                    )
-                                    continue
                                 seen_tool_signatures.add(signature)
                                 try:
                                     if command_kind == "WEB_SEARCH":

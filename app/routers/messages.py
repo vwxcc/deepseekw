@@ -707,6 +707,11 @@ async def send_message(
     memory_enabled = bool(preference_row.memory_enabled) if preference_row is not None else True
     if memory_enabled:
         system_prompt += await _memory_block(db, user.id)
+    else:
+        system_prompt += (
+            "\n\n[ПАМЯТЬ ВЫКЛЮЧЕНА пользователем: не используй сохранённые факты и предпочтения, "
+            "не добавляй маркеры [[memory: ...]] или [[pref: ...]] и не пытайся сохранять новые записи.]"
+        )
     system_prompt += await _request_context_block(request, db, user, data.client_context)
     plan_for_limits = "pro" if user.is_admin else normalize_plan(user.plan)
     effective_limits = await get_limits(db, plan_for_limits)

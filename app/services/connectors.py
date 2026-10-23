@@ -215,7 +215,7 @@ async def execute_connector_action(
             if not project or not path or any(part == ".." for part in path.split("/")):
                 raise ValueError("Для GitLab нужны project_id/repo и path")
             url = f"https://gitlab.com/api/v4/projects/{quote(project, safe='')}/repository/files/{quote(path, safe='')}"
-            params = {"ref": str(data.get("branch") or "main")[:200}
+            params = {"ref": str(data.get("branch") or "main")[:200]}
         else:
             raise ValueError("Неизвестное действие GitLab")
     elif provider == "notion":

@@ -4169,7 +4169,7 @@
         responses.push({question:String(q.question||''),values,expected});return{correct,values,expected};
       });
       const score=results.filter(item=>item.correct).length;
-      message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=true;message.quizResponses=responses;message.quizResultSent=false;
+      message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=false;message.quizResponses=responses;message.quizResultSent=false;
       renderMessageInPlace(message.id);toast('Результат: '+score+' из '+items.length);
       // The model opts in during quiz generation only when its follow-up needs the score.
       if(items.some(item=>item&&typeof item==='object'&&item.send_result_to_ai===true)){

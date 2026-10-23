@@ -703,8 +703,15 @@ async def send_message(
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
         )
 
-    system_prompt += await _memory_block(db, user.id)
+    preference_row = await db.get(UserPreference, user.id)
+    memory_enabled = bool(preference_row.memory_enabled) if preference_row is not None else True
+    if memory_enabled:
+        system_prompt += await _memory_block(db, user.id)
     system_prompt += await _request_context_block(request, db, user, data.client_context)
+    plan_for_limits = "pro" if user.is_admin else normalize_plan(user.plan)
+    effective_limits = await get_limits(db, plan_for_limits)
+    raw_action_limit = effective_limits.get("agent_actions", 3)
+    action_limit = max(0, min(50, int(raw_action_limit if raw_action_limit is not None else 3)))
     if execution_target == "device":
         system_prompt += (
             "\n\n[Запуск кода: НА УСТРОЙСТВЕ пользователя. Не выполняй код на сервере "
@@ -763,8 +770,9 @@ async def send_message(
         search_query=content,
         web_search=bool(data.web_search),
         first_exchange=first_exchange,
-        max_steps=int((await get_limits(db, user.plan or "free")).get("agent_steps") or 0)
-        or None,
+        max_steps=int(effective_limits.get("agent_steps") or 0) or None,
+        memory_enabled=memory_enabled,
+        action_limit=action_limit,
     )
     # Start the normal AI job first. The exact-title lookup runs only after it has
     # entered the router; on a hit, cancel that work and return the prepared answer.

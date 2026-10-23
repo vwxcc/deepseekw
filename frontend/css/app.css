@@ -5431,3 +5431,223 @@ input[type="range"]:focus-visible {
   #brain-workspace-shell .brain-graph-canvas { grid-template-columns:repeat(2,minmax(0,1fr)); }.brain-page-toolbar { align-items:flex-start; }
 }
 @media(max-width:480px) { #brain-workspace-shell .brain-graph-canvas { grid-template-columns:minmax(0,1fr); }.brain-page-search { min-width:100%; } }
+
+
+/* ---- Targeted fixes: media previews, table overflow, option labels and sidebar ---- */
+
+/* Tables scroll inside their own frame; never widen the message column. */
+#messages .msg .content.md .table-wrap,
+.table-wrap {
+  display: block;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  margin: 0 0 13px;
+}
+#messages .msg .content.md .table-wrap table,
+.table-wrap table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  table-layout: auto;
+  margin: 0;
+}
+.table-wrap th,
+.table-wrap td {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* In-chat images are small previews; opening them still targets the original file. */
+.msg-att.img {
+  flex: 0 0 auto;
+  max-width: 140px;
+}
+.msg-att.img img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 140px;
+  max-height: 140px;
+  object-fit: contain;
+  border-radius: var(--radius);
+}
+
+/* Keep callouts and interactive AI labels horizontal in narrow flex/grid layouts. */
+#messages .msg.assistant .content.md .aich-ui-callout {
+  grid-column: 1 / -1 !important;
+  justify-self: stretch !important;
+  align-self: stretch !important;
+  flex: 0 0 100% !important;
+  display: grid !important;
+  grid-template-columns: 2rem minmax(0, 1fr) !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+#messages .msg.assistant .content.md .aich-ui-copy {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  direction: ltr !important;
+}
+#messages .msg.assistant .content.md .aich-ui-copy > strong,
+#messages .msg.assistant .content.md .aich-ui-copy > div {
+  display: block !important;
+  grid-column: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  direction: ltr !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+}
+#messages .msg.assistant .content.md .aich-ui-copy > div {
+  white-space: normal !important;
+  -webkit-box-orient: horizontal !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+  max-height: 2.6em;
+}
+#messages .msg.assistant .content.md .aich-ui-actions,
+#messages .msg.assistant .content.md .aich-ui-action {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+#messages .msg.assistant .content.md .aich-ui-action {
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  direction: ltr !important;
+}
+#messages .msg.assistant .content.md .aich-ui-action > span:nth-child(2) {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+/* Top row always contains New chat and Account, also on narrow phones. */
+#sidebar .side-row.top-account-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+}
+#sidebar .side-row.top-account-actions > #new-chat-btn,
+#sidebar .side-row.top-account-actions > #settings-btn {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 40px;
+  justify-content: center !important;
+  gap: 6px;
+  padding: 8px 9px;
+  white-space: nowrap;
+}
+#sidebar .side-row.top-account-actions > #settings-btn > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 11px;
+  text-align: left;
+}
+.sidebar-more-btn .sidebar-more-caret {
+  margin-left: auto;
+  color: var(--fg-muted);
+  transition: transform .18s ease;
+}
+.sidebar-more-btn[aria-expanded="true"] .sidebar-more-caret {
+  transform: rotate(180deg);
+}
+.sidebar-more-content:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.sidebar-more-content .sidebar-quick-tools,
+.sidebar-more-content .sidebar-section-links,
+.sidebar-more-content .primary-actions {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The profile sheet has one highlighted, full-width entry to usage and balance. */
+#modal-root .profile-limits-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  margin: 12px 0 8px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--bg-panel));
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+#modal-root .profile-limits-action:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+#modal-root .profile-limits-action:active { transform: scale(.995); }
+#modal-root .profile-limits-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--bg-panel);
+  color: var(--accent);
+}
+#modal-root .profile-limits-icon .ic { width: 19px; height: 19px; }
+#modal-root .profile-limits-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+#modal-root .profile-limits-copy strong { font-size: 14px; font-weight: 650; }
+#modal-root .profile-limits-copy small {
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+}
+#modal-root .profile-limits-arrow { flex: 0 0 auto; color: var(--fg-muted); }
+#modal-root .profile-limits-arrow .ic { width: 17px; height: 17px; }
+#modal-root .profile-admin-limits { grid-column: 1 / -1; }

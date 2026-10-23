@@ -86,6 +86,48 @@ def _format_http_error(status_code: int, body: str, model: str, env_prefix: str 
     )
 
 
+async def transcribe_audio(
+    *,
+    data: bytes,
+    filename: str,
+    mime_type: str,
+    base_url: str,
+    api_key: str,
+    model: str = "whisper-1",
+    timeout: float = 75.0,
+) -> str:
+    """Transcribe an uploaded audio file using an OpenAI-compatible audio endpoint."""
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        raise ProviderError("Не задан base_url для распознавания речи")
+    if base.endswith("/v1"):
+        url = base + "/audio/transcriptions"
+    else:
+        url = base + "/v1/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        response = await _get_provider_client().post(
+            url,
+            headers=headers,
+            data={"model": (model or "whisper-1").strip(), "response_format": "json"},
+            files={"file": (filename or "voice-message.webm", data, mime_type or "application/octet-stream")},
+            timeout=timeout,
+        )
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"Не удалось подключиться к сервису распознавания речи: {type(exc).__name__}") from exc
+    if response.status_code < 200 or response.status_code >= 300:
+        body = (response.text or "").strip().replace("\\n", " ")[:300]
+        raise ProviderError(f"Сервис распознавания речи вернул HTTP {response.status_code}: {body}")
+    try:
+        payload = response.json()
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ProviderError("Сервис распознавания речи вернул некорректный ответ") from exc
+    text = str(payload.get("text") or "").strip() if isinstance(payload, dict) else ""
+    if not text:
+        raise ProviderError("Сервис распознавания речи не вернул текст")
+    return text[:100_000]
+
+
 def _endpoint(base_url: str) -> str:
     base = (base_url or "").strip().rstrip("/")
     if not base:

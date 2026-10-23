@@ -1599,7 +1599,7 @@ class AIRouter:
                 connector_flags = await connection_state(connector_db, job.user_id)
         connected = [item["provider"] for item in CONNECTOR_CATALOG if connector_flags.get(item["provider"])]
         unavailable = [item["provider"] for item in CONNECTOR_CATALOG if not connector_flags.get(item["provider"])]
-        system_prompt += "\n\n" + prompts.TOOL_COMMAND_SKILL.replace("{action_limit}", str(max(1, int(job.action_limit))))
+        system_prompt += "\n\n" + prompts.TOOL_COMMAND_SKILL.replace("{action_limit}", str(max(0, int(job.action_limit))))
         system_prompt += "\n\n[ДОСТУП КОННЕКТОРАМ]\n" + json.dumps({"connected": connected, "not_connected": unavailable}, ensure_ascii=False)
         if job.user_id:
             # Private skills are loaded only for the owning account and are never exposed by system-skill APIs.

@@ -582,7 +582,7 @@ a { color: var(--accent); }
    ============================================================ */
 .modal-back {
   position: fixed; inset: 0; background: rgba(40, 34, 24, .34);
-  display: grid; place-items: center; z-index: 12000; padding: 20px;
+  display: grid; place-items: center; z-index: 1800; padding: 20px;
   animation: fadeIn 0.19s ease;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -4440,6 +4440,7 @@ html, body, #main-screen, #chat-area { max-width: 100%; overflow-x: hidden; }
 
 /* Bottom-sheet dialogs use the same visual language as the plus panel. */
 .modal-back-sheet {
+  z-index: 12000;
   align-items: end;
   justify-items: center;
   padding: 8px 12px 0;

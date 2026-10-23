@@ -419,14 +419,14 @@ async def patch_api_gateway_config(data: ApiGatewayConfigUpdate, _csrf=Depends(r
 
 
 @router.post("/api-gateway/key")
-async def regenerate_api_gateway_key(_csrf=Depends(require_csrf), db: AsyncSession = Depends(get_db)):
-    config = await _get_api_gateway_config(db)
-    key = "aich_" + secrets.token_urlsafe(36)
-    config.api_key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
-    config.api_key_prefix = key[:13]
-    await db.commit()
-    return {"api_key": key, **(await _api_gateway_payload(db, config))}
-
+async def regenerate_api_gateway_key(
+    _csrf=Depends(require_csrf),
+) -> dict:
+    """The shared legacy key is intentionally disabled; API secrets are user-owned."""
+    raise HTTPException(
+        status.HTTP_410_GONE,
+        "Общий API-ключ отключён. Создайте личный ключ на странице API AI CH.",
+    )
 
 
 

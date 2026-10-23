@@ -5277,7 +5277,8 @@
       const shell = $('#add-to-chat-shell');
       if (shell && shell.classList.contains('open')) closeAddToChatSheet(); else openAddToChatSheet();
     });
-    $('#file-input').addEventListener('cancel', () => { workspaceUploadIntent = false; $('#file-input').removeAttribute('accept'); });
+    $('#file-input').addEventListener('cancel', () => { workspaceUploadIntent = false; });
+    $('#file-input').addEventListener('cancel', () => { $('#file-input').removeAttribute('accept'); });
     $('#file-input').addEventListener('change', async (e) => {
       $('#file-input').removeAttribute('accept');
       const files = Array.from(e.target.files || []);

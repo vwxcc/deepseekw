@@ -8,7 +8,7 @@
   <link rel="preload" href="/assets/fonts/ys-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/lora-cyrillic-600.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/pt-400.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=68&rev=117" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=69&rev=118" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
 <body>
@@ -244,10 +244,13 @@
               <circle class="usage-ring-value" id="usage-bar" cx="18" cy="18" r="15.5" pathLength="100"/>
             </svg>
           </button>
-          <button class="side-item wide" id="settings-btn" title="Настройки и профиль">
-            <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
+          <button class="new-chat sidebar-new-chat" id="new-chat-btn" title="Новый чат">
+            <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
           </button>
         </div>
+        <button class="side-item wide sidebar-account-settings" id="settings-btn" title="Настройки и профиль">
+          <svg class="ic"><use href="#i-user"/></svg><span id="who">Аккаунт</span>
+        </button>
         <button class="side-item wide sidebar-limits hidden" id="sidebar-limits-btn" title="Настроить тарифы и лимиты">
           <svg class="ic"><use href="#i-settings"/></svg><span>Настройки лимитов</span>
         </button>
@@ -280,8 +283,8 @@
           <button type="button" class="chip-btn context sidebar-memory" id="scheduled-quick-btn" title="Календарь и напоминания"><svg class="ic"><use href="#i-calendar"/></svg><span>Запланировано</span></button>
         </div>
         <div class="side-row primary-actions">
-          <button class="new-chat" id="new-chat-btn" title="Новый чат">
-            <svg class="ic"><use href="#i-plus"/></svg><span>Новый чат</span>
+          <button class="new-chat capabilities-launch" id="capabilities-btn" title="Возможности AI CH">
+            <svg class="ic"><use href="#i-sparkle"/></svg><span>Возможности</span>
           </button>
           <button class="new-chat code-mode" id="new-code-btn" title="Код-агент скоро появится" aria-label="Код-агент — скоро" aria-disabled="true" disabled>
             <svg class="ic"><use href="#i-lock"/></svg><span>Код-агент</span><em class="soon-tag">Скоро</em>
@@ -430,6 +433,17 @@
         <button type="button" class="chip-btn" id="api-workspace-refresh"><svg class="ic"><use href="#i-refresh"/></svg><span>Обновить статус</span></button>
       </header>
       <div id="api-workspace-content" class="api-page-content" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <div id="capabilities-workspace-shell" class="files-workspace-shell" aria-hidden="true">
+    <section class="files-workspace capabilities-page-workspace" role="region" aria-labelledby="capabilities-workspace-title" tabindex="-1">
+      <header class="files-workspace-header">
+        <button type="button" class="icon-btn" id="capabilities-workspace-back" title="Вернуться в чат" aria-label="Вернуться в чат"><svg class="ic"><use href="#i-chevron"/></svg></button>
+        <div class="files-workspace-title"><h2 id="capabilities-workspace-title">Возможности AI CH</h2><p>Одна среда для диалогов, знаний, файлов и инструментов</p></div>
+        <span class="capabilities-version-chip"><svg class="ic"><use href="#i-sparkle"/></svg> AI CH</span>
+      </header>
+      <div id="capabilities-workspace-content" class="capabilities-page-content" aria-live="polite"></div>
     </section>
   </div>
 
@@ -656,6 +670,6 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=102&rev=117"></script>
+  <script src="/assets/js/app.js?v=103&rev=118"></script>
 </body>
 </html>

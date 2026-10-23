@@ -156,8 +156,8 @@ ASK_SKILL = (
 )
 RUN_RE = re.compile(r"```run[^\n]*\n([\s\S]*?)```", re.I)
 FILEPLAN_RE = re.compile(r"```fileplan[^\n]*\n([\s\S]*?)```", re.I)
-AGENT_BLOCK_RE = re.compile(r"\`\`\`(run|fileplan)[^\\n]*\\n([\\s\\S]*?)\`\`\`", re.I)
-TOOL_COMMAND_RE = re.compile(r"\\[\\[\\s*AICH_(CONNECTOR|WEB_SEARCH)\\s*:\\s*(\\{[\\s\\S]*?\\})\\s*\\]\\]", re.I)
+AGENT_BLOCK_RE = re.compile(r"```(run|fileplan)[^\n]*\n([\s\S]*?)```", re.I)
+TOOL_COMMAND_RE = re.compile(r"\[\[\s*AICH_(CONNECTOR|WEB_SEARCH)\s*:\s*(\{[\s\S]*?\})\s*\]\]", re.I)
 
 TOOL_COMMAND_SKILL = """
 Команды поиска и подключений AI CH:
@@ -189,7 +189,7 @@ def extract_tool_commands(text: str) -> list[tuple[str, dict]]:
 def strip_tool_commands(text: str) -> str:
     """Remove internal tool instructions from the visible/persisted answer."""
     clean = TOOL_COMMAND_RE.sub("", text or "")
-    return re.sub(r"\\n{3,}", "\\n\\n", clean).strip()
+    return re.sub(r"\n{3,}", "\n\n", clean).strip()
 
 RUN_SKILL = (
     "Исполнение и проверка. Не запускай код до того, как сформирован полный ответ. "

@@ -8038,7 +8038,17 @@
       if ($('#capabilities-workspace-shell')?.classList.contains('open')) closeCapabilitiesWorkspace();
     });
     // Code Agent is temporarily unavailable; never create a project/chat from this control.
-    $('#sidebar-limits-btn').addEventListener('click', openLimits);
+    const legacySidebarLimits = $('#sidebar-limits-btn');
+    if (legacySidebarLimits) legacySidebarLimits.addEventListener('click', openLimits);
+    const moreButton = $('#sidebar-more-btn');
+    const moreContent = $('#sidebar-more-content');
+    if (moreButton && moreContent) {
+      moreButton.addEventListener('click', () => {
+        const expanded = moreButton.getAttribute('aria-expanded') === 'true';
+        moreButton.setAttribute('aria-expanded', String(!expanded));
+        moreContent.classList.toggle('hidden', expanded);
+      });
+    }
     // Консилиум намеренно не возвращаем: восстановлен только режим Код-агента.
     $('#collapse-btn').addEventListener('click', () => {
       if (window.innerWidth <= 860) { closeMobileSidebar(); return; }
@@ -8084,6 +8094,10 @@
           '<span>' + escapeHtml(u.email || '') + '</span>' +
           '<span class="role-chip">' + (isAdmin ? 'администратор' : 'пользователь') + '</span></div>' +
           '</div>' +
+          '<button type="button" class="profile-limits-action" id="profile-limits-btn">' +
+          '<span class="profile-limits-icon">' + icon('gauge') + '</span>' +
+          '<span class="profile-limits-copy"><strong>Лимиты и баланс</strong><small>Расход, остаток и статистика использования</small></span>' +
+          '<span class="profile-limits-arrow">' + icon('chevron-right') + '</span></button>' +
           '<h4 class="sec">Параметры</h4>' +
           '<p class="usage-note">Поиск в интернете: всегда включён · Память: ' +
           ((state.memories || []).length) + ' записей<br/>' +
@@ -8094,7 +8108,8 @@
           '<button class="chip-btn" id="set-links">' + icon('link') + 'Мои ссылки</button>' +
           '<button class="chip-btn" id="set-files">' + icon('folder') + 'Файлы</button>' +
           (isAdmin
-            ? '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
+            ? '<button type="button" class="chip-btn profile-admin-limits" id="profile-admin-limits-btn">' + icon('settings') + 'Настройки лимитов</button>' +
+              '<button class="chip-btn" id="open-ms">' + icon('settings') + 'Model Sets</button>' +
               '<button class="chip-btn" id="open-api-gateway">' + icon('plug') + 'Настройки API</button>' +
               '<button class="chip-btn" id="open-brain-config">' + icon('brain') + 'Настройки Второго мозга</button>' +
               '<button class="chip-btn" id="open-ready-answers">' + icon('book') + 'База готовых ответов</button>' +
@@ -8110,6 +8125,8 @@
       on('#set-memory', () => { closeModal(); openMemory(); });
       on('#set-links', () => { closeModal(); openLinks(); });
       on('#set-files', () => { closeModal(); toggleFiles(true); });
+      on('#profile-limits-btn', () => { closeModal(); openUsageModal({ refresh: true }); });
+      on('#profile-admin-limits-btn', () => { closeModal(); openLimits(); });
       on('#open-ms', () => { closeModal(); openModelSetsAdmin(); });
       on('#open-api-gateway', () => { closeModal(); openApiAdminSettings(); });
       on('#open-brain-config', () => { closeModal(); openBrainAdminSettings(); });

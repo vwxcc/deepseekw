@@ -124,8 +124,13 @@ class MessageCreate(BaseModel):
     web_search: bool = True
     effort: str | None = None
     style: str = "auto"
+    response_detail: str = "standard"
     execution_target: str = "site"
     client_context: dict = Field(default_factory=dict)
+
+
+class ResponseDetailIn(BaseModel):
+    response_detail: str = "standard"
 
 
 class RateIn(BaseModel):

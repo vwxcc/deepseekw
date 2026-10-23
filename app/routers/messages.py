@@ -51,6 +51,7 @@ from ..schemas import (
     CompressIn,
     MessageCreate,
     MessageOut,
+    ResponseDetailIn,
     RateIn,
     UsageOut,
 )
@@ -514,6 +515,7 @@ async def _spawn(
     user_id: str | None = None,
     effort: str | None = None,
     execution_target: str = "site",
+    response_detail: str = "standard",
 ) -> StreamingResponse:
     execution_target = execution_target if execution_target in {"site", "device", "both"} else "site"
     selected_model_set_id = chat.model_set_id
@@ -532,6 +534,10 @@ async def _spawn(
             action_limit = max(0, min(50, int(raw_action_limit if raw_action_limit is not None else 3)))
     mode = chat.mode or "chat"
     system_prompt = prompts.CODE_SYSTEM if mode == "code" else prompts.MAIN_SYSTEM
+    detail_key = str(response_detail or "standard").strip().lower()
+    if detail_key not in prompts.RESPONSE_DETAIL_PROMPTS:
+        detail_key = "standard"
+    system_prompt += prompts.RESPONSE_DETAIL_PROMPTS[detail_key]
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
@@ -795,6 +801,10 @@ async def send_message(
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
+    detail_key = str(data.response_detail or "standard").strip().lower()
+    if detail_key not in prompts.RESPONSE_DETAIL_PROMPTS:
+        detail_key = "standard"
+    system_prompt += prompts.RESPONSE_DETAIL_PROMPTS[detail_key]
     if chat.summary:
         system_prompt += (
             "\n\n[Краткое содержание предыдущего диалога]\n" + chat.summary
@@ -963,6 +973,7 @@ async def send_first_message(
 @router.post("/messages/{message_id}/retry")
 async def retry_message(
     request: Request,
+    data: ResponseDetailIn | None = None,
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
@@ -981,12 +992,14 @@ async def retry_message(
         history_messages=history_messages,
         user_id=user.id,
         execution_target=message.execution_target or "site",
+        response_detail=data.response_detail if data is not None else "standard",
     )
 
 
 @router.post("/messages/{message_id}/branch")
 async def branch_message(
     request: Request,
+    data: ResponseDetailIn | None = None,
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
@@ -1005,12 +1018,14 @@ async def branch_message(
         history_messages=history_messages,
         user_id=user.id,
         execution_target=message.execution_target or "site",
+        response_detail=data.response_detail if data is not None else "standard",
     )
 
 
 @router.post("/messages/{message_id}/continue")
 async def continue_message(
     request: Request,
+    data: ResponseDetailIn | None = None,
     message: Message = Depends(get_owned_message),
     user: User = Depends(get_current_user),
     _csrf=Depends(require_csrf),
@@ -1032,6 +1047,7 @@ async def continue_message(
         history_messages=history_messages,
         user_id=user.id,
         execution_target=message.execution_target or "site",
+        response_detail=data.response_detail if data is not None else "standard",
     )
 
 

@@ -982,13 +982,11 @@
     const body = cleanText(spec.text, 1600);
     const tone = ['info', 'success', 'warning', 'neutral'].includes(spec.tone) ? spec.tone : 'neutral';
     if (spec.type === 'callout') {
-      // Keep critical geometry inline as a last resort: this block must never
-      // inherit a narrow flex/grid track and wrap a word one character per line.
-      return '<aside class="aich-ui-callout tone-' + tone + '" role="note" style="display:grid;grid-template-columns:2rem minmax(0,1fr);align-items:center;justify-items:stretch;gap:10px;box-sizing:border-box;width:100%;max-width:100%;min-width:0;flex:0 0 100%;align-self:stretch;overflow:hidden;writing-mode:horizontal-tb;direction:ltr">' +
-        '<span class="aich-ui-emoji" aria-hidden="true" style="grid-column:1;display:flex;align-items:center;justify-content:center;flex:none;width:2rem;min-width:2rem;max-width:2rem;font-size:1.55rem;line-height:1;white-space:nowrap;writing-mode:horizontal-tb">' + emoji + '</span>' +
-        '<div class="aich-ui-copy" style="grid-column:2;display:flex;flex-direction:column;align-items:stretch;gap:4px;width:100%;min-width:0;max-width:100%;overflow:hidden;overflow-wrap:break-word;word-break:normal;white-space:normal;writing-mode:horizontal-tb;direction:ltr">' +
-        (title ? '<strong style="display:block;width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal;word-break:normal;writing-mode:horizontal-tb">' + escapeHtml(title) + '</strong>' : '') +
-        (body ? '<div style="display:block;width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:anywhere;word-break:normal;writing-mode:horizontal-tb">' + escapeHtml(body).replace(/\s*\n\s*/g, ' ') + '</div>' : '') +
+      return '<aside class="aich-ui-callout aich-ui-callout-stable tone-' + tone + '" role="note">' +
+        '<span class="aich-ui-emoji" aria-hidden="true">' + emoji + '</span>' +
+        '<div class="aich-ui-copy">' +
+        (title ? '<strong>' + escapeHtml(title) + '</strong>' : '') +
+        (body ? '<div>' + escapeHtml(body).replace(/\s*\n\s*/g, ' ') + '</div>' : '') +
         '</div></aside>';
     }
     const actionButton = item => {
@@ -1011,10 +1009,13 @@
       const buttons = spec.items.slice(0, 6).map(actionButton).filter(Boolean);
       const isCarousel = spec.layout === 'carousel' || spec.presentation === 'carousel' || spec.carousel === true;
       const actionsClass = isCarousel ? 'aich-ui-actions aich-ui-actions-carousel' : 'aich-ui-actions';
-      return buttons.length ? '<section class="' + actionsClass + '" aria-label="' +
-        escapeHtml(title || 'Интерактивные действия') + '">' +
-        (title ? '<div class="aich-ui-actions-heading"><span aria-hidden="true">' + emoji + '</span><strong>' + escapeHtml(title) + '</strong></div>' : '') +
-        buttons.join('') + '</section>' : codeBlockHtml('json', code);
+      const heading = title
+        ? '<div class="aich-ui-actions-heading"><span aria-hidden="true">' + emoji + '</span><strong>' + escapeHtml(title) + '</strong></div>'
+        : '';
+      return buttons.length ? '<section class="aich-ui-actions-wrap" aria-label="' +
+        escapeHtml(title || 'Интерактивные действия') + '">' + heading +
+        '<div class="' + actionsClass + '" role="group">' + buttons.join('') + '</div></section>'
+        : codeBlockHtml('json', code);
     }
     return codeBlockHtml('json', code);
   }
@@ -1214,6 +1215,8 @@
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
+    responseDetail: ['minimum', 'standard', 'max'].includes(localStorage.getItem('aich_response_detail'))
+      ? localStorage.getItem('aich_response_detail') : 'standard',
     readonly: false,
     publicToken: null,
     greetTimer: null,
@@ -4242,8 +4245,8 @@
         openAudioPlayer(id, true);
       } else if (act === 'device-audio') {
         startDeviceSpeech(id);
-      } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry'); }
-      else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue'); }
+      } else if (act === 'retry') { streamRequest('/api/messages/' + id + '/retry', { response_detail: state.responseDetail }); }
+      else if (act === 'continue') { streamRequest('/api/messages/' + id + '/continue', { response_detail: state.responseDetail }); }
       else if (act === 'stop') { await api.post('/api/messages/' + id + '/stop'); }
       else if (act === 'rate-up') { await rateMessage(id, 1); }
       else if (act === 'rate-down') { await rateMessage(id, -1); }
@@ -5197,6 +5200,7 @@
         execution_target: selectedExecutionTarget,
         effort: state.effort,
         style: state.style,
+        response_detail: state.responseDetail,
       }, { optimistic: true, input, draft, attachments: sentAttachments });
       requestStarted = true;
 
@@ -5275,12 +5279,36 @@
     }));
   }
 
+  function responseDetailName(value) {
+    return ({ minimum: 'Минимум', standard: 'Стандарт', max: 'Max' })[value] || 'Стандарт';
+  }
+
+  function renderAddChatResponseDetailView() {
+    const root = $('#add-chat-response-detail-options');
+    if (!root) return;
+    const options = [
+      { value: 'minimum', title: 'Минимум', description: 'Коротко и по делу, без лишних пояснений.' },
+      { value: 'standard', title: 'Стандарт', description: 'Обычная глубина ответа по задаче. Выбрано по умолчанию.' },
+      { value: 'max', title: 'Max', description: 'Больше деталей, объяснений, шагов и примеров.' },
+    ];
+    root.innerHTML = options.map(option => {
+      const selected = state.responseDetail === option.value;
+      return '<button type="button" class="response-detail-option' + (selected ? ' selected' : '') +
+        '" role="radio" aria-checked="' + String(selected) + '" data-response-detail="' + option.value + '">' +
+        '<span class="response-detail-option-copy"><strong>' + option.title + '</strong><small>' +
+        option.description + '</small></span><span class="response-detail-option-check" aria-hidden="true">' +
+        (selected ? icon('check') : '') + '</span></button>';
+    }).join('');
+  }
+
   function renderAddChatActionLabels() {
     const modelLabel = $('#add-chat-model-current');
     if (modelLabel) {
       const selected = (state.modelSets || []).find(item => item && item.id === state.modelSetId);
       modelLabel.textContent = selected ? selected.name : 'Модель по умолчанию';
     }
+    const responseDetailLabel = $('#add-chat-response-detail-current');
+    if (responseDetailLabel) responseDetailLabel.textContent = responseDetailName(state.responseDetail);
     const projectTitle = $('#add-chat-project-title');
     const projectLabel = $('#add-chat-project-current');
     const projectButton = $('#add-chat-project-action');
@@ -5373,11 +5401,12 @@
 
   function setAddChatView(view) {
     const shell = $('#add-to-chat-shell');
-    const allowed = ['model', 'memory', 'connectors', 'library', 'project', 'share'];
+    const allowed = ['model', 'response-detail', 'memory', 'connectors', 'library', 'project', 'share'];
     const next = allowed.includes(view) ? view : 'main';
     addChatActiveView = next;
     const main = $('#add-chat-main-view');
     const model = $('#add-chat-model-view');
+    const responseDetail = $('#add-chat-response-detail-view');
     const memory = $('#add-chat-memory-view');
     const connectors = $('#add-chat-connectors-view');
     const library = $('#add-chat-library-view');
@@ -5385,6 +5414,7 @@
     const share = $('#add-chat-share-view');
     if (main) main.classList.toggle('hidden', next !== 'main');
     if (model) model.classList.toggle('hidden', next !== 'model');
+    if (responseDetail) responseDetail.classList.toggle('hidden', next !== 'response-detail');
     if (memory) memory.classList.toggle('hidden', next !== 'memory');
     if (connectors) connectors.classList.toggle('hidden', next !== 'connectors');
     if (library) library.classList.toggle('hidden', next !== 'library');
@@ -5393,6 +5423,7 @@
     if (shell) shell.classList.toggle('has-subview', next !== 'main');
     const title = $('#add-to-chat-title');
     if (title) title.textContent = next === 'model' ? 'Выбор модели'
+      : next === 'response-detail' ? 'Как отвечать'
       : next === 'memory' ? 'Память и предпочтения'
       : next === 'connectors' ? 'Коннекторы'
       : next === 'library' ? 'Файлы аккаунта'
@@ -5410,6 +5441,7 @@
     if (photos) photos.classList.toggle('hidden', next !== 'main');
     state.modelPickerOpen = next === 'model';
     renderModelPicker();
+    if (next === 'response-detail') renderAddChatResponseDetailView();
     if (next === 'memory') renderAddChatMemoryView();
     if (next === 'connectors') renderConnectorsInto($('#add-chat-connectors-list'));
     if (next === 'main') renderAddChatActionLabels();
@@ -5560,6 +5592,8 @@
         openAddChatLibrary();
       } else if (action === 'model') {
         setAddChatView('model');
+      } else if (action === 'response-detail') {
+        setAddChatView('response-detail');
       } else if (action === 'memory') {
         setAddChatView('memory');
       } else if (action === 'project') {
@@ -5567,6 +5601,16 @@
       } else if (action === 'connectors') {
         setAddChatView('connectors');
       }
+    });
+    $('#add-chat-response-detail-options')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-response-detail]');
+      if (!button) return;
+      const value = button.dataset.responseDetail;
+      if (!['minimum', 'standard', 'max'].includes(value)) return;
+      state.responseDetail = value;
+      localStorage.setItem('aich_response_detail', value);
+      renderAddChatActionLabels();
+      setAddChatView('main');
     });
     $('#add-chat-library-search')?.addEventListener('input', renderAddChatLibraryFiles);
     $('#add-chat-library-list')?.addEventListener('change', event => {

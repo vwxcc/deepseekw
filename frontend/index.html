@@ -265,20 +265,19 @@
           </button>
         </div>
 
-        <div class="side-row sidebar-section-links">
-          <button type="button" class="chip-btn context sidebar-memory" id="scheduled-quick-btn" title="Календарь и напоминания">
-            <svg class="ic"><use href="#i-calendar"/></svg><span>Запланировано</span>
-          </button>
-          <button type="button" class="chip-btn context sidebar-memory" id="projects-quick-btn" title="Все проекты">
-            <svg class="ic"><use href="#i-folder"/></svg><span>Проекты</span>
-          </button>
-        </div>
-
         <button type="button" class="chip-btn context sidebar-more-btn" id="sidebar-more-btn"
                 aria-expanded="false" aria-controls="sidebar-more-content">
-          <svg class="ic"><use href="#i-chevron-down"/></svg><span>Ещё</span><span class="sidebar-more-caret" aria-hidden="true">⌄</span>
+          <svg class="ic"><use href="#i-chevron-down"/></svg><span>Ещё</span>
         </button>
         <div id="sidebar-more-content" class="sidebar-more-content hidden">
+          <div class="side-row sidebar-section-links">
+            <button type="button" class="chip-btn context sidebar-memory" id="scheduled-quick-btn" title="Календарь и напоминания">
+              <svg class="ic"><use href="#i-calendar"/></svg><span>Запланировано</span>
+            </button>
+            <button type="button" class="chip-btn context sidebar-memory" id="projects-quick-btn" title="Все проекты">
+              <svg class="ic"><use href="#i-folder"/></svg><span>Проекты</span>
+            </button>
+          </div>
           <div class="side-row sidebar-quick-tools sidebar-api-brain">
             <button type="button" class="chip-btn context sidebar-memory sidebar-api" id="api-quick-btn" title="OpenAI-совместимый API и расходы">
               <svg class="ic"><use href="#i-plug"/></svg><span>API</span>
@@ -619,6 +618,11 @@
             <span class="add-chat-action-copy"><strong>Выбор модели</strong><small id="add-chat-model-current">Текущая модель</small></span>
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
+          <button type="button" class="add-chat-action" data-add-chat-action="response-detail">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-sparkle"/></svg></span>
+            <span class="add-chat-action-copy"><strong>Как отвечать</strong><small id="add-chat-response-detail-current">Стандарт</small></span>
+            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+          </button>
           <button type="button" class="add-chat-action" data-add-chat-action="memory">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
             <span class="add-chat-action-copy"><strong>Память и предпочтения</strong><small id="add-chat-memory-current">Включена по умолчанию</small></span>
@@ -641,6 +645,10 @@
       </div>
       <div id="add-chat-model-view" class="add-chat-subview hidden">
         <div id="model-picker" class="model-picker hidden" role="listbox" aria-label="Выбор модели"></div>
+      </div>
+      <div id="add-chat-response-detail-view" class="add-chat-subview hidden">
+        <div id="add-chat-response-detail-options" class="response-detail-options" role="radiogroup" aria-label="Подробность ответа"></div>
+        <p class="response-detail-help">Меняется только подробность текста. Инструменты, поиск, цепочка агента и интерактивные блоки остаются доступны.</p>
       </div>
       <div id="add-chat-library-view" class="add-chat-subview hidden">
         <div class="add-chat-library-toolbar">

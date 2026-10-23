@@ -108,6 +108,8 @@ class MessageOut(ORMModel):
     attachments: list[AttachmentOut] = Field(default_factory=list)
     sources: list[dict] = Field(default_factory=list)
     tool_runs: list[dict] = Field(default_factory=list)
+    ask: list[dict] = Field(default_factory=list)
+    quiz: list[dict] = Field(default_factory=list)
     memories: list[str] = Field(default_factory=list)
     execution_target: str = "site"
     children: list["MessageOut"] = Field(default_factory=list)

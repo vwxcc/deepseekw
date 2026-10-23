@@ -31,6 +31,21 @@ class AudioTranscriptionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["files"]["file"][0], "voice-message.webm")
         self.assertEqual(kwargs["files"]["file"][2], "audio/webm")
 
+    def test_dedicated_transcription_settings_are_supported(self) -> None:
+        from app.config import Settings
+
+        configured = Settings(
+            _env_file=None,
+            audio_transcription_base_url="https://speech.example.test/v1",
+            audio_transcription_api_key="dedicated-test-key",
+            audio_transcription_model="speech-model",
+            audio_transcription_timeout=45,
+        )
+        self.assertEqual(configured.audio_transcription_base_url, "https://speech.example.test/v1")
+        self.assertEqual(configured.audio_transcription_api_key, "dedicated-test-key")
+        self.assertEqual(configured.audio_transcription_model, "speech-model")
+        self.assertEqual(configured.audio_transcription_timeout, 45)
+
     async def test_reports_provider_failure_instead_of_faking_transcription(self) -> None:
         response = Mock(status_code=404, text='{"error":"not supported"}')
         client = Mock()

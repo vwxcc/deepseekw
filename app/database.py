@@ -166,6 +166,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "usage_events": {
         "api_key_id": "VARCHAR(36)",
     },
+    "user_api_keys": {
+        "is_revoked": "BOOLEAN NOT NULL DEFAULT 0",
+    },
     "users": {
         "token_balance": "INTEGER NOT NULL DEFAULT 0",
         "avatar": "INTEGER DEFAULT 0",

@@ -48,6 +48,19 @@ class AskOptionsTests(unittest.TestCase):
         self.assertEqual(quiz[0]["options"], [])
         self.assertEqual(quiz[0]["correct"], ["Хельсинки"])
 
+    def test_quiz_can_request_ai_follow_up_only_when_marked(self) -> None:
+        from app.ai.prompts import extract_quiz
+
+        clean, quiz = extract_quiz(
+            "[[quiz: Что разобрать дальше? || options: Ошибки | Следующая тема || "
+            "correct: Ошибки || send_result_to_ai: true]]"
+        )
+        self.assertEqual(clean, "")
+        self.assertTrue(quiz[0]["send_result_to_ai"])
+
+        _, ordinary = extract_quiz("[[quiz: Простой вопрос || correct: Да]]")
+        self.assertFalse(ordinary[0]["send_result_to_ai"])
+
     def test_legacy_free_text_question(self) -> None:
         clean, questions = extract_ask("Ответ здесь. [[ask: Какой формат?]]")
         self.assertEqual(clean, "Ответ здесь.")

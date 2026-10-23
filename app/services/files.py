@@ -6,6 +6,7 @@ import io
 from pathlib import Path
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".tiff", ".ico"}
+AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".mp4", ".webm", ".ogg", ".oga", ".aac", ".flac"}
 TEXT_EXTS = {
     ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".yaml", ".yml", ".xml",
     ".html", ".htm", ".log", ".ini", ".cfg", ".conf", ".py", ".js", ".mjs", ".ts",
@@ -19,6 +20,8 @@ def detect_kind(name: str, mime: str) -> str:
     mime = (mime or "").lower()
     if ext == ".pdf" or mime == "application/pdf":
         return "pdf"
+    if ext in AUDIO_EXTS or mime.startswith("audio/"):
+        return "audio"
     if ext in IMAGE_EXTS or mime.startswith("image/"):
         return "image"
     if ext in {".doc", ".docx"}:

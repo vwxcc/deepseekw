@@ -2399,6 +2399,35 @@
       '<div class="ask-row"><button type="button" class="chip-btn ask-send">'+icon('arrow-up')+'Ответить</button></div></section>';
   }
 
+  function quizResultReport(message) {
+    const rows = Array.isArray(message && message.quizResponses) ? message.quizResponses : [];
+    const score = (message && message.quizScore) || { correct: 0, total: (message && message.quiz || []).length };
+    const results = Array.isArray(message && message.quizResults) ? message.quizResults : [];
+    return ['Проверь мой результат теста: ' + Number(score.correct || 0) + ' из ' + Number(score.total || 0) + '.'].concat(
+      rows.map((row, index) =>
+        (index + 1) + '. ' + String(row.question || '') +
+        '\nМой ответ: ' + (Array.isArray(row.values) && row.values.length ? row.values.join(', ') : 'нет ответа') +
+        '\nПравильный ответ: ' + (Array.isArray(row.expected) && row.expected.length ? row.expected.join(', ') : 'не задан') +
+        '\nРезультат: ' + (results[index] && results[index].correct ? 'верно' : 'неверно')
+      )
+    ).join('\n\n');
+  }
+
+  function sendQuizResultToAI(message) {
+    const input = $('#input');
+    if (!input || !message || state.streaming || state.sending || state.chatLoading) {
+      toast('Результат сохранён. Отправьте его в чат, когда текущий ответ завершится.', 'info');
+      return false;
+    }
+    input.value = quizResultReport(message);
+    autoGrow();
+    message.quizResultSent = true;
+    message.quizCollapsed = true;
+    renderMessageInPlace(message.id);
+    void sendCurrent();
+    return true;
+  }
+
   function quizCardHtml(message) {
     if (!message || !Array.isArray(message.quiz) || !message.quiz.length) return '';
     const items=message.quiz.slice(0,20), submitted=!!message.quizSubmitted, collapsed=!!message.quizCollapsed;
@@ -4140,19 +4169,17 @@
         responses.push({question:String(q.question||''),values,expected});return{correct,values,expected};
       });
       const score=results.filter(item=>item.correct).length;
-      message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=true;message.quizResponses=responses;message.quizResultSent=false;
+      message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=false;message.quizResponses=responses;message.quizResultSent=false;
       renderMessageInPlace(message.id);toast('Результат: '+score+' из '+items.length);
+      // The model opts in during quiz generation only when its follow-up needs the score.
+      if(items.some(item=>item&&typeof item==='object'&&item.send_result_to_ai===true)){
+        sendQuizResultToAI(message);
+      }
     }));
     $$('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null;
       if(!message||!Array.isArray(message.quiz)||!message.quizSubmitted||message.quizResultSent)return;
-      const rows=Array.isArray(message.quizResponses)?message.quizResponses:[],score=message.quizScore||{correct:0,total:message.quiz.length};
-      const report=['Проверь мой результат теста: '+score.correct+' из '+score.total+'.'].concat(
-        rows.map((row,i)=>(i+1)+'. '+row.question+'\nМой ответ: '+(row.values.length?row.values.join(', '):'нет ответа')+
-        '\nПравильный ответ: '+(row.expected.length?row.expected.join(', '):'не задан')+'\nРезультат: '+(message.quizResults[i]&&message.quizResults[i].correct?'верно':'неверно'))
-      ).join('\n\n');
-      const input=$('#input');if(!input)return;
-      message.quizResultSent=true;message.quizCollapsed=true;input.value=report;autoGrow();renderMessageInPlace(message.id);sendCurrent();
+      sendQuizResultToAI(message);
     }));
     $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
@@ -5338,7 +5365,7 @@
 
   function setAddChatView(view) {
     const shell = $('#add-to-chat-shell');
-    const allowed = ['model', 'memory', 'connectors', 'library', 'project'];
+    const allowed = ['model', 'memory', 'connectors', 'library', 'project', 'share'];
     const next = allowed.includes(view) ? view : 'main';
     addChatActiveView = next;
     const main = $('#add-chat-main-view');
@@ -5347,19 +5374,22 @@
     const connectors = $('#add-chat-connectors-view');
     const library = $('#add-chat-library-view');
     const project = $('#add-chat-project-view');
+    const share = $('#add-chat-share-view');
     if (main) main.classList.toggle('hidden', next !== 'main');
     if (model) model.classList.toggle('hidden', next !== 'model');
     if (memory) memory.classList.toggle('hidden', next !== 'memory');
     if (connectors) connectors.classList.toggle('hidden', next !== 'connectors');
     if (library) library.classList.toggle('hidden', next !== 'library');
     if (project) project.classList.toggle('hidden', next !== 'project');
+    if (share) share.classList.toggle('hidden', next !== 'share');
     if (shell) shell.classList.toggle('has-subview', next !== 'main');
     const title = $('#add-to-chat-title');
     if (title) title.textContent = next === 'model' ? 'Выбор модели'
       : next === 'memory' ? 'Память и предпочтения'
       : next === 'connectors' ? 'Коннекторы'
       : next === 'library' ? 'Файлы аккаунта'
-      : next === 'project' ? 'Добавить в проект' : 'Добавить в чат';
+      : next === 'project' ? 'Добавить в проект'
+      : next === 'share' ? 'Поделиться' : 'Добавить в чат';
     const nav = $('#add-chat-nav');
     if (nav) {
       nav.innerHTML = next === 'main'
@@ -5602,8 +5632,6 @@
     const emptyComposer = !input.value.trim();
     const useMic = emptyComposer && !activeVoiceRecorder && !voiceUploadInProgress &&
       !state.streaming && !state.sending && !state.chatLoading;
-    const emojiButton = $('#emoji-btn');
-    if (emojiButton) emojiButton.classList.toggle('hidden', !useMic);
     const targetIcon = useMic ? 'mic' : 'arrow-up';
     button.innerHTML = '<svg class="ic"><use href="#i-' + targetIcon + '"/></svg>';
     button.title = useMic ? 'Записать голосовое сообщение' :
@@ -5918,7 +5946,6 @@
     $('#stop-btn').addEventListener('click', async () => {
       if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
     });
-    $('#emoji-btn')?.addEventListener('click', openComposerEmojiPicker);
     $('#attach-btn').addEventListener('click', () => {
       workspaceUploadIntent = false;
       const shell = $('#add-to-chat-shell');
@@ -5979,13 +6006,21 @@
     const btn = $('#context-btn');
     if (!btn) return;
     const label = $('#usage-pct');
-    const bar = $('#usage-bar');
-    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    const ring = $('#usage-bar');
+    const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
     if (label) label.textContent = p + '%';
-    if (bar) bar.style.width = p + '%';
+    if (ring) {
+      if (ring.tagName && ring.tagName.toLowerCase() === 'circle') {
+        ring.style.strokeDasharray = '100';
+        ring.style.strokeDashoffset = String(100 - p);
+      } else {
+        ring.style.width = p + '%';
+      }
+    }
     btn.classList.toggle('warn', p >= 80);
     btn.classList.toggle('full', p >= 100);
     btn.title = note;
+    btn.setAttribute('aria-label', 'Использование лимитов: ' + p + '%. ' + String(note || 'Нажмите, чтобы открыть лимиты.'));
   }
 
   async function loadUsage() {
@@ -7841,138 +7876,174 @@
   }
 
   async function openShare() {
-    if (!state.currentChatId) { toast('Сначала откройте чат', 'error'); return; }
+    const chatId = state.currentChatId;
+    if (!chatId) { toast('Сначала откройте чат', 'error'); return; }
+    const shell = $('#add-to-chat-shell');
+    const content = $('#add-chat-share-content');
+    if (!shell || !content) { toast('Меню «Поделиться» недоступно.', 'error'); return; }
+
+    // Open the actual + sheet immediately; never wait for share/status API calls before showing it.
+    openAddToChatSheet();
+    setAddChatView('share');
+    content.innerHTML = '<p class="usage-note share-loading">Открываю действия чата…</p>';
+
     let st;
-    try { st = await api.get('/api/chats/' + state.currentChatId + '/share'); }
-    catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
+    try {
+      st = await api.get('/api/chats/' + encodeURIComponent(chatId) + '/share');
+    } catch (e) {
+      if (state.currentChatId === chatId && addChatActiveView === 'share') {
+        content.innerHTML = '<p class="usage-note">Не удалось загрузить ссылку чата. Закройте меню и попробуйте ещё раз.</p>';
+      }
+      toast('Ошибка: ' + e.message, 'error');
+      return;
+    }
+    if (state.currentChatId !== chatId || addChatActiveView !== 'share') return;
 
     const url = st.share_token ? (location.origin + '/?share=' + st.share_token) : '';
     const answerNodes = allMessages(state.tree).map(entry => entry && entry.node)
       .filter(node => node && node.role === 'assistant' && node.status === 'completed' && String(node.content || '').trim());
-    await Promise.all(answerNodes.map(async node => {
-      await Promise.all([refreshReadableTextStatus(node.id), refreshAudioStatus(node.id)]);
-    }));
-    const answerActions = answerNodes.map((node, index) => {
+
+    const renderAnswerActions = () => answerNodes.map((node, index) => {
       const number = index + 1;
       const id = escapeHtml(String(node.id));
       const readable = state.readableText[node.id];
       const readableButton = readable && readable.status === 'ready' && String(readable.text || '').trim()
-        ? '<button class="chip-btn share-answer-action" data-share-copy-readable="' + id + '">' + icon('copy') + 'Читабельный текст · ответ ' + number + '</button>' : '';
+        ? '<button type="button" class="add-chat-action share-answer-action" data-share-copy-readable="' + id + '">' +
+          '<span class="add-chat-row-icon">' + icon('copy') + '</span><span class="add-chat-action-copy"><strong>Читабельный текст · ответ ' + number + '</strong></span></button>' : '';
       const audioButton = state.audioReady[node.id]
-        ? '<a class="chip-btn share-answer-action" href="/api/messages/' + encodeURIComponent(node.id) + '/audio/file" download="AI-Ch-ответ-' + number + '">' + icon('download') + 'Аудио · ответ ' + number + '</a>' : '';
-      return '<div class="share-answer-row"><span>Ответ ' + number + '</span><button class="chip-btn share-answer-action" data-share-copy-answer="' + id + '">' +
-        icon('copy') + 'Копировать' + '</button>' + readableButton + audioButton + '</div>';
+        ? '<a class="add-chat-action share-answer-action" data-share-audio href="/api/messages/' + encodeURIComponent(node.id) +
+          '/audio/file" download="AI-Ch-ответ-' + number + '"><span class="add-chat-row-icon">' + icon('download') +
+          '</span><span class="add-chat-action-copy"><strong>Аудио · ответ ' + number + '</strong></span></a>' : '';
+      return '<div class="add-chat-action-group share-answer-row">' +
+        '<button type="button" class="add-chat-action share-copy-answer" data-share-copy-answer="' + id + '">' +
+        '<span class="add-chat-row-icon">' + icon('copy') + '</span><span class="add-chat-action-copy"><strong>Копировать ответ ' + number + '</strong></span></button>' +
+        readableButton + audioButton + '</div>';
     }).join('');
-    openModal({
-      title: 'Действия чата',
-      okText: 'Закрыть',
-      extraClass: 'share-wide bottom-sheet',
-      body:
-        '<div class="chat-actions-primary">' +
-        '<button type="button" class="chip-btn" id="chat-action-new">' + icon('plus') + 'Новый чат</button>' +
-        '<button type="button" class="chip-btn" id="chat-action-pin">' + icon('map-pin') + (state.chats.find(chat => chat && chat.id === state.currentChatId)?.is_pinned ? 'Открепить' : 'Закрепить') + '</button>' +
-        '<button type="button" class="chip-btn" id="chat-action-project">' + icon('folder') + 'Добавить в проект</button>' +
-        '<button type="button" class="chip-btn" id="chat-action-files">' + icon('file') + 'Загруженные файлы</button>' +
-        '<button type="button" class="chip-btn" id="chat-action-find">' + icon('search') + 'Найти в чате</button>' +
-        '</div><hr style="border:0;border-top:1px solid var(--border-soft);margin:14px 0" />' +
-        (st.is_public
-        ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
-          '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
-          '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button class="chip-btn" id="copy-link">' + icon('copy') + 'Копировать ссылку</button>' +
-          '<button class="chip-btn" id="open-link">' + icon('link') + 'Открыть</button>' +
-          '<button class="chip-btn" id="stop-share">' + icon('x') + 'Отключить</button></div>'
-        : '<p>Создать публичную ссылку на этот чат? Доступ будет только на чтение.</p>' +
-          '<div style="margin-top:12px"><button class="chip-btn" id="start-share">' +
-          icon('link') + 'Создать ссылку</button></div>') +
-        '<hr style="border:0;border-top:1px solid var(--border-soft);margin:16px 0" />' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="chip-btn" id="copy-all-chat">' + icon('copy') + 'Скопировать всё</button>' +
-        '<button class="chip-btn" id="download-chat">' + icon('download') + 'Скачать чат</button>' +
-        '<button class="chip-btn" id="create-chat-branch">' + icon('git-branch') + 'Создать ветку в новом чате</button></div>' +
-        '<div class="share-answer-actions"><strong>Отдельные ответы</strong>' +
-        (answerActions || '<p class="usage-note">Завершённых ответов пока нет.</p>') + '</div>',
-      onOk: () => true,
-    });
 
-    $('#chat-action-new')?.addEventListener('click', async () => {
-      closeModal();
-      await newChat('chat');
-    });
-    $('#chat-action-pin')?.addEventListener('click', async () => {
-      const chatId = state.currentChatId;
-      closeModal();
-      if (chatId) await toggleChatPin(chatId);
-    });
-    $('#chat-action-project')?.addEventListener('click', () => {
-      const chatId = state.currentChatId;
-      closeModal();
-      if (chatId) openChatProjectPicker(chatId);
-    });
-    $('#chat-action-files')?.addEventListener('click', () => {
-      closeModal();
-      openCurrentChatFilesModal();
-    });
-    $('#chat-action-find')?.addEventListener('click', () => {
-      closeModal();
-      startChatSearch();
-    });
-    const start = $('#start-share');
-    if (start) start.addEventListener('click', async () => {
-      try { await api.post('/api/chats/' + state.currentChatId + '/share'); }
-      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-      $('#modal-root').innerHTML = ''; openShare();
-    });
-    const branch = $('#create-chat-branch');
-    if (branch) branch.addEventListener('click', async () => {
-      const sourceId = state.currentChatId;
-      if (!sourceId) return;
-      branch.disabled = true;
-      try {
-        const created = await api.post('/api/chats/' + encodeURIComponent(sourceId) + '/branch');
-        if (!created || typeof created.id !== 'string' || !created.id) throw new Error('Сервер не вернул ID новой ветки');
-        $('#modal-root').innerHTML = '';
-        upsertChat(created);
-        state.chatListVersion += 1;
-        await loadChats();
-        const opened = await openChat(created.id);
-        if (opened) toast('Ветка создана. Исходный чат сохранён.');
-      } catch (error) {
-        branch.disabled = false;
-        toast('Не удалось создать ветку: ' + (error.message || error), 'error');
-      }
-    });
-    $$('[data-share-copy-answer]').forEach(button => button.addEventListener('click', async () => {
-      const node = findNode(state.tree, button.dataset.shareCopyAnswer);
-      if (!node) return;
-      const ok = await copyText(copyableAnswerText(node.content || ''));
-      toast(ok ? 'Ответ скопирован' : 'Не удалось скопировать ответ', ok ? '' : 'error');
-    }));
-    $$('[data-share-copy-readable]').forEach(button => button.addEventListener('click', async () => {
-      const readable = state.readableText[button.dataset.shareCopyReadable];
-      if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
-        toast('Читабельный текст ещё не готов', 'error'); return;
-      }
-      const ok = await copyText(readable.text);
-      toast(ok ? 'Читабельный текст скопирован' : 'Не удалось скопировать текст', ok ? '' : 'error');
-    }));
-    const copyAll = $('#copy-all-chat');
-    if (copyAll) copyAll.addEventListener('click', copyAllChatText);
-    const downloadAll = $('#download-chat');
-    if (downloadAll) downloadAll.addEventListener('click', downloadChatText);
-    const copy = $('#copy-link');
-    if (copy) copy.addEventListener('click', async () => {
-      const ok = await copyText(url);
-      toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
-    });
-    const open = $('#open-link');
-    if (open) open.addEventListener('click', () => window.open(url, '_blank'));
-    const stop = $('#stop-share');
-    if (stop) stop.addEventListener('click', async () => {
-      try { await api.del('/api/chats/' + state.currentChatId + '/share'); }
-      catch (e) { toast('Ошибка: ' + e.message, 'error'); return; }
-      $('#modal-root').innerHTML = ''; openShare();
-    });
+    const linkSection = st.is_public
+      ? '<p>Чат открыт по ссылке — доступ только на чтение.</p>' +
+        '<input id="share-url" readonly value="' + escapeHtml(url) + '" />' +
+        '<div class="share-link-actions">' +
+        '<button type="button" class="add-chat-action" id="copy-link"><span class="add-chat-row-icon">' + icon('copy') +
+        '</span><span class="add-chat-action-copy"><strong>Копировать ссылку</strong></span></button>' +
+        '<button type="button" class="add-chat-action" id="open-link"><span class="add-chat-row-icon">' + icon('link') +
+        '</span><span class="add-chat-action-copy"><strong>Открыть ссылку</strong></span></button>' +
+        '<button type="button" class="add-chat-action" id="stop-share"><span class="add-chat-row-icon">' + icon('x') +
+        '</span><span class="add-chat-action-copy"><strong>Отключить ссылку</strong></span></button></div>'
+      : '<p>Создать публичную ссылку на этот чат? Доступ будет только на чтение.</p>' +
+        '<button type="button" class="add-chat-action" id="start-share"><span class="add-chat-row-icon">' + icon('link') +
+        '</span><span class="add-chat-action-copy"><strong>Создать ссылку</strong><small>Доступ только на чтение</small></span></button>';
+
+    content.innerHTML =
+      '<div class="add-chat-sheet-content share-sheet-body">' +
+        '<div class="add-chat-action-group">' +
+          '<button type="button" class="add-chat-action" id="chat-action-new"><span class="add-chat-row-icon">' + icon('plus') +
+          '</span><span class="add-chat-action-copy"><strong>Новый чат</strong></span></button>' +
+          '<button type="button" class="add-chat-action" id="chat-action-pin"><span class="add-chat-row-icon">' + icon('map-pin') +
+          '</span><span class="add-chat-action-copy"><strong>' + ((state.chats.find(chat => chat && chat.id === chatId)?.is_pinned) ? 'Открепить чат' : 'Закрепить чат') + '</strong></span></button>' +
+          '<button type="button" class="add-chat-action" id="chat-action-project"><span class="add-chat-row-icon">' + icon('folder') +
+          '</span><span class="add-chat-action-copy"><strong>Добавить в проект</strong></span></button>' +
+          '<button type="button" class="add-chat-action" id="chat-action-files"><span class="add-chat-row-icon">' + icon('file') +
+          '</span><span class="add-chat-action-copy"><strong>Загруженные файлы</strong></span></button>' +
+          '<button type="button" class="add-chat-action" id="chat-action-find"><span class="add-chat-row-icon">' + icon('search') +
+          '</span><span class="add-chat-action-copy"><strong>Найти в чате</strong></span></button>' +
+        '</div>' +
+        '<section class="share-link-section"><strong>Ссылка на чат</strong><div id="share-link-content">' + linkSection + '</div></section>' +
+        '<div class="add-chat-action-group">' +
+          '<button type="button" class="add-chat-action" id="copy-all-chat"><span class="add-chat-row-icon">' + icon('copy') +
+          '</span><span class="add-chat-action-copy"><strong>Скопировать весь чат</strong></span></button>' +
+          '<button type="button" class="add-chat-action" id="download-chat"><span class="add-chat-row-icon">' + icon('download') +
+          '</span><span class="add-chat-action-copy"><strong>Скачать чат</strong></span></button>' +
+          '<button type="button" class="add-chat-action" id="create-chat-branch"><span class="add-chat-row-icon">' + icon('git-branch') +
+          '</span><span class="add-chat-action-copy"><strong>Создать ветку в новом чате</strong></span></button>' +
+        '</div>' +
+        '<section class="share-answer-actions"><strong>Отдельные ответы</strong><div id="share-answer-list">' +
+        (renderAnswerActions() || '<p class="usage-note">Завершённых ответов пока нет.</p>') + '</div></section>' +
+      '</div>';
+
+    // A single delegated handler survives refreshes of the answer list and repeated opens.
+    if (content.dataset.shareBound !== '1') {
+      content.dataset.shareBound = '1';
+      content.addEventListener('click', async event => {
+        const button = event.target.closest('button, a');
+        if (!button || !content.contains(button)) return;
+        const activeChatId = state.currentChatId;
+        if (button.id === 'chat-action-new') {
+          closeAddToChatSheet();
+          await newChat('chat');
+        } else if (button.id === 'chat-action-pin') {
+          closeAddToChatSheet();
+          if (activeChatId) await toggleChatPin(activeChatId);
+        } else if (button.id === 'chat-action-project') {
+          closeAddToChatSheet();
+          if (activeChatId) openChatProjectPicker(activeChatId);
+        } else if (button.id === 'chat-action-files') {
+          closeAddToChatSheet();
+          openCurrentChatFilesModal();
+        } else if (button.id === 'chat-action-find') {
+          closeAddToChatSheet();
+          startChatSearch();
+        } else if (button.id === 'start-share') {
+          button.disabled = true;
+          try { await api.post('/api/chats/' + encodeURIComponent(activeChatId) + '/share'); }
+          catch (e) { button.disabled = false; toast('Ошибка: ' + e.message, 'error'); return; }
+          await openShare();
+        } else if (button.id === 'stop-share') {
+          button.disabled = true;
+          try { await api.del('/api/chats/' + encodeURIComponent(activeChatId) + '/share'); }
+          catch (e) { button.disabled = false; toast('Ошибка: ' + e.message, 'error'); return; }
+          await openShare();
+        } else if (button.id === 'create-chat-branch') {
+          if (!activeChatId) return;
+          button.disabled = true;
+          try {
+            const created = await api.post('/api/chats/' + encodeURIComponent(activeChatId) + '/branch');
+            if (!created || typeof created.id !== 'string' || !created.id) throw new Error('Сервер не вернул ID новой ветки');
+            closeAddToChatSheet();
+            upsertChat(created);
+            state.chatListVersion += 1;
+            await loadChats();
+            const opened = await openChat(created.id);
+            if (opened) toast('Ветка создана. Исходный чат сохранён.');
+          } catch (error) {
+            button.disabled = false;
+            toast('Не удалось создать ветку: ' + (error.message || error), 'error');
+          }
+        } else if (button.id === 'copy-link') {
+          const link = String($('#share-url')?.value || '');
+          const ok = await copyText(link);
+          toast(ok ? 'Ссылка скопирована' : 'Не удалось скопировать', ok ? '' : 'error');
+        } else if (button.id === 'open-link') {
+          const link = String($('#share-url')?.value || '');
+          if (link) window.open(link, '_blank', 'noopener');
+        } else if (button.id === 'copy-all-chat') {
+          copyAllChatText();
+        } else if (button.id === 'download-chat') {
+          downloadChatText();
+        } else if (button.dataset.shareCopyAnswer) {
+          const node = findNode(state.tree, button.dataset.shareCopyAnswer);
+          if (!node) return;
+          const ok = await copyText(copyableAnswerText(node.content || ''));
+          toast(ok ? 'Ответ скопирован' : 'Не удалось скопировать ответ', ok ? '' : 'error');
+        } else if (button.dataset.shareCopyReadable) {
+          const readable = state.readableText[button.dataset.shareCopyReadable];
+          if (!readable || readable.status !== 'ready' || !String(readable.text || '').trim()) {
+            toast('Читабельный текст ещё не готов', 'error'); return;
+          }
+          const ok = await copyText(readable.text);
+          toast(ok ? 'Читабельный текст скопирован' : 'Не удалось скопировать текст', ok ? '' : 'error');
+        }
+      });
+    }
+
+    // Refresh just a handful of recent answer statuses in the background. The sheet is already usable.
+    Promise.all(answerNodes.slice(-5).map(async node => {
+      await Promise.all([refreshReadableTextStatus(node.id), refreshAudioStatus(node.id)]);
+    })).then(() => {
+      if (state.currentChatId !== chatId || addChatActiveView !== 'share') return;
+      const box = $('#share-answer-list');
+      if (box) box.innerHTML = renderAnswerActions() || '<p class="usage-note">Завершённых ответов пока нет.</p>';
+    }).catch(() => { /* action sheet remains usable with cached statuses */ });
   }
 
   async function currentUserOrNull() {

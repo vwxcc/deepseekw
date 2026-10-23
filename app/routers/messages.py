@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
+from pathlib import Path
 from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -15,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..ai import prompts
 from ..ai.router import Job, router as ai_router
 from ..ai.stream_lifecycle import detach_output_drain
-from ..ai.providers import ProviderError, complete_chat
+from ..ai.providers import ProviderError, complete_chat, transcribe_audio
 from ..deps import (
     get_current_user,
     get_db,
@@ -693,6 +695,63 @@ async def send_message(
         await db.commit()
 
     user_atts = (await message_attachments(db, [user_msg.id])).get(user_msg.id, [])
+
+    # Browser SpeechRecognition is not available everywhere. Transcribe audio on the
+    # server before constructing the model history, so an attached recording is usable
+    # even when the browser could only upload the raw media.
+    audio_records = [
+        rec for rec in attached
+        if str(rec.kind or "").lower() == "audio" and not str(rec.extracted_text or "").strip()
+    ]
+    if audio_records:
+        try:
+            _, _, transcription_entries = await ai_router._resolve_entries(RouteType.MAIN, chat.model_set_id)
+        except Exception as exc:
+            transcription_entries = []
+            log.warning("Could not resolve a provider for audio transcription (%s)", type(exc).__name__)
+        transcription_model = str(os.getenv("AUDIO_TRANSCRIPTION_MODEL", "whisper-1") or "whisper-1").strip()
+        for rec in audio_records:
+            transcript = ""
+            failure_reason = "сервис распознавания речи недоступен для выбранного API"
+            try:
+                payload = Path(rec.storage_path).read_bytes()
+                if not payload:
+                    failure_reason = "аудиофайл пуст"
+                elif len(payload) > 25 * 1024 * 1024:
+                    failure_reason = "аудиофайл превышает лимит 25 МБ для распознавания"
+                else:
+                    for entry in transcription_entries:
+                        try:
+                            transcript = await transcribe_audio(
+                                data=payload,
+                                filename=Path(rec.original_name or "voice-message.webm").name,
+                                mime_type=str(rec.mime_type or "application/octet-stream"),
+                                base_url=entry.base_url,
+                                api_key=entry.api_key,
+                                model=transcription_model,
+                                timeout=min(max(15, int(entry.timeout or 75)), 90),
+                            )
+                            if transcript:
+                                break
+                        except ProviderError as exc:
+                            failure_reason = str(exc)[:240]
+                        except Exception as exc:
+                            failure_reason = type(exc).__name__
+            except OSError:
+                failure_reason = "аудиофайл не удалось прочитать на сервере"
+            if transcript:
+                rec.extracted_text = "[Расшифровка голосового сообщения]\n" + transcript[:100_000]
+            else:
+                # Be explicit about the limitation: do not make the model pretend it
+                # heard the binary attachment when this provider cannot transcribe it.
+                rec.extracted_text = (
+                    "[Голосовое сообщение прикреплено, но не удалось получить расшифровку: "
+                    + failure_reason
+                    + ". Не утверждай, что слышал запись. Сообщи пользователю, что распознавание не сработало, "
+                      "и предложи повторить отправку или прислать текст.]"
+                )
+                log.warning("Audio transcription did not complete for attachment %s (%s)", rec.id, failure_reason[:100])
+        await db.commit()
 
     if data.effort:
         chat.effort = data.effort

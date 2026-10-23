@@ -5651,3 +5651,35 @@ input[type="range"]:focus-visible {
 #modal-root .profile-limits-arrow { flex: 0 0 auto; color: var(--fg-muted); }
 #modal-root .profile-limits-arrow .ic { width: 17px; height: 17px; }
 #modal-root .profile-admin-limits { grid-column: 1 / -1; }
+
+
+/* Voice follow-up / clarification chips use ask-option, not aich-ui-action. */
+#messages .msg .ask-question,
+#messages .msg .ask-options {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+#messages .msg .ask-options {
+  display: flex !important;
+  flex-flow: row wrap !important;
+  align-items: flex-start;
+  gap: 7px;
+}
+#messages .msg .ask-option {
+  display: inline-flex !important;
+  align-items: center;
+  flex: 0 1 auto !important;
+  box-sizing: border-box;
+  width: auto;
+  min-width: min-content !important;
+  max-width: 100% !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  direction: ltr !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  hyphens: none !important;
+}

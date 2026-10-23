@@ -21,7 +21,7 @@ CONNECTOR_CATALOG = [
     {"provider": "google_drive", "title": "Google Drive", "description": "Поиск файлов на Google Drive.", "actions": ["search_files"]},
     {"provider": "linear", "title": "Linear", "description": "Поиск задач и issues.", "actions": ["search_issues"]},
     {"provider": "huggingface", "title": "Hugging Face", "description": "Поиск моделей и датасетов.", "actions": ["search_models", "search_datasets"]},
-    {"provider": "discord", "title": "Discord", "description": "Просмотр серверов, к которым у бота есть доступ.", "actions": ["list_guilds"]},
+    {"provider": "discord", "title": "Discord", "description": "Проверка токена Discord-бота.", "actions": ["check_bot"]},
 ]
 _CATALOG = {item["provider"]: item for item in CONNECTOR_CATALOG}
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -62,7 +62,18 @@ async def save_connection(db: AsyncSession, user: User, provider: str, token: st
             )
         if response.status_code != 200:
             raise ValueError("GitHub не принял токен. Проверьте его и нужные права доступа.")
-        user.github_token = token[:255]
+        row = (await db.execute(
+            select(ConnectorConnection).where(
+                ConnectorConnection.user_id == user.id,
+                ConnectorConnection.provider == provider,
+            )
+        )).scalars().first()
+        if row is None:
+            db.add(ConnectorConnection(user_id=user.id, provider=provider, token=token))
+        else:
+            row.token = token
+        # Retain the legacy field for existing GitHub project features.
+        user.github_token = token
         user.github_user = str(response.json().get("login") or "")[:120] or None
         await db.commit()
         return
@@ -86,6 +97,14 @@ async def delete_connection(db: AsyncSession, user: User, provider: str) -> None
     if provider == "github":
         user.github_token = None
         user.github_user = None
+        row = (await db.execute(
+            select(ConnectorConnection).where(
+                ConnectorConnection.user_id == user.id,
+                ConnectorConnection.provider == provider,
+            )
+        )).scalars().first()
+        if row is not None:
+            await db.delete(row)
     else:
         row = (await db.execute(
             select(ConnectorConnection).where(
@@ -100,8 +119,14 @@ async def delete_connection(db: AsyncSession, user: User, provider: str) -> None
 
 async def _get_token(db: AsyncSession, user_id: str, provider: str) -> str:
     if provider == "github":
+        row = (await db.execute(
+            select(ConnectorConnection).where(
+                ConnectorConnection.user_id == user_id,
+                ConnectorConnection.provider == provider,
+            )
+        )).scalars().first()
         user = await db.get(User, user_id)
-        token = str(user.github_token or "").strip() if user else ""
+        token = str((row.token if row is not None else "") or (user.github_token if user else "") or "").strip()
     else:
         row = (await db.execute(
             select(ConnectorConnection).where(
@@ -195,7 +220,8 @@ async def execute_connector_action(
         if action != "search_videos":
             raise ValueError("Неизвестное действие YouTube")
         url = "https://www.googleapis.com/youtube/v3/search"
-        params = {"part": "snippet", "type": "video", "maxResults": 5, "q": _query(data), "key": token}
+        headers["X-Goog-Api-Key"] = token
+        params = {"part": "snippet", "type": "video", "maxResults": 5, "q": _query(data)}
     elif provider == "spotify":
         headers["Authorization"] = f"Bearer {token}"
         if action in {"search_tracks", "search_artists"}:
@@ -250,8 +276,7 @@ async def execute_connector_action(
         params = {"search": _query(data), "limit": 7}
     elif provider == "discord":
         headers["Authorization"] = f"Bot {token}"
-        url = "https://discord.com/api/v10/users/@me/guilds"
-        params = {"limit": 10}
+        url = "https://discord.com/api/v10/users/@me"
 
     try:
         async with httpx.AsyncClient(timeout=18.0, follow_redirects=False) as client:
@@ -328,8 +353,7 @@ async def execute_connector_action(
         items = result if isinstance(result, list) else []
         return {"ok": True, "provider": provider, "action": action, "items": [{"id": i.get("id") or i.get("modelId"), "url": "https://huggingface.co/" + str(i.get("id") or i.get("modelId") or ""), "downloads": i.get("downloads")} for i in items[:7]]}
     if provider == "discord":
-        items = result if isinstance(result, list) else []
-        return {"ok": True, "provider": provider, "action": action, "items": [{"name": i.get("name"), "id": i.get("id")} for i in items[:10]]}
+        return {"ok": True, "provider": provider, "action": action, "bot": {"username": result.get("username"), "id": result.get("id")}}
     return {"ok": True, "provider": provider, "action": action, "result": _safe_result(result)}
 
 

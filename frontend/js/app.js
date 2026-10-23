@@ -6005,10 +6005,8 @@
   function paintUsage(pct, note) {
     const btn = $('#context-btn');
     if (!btn) return;
-    const label = $('#usage-pct');
     const ring = $('#usage-bar');
     const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
-    if (label) label.textContent = p + '%';
     if (ring) {
       if (ring.tagName && ring.tagName.toLowerCase() === 'circle') {
         ring.style.strokeDasharray = '100';
@@ -6020,7 +6018,7 @@
     btn.classList.toggle('warn', p >= 80);
     btn.classList.toggle('full', p >= 100);
     btn.title = note;
-    btn.setAttribute('aria-label', 'Использование лимитов: ' + p + '%. ' + String(note || 'Нажмите, чтобы открыть лимиты.'));
+    btn.setAttribute('aria-label', 'Лимиты использования. Нажмите, чтобы открыть подробности.');
   }
 
   async function loadUsage() {
@@ -6035,7 +6033,7 @@
       return;
     }
     const info = planUsage();
-    paintUsage(info.worst, 'Использование лимитов подписки: ' + info.worst + '%');
+    paintUsage(info.worst, 'Использование лимитов подписки');
   }
 
   function usageCards(u) {

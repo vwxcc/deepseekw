@@ -8161,88 +8161,90 @@
       return;
     }
 
-    // Create visible per-file rows before the network request so the status remains visible
-    // even when the user closes the + sheet while a file is uploading.
-    const retryLocalUploadId = String(uploadOptions.retryLocalUploadId || '');
-    const localItems = selectedFiles.map(file => {
-      if (retryLocalUploadId) {
-        const existing = state.pendingAttachments.find(item =>
-          item && String(item.localUploadId || '') === retryLocalUploadId
-        );
-        if (existing) {
-          existing.uploadFile = file;
-          existing.uploadStatus = 'uploading';
-          existing.uploadError = '';
-          return existing;
+    if (!(options && options.libraryOnly)) {
+      // Create visible per-file rows before the network request so the status remains visible
+      // even when the user closes the + sheet while a file is uploading.
+      const retryLocalUploadId = String(uploadOptions.retryLocalUploadId || '');
+      const localItems = selectedFiles.map(file => {
+        if (retryLocalUploadId) {
+          const existing = state.pendingAttachments.find(item =>
+            item && String(item.localUploadId || '') === retryLocalUploadId
+          );
+          if (existing) {
+            existing.uploadFile = file;
+            existing.uploadStatus = 'uploading';
+            existing.uploadError = '';
+            return existing;
+          }
         }
-      }
-      const item = {
-        localUploadId: 'tmp_upload_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9),
-        original_name: file.name,
-        name: file.name,
-        size: Number(file.size) || 0,
-        mime_type: String(file.type || ''),
-        uploadFile: file,
-        uploadStatus: 'uploading',
-        uploadError: '',
-      };
-      state.pendingAttachments.push(item);
-      return item;
-    });
-    renderAttachments();
-
-    let successCount = 0;
-    const failures = [];
-    await Promise.all(selectedFiles.map(async (file, index) => {
-      const localItem = localItems[index];
-      const form = new FormData();
-      form.append('files', file, file.name);
-      try {
-        // Upload one file per request so a single failure can be retried independently.
-        const response = await api.postForm('/api/files', form);
-        const received = Array.isArray(response)
-          ? response
-          : (response && Array.isArray(response.files)
-            ? response.files
-            : (response && response.id ? [response] : []));
-        const saved = received.find(item => item && typeof item.id === 'string' && item.id);
-        if (!saved) throw new Error('Сервер не подтвердил загрузку файла');
-
-        const fileMap = new Map((Array.isArray(state.files) ? state.files : [])
-          .filter(item => item && item.id).map(item => [String(item.id), item]));
-        fileMap.set(String(saved.id), saved);
-        state.files = Array.from(fileMap.values());
-
-        const pendingIndex = state.pendingAttachments.findIndex(item =>
-          item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
-        );
-        // If the user removed the chip while uploading, do not re-attach it on completion.
-        if (pendingIndex >= 0) state.pendingAttachments.splice(pendingIndex, 1, saved);
-        successCount += 1;
-      } catch (err) {
-        const message = usefulErrorMessage(err, 'не удалось загрузить файл');
-        const pendingItem = state.pendingAttachments.find(item =>
-          item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
-        );
-        if (pendingItem) {
-          pendingItem.uploadStatus = 'error';
-          pendingItem.uploadError = message;
+        const item = {
+          localUploadId: 'tmp_upload_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9),
+          original_name: file.name,
+          name: file.name,
+          size: Number(file.size) || 0,
+          mime_type: String(file.type || ''),
+          uploadFile: file,
+          uploadStatus: 'uploading',
+          uploadError: '',
+        };
+        state.pendingAttachments.push(item);
+        return item;
+      });
+      renderAttachments();
+  
+      let successCount = 0;
+      const failures = [];
+      await Promise.all(selectedFiles.map(async (file, index) => {
+        const localItem = localItems[index];
+        const form = new FormData();
+        form.append('files', file, file.name);
+        try {
+          // Upload one file per request so a single failure can be retried independently.
+          const response = await api.postForm('/api/files', form);
+          const received = Array.isArray(response)
+            ? response
+            : (response && Array.isArray(response.files)
+              ? response.files
+              : (response && response.id ? [response] : []));
+          const saved = received.find(item => item && typeof item.id === 'string' && item.id);
+          if (!saved) throw new Error('Сервер не подтвердил загрузку файла');
+  
+          const fileMap = new Map((Array.isArray(state.files) ? state.files : [])
+            .filter(item => item && item.id).map(item => [String(item.id), item]));
+          fileMap.set(String(saved.id), saved);
+          state.files = Array.from(fileMap.values());
+  
+          const pendingIndex = state.pendingAttachments.findIndex(item =>
+            item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
+          );
+          // If the user removed the chip while uploading, do not re-attach it on completion.
+          if (pendingIndex >= 0) state.pendingAttachments.splice(pendingIndex, 1, saved);
+          successCount += 1;
+        } catch (err) {
+          const message = usefulErrorMessage(err, 'не удалось загрузить файл');
+          const pendingItem = state.pendingAttachments.find(item =>
+            item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
+          );
+          if (pendingItem) {
+            pendingItem.uploadStatus = 'error';
+            pendingItem.uploadError = message;
+          }
+          failures.push({ name: String(file.name || 'Файл'), message });
+        } finally {
+          renderFiles();
+          renderFilesWorkspace();
+          renderAttachments();
         }
-        failures.push({ name: String(file.name || 'Файл'), message });
-      } finally {
-        renderFiles();
-        renderFilesWorkspace();
-        renderAttachments();
+      }));
+  
+      if (failures.length) {
+        const detail = failures.map(item => '«' + item.name + '»: ' + item.message).join('; ');
+        toast((successCount
+          ? 'Не удалось загрузить часть файлов. Нажмите значок повтора рядом с файлом. '
+          : 'Ошибка загрузки. Нажмите значок повтора рядом с файлом. ') + detail, 'error');
+      } else if (successCount) {
+        toast(successCount === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
       }
-    }));
-
-    if (failures.length) {
-      const detail = failures.map(item => '«' + item.name + '»: ' + item.message).join('; ');
-      toast((successCount
-        ? 'Не удалось загрузить часть файлов. Нажмите значок повтора рядом с файлом. '
-        : 'Ошибка загрузки. Нажмите значок повтора рядом с файлом. ') + detail, 'error');
-    } else if (successCount) {
-      toast(successCount === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
     }
   }
 

@@ -1798,7 +1798,7 @@
         event.preventDefault();
         event.stopPropagation();
         if (button.dataset.act === 'more') {
-          $('.chat-item.actions-open').forEach(item => {
+          Array.from(document.querySelectorAll('.chat-item.actions-open')).forEach(item => {
             if (item !== row) item.classList.remove('actions-open');
           });
           row.classList.toggle('actions-open');
@@ -1808,7 +1808,7 @@
         if (button.dataset.act === 'delete') return removeChat(id);
         if (button.dataset.act === 'pin') return toggleChatPin(id);
       }
-      $('.chat-item.actions-open').forEach(item => item.classList.remove('actions-open'));
+      Array.from(document.querySelectorAll('.chat-item.actions-open')).forEach(item => item.classList.remove('actions-open'));
       openChat(id);
     };
   }

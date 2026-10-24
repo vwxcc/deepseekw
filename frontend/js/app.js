@@ -4352,7 +4352,7 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
-    $$$('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
       const messageId = String(button.dataset.messageId || '');
       const agentId = String(button.dataset.deepAgentId || '');
       const message = findNode(state.tree, messageId);
@@ -4360,7 +4360,7 @@
         .find(run => run && run.kind === 'deep_research_agent' && String(run.agent_id || '') === agentId);
       openDeepResearchAgentDetail(agent);
     }));
-    $$$('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;
@@ -4407,15 +4407,15 @@
       if (btn) btn.addEventListener('click', send);
     });
 
-    $$$('.ask-expand', scope).forEach(button => button.addEventListener('click', () => {
+    $$('.ask-expand', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
       if (!message) return; message.askCollapsed=false; renderMessageInPlace(message.id);
     }));
-    $$$('.quiz-card [data-quiz-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('.quiz-card [data-quiz-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
       if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id, null, { preserveScroll: true });
     }));
-    $$$('.quiz-option[data-quiz-option]', scope).forEach(button => {
+    $$('.quiz-option[data-quiz-option]', scope).forEach(button => {
       button.addEventListener('pointerdown', () => snapshotQuizSelection(button), { capture: true });
       button.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === ' ') snapshotQuizSelection(button);
@@ -4452,7 +4452,7 @@
       });
       });
     });
-    $$$('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
+    $$('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
       const el=input.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null,index=Number(input.dataset.quizCustom);
       if(!message||!Number.isInteger(index)||index<0||message.quizSubmitted)return;
       message.quizCustom=Array.isArray(message.quizCustom)?message.quizCustom:[];
@@ -4464,7 +4464,7 @@
         if(question)$$('[data-quiz-option]',question).forEach(option=>{option.classList.remove('is-selected');option.setAttribute('aria-pressed','false');});
       }
     }));
-    $$$('.quiz-submit', scope).forEach(button => button.addEventListener('click', () => {
+    $$('.quiz-submit', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null;
       if(!message||!Array.isArray(message.quiz)||message.quizSubmitted)return;
       const items=message.quiz.slice(0,20),answers=Array.isArray(message.quizAnswers)?message.quizAnswers:[],custom=Array.isArray(message.quizCustom)?message.quizCustom:[];
@@ -4486,14 +4486,14 @@
         sendQuizResultToAI(message);
       }
     }));
-    $$$('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
+    $$('.quiz-send-result', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null;
       if(!message||!Array.isArray(message.quiz)||!message.quizSubmitted||message.quizResultSent)return;
       sendQuizResultToAI(message);
     }));
-    $$$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
+    $$('.mem-line', scope).forEach(el => el.addEventListener('click', () => openMemory(el.dataset.memline)));
 
-    $$$('.think-head', scope).forEach(h => h.addEventListener('click', () => {
+    $$('.think-head', scope).forEach(h => h.addEventListener('click', () => {
       const box = h.closest('.think-box');
       if (!box) return;
       box.classList.toggle('collapsed');
@@ -4571,17 +4571,17 @@
       });
     }
 
-    $$$('[data-activity-full]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-activity-full]', scope).forEach(button => button.addEventListener('click', () => {
       openActivityStream(button.dataset.activityFull);
     }));
-    $$$('[data-activity-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-activity-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.activityToggle);
       if (!n) return;
       n.showActivities = !n.showActivities;
       renderMessageInPlace(n.id);
     }));
 
-    $$$('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-fallback-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const n = findNode(state.tree, button.dataset.fallbackCodeToggle);
       if (!n) return;
       const runs = Array.isArray(n.tool_runs) ? n.tool_runs : [];
@@ -4592,11 +4592,11 @@
       openFallbackCodeViewer(code, 'python');
     }));
 
-    $$$('[data-open-device-status]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-open-device-status]', scope).forEach(button => button.addEventListener('click', () => {
       openDeviceRunnerStatus(button.dataset.openDeviceStatus);
     }));
 
-    $$$('[data-web-images-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-web-images-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const section = button.closest('.aich-web-images');
       if (!section) return;
       const expanded = section.classList.toggle('is-collapsed') === false;
@@ -4606,7 +4606,7 @@
         icon(expanded ? 'chevron-up' : 'chevron-down');
     }));
 
-    $$$('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-code-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const block = button.closest('.code-block');
       if (!block) return;
       const preview = $('.code-preview', block);
@@ -4622,7 +4622,7 @@
         '<span>' + (expanded ? 'Свернуть' : 'Развернуть') + '</span>';
     }));
 
-    $$$('[data-preview-run]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-preview-run]', scope).forEach(button => button.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[button.dataset.previewRun];
       const preview = button.closest('.html-preview');
       const frame = preview ? $('iframe', preview) : null;
@@ -4634,17 +4634,17 @@
       button.blur();
     }));
 
-    $$$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-copy]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.copy];
       copyWithFeedback(b, rec ? rec.code : '');
     }));
 
-    $$$('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl]', scope).forEach(b => b.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[b.dataset.dl];
       if (rec) openSaveMenu({ title: 'Код', text: rec.code, lang: rec.lang, svg: false });
     }));
 
-    $$$('[data-run-file-block]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-run-file-block]', scope).forEach(button => button.addEventListener('click', () => {
       const rec = (window.__codeStore || {})[button.dataset.runFileBlock];
       const code = rec && typeof rec.code === 'string' ? rec.code.trim() : '';
       if (!code) { toast('Код для создания файла не найден.', 'error'); return; }
@@ -4654,7 +4654,7 @@
       openDeviceCodeRunner({ lang: 'run', code }, typeof messageId === 'string' ? messageId : null);
     }));
 
-    $$$('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
+    $$('[data-dl-table]', scope).forEach(b => b.addEventListener('click', () => {
       const rows = (window.__tableStore || {})[b.dataset.dlTable];
       if (!rows) return;
       openTableMenu(rows);

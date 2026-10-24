@@ -4310,6 +4310,46 @@
   }
 
 
+  // Keep a quiz question anchored in the viewport while selecting an option.
+  // Some mobile browsers scroll the page on button focus/tap, and a live answer
+  // stream must not pull the reader back to the bottom while the quiz is in use.
+  const quizSelectionSnapshots = new WeakMap();
+
+  function snapshotQuizSelection(button) {
+    const question = button && button.closest('.quiz-question');
+    const messages = $('#messages');
+    const snapshot = {
+      question,
+      questionTop: question ? question.getBoundingClientRect().top : null,
+      messages,
+      messagesScrollTop: messages ? messages.scrollTop : null,
+      pageX: window.scrollX || 0,
+      pageY: window.scrollY || 0,
+    };
+    quizSelectionSnapshots.set(button, snapshot);
+    state.stickBottom = false;
+  }
+
+  function restoreQuizSelectionViewport(snapshot) {
+    if (!snapshot) return;
+    if (snapshot.messages && snapshot.messagesScrollTop !== null) {
+      snapshot.messages.scrollTop = snapshot.messagesScrollTop;
+    }
+    if ((window.scrollX || 0) !== snapshot.pageX || (window.scrollY || 0) !== snapshot.pageY) {
+      window.scrollTo(snapshot.pageX, snapshot.pageY);
+    }
+    if (snapshot.question && snapshot.question.isConnected && snapshot.questionTop !== null) {
+      const delta = snapshot.question.getBoundingClientRect().top - snapshot.questionTop;
+      if (Math.abs(delta) > 1) {
+        if (snapshot.messages && snapshot.messages.contains(snapshot.question)) {
+          snapshot.messages.scrollTop += delta;
+        } else {
+          window.scrollBy(0, delta);
+        }
+      }
+    }
+  }
+
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
     $$('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
@@ -4375,9 +4415,20 @@
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
       if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id, null, { preserveScroll: true });
     }));
-    $$('.quiz-option[data-quiz-option]', scope).forEach(button => button.addEventListener('click', () => {
+    $('.quiz-option[data-quiz-option]', scope).forEach(button => {
+      button.addEventListener('pointerdown', () => snapshotQuizSelection(button), { capture: true });
+      button.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') snapshotQuizSelection(button);
+      }, { capture: true });
+      button.addEventListener('click', event => {
+      event.preventDefault();
+      const snapshot = quizSelectionSnapshots.get(button);
+      quizSelectionSnapshots.delete(button);
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null, question=button.closest('.quiz-question');
-      if (!message||!question||message.quizSubmitted) return;
+      if (!message||!question||message.quizSubmitted) {
+        restoreQuizSelectionViewport(snapshot);
+        return;
+      }
       const index=Number(button.dataset.quizIndex); if(!Number.isInteger(index)||index<0)return;
       const value=String(button.dataset.quizOption||''), multi=button.dataset.quizMultiple==='true';
       const current=Array.isArray(message.quizAnswers[index])?message.quizAnswers[index].slice():[];
@@ -4390,12 +4441,18 @@
       else next=[value];
       message.quizAnswers=Array.isArray(message.quizAnswers)?message.quizAnswers:[];
       message.quizAnswers[index]=next;
-      $$('[data-quiz-option]',question).forEach(option=>{
+      $('[data-quiz-option]',question).forEach(option=>{
         const picked=next.includes(String(option.dataset.quizOption||''));
         option.classList.toggle('is-selected',picked);option.setAttribute('aria-pressed',String(picked));
       });
-    }));
-    $$('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
+      restoreQuizSelectionViewport(snapshot);
+      requestAnimationFrame(() => {
+        restoreQuizSelectionViewport(snapshot);
+        requestAnimationFrame(() => restoreQuizSelectionViewport(snapshot));
+      });
+      });
+    });
+    $('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
       const el=input.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null,index=Number(input.dataset.quizCustom);
       if(!message||!Number.isInteger(index)||index<0||message.quizSubmitted)return;
       message.quizCustom=Array.isArray(message.quizCustom)?message.quizCustom:[];

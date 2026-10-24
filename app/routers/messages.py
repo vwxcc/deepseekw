@@ -357,34 +357,34 @@ async def _memory_block(
         .limit(120)
     )
     rows = [m for m in res.scalars().all() if m.content]
-    prefs = [m.content for m in rows if (m.kind or "fact") == "preference"]
+    prefs = [m.content[:300] for m in rows if (m.kind or "fact") == "preference"][:15]
     query = str(request_text or "").casefold()
     recall_terms = (
-        "памят", "истори", "раньше", "прошлый раз", "прошлой бесед",
+        "памят", "истори", "вспомни", "что ты знаешь", "обо мне", "раньше", "прошлый раз", "прошлой бесед",
         "что мы делали", "что делали", "что обсуждали", "что ты помнишь",
         "помнишь", "продолж", "вернись к", "вернёмся к", "вернемся к",
         "где останов", "на чём останов", "на чем останов", "предыдущ",
-        "возобнов", "контекст проекта", "сводк", "our previous", "what did we",
+        "возобнов", "по проекту", "контекст проекта", "сводк", "our previous", "what did we",
         "remember", "continue where", "project history",
     )
     needs_recall = any(term in query for term in recall_terms)
-    facts = [m.content for m in rows if (m.kind or "fact") == "fact"] if needs_recall else []
-    history = [m.content for m in rows if m.kind == "history"] if needs_recall else []
+    facts = [m.content[:500] for m in rows if (m.kind or "fact") == "fact"][:15] if needs_recall else []
+    history = [m.content[:600] for m in rows if m.kind == "history"][:12] if needs_recall else []
     out = ""
     if prefs:
         out += (
             "\n\n[Персонализация — постоянные предпочтения пользователя]\n"
-            + "\n".join("- " + value for value in reversed(prefs[:30]))
+            + "\n".join("- " + value for value in reversed(prefs))
         )
     if facts:
         out += (
             "\n\n[Память о пользователе — извлечена по запросу]\n"
-            + "\n".join("- " + value for value in reversed(facts[:40]))
+            + "\n".join("- " + value for value in reversed(facts))
         )
     if history:
         out += (
             "\n\n[Краткая история предыдущей работы — извлечена по запросу]\n"
-            + "\n".join("- " + value for value in reversed(history[:40]))
+            + "\n".join("- " + value for value in reversed(history))
             + "\nИспользуй эти записи как контекст для продолжения; приоритет имеют последние сообщения текущего чата."
         )
     return out

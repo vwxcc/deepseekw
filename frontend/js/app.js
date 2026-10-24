@@ -117,6 +117,7 @@
   let pendingNewChatProjectLabel = '';
   let addChatProjects = [];
   let addChatActiveView = 'main';
+  let expandedDeepResearchMessageId = '';
   // Persist the expanded preference for Share; the + root itself always stays fixed.
   let addChatExpandedThisSession = false;
   let addChatSelectedFileIds = new Set();
@@ -4161,6 +4162,9 @@
     const flow = runs.find(run => run && run.kind === 'deep_research_flow');
     const agents = runs.filter(run => run && run.kind === 'deep_research_agent');
     if (!agents.length) return '';
+
+    const messageId = String(n.id || '');
+    const expanded = expandedDeepResearchMessageId === messageId;
     const byId = new Map(agents.map(agent => [String(agent.agent_id || ''), agent]));
     const edges = Array.isArray(flow && flow.edges) ? flow.edges : [];
     const connections = edges.map(edge => {
@@ -4171,35 +4175,100 @@
         '</span><span class="deep-research-arrow">→</span><span>' + escapeHtml(to.name || 'Агент') +
         '</span>' + (edge.label ? '<small>' + escapeHtml(edge.label) + '</small>' : '') + '</div>';
     }).filter(Boolean).join('');
-    const active = agents.some(agent => ['queued', 'waiting', 'working', 'searching'].includes(String(agent.status || '')));
+
+    const activeStates = ['queued', 'waiting', 'working', 'searching'];
+    const finishedStates = ['done', 'failed', 'cancelled'];
+    const active = agents.some(agent => activeStates.includes(String(agent.status || '')));
+    const failed = agents.some(agent => String(agent.status || '') === 'failed');
+    const cancelled = agents.some(agent => String(agent.status || '') === 'cancelled');
+    const finishedCount = agents.filter(agent => finishedStates.includes(String(agent.status || ''))).length;
+    const total = agents.length;
+    const percent = total ? Math.round(finishedCount / total * 100) : 0;
+    const overallStatus = active ? 'Исследование идёт'
+      : failed ? 'Завершено с ошибками'
+      : cancelled ? 'Остановлено'
+      : 'Завершено';
+    const statusClass = active ? 'is-running' : failed ? 'is-error' : cancelled ? 'is-stopped' : 'is-done';
     const totalTokens = Math.max(0, Number(flow && flow.total_tokens) || 0);
-    return '<section class="deep-research-flow" aria-label="Deep Research: ход исследования">' +
-      '<div class="deep-research-flow-head"><span class="deep-research-flow-mark">🧭</span>' +
-      '<strong>Deep Research</strong><span class="deep-research-flow-state">' +
-      (active ? thinkAnim() + ' Исследуют' : 'Исследование завершено') + '</span></div>' +
-      '<div class="deep-research-total-tokens">Токены планировщика и всех агентов: <strong>' + totalTokens.toLocaleString('ru-RU') + '</strong></div>' +
-      '<div class="deep-research-agents">' + agents.map(agent => {
-        const state = String(agent.status || 'queued');
-        const marker = ['queued', 'working', 'searching'].includes(state)
-          ? '<span class="deep-agent-spinner" aria-hidden="true"></span>'
-          : state === 'done' ? '<span class="deep-agent-state-dot is-done">✓</span>'
-          : '<span class="deep-agent-state-dot is-error">!</span>';
-        const id = escapeHtml(String(agent.agent_id || ''));
-        const agentTokens = Math.max(0, Number(agent.tokens_in) || 0) + Math.max(0, Number(agent.tokens_out) || 0);
-        const tokensLabel = agentTokens > 0 ? '<span class="deep-agent-token-count">' + agentTokens.toLocaleString('ru-RU') + ' токенов</span>' : '';
-        return '<button type="button" class="deep-research-agent-card" data-deep-agent-id="' + id +
-          '" data-message-id="' + escapeHtml(String(n.id || '')) + '" aria-label="Открыть результат агента ' +
-          escapeHtml(agent.name || 'Агент') + '">' +
-          '<span class="deep-agent-card-top">' + marker + '<strong>' + escapeHtml(agent.name || 'Агент') +
-          '</strong><small>' + escapeHtml(deepResearchStatusLabel(state)) + '</small></span>' +
-          '<span class="deep-agent-card-task">' + escapeHtml(agent.task || '') + '</span>' + tokensLabel +
-          (agent.result ? '<span class="deep-agent-card-preview">' + escapeHtml(String(agent.result).slice(0, 180)) + '</span>' : '') +
-          '</button>';
-      }).join('') + '</div>' +
+    const messageIdAttr = escapeHtml(messageId);
+
+    const agentCards = agents.map(agent => {
+      const state = String(agent.status || 'queued');
+      const marker = ['queued', 'waiting', 'working', 'searching'].includes(state)
+        ? '<span class="deep-agent-spinner" aria-hidden="true"></span>'
+        : state === 'done' ? '<span class="deep-agent-state-dot is-done">✓</span>'
+        : state === 'cancelled' ? '<span class="deep-agent-state-dot is-stopped">–</span>'
+        : '<span class="deep-agent-state-dot is-error">!</span>';
+      const id = escapeHtml(String(agent.agent_id || ''));
+      const agentTokens = Math.max(0, Number(agent.tokens_in) || 0) + Math.max(0, Number(agent.tokens_out) || 0);
+      const tokensLabel = agentTokens > 0 ? '<span class="deep-agent-token-count">' + agentTokens.toLocaleString('ru-RU') + ' токенов</span>' : '';
+      return '<button type="button" class="deep-research-agent-card" data-deep-agent-id="' + id +
+        '" data-message-id="' + messageIdAttr + '" aria-label="Открыть результат агента ' +
+        escapeHtml(agent.name || 'Агент') + '">' +
+        '<span class="deep-agent-card-top">' + marker + '<strong>' + escapeHtml(agent.name || 'Агент') +
+        '</strong><small>' + escapeHtml(deepResearchStatusLabel(state)) + '</small></span>' +
+        '<span class="deep-agent-card-task">' + escapeHtml(agent.task || '') + '</span>' + tokensLabel +
+        (agent.result ? '<span class="deep-agent-card-preview">' + escapeHtml(String(agent.result).slice(0, 180)) + '</span>' : '') +
+        '</button>';
+    }).join('');
+
+    return '<section class="deep-research-flow ' + (expanded ? 'is-expanded' : 'is-collapsed') +
+      '" data-message-id="' + messageIdAttr + '" aria-label="Deep Research: ход исследования">' +
+      '<div class="deep-research-flow-head">' +
+      '<span class="deep-research-flow-mark" aria-hidden="true">🧭</span>' +
+      '<strong class="deep-research-flow-title">Deep Research</strong>' +
+      '<span class="deep-research-flow-status"><span class="deep-research-status-dot ' + statusClass + '" aria-hidden="true"></span>' +
+      '<span>' + escapeHtml(overallStatus) + '</span></span>' +
+      '<span class="deep-research-flow-progress">' + finishedCount + ' из ' + total + ' · ' + percent + '%</span>' +
+      '<button type="button" class="deep-research-expand-button" data-deep-research-toggle data-message-id="' + messageIdAttr +
+      '" aria-expanded="' + String(expanded) + '">' + (expanded ? 'Свернуть' : 'Развернуть') + '</button>' +
+      '</div>' +
+      '<div class="deep-research-expanded-content' + (expanded ? '' : ' hidden') + '">' +
+      '<div class="deep-research-total-tokens">Токены планировщика и всех агентов: <strong>' +
+      totalTokens.toLocaleString('ru-RU') + '</strong></div>' +
+      '<div class="deep-research-agents">' + agentCards + '</div>' +
       (connections ? '<div class="deep-research-connections"><span class="deep-research-connections-title">Связи и передача результатов</span>' + connections + '</div>' : '') +
-      '</section>';
+      '</div></section>';
   }
 
+  function syncDeepResearchCollapseButton() {
+    const button = $('#deep-research-collapse-floating');
+    const messages = $('#messages');
+    if (!button) return;
+    if (!button.dataset.bound) {
+      button.dataset.bound = '1';
+      button.addEventListener('click', () => {
+        if (expandedDeepResearchMessageId) setDeepResearchExpanded(expandedDeepResearchMessageId, false);
+      });
+    }
+    const activeSection = expandedDeepResearchMessageId
+      ? $$('.deep-research-flow', messages).find(section =>
+          section.dataset.messageId === expandedDeepResearchMessageId && section.classList.contains('is-expanded'))
+      : null;
+    const show = !!activeSection;
+    button.classList.toggle('hidden', !show);
+    button.setAttribute('aria-hidden', String(!show));
+    button.tabIndex = show ? 0 : -1;
+  }
+
+  function setDeepResearchExpanded(messageId, expanded) {
+    const targetId = String(messageId || '');
+    expandedDeepResearchMessageId = expanded && targetId ? targetId : '';
+    const messages = $('#messages');
+    $$('.deep-research-flow', messages).forEach(section => {
+      const isExpanded = !!expanded && section.dataset.messageId === targetId;
+      section.classList.toggle('is-expanded', isExpanded);
+      section.classList.toggle('is-collapsed', !isExpanded);
+      const content = $('.deep-research-expanded-content', section);
+      if (content) content.classList.toggle('hidden', !isExpanded);
+      const toggle = $('[data-deep-research-toggle]', section);
+      if (toggle) {
+        toggle.textContent = isExpanded ? 'Свернуть' : 'Развернуть';
+        toggle.setAttribute('aria-expanded', String(isExpanded));
+      }
+    });
+    syncDeepResearchCollapseButton();
+  }
   function openDeepResearchAgentDetail(agent) {
     if (!agent) return;
     openAddToChatSheet('detail');
@@ -4343,6 +4412,7 @@
     if (!entries.length) {
       // Keep the existing empty-state DOM and animation instead of rebuilding it on every no-op render.
       if (!box.classList.contains('empty') || !box.querySelector('.empty-state')) renderEmptyState();
+      syncDeepResearchCollapseButton();
       updateScrollDownButton();
       return;
     }
@@ -4463,6 +4533,13 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
+    $('[data-deep-research-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+      const messageId = String(button.dataset.messageId || '');
+      const section = button.closest('.deep-research-flow');
+      const expanded = !!section && !section.classList.contains('is-expanded');
+      setDeepResearchExpanded(messageId, expanded);
+    }));
+    syncDeepResearchCollapseButton();
     $$('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
       const messageId = String(button.dataset.messageId || '');
       const agentId = String(button.dataset.deepAgentId || '');

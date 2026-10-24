@@ -7289,15 +7289,15 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
 .deep-research-model-toggle.deep-research-selected .deep-research-switch { background: #777; }
 .deep-research-model-toggle.deep-research-selected .deep-research-switch > span { transform: translateX(14px); }
 
-#add-to-chat-shell .add-to-chat-sheet,
-#add-to-chat-shell .add-to-chat-sheet.is-expanded {
+#add-to-chat-shell.plus-fixed .add-to-chat-sheet,
+#add-to-chat-shell.plus-fixed .add-to-chat-sheet.is-expanded {
   height: auto !important;
   min-height: 0 !important;
   max-height: calc(var(--app-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 88px) !important;
   transition: transform .28s cubic-bezier(.22, 1, .36, 1) !important;
   overflow: hidden !important;
 }
-#add-to-chat-shell .add-chat-handle-wrap {
+#add-to-chat-shell.plus-fixed .add-chat-handle-wrap {
   display: none !important;
   flex-basis: 0 !important;
   height: 0 !important;
@@ -7306,12 +7306,19 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   touch-action: auto !important;
   cursor: default !important;
 }
-#add-to-chat-shell:not(.has-subview) .add-chat-scroll-area {
+#add-to-chat-shell.plus-fixed:not(.has-subview) .add-chat-scroll-area {
   flex: 0 0 auto !important;
   overflow: hidden !important;
   padding: 6px 0 0 !important;
   touch-action: auto !important;
   scrollbar-width: none !important;
+}
+#add-to-chat-shell.plus-fixed.has-subview .add-chat-scroll-area {
+  flex: 1 1 0 !important;
+  overflow-y: auto !important;
+  padding: 10px 6px 10px 0 !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 #add-to-chat-shell:not(.has-subview) .add-chat-sheet-content { gap: 6px !important; }
 #add-to-chat-shell:not(.has-subview) .add-chat-primary-action {

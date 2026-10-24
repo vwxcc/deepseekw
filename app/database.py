@@ -183,6 +183,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "sessions": {
         "ip_hash": "VARCHAR(64)",
     },
+    "user_preferences": {
+        "accent_color": "VARCHAR(7) NOT NULL DEFAULT '#3b82f6'",
+    },
     "users": {
         "token_balance": "INTEGER NOT NULL DEFAULT 0",
         "avatar": "INTEGER DEFAULT 0",

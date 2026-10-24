@@ -5798,3 +5798,202 @@ input[type="range"]:focus-visible {
   #add-to-chat-shell .add-chat-primary-icon { flex-basis: 42px; width: 42px; height: 42px; }
   .add-to-chat-sheet { border-radius: 24px !important; padding-bottom: 12px !important; }
 }
+
+
+/* Deep Research, visible generation indicators, and a sheet that expands before scrolling. */
+.add-to-chat-sheet {
+  height: min(58dvh, 520px);
+  max-height: min(88dvh, 760px);
+}
+.add-to-chat-sheet.is-expanded {
+  height: min(88dvh, 760px);
+}
+.add-chat-handle-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-panel);
+  border-radius: 18px 18px 0 0;
+}
+.add-to-chat-sheet > .add-chat-sheet-content,
+.add-to-chat-sheet > .add-chat-subview {
+  scrollbar-gutter: stable;
+}
+@keyframes aich-chat-spin {
+  to { transform: rotate(360deg); }
+}
+.chat-generating-spinner {
+  display: inline-block;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  margin-right: 7px;
+  border: 1.8px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: aich-chat-spin .8s linear infinite;
+}
+#chat-title.is-generating::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border: 1.8px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: aich-chat-spin .8s linear infinite;
+}
+.chat-mode-emoji {
+  flex: 0 0 auto;
+  margin-right: 5px;
+  font-size: 13px;
+}
+.deep-research-toggle.deep-research-selected {
+  background: var(--bg-hover, var(--bg-panel));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.deep-research-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 8px 0 12px;
+  padding: 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 17px;
+  background: var(--bg-panel);
+  box-sizing: border-box;
+}
+.deep-research-flow-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.deep-research-flow-mark { flex: 0 0 auto; }
+.deep-research-flow-head strong { font-weight: 650; }
+.deep-research-flow-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--fg-soft);
+  font-size: 11.5px;
+}
+.deep-research-flow-state .think-anim { transform: scale(.72); transform-origin: center; }
+.deep-research-agents { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.deep-research-agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease;
+}
+.deep-research-agent-card:hover { border-color: var(--border); background: var(--bg-hover, var(--bg-panel)); }
+.deep-agent-card-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.deep-agent-card-top strong { min-width: 0; overflow-wrap: anywhere; font-size: 12.5px; font-weight: 650; }
+.deep-agent-card-top small { flex: 0 0 auto; margin-left: auto; color: var(--fg-soft); font-size: 10.5px; }
+.deep-agent-card-task, .deep-agent-card-preview {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--fg-soft);
+  font-size: 11.5px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.deep-agent-card-preview { color: var(--fg); opacity: .84; }
+.deep-agent-spinner, .deep-agent-state-dot {
+  display: inline-grid;
+  flex: 0 0 13px;
+  width: 13px;
+  height: 13px;
+  place-items: center;
+  box-sizing: border-box;
+}
+.deep-agent-spinner {
+  border: 1.6px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: aich-chat-spin .8s linear infinite;
+}
+.deep-agent-state-dot { font-size: 11px; font-weight: 700; color: var(--fg-soft); }
+.deep-agent-state-dot.is-done { color: var(--success, #25845a); }
+.deep-agent-state-dot.is-error { color: var(--danger); }
+.deep-research-connections {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.deep-research-connections-title { color: var(--fg-soft); font-size: 10.5px; font-weight: 600; }
+.deep-research-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-soft);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.deep-research-arrow { color: var(--accent); font-weight: 700; }
+.deep-research-connection small { width: 100%; margin-left: 2px; color: var(--fg-soft); font-size: 10px; }
+#add-chat-agent-detail-content { min-width: 0; }
+.deep-agent-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 8px 2px 16px;
+}
+.deep-agent-detail-status {
+  align-self: flex-start;
+  padding: 5px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--fg-soft);
+  font-size: 12px;
+}
+.deep-agent-detail h3 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
+.deep-agent-detail section { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.deep-agent-detail section > strong { font-size: 12px; color: var(--fg-soft); }
+.deep-agent-detail section p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.deep-agent-detail-result {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--bg);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.deep-agent-detail-sources { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--border-soft); border-radius: 14px; }
+.deep-agent-source { min-height: 54px; text-decoration: none; }
+.deep-agent-source + .deep-agent-source { border-top: 1px solid var(--border-soft); }
+.deep-agent-source .add-chat-action-copy small { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .add-to-chat-sheet { height: min(62dvh, 560px); max-height: min(88dvh, 760px); }
+  .add-to-chat-sheet.is-expanded { height: min(88dvh, 760px); }
+  .deep-research-flow { padding: 9px; }
+}

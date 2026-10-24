@@ -623,6 +623,11 @@
             <span class="add-chat-action-copy"><strong>Как отвечать</strong><small id="add-chat-response-detail-current">Стандарт</small></span>
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
+          <button type="button" class="add-chat-action deep-research-toggle" data-add-chat-action="deep-research" aria-pressed="false">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
+            <span class="add-chat-action-copy"><strong>Deep Research</strong><small id="add-chat-deep-research-current">Выключен · до 5 агентов</small></span>
+            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
+          </button>
           <button type="button" class="add-chat-action" data-add-chat-action="memory">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
             <span class="add-chat-action-copy"><strong>Память и предпочтения</strong><small id="add-chat-memory-current">Включена по умолчанию</small></span>
@@ -683,6 +688,9 @@
       </div>
       <div id="add-chat-share-view" class="add-chat-subview hidden">
         <div id="add-chat-share-content" aria-live="polite"></div>
+      </div>
+      <div id="add-chat-agent-detail-view" class="add-chat-subview hidden">
+        <div id="add-chat-agent-detail-content"></div>
       </div>
     </section>
   </div>

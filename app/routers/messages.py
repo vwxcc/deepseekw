@@ -165,6 +165,13 @@ async def _stream_job(
                     items = []
                 if items:
                     yield _sse("memory", {"items": items})
+            elif kind == "deep_research":
+                try:
+                    payload_data = json.loads(payload)
+                except Exception:
+                    payload_data = None
+                if isinstance(payload_data, dict):
+                    yield _sse("deep_research", payload_data)
             elif kind == "tool_start":
                 try:
                     start = json.loads(payload)
@@ -641,6 +648,27 @@ async def _check_budget_before_send(user: User, db: AsyncSession) -> None:
         )
 
 
+
+async def _ensure_no_active_generation(user: User, db: AsyncSession) -> None:
+    """Allow one live assistant generation per user, including across browser tabs."""
+    active_id = await db.scalar(
+        select(Message.id)
+        .join(Chat, Message.chat_id == Chat.id)
+        .where(
+            Chat.user_id == user.id,
+            Chat.deleted_at.is_(None),
+            Message.role == Role.assistant,
+            Message.status.in_([MessageStatus.queued, MessageStatus.processing]),
+        )
+        .limit(1)
+    )
+    if active_id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "У вас уже выполняется запрос. Дождитесь его завершения.",
+        )
+
+
 @router.post("/chats/{chat_id}/messages")
 async def send_message(
     request: Request,
@@ -653,8 +681,11 @@ async def send_message(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
+    await _ensure_no_active_generation(user, db)
     await _check_budget_before_send(user, db)
     data.model_set_id = await _choose_model_set(db, user, data.model_set_id, chat.model_set_id)
+    if data.deep_research:
+        chat.mode = "research"
     chat.model_set_id = data.model_set_id
     execution_target = (data.execution_target or "site").strip().lower()
     if execution_target not in {"site", "device", "both"}:
@@ -885,6 +916,7 @@ async def send_message(
         max_steps=int(effective_limits.get("agent_steps") or 0) or None,
         memory_enabled=memory_enabled,
         action_limit=action_limit,
+        deep_research=bool(data.deep_research),
     )
     # Start the normal AI job first. The exact-title lookup runs only after it has
     # entered the router; on a hit, cancel that work and return the prepared answer.
@@ -892,7 +924,7 @@ async def send_message(
     # Yield once so the normal AI worker can start processing before the exact-title lookup.
     await asyncio.sleep(0)
 
-    if not attached and not code_mode:
+    if not attached and not code_mode and not data.deep_research:
         cached = await find_ready_answer_exact(content)
         if cached is not None:
             job.ready_answer_hit = True
@@ -928,6 +960,7 @@ async def send_first_message(
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
+    await _ensure_no_active_generation(user, db)
     await _check_budget_before_send(user, db)
     data.model_set_id = await _choose_model_set(db, user, data.model_set_id)
 
@@ -947,7 +980,7 @@ async def send_first_message(
 
     # A new chat is always a new root branch.
     data.parent_message_id = None
-    chat = Chat(user_id=user.id, title="Новый чат", mode="chat", model_set_id=data.model_set_id, project_id=project_id)
+    chat = Chat(user_id=user.id, title="Новый чат", mode=("research" if data.deep_research else "chat"), model_set_id=data.model_set_id, project_id=project_id)
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
@@ -979,6 +1012,7 @@ async def retry_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    await _ensure_no_active_generation(user, db)
     parent_id = message.parent_message_id
     if parent_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего повторять")
@@ -1005,6 +1039,7 @@ async def branch_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    await _ensure_no_active_generation(user, db)
     parent_id = message.parent_message_id
     if parent_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего ветвить")
@@ -1031,6 +1066,7 @@ async def continue_message(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    await _ensure_no_active_generation(user, db)
     chat = await db.get(Chat, message.chat_id)
     history_messages = await ancestor_chain(db, message.id)
     history_messages.append(

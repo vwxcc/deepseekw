@@ -61,6 +61,7 @@ class ChatOut(ORMModel):
     source_chat_title: str | None = None
     is_pinned: bool = False
     project_id: str | None = None
+    is_generating: bool = False
 
 
 class ChatCreate(BaseModel):
@@ -125,7 +126,8 @@ class MessageCreate(BaseModel):
     effort: str | None = None
     style: str = "auto"
     response_detail: str = "standard"
-    execution_target: str = "site"
+    deep_research: bool = False
+    execution_target: str = "site
     client_context: dict = Field(default_factory=dict)
 
 

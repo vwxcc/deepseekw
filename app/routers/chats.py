@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_user, get_db, get_owned_chat, require_csrf
-from ..models import Attachment, Chat, Message, MessageStatus, ModelSet, ModelSetEntry, Project, RouteType, Suggestion, User
+from ..models import Attachment, Chat, Message, MessageStatus, ModelSet, ModelSetEntry, Project, Role, RouteType, Suggestion, User
 from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut, SharedChatOut
 from ..services.limits import allow, get_limits, normalize_plan
 
@@ -26,7 +26,21 @@ async def list_chats(
         stmt = stmt.where(Chat.title.ilike(f"%{q}%"))
     stmt = stmt.order_by(Chat.updated_at.desc())
     result = await db.execute(stmt)
-    return [ChatOut.model_validate(c) for c in result.scalars().all()]
+    chats = result.scalars().all()
+    if not chats:
+        return []
+    active_result = await db.execute(
+        select(Message.chat_id).where(
+            Message.chat_id.in_([chat.id for chat in chats]),
+            Message.role == Role.assistant,
+            Message.status.in_([MessageStatus.queued, MessageStatus.processing]),
+        )
+    )
+    active_chat_ids = set(active_result.scalars().all())
+    return [
+        ChatOut.model_validate(chat).model_copy(update={"is_generating": chat.id in active_chat_ids})
+        for chat in chats
+    ]
 
 
 @router.get("/shared", response_model=list[SharedChatOut])

@@ -1217,6 +1217,8 @@
     style: localStorage.getItem('cs_style') || 'auto',
     responseDetail: ['minimum', 'standard', 'max'].includes(localStorage.getItem('aich_response_detail'))
       ? localStorage.getItem('aich_response_detail') : 'standard',
+    deepResearch: localStorage.getItem('aich_deep_research') === '1',
+    generatingChatId: '',
     readonly: false,
     publicToken: null,
     greetTimer: null,
@@ -1403,10 +1405,28 @@
     });
   }
 
+  function chatDisplayTitle(chat, fallback) {
+    const name = String(chat && chat.title || fallback || 'Новый чат');
+    return chat && chat.mode === 'research' ? '🧭 ' + name : name;
+  }
+
+  function refreshCurrentChatTitle(fallback) {
+    const title = $('#chat-title');
+    if (!title) return;
+    const chat = (state.chats || []).find(item => item && item.id === state.currentChatId) || null;
+    title.textContent = chatDisplayTitle(chat, fallback || 'Чат');
+    const generating = !!(chat && chat.is_generating) || !!(
+      state.streaming && state.generatingChatId && state.generatingChatId === state.currentChatId
+    );
+    title.classList.toggle('is-generating', generating);
+  }
+
   function chatListItemHtml(chat, options) {
     const pinned = !!chat.is_pinned;
     const showPin = !(options && options.hidePin);
     return '<div class="chat-item' + (chat.id === state.currentChatId ? ' active' : '') + '" data-id="' + escapeHtml(chat.id) + '">' +
+      (chat.is_generating ? '<span class="chat-generating-spinner" role="status" aria-label="Запрос обрабатывается"></span>' : '') +
+      (chat.mode === 'research' ? '<span class="chat-mode-emoji" title="Deep Research" aria-label="Deep Research">🧭</span>' : '') +
       '<span class="title">' + escapeHtml(chat.title || 'Новый чат') + '</span>' +
       ((chat.mode === 'code' || chat.mode === 'council' || (chat.bundle_id && chat.mode !== 'council')) ?
         '<span class="chat-meta">' +
@@ -1566,7 +1586,7 @@
         if (i >= 0) state.chats[i] = upd;
         state.chatListVersion += 1;
         renderChatList();
-        if (state.currentChatId === id) $('#chat-title').textContent = upd.title;
+        if (state.currentChatId === id) refreshCurrentChatTitle(upd.title);
         return true;
       },
     });
@@ -1580,6 +1600,7 @@
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
       $('#chat-title').textContent = 'AI CH';
+      $('#chat-title').classList.remove('is-generating');
       renderMessages();
     }
     renderChatList();
@@ -1619,7 +1640,7 @@
       }
       renderModelPicker();
       renderAddChatActionLabels();
-      $('#chat-title').textContent = chat ? (chat.title || 'Новый чат') : 'Чат';
+      refreshCurrentChatTitle(chat ? (chat.title || 'Новый чат') : 'Чат');
       renderChatList();
       renderMessages();
       if (state.streaming && liveStream && liveStream.chatId === id && liveStream.assistantId) bindStreamRefs();
@@ -2504,19 +2525,19 @@
         // Render the accumulated draft while the model is still responding.
         // renderMarkdown also recognises complete code fences, math and UI blocks.
         const liveDraft = String(draft || n.publicStream || '');
-        inner = activityHtml(n, true) + messageFilesHtml(n) +
+        inner = activityHtml(n, true) + deepResearchHtml(n) + messageFilesHtml(n) +
           (liveDraft.trim()
             ? '<div class="content md streaming-answer" aria-live="polite">' + renderMarkdown(liveDraft) + '</div>'
             : '');
       } else if (failed) {
-        inner = activityHtml(n, false) + messageFilesHtml(n) +
+        inner = activityHtml(n, false) + deepResearchHtml(n) + messageFilesHtml(n) +
           '<div class="content md" style="color:var(--danger)">Ошибка: ' +
           escapeHtml(n.error || 'запрос не прошёл') + '</div>';
       } else {
         const raw = String(n.content || '');
         const truncated = raw.length > FULL_RENDER_LIMIT && !n.showFull;
         const body = truncated ? raw.slice(0, FULL_RENDER_LIMIT) : raw;
-        inner = activityHtml(n, false) + messageFilesHtml(n) + '<div class="content md">' + renderMarkdown(body) + imageResultsHtml(n.sources) + '</div>' +
+        inner = activityHtml(n, false) + deepResearchHtml(n) + messageFilesHtml(n) + '<div class="content md">' + renderMarkdown(body) + imageResultsHtml(n.sources) + '</div>' +
           (truncated
             ? '<div class="more-note">Показано ' + FULL_RENDER_LIMIT.toLocaleString('ru-RU') +
               ' из ' + raw.length.toLocaleString('ru-RU') + ' символов — ' +
@@ -3899,8 +3920,86 @@
     });
   }
 
+
+  function deepResearchStatusLabel(status) {
+    return ({
+      queued: 'В очереди',
+      working: 'Работает',
+      searching: 'Ищет данные',
+      done: 'Готово',
+      failed: 'Не удалось',
+      cancelled: 'Остановлено',
+    })[String(status || '')] || 'Работает';
+  }
+
+  function deepResearchHtml(n) {
+    const runs = Array.isArray(n && n.tool_runs) ? n.tool_runs : [];
+    const flow = runs.find(run => run && run.kind === 'deep_research_flow');
+    const agents = runs.filter(run => run && run.kind === 'deep_research_agent');
+    if (!agents.length) return '';
+    const byId = new Map(agents.map(agent => [String(agent.agent_id || ''), agent]));
+    const edges = Array.isArray(flow && flow.edges) ? flow.edges : [];
+    const connections = edges.map(edge => {
+      const from = byId.get(String(edge.from || ''));
+      const to = byId.get(String(edge.to || ''));
+      if (!from || !to) return '';
+      return '<div class="deep-research-connection"><span>' + escapeHtml(from.name || 'Агент') +
+        '</span><span class="deep-research-arrow">→</span><span>' + escapeHtml(to.name || 'Агент') +
+        '</span>' + (edge.label ? '<small>' + escapeHtml(edge.label) + '</small>' : '') + '</div>';
+    }).filter(Boolean).join('');
+    const active = agents.some(agent => ['queued', 'working', 'searching'].includes(String(agent.status || '')));
+    return '<section class="deep-research-flow" aria-label="Deep Research: ход исследования">' +
+      '<div class="deep-research-flow-head"><span class="deep-research-flow-mark">🧭</span>' +
+      '<strong>Deep Research</strong><span class="deep-research-flow-state">' +
+      (active ? thinkAnim() + ' Исследуют' : 'Исследование завершено') + '</span></div>' +
+      '<div class="deep-research-agents">' + agents.map(agent => {
+        const state = String(agent.status || 'queued');
+        const marker = ['queued', 'working', 'searching'].includes(state)
+          ? '<span class="deep-agent-spinner" aria-hidden="true"></span>'
+          : state === 'done' ? '<span class="deep-agent-state-dot is-done">✓</span>'
+          : '<span class="deep-agent-state-dot is-error">!</span>';
+        const id = escapeHtml(String(agent.agent_id || ''));
+        return '<button type="button" class="deep-research-agent-card" data-deep-agent-id="' + id +
+          '" data-message-id="' + escapeHtml(String(n.id || '')) + '" aria-label="Открыть результат агента ' +
+          escapeHtml(agent.name || 'Агент') + '">' +
+          '<span class="deep-agent-card-top">' + marker + '<strong>' + escapeHtml(agent.name || 'Агент') +
+          '</strong><small>' + escapeHtml(deepResearchStatusLabel(state)) + '</small></span>' +
+          '<span class="deep-agent-card-task">' + escapeHtml(agent.task || '') + '</span>' +
+          (agent.result ? '<span class="deep-agent-card-preview">' + escapeHtml(String(agent.result).slice(0, 180)) + '</span>' : '') +
+          '</button>';
+      }).join('') + '</div>' +
+      (connections ? '<div class="deep-research-connections"><span class="deep-research-connections-title">Связи и передача результатов</span>' + connections + '</div>' : '') +
+      '</section>';
+  }
+
+  function openDeepResearchAgentDetail(agent) {
+    if (!agent) return;
+    openAddToChatSheet();
+    setAddChatView('agent-detail');
+    const root = $('#add-chat-agent-detail-content');
+    if (!root) return;
+    const sources = (Array.isArray(agent.sources) ? agent.sources : []).filter(source =>
+      source && /^https?:\/\//i.test(String(source.url || ''))
+    );
+    const sourceHtml = sources.length
+      ? '<div class="deep-agent-detail-sources">' + sources.map((source, index) =>
+        '<a class="add-chat-action deep-agent-source" href="' + escapeHtml(source.url) +
+        '" target="_blank" rel="noopener noreferrer"><span class="add-chat-row-icon">' + icon('globe') +
+        '</span><span class="add-chat-action-copy"><strong>' + escapeHtml(source.title || ('Источник ' + (index + 1))) +
+        '</strong><small>' + escapeHtml(source.url) + '</small></span></a>'
+      ).join('') + '</div>'
+      : '<p class="usage-note">Агент не сохранил отдельные ссылки на источники.</p>';
+    root.innerHTML = '<div class="deep-agent-detail">' +
+      '<div class="deep-agent-detail-status">' + escapeHtml(deepResearchStatusLabel(agent.status)) + '</div>' +
+      '<h3>' + escapeHtml(agent.name || 'Агент') + '</h3>' +
+      '<section><strong>Назначение</strong><p>' + escapeHtml(agent.task || 'Задача не указана') + '</p></section>' +
+      '<section><strong>Результат</strong><div class="deep-agent-detail-result">' +
+      escapeHtml(agent.result || (agent.status === 'failed' ? 'Агент завершился с ошибкой.' : 'Результат появится по завершении работы.')) +
+      '</div></section><section><strong>Источники</strong>' + sourceHtml + '</section></div>';
+  }
+
   function toolRunsHtml(runs) {
-    const items = Array.isArray(runs) ? runs.filter(r => r && typeof r === 'object') : [];
+    const items = Array.isArray(runs) ? runs.filter(r => r && typeof r === 'object' && !String(r.kind || '').startsWith('deep_research_')) : [];
     if (!items.length) return '';
 
     // Present internal executions as one result panel. Do not expose an operation count.
@@ -4078,7 +4177,15 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
-    $$('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
+    $('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
+      const messageId = String(button.dataset.messageId || '');
+      const agentId = String(button.dataset.deepAgentId || '');
+      const message = findNode(state.tree, messageId);
+      const agent = (Array.isArray(message && message.tool_runs) ? message.tool_runs : [])
+        .find(run => run && run.kind === 'deep_research_agent' && String(run.agent_id || '') === agentId);
+      openDeepResearchAgentDetail(agent);
+    }));
+    $('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;
@@ -4454,6 +4561,17 @@
 
   function setStreaming(on) {
     state.streaming = on;
+    if (on) {
+      state.generatingChatId = state.currentChatId || '';
+      const activeChat = (state.chats || []).find(item => item && item.id === state.generatingChatId);
+      if (activeChat) activeChat.is_generating = true;
+    } else {
+      const completedChat = (state.chats || []).find(item => item && item.id === state.generatingChatId);
+      if (completedChat) completedChat.is_generating = false;
+      state.generatingChatId = '';
+    }
+    refreshCurrentChatTitle();
+    renderChatList();
     const sendButton = $('#send-btn');
     if (sendButton) sendButton.disabled = !!(on || state.sending || state.chatLoading);
     $('#send-btn').classList.remove('hidden');
@@ -4624,7 +4742,11 @@
             const ownsOpenView = state.chatOpenToken === streamContext.startChatOpenToken &&
               (state.currentChatId === streamContext.startChatId ||
                 (!streamContext.startChatId && !state.currentChatId));
+            data.is_generating = true;
             upsertChat(data);
+            state.generatingChatId = data.id;
+            const activeNewChat = state.chats.find(item => item && item.id === data.id);
+            if (activeNewChat) activeNewChat.is_generating = true;
             if (!streamContext.startChatId && pendingNewChatProjectId && String(data.project_id || '') === pendingNewChatProjectId) {
               pendingNewChatProjectId = '';
               pendingNewChatProjectLabel = '';
@@ -4634,8 +4756,7 @@
             if (ownsOpenView) {
               state.currentChatId = data.id;
               updateShareButtonVisibility();
-              const title = $('#chat-title');
-              if (title) title.textContent = data.title || 'Новый чат';
+              refreshCurrentChatTitle(data.title || 'Новый чат');
             }
           }
         } else if (ev === 'user_message' || ev === 'assistant_message') {
@@ -4731,6 +4852,23 @@
           }
         } else if (ev === 'status_stop') {
           stopPreviewStatuses();
+        } else if (ev === 'deep_research') {
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
+          if (n && data && Array.isArray(data.agents)) {
+            const existingRuns = Array.isArray(n.tool_runs) ? n.tool_runs : [];
+            const preservedRuns = existingRuns.filter(run => run && !String(run.kind || '').startsWith('deep_research_'));
+            n.tool_runs = preservedRuns.concat(data.flow && data.flow.kind === 'deep_research_flow' ? [data.flow] : [], data.agents);
+            const activeAgents = data.agents.filter(agent => ['queued', 'working', 'searching'].includes(String(agent.status || '')));
+            if (activeAgents.length) {
+              const current = activeAgents.find(agent => agent.status === 'searching') || activeAgents[0];
+              appendActivity(n, { kind: 'status', text: String(current.name || 'Агент') + ': ' + deepResearchStatusLabel(current.status) });
+            }
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(streamContext.assistantId);
+              bindStreamRefs();
+            }
+          }
         } else if (ev === 'stage') {
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
@@ -5054,7 +5192,7 @@
             const i = state.chats.findIndex(c => c.id === chat.id);
             if (i >= 0 && state.chats[i].title !== chat.title) {
               state.chats[i] = chat; renderChatList();
-              if (state.currentChatId === completedChatId) $('#chat-title').textContent = chat.title;
+              if (state.currentChatId === completedChatId) refreshCurrentChatTitle(chat.title);
             }
           } catch (e) { /* noop */ }
         }, 2500);
@@ -5201,6 +5339,7 @@
         effort: state.effort,
         style: state.style,
         response_detail: state.responseDetail,
+        deep_research: !!state.deepResearch,
       }, { optimistic: true, input, draft, attachments: sentAttachments });
       requestStarted = true;
 
@@ -5309,6 +5448,13 @@
     }
     const responseDetailLabel = $('#add-chat-response-detail-current');
     if (responseDetailLabel) responseDetailLabel.textContent = responseDetailName(state.responseDetail);
+    const deepResearchButton = $('[data-add-chat-action="deep-research"]');
+    const deepResearchLabel = $('#add-chat-deep-research-current');
+    if (deepResearchButton) {
+      deepResearchButton.classList.toggle('deep-research-selected', !!state.deepResearch);
+      deepResearchButton.setAttribute('aria-pressed', String(!!state.deepResearch));
+    }
+    if (deepResearchLabel) deepResearchLabel.textContent = state.deepResearch ? 'Включён · до 5 агентов' : 'Выключен · до 5 агентов';
     const projectTitle = $('#add-chat-project-title');
     const projectLabel = $('#add-chat-project-current');
     const projectButton = $('#add-chat-project-action');
@@ -5401,7 +5547,7 @@
 
   function setAddChatView(view) {
     const shell = $('#add-to-chat-shell');
-    const allowed = ['model', 'response-detail', 'memory', 'connectors', 'library', 'project', 'share'];
+    const allowed = ['model', 'response-detail', 'memory', 'connectors', 'library', 'project', 'share', 'agent-detail'];
     const next = allowed.includes(view) ? view : 'main';
     addChatActiveView = next;
     const main = $('#add-chat-main-view');
@@ -5412,6 +5558,7 @@
     const library = $('#add-chat-library-view');
     const project = $('#add-chat-project-view');
     const share = $('#add-chat-share-view');
+    const agentDetail = $('#add-chat-agent-detail-view');
     if (main) main.classList.toggle('hidden', next !== 'main');
     if (model) model.classList.toggle('hidden', next !== 'model');
     if (responseDetail) responseDetail.classList.toggle('hidden', next !== 'response-detail');
@@ -5420,6 +5567,7 @@
     if (library) library.classList.toggle('hidden', next !== 'library');
     if (project) project.classList.toggle('hidden', next !== 'project');
     if (share) share.classList.toggle('hidden', next !== 'share');
+    if (agentDetail) agentDetail.classList.toggle('hidden', next !== 'agent-detail');
     if (shell) shell.classList.toggle('has-subview', next !== 'main');
     const title = $('#add-to-chat-title');
     if (title) title.textContent = next === 'model' ? 'Выбор модели'
@@ -5428,7 +5576,8 @@
       : next === 'connectors' ? 'Коннекторы'
       : next === 'library' ? 'Файлы аккаунта'
       : next === 'project' ? 'Добавить в проект'
-      : next === 'share' ? 'Поделиться' : 'Добавить в чат';
+      : next === 'share' ? 'Поделиться'
+      : next === 'agent-detail' ? 'Результат агента' : 'Добавить в чат';
     const nav = $('#add-chat-nav');
     if (nav) {
       nav.innerHTML = next === 'main'
@@ -5456,6 +5605,7 @@
     $('#attach-btn')?.classList.add('is-active');
     const sheet = $('.add-chat-sheet', shell);
     if (sheet) {
+      sheet.classList.remove('is-expanded');
       sheet.scrollTop = 0;
       requestAnimationFrame(() => sheet.focus({ preventScroll: true }));
     }
@@ -5467,6 +5617,7 @@
     setAddChatView('main');
     const sheet = $('.add-chat-sheet', shell);
     if (sheet) {
+      sheet.classList.remove('is-expanded');
       sheet.style.removeProperty('transition');
       sheet.style.removeProperty('transform');
     }
@@ -5594,6 +5745,11 @@
         setAddChatView('model');
       } else if (action === 'response-detail') {
         setAddChatView('response-detail');
+      } else if (action === 'deep-research') {
+        state.deepResearch = !state.deepResearch;
+        localStorage.setItem('aich_deep_research', state.deepResearch ? '1' : '0');
+        renderAddChatActionLabels();
+        toast(state.deepResearch ? 'Deep Research включён: до 5 агентов' : 'Deep Research выключен');
       } else if (action === 'memory') {
         setAddChatView('memory');
       } else if (action === 'project') {
@@ -5639,23 +5795,23 @@
         if (!drag || drag.id !== event.pointerId) return;
         const dx = event.clientX - drag.x;
         const dy = event.clientY - drag.y;
-        if (dy <= 0 || Math.abs(dx) > Math.abs(dy)) return;
+        if (Math.abs(dy) < 8 || Math.abs(dx) > Math.abs(dy)) return;
         drag.dy = dy;
-        if (dy > 8) {
-          sheet.style.transition = 'none';
-          sheet.style.transform = 'translate(-50%, ' + dy + 'px)';
-          if (event.cancelable) event.preventDefault();
-        }
+        if (dy < -8 && event.cancelable) event.preventDefault();
       });
       const finish = event => {
         if (!drag || drag.id !== event.pointerId) return;
         const dy = drag.dy;
         drag = null;
-        if (dy > 72) closeAddToChatSheet();
-        else {
-          sheet.style.removeProperty('transform');
-          sheet.style.removeProperty('transition');
+        if (dy < -28) {
+          sheet.classList.add('is-expanded');
+        } else if (dy > 35 && sheet.classList.contains('is-expanded')) {
+          sheet.classList.remove('is-expanded');
+        } else if (dy > 110) {
+          closeAddToChatSheet();
         }
+        sheet.style.removeProperty('transform');
+        sheet.style.removeProperty('transition');
       };
       handle.addEventListener('pointerup', finish);
       handle.addEventListener('pointercancel', finish);
@@ -8242,9 +8398,7 @@
     const title = $('#chat-title');
     if (!title) return;
     title.classList.remove('chat-title-search');
-    title.textContent = state.chatSearchPreviousTitle || (
-      (state.chats || []).find(chat => chat && chat.id === state.currentChatId)?.title || 'AI CH'
-    );
+    refreshCurrentChatTitle(state.chatSearchPreviousTitle || 'AI CH');
     state.chatSearchPreviousTitle = '';
     state.chatSearchMatchIndex = 0;
   }
@@ -8501,6 +8655,7 @@
 
     content.innerHTML =
       '<div class="add-chat-sheet-content share-sheet-body">' +
+        '<section class="share-link-section share-link-section-first"><strong>Ссылка на чат</strong><div id="share-link-content">' + linkSection + '</div></section>' +
         '<div class="add-chat-action-group">' +
           '<button type="button" class="add-chat-action" id="chat-action-new"><span class="add-chat-row-icon">' + icon('plus') +
           '</span><span class="add-chat-action-copy"><strong>Новый чат</strong></span></button>' +
@@ -8513,7 +8668,6 @@
           '<button type="button" class="add-chat-action" id="chat-action-find"><span class="add-chat-row-icon">' + icon('search') +
           '</span><span class="add-chat-action-copy"><strong>Найти в чате</strong></span></button>' +
         '</div>' +
-        '<section class="share-link-section"><strong>Ссылка на чат</strong><div id="share-link-content">' + linkSection + '</div></section>' +
         '<div class="add-chat-action-group">' +
           '<button type="button" class="add-chat-action" id="copy-all-chat"><span class="add-chat-row-icon">' + icon('copy') +
           '</span><span class="add-chat-action-copy"><strong>Скопировать весь чат</strong></span></button>' +

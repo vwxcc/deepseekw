@@ -4452,7 +4452,7 @@
       });
       });
     });
-    $('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
+    $$('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
       const el=input.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null,index=Number(input.dataset.quizCustom);
       if(!message||!Number.isInteger(index)||index<0||message.quizSubmitted)return;
       message.quizCustom=Array.isArray(message.quizCustom)?message.quizCustom:[];

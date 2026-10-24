@@ -7407,3 +7407,13 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   align-self: center !important;
   transform: translateY(3px) !important;
 }
+
+
+/* Keep + subviews at the captured main-menu height. */
+#add-to-chat-shell.plus-fixed.has-subview .add-to-chat-sheet {
+  height: min(
+    var(--plus-main-sheet-height, 380px),
+    calc(var(--app-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 88px)
+  ) !important;
+  min-height: 0 !important;
+}

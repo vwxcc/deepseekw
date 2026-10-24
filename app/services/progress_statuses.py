@@ -1178,7 +1178,7 @@ assert all(len(statuses) == 10 for _, _, statuses in _CATEGORIES)
 
 def _normalize_status_text(value: Any) -> str:
     """Normalize user text consistently, including Russian ё/e and repeated whitespace."""
-    return re.sub(r"\\s+", " ", str(value or "").casefold().replace("ё", "е")).strip()[:12000]
+    return re.sub(r"\s+", " ", str(value or "").casefold().replace("ё", "е")).strip()[:12000]
 
 
 def _keyword_matches(text: str, keyword: str) -> bool:
@@ -1190,7 +1190,7 @@ def _keyword_matches(text: str, keyword: str) -> bool:
         return term in text
     # Category keywords are prefixes/stems, but must begin a token; this prevents
     # e.g. "api" from accidentally matching the middle of an unrelated word.
-    return re.search(r"(?<![\\w])" + re.escape(term), text, flags=re.UNICODE) is not None
+    return re.search(r"(?<![\w])" + re.escape(term), text, flags=re.UNICODE) is not None
 
 
 def _category_score(text: str, keywords: tuple[str, ...]) -> tuple[int, int, int]:

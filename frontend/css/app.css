@@ -6137,15 +6137,20 @@ input[type="range"]:focus-visible {
 }
 
 
-/* Final reliability fixes: consistent Markdown table typography and a real + sheet scroller. */
-/* Every table uses one type size, including strong/code/link text inside cells. */
-#messages .msg .content.md .table-wrap > table,
-#messages .msg .content.md .table-wrap > table th,
-#messages .msg .content.md .table-wrap > table td,
-#messages .msg .content.md .table-wrap > table th *,
-#messages .msg .content.md .table-wrap > table td * {
-  font-size: 14px !important;
-  line-height: 1.45 !important;
+/* Final reliability fixes: stable Markdown tables and real + sheet scrolling. */
+
+/* Markdown tables: one text size, natural header row, horizontal overflow only. */
+#messages .msg .content.md .table-wrap {
+  display: block !important;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto !important;
+  overflow-y: visible;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
 }
 #messages .msg .content.md .table-wrap > table {
   display: table !important;
@@ -6154,23 +6159,37 @@ input[type="range"]:focus-visible {
   max-width: none !important;
   table-layout: auto !important;
   border-collapse: collapse !important;
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
 }
 #messages .msg .content.md .table-wrap > table thead {
   display: table-header-group !important;
+  visibility: visible !important;
 }
 #messages .msg .content.md .table-wrap > table thead > tr {
   display: table-row !important;
   visibility: visible !important;
 }
 #messages .msg .content.md .table-wrap > table th,
-#messages .msg .content.md .table-wrap > table td {
-  min-width: 74px !important;
-  max-width: 360px !important;
+#messages .msg .content.md .table-wrap > table td,
+#messages .msg .content.md .table-wrap > table th *,
+#messages .msg .content.md .table-wrap > table td * {
+  box-sizing: border-box;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  min-width: 74px;
+  max-width: 360px;
   padding: 8px 10px !important;
   vertical-align: top !important;
   overflow-wrap: anywhere !important;
   word-break: normal !important;
   visibility: visible !important;
+}
+#messages .msg .content.md .table-wrap > table th {
+  background: var(--bg-hover);
+  color: var(--fg);
+  font-weight: 650;
 }
 #messages .msg .content.md .table-wrap > .tbl-dl {
   position: relative !important;
@@ -6183,44 +6202,52 @@ input[type="range"]:focus-visible {
   opacity: 1 !important;
 }
 
-/* Use a flex column with one explicitly sized scroll pane.
-   This avoids the mobile Safari grid/min-height issue and keeps the header fixed. */
+/* The + sheet is a fixed-height flex column; only its active pane scrolls.
+   Avoid height:0 and competing grid/flex declarations: Safari can lose scroll
+   when a flex item is forced to zero height with later min-content sizing. */
 #add-to-chat-shell .add-to-chat-sheet {
   display: flex !important;
   flex-direction: column !important;
-  grid-template-rows: none !important;
-  align-content: stretch !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
   overflow: hidden !important;
   min-height: 0 !important;
+  box-sizing: border-box !important;
 }
 #add-to-chat-shell .add-chat-handle-wrap,
 #add-to-chat-shell .add-chat-head {
   flex: 0 0 auto !important;
+  min-height: 0;
+}
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content.hidden,
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-subview.hidden {
+  display: none !important;
 }
 #add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content:not(.hidden),
 #add-to-chat-shell .add-to-chat-sheet > .add-chat-subview:not(.hidden) {
-  display: block !important;
-  flex: 1 1 0% !important;
+  flex: 1 1 0px !important;
   width: 100% !important;
-  height: 0 !important;
+  height: auto !important;
   min-width: 0 !important;
   min-height: 0 !important;
   max-height: none !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
-  overscroll-behavior-y: contain;
+  overscroll-behavior: contain !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   scroll-behavior: smooth;
+  scroll-padding-block: 8px;
   scrollbar-width: auto !important;
-  scrollbar-color: color-mix(in srgb, var(--fg-muted) 68%, var(--bg-panel)) var(--bg-side) !important;
+  scrollbar-color: var(--fg-muted) var(--bg-side);
   scrollbar-gutter: stable;
-  box-sizing: border-box;
+  box-sizing: border-box !important;
+  padding-bottom: 8px;
 }
 #add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content:not(.hidden) {
   display: flex !important;
   flex-direction: column !important;
-  align-items: stretch;
+  align-items: stretch !important;
 }
 #add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content::-webkit-scrollbar,
 #add-to-chat-shell .add-to-chat-sheet > .add-chat-subview::-webkit-scrollbar {
@@ -6234,7 +6261,7 @@ input[type="range"]:focus-visible {
 }
 #add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content::-webkit-scrollbar-thumb,
 #add-to-chat-shell .add-to-chat-sheet > .add-chat-subview::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--fg-muted) 68%, var(--bg-panel));
+  background: var(--fg-muted);
   border: 2px solid var(--bg-panel);
   border-radius: 999px;
   background-clip: padding-box;

@@ -10,6 +10,8 @@
   let pendingNewChatProjectLabel = '';
   let addChatProjects = [];
   let addChatActiveView = 'main';
+  // The sheet stays expanded for this page session after its first expansion.
+  let addChatExpandedThisSession = false;
   let addChatSelectedFileIds = new Set();
   // Keep execution controls scoped to explicitly marked file-generation blocks.
   const actionCarouselTimers = new WeakMap();
@@ -5665,11 +5667,11 @@
     const shell = $('#add-to-chat-shell');
     if (!shell) { $('#file-input')?.click(); return; }
     const sheet = $('.add-to-chat-sheet', shell);
-    // Each opening starts collapsed regardless of the previous gesture or subview.
     if (sheet) {
-      sheet.classList.remove('is-expanded');
-      sheet.scrollTop = 0;
-      $$('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
+      // Compact on a fresh page; once expanded, preserve that preference for this page session.
+      sheet.classList.toggle('is-expanded', addChatExpandedThisSession);
+      const scrollArea = $('#add-chat-scroll-area', sheet);
+      if (scrollArea) scrollArea.scrollTop = 0;
       sheet.style.removeProperty('height');
       sheet.style.removeProperty('max-height');
       sheet.style.removeProperty('transform');
@@ -5687,9 +5689,9 @@
     if (!shell) return;
     const sheet = $('.add-to-chat-sheet', shell);
     if (sheet) {
-      sheet.classList.remove('is-expanded');
-      sheet.scrollTop = 0;
-      $$('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
+      const scrollArea = $('#add-chat-scroll-area', sheet);
+      if (scrollArea) scrollArea.scrollTop = 0;
+      // Do not clear is-expanded: a previously expanded sheet reopens expanded until reload.
       sheet.style.removeProperty('height');
       sheet.style.removeProperty('max-height');
       sheet.style.removeProperty('transition');

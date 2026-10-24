@@ -7174,3 +7174,27 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
 }
 .attach-chip button[data-rm] { flex: 0 0 24px; }
 .attach-chip.is-error .attach-status-spinner { display: none !important; }
+
+
+/* Every button inside the + sheet uses the same soft-gray control surface. */
+#add-to-chat-shell .add-chat-head button,
+#add-to-chat-shell .add-chat-scroll-area button {
+  background-color: #f0f0f0 !important;
+  border-color: #dedede !important;
+  color: #333333 !important;
+  box-shadow: none !important;
+}
+#add-to-chat-shell .add-chat-head button:hover,
+#add-to-chat-shell .add-chat-scroll-area button:hover {
+  background-color: #e5e5e5 !important;
+  color: #222222 !important;
+}
+#add-to-chat-shell .add-chat-scroll-area button[aria-selected="true"],
+#add-to-chat-shell .add-chat-scroll-area button[aria-pressed="true"],
+#add-to-chat-shell .add-chat-scroll-area button.is-active,
+#add-to-chat-shell .add-chat-scroll-area button.active,
+#add-to-chat-shell .add-chat-scroll-area button.selected {
+  background-color: #e2e2e2 !important;
+  border-color: #cccccc !important;
+  color: #222222 !important;
+}

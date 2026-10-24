@@ -1924,7 +1924,7 @@ class AIRouter:
         raw_to_id: dict[str, str] = {}
         used_ids: set[str] = set()
         if isinstance(raw_agents, list):
-            for index, raw_agent in enumerate(raw_agents[:agent_limit], 1)
+            for index, raw_agent in enumerate(raw_agents[:agent_limit], 1):
                 if not isinstance(raw_agent, dict):
                     continue
                 raw_id = str(raw_agent.get("id") or "").strip()[:80]
@@ -2419,6 +2419,8 @@ class AIRouter:
                                             + (": " + reason if reason else ""),
                                         ))
                                         await self._run_deep_research(job, entry)
+                                        # Ensure the final message keeps the research graph and agent results.
+                                        all_runs[:] = list(job.deep_research_runs)
                                         research_agents = [
                                             run for run in job.deep_research_runs
                                             if run.get("kind") == "deep_research_agent"

@@ -4532,7 +4532,7 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
-    $('[data-deep-research-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-deep-research-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const messageId = String(button.dataset.messageId || '');
       const section = button.closest('.deep-research-flow');
       const expanded = !!section && !section.classList.contains('is-expanded');

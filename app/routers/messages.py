@@ -939,10 +939,6 @@ async def send_message(
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
-    if data.import_transfer:
-        # Transfer orchestration is deliberately server-side; never ship this task prompt
-        # in the browser bundle or store it as the visible user message.
-        system_prompt += "\n\n" + IMPORT_TRANSFER_SYSTEM_INSTRUCTION
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     detail_key = str(data.response_detail or "standard").strip().lower()
     if detail_key not in prompts.RESPONSE_DETAIL_PROMPTS:
@@ -986,6 +982,11 @@ async def send_message(
             "Не используй секреты и не создавай опасные побочные эффекты. Для HTML/JS-интерфейса "
             "предоставь обычный блок кода для локального превью; не выдавай его за серверное исполнение.]"
         )
+
+    if data.import_transfer:
+        # Append after ordinary preferences/context so the server-managed transfer
+        # rules remain authoritative and never appear in the user's chat message.
+        system_prompt += "\n\n" + IMPORT_TRANSFER_SYSTEM_INSTRUCTION
 
     # The answer must start immediately: web search runs inside the worker, which
     # is also where the query-writing call is billed.

@@ -118,6 +118,7 @@
   let addChatProjects = [];
   let addChatActiveView = 'main';
   let expandedDeepResearchMessageId = '';
+  let expandedDeepResearchPlanMessageId = '';
   // Persist the expanded preference for Share; the + root itself always stays fixed.
   let addChatExpandedThisSession = false;
   let addChatSelectedFileIds = new Set();
@@ -4165,6 +4166,7 @@
 
     const messageId = String(n.id || '');
     const expanded = expandedDeepResearchMessageId === messageId;
+    const planExpanded = expandedDeepResearchPlanMessageId === messageId;
     const byId = new Map(agents.map(agent => [String(agent.agent_id || ''), agent]));
     const edges = Array.isArray(flow && flow.edges) ? flow.edges : [];
     const connections = edges.map(edge => {
@@ -4191,6 +4193,18 @@
     const totalTokens = Math.max(0, Number(flow && flow.total_tokens) || 0);
     const messageIdAttr = escapeHtml(messageId);
 
+    const plannerSteps = agents.map((agent, index) => {
+      const dependencies = Array.isArray(agent.depends_on)
+        ? agent.depends_on.map(id => byId.get(String(id || ''))).filter(Boolean)
+        : [];
+      const dependsText = dependencies.length
+        ? '<div class="deep-research-plan-depends">После: ' + dependencies.map(item => escapeHtml(item.name || 'Агент')).join(', ') + '</div>'
+        : '<div class="deep-research-plan-depends">Независимая задача</div>';
+      return '<li class="deep-research-plan-step"><span class="deep-research-plan-number">' + (index + 1) +
+        '</span><div class="deep-research-plan-step-copy"><strong>' + escapeHtml(agent.name || ('Агент ' + (index + 1))) +
+        '</strong><p>' + escapeHtml(agent.task || 'Задача не указана') + '</p>' + dependsText + '</div></li>';
+    }).join('');
+
     const agentCards = agents.map(agent => {
       const state = String(agent.status || 'queued');
       const marker = !finishedStates.includes(state)
@@ -4216,13 +4230,23 @@
       '<div class="deep-research-flow-head">' +
       '<span class="deep-research-flow-mark" aria-hidden="true">🧭</span>' +
       '<strong class="deep-research-flow-title">Deep Research</strong>' +
-      '<span class="deep-research-flow-status"><span class="deep-research-status-dot ' + statusClass + '" aria-hidden="true"></span>' +
-      '<span>' + escapeHtml(overallStatus) + '</span></span>' +
-      '<span class="deep-research-flow-progress">' + finishedCount + ' из ' + total + ' · ' + percent + '%</span>' +
       '<button type="button" class="deep-research-expand-button" data-deep-research-toggle data-message-id="' + messageIdAttr +
       '" aria-expanded="' + String(expanded) + '">' + (expanded ? 'Свернуть' : 'Развернуть') + '</button>' +
       '</div>' +
+      '<div class="deep-research-summary-row">' +
+      '<span class="deep-research-flow-status"><span class="deep-research-status-dot ' + statusClass + '" aria-hidden="true"></span>' +
+      '<span>' + escapeHtml(overallStatus) + '</span></span>' +
+      '<span class="deep-research-flow-progress">' + finishedCount + ' из ' + total + ' · ' + percent + '%</span>' +
+      '</div>' +
       '<div class="deep-research-expanded-content' + (expanded ? '' : ' hidden') + '">' +
+      '<div class="deep-research-plan-block">' +
+      '<button type="button" class="deep-research-plan-toggle" data-deep-research-plan-toggle data-message-id="' + messageIdAttr +
+      '" aria-expanded="' + String(planExpanded) + '"><span class="deep-research-plan-icon" aria-hidden="true">🧠</span>' +
+      '<span>' + (planExpanded ? 'Скрыть план главного агента' : 'План главного агента') + '</span>' +
+      '<span class="deep-research-plan-chevron" aria-hidden="true">' + (planExpanded ? '−' : '+') + '</span></button>' +
+      '<div class="deep-research-plan-content' + (planExpanded ? '' : ' hidden') + '">' +
+      '<p class="deep-research-plan-intro">План распределения задач и зависимостей, составленный координатором исследования.</p>' +
+      '<ol class="deep-research-plan-steps">' + plannerSteps + '</ol></div></div>' +
       '<div class="deep-research-total-tokens">Токены планировщика и всех агентов: <strong>' +
       totalTokens.toLocaleString('ru-RU') + '</strong></div>' +
       '<div class="deep-research-agents">' + agentCards + '</div>' +
@@ -4532,11 +4556,17 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
-    $$('[data-deep-research-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+    $('[data-deep-research-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const messageId = String(button.dataset.messageId || '');
       const section = button.closest('.deep-research-flow');
       const expanded = !!section && !section.classList.contains('is-expanded');
       setDeepResearchExpanded(messageId, expanded);
+    }));
+    $('[data-deep-research-plan-toggle]', scope).forEach(button => button.addEventListener('click', () => {
+      const messageId = String(button.dataset.messageId || '');
+      if (!messageId) return;
+      expandedDeepResearchPlanMessageId = expandedDeepResearchPlanMessageId === messageId ? '' : messageId;
+      renderMessageInPlace(messageId, null, { preserveScroll: true });
     }));
     syncDeepResearchCollapseButton();
     $$('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {

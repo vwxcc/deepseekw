@@ -44,7 +44,7 @@ _CATEGORIES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "Распределяю материал по слайдам",
             "Сокращаю перегруженные формулировки",
             "Подбираю визуальные акценты",
-            "Согласую заголовки и содержание",
+            "Сопоставляю заголовки с ключевыми тезисами",
             "Проверяю баланс текста и графики",
             "Сверяю переходы между разделами",
             "Проверяю целостность презентации",
@@ -289,7 +289,7 @@ _CATEGORIES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "Слежу за голосом и тоном",
             "Уточняю характерные детали",
             "Убираю шаблонные формулировки",
-            "Согласую начало и завершение",
+            "Выверяю композиционную дугу текста",
             "Проверяю цельность творческой идеи",
         ),
     ),
@@ -489,6 +489,12 @@ _CATEGORIES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "извлечение информации",
             "extract data",
             "сбор данных из",
+            "историю чатов",
+            "перенеси историю",
+            "экспорт чатов",
+            "экспорт переписки",
+            "история диалогов",
+            "экспорт истории",
         ),
         (
             "Определяю структуру исходных материалов",
@@ -1188,8 +1194,14 @@ def _keyword_matches(text: str, keyword: str) -> bool:
         return False
     if " " in term:
         return term in text
-    # Category keywords are prefixes/stems, but must begin a token; this prevents
-    # e.g. "api" from accidentally matching the middle of an unrelated word.
+    # Very short keywords (PDF, API, SQL, C++) must match complete tokens. Longer
+    # stems can match inflected forms, but only at a token boundary.
+    if len(term) <= 3:
+        return re.search(
+            r"(?<![\w])" + re.escape(term) + r"(?![\w])",
+            text,
+            flags=re.UNICODE,
+        ) is not None
     return re.search(r"(?<![\w])" + re.escape(term), text, flags=re.UNICODE) is not None
 
 
@@ -1209,18 +1221,58 @@ def _category_score(text: str, keywords: tuple[str, ...]) -> tuple[int, int, int
     return (sum(item[0] for item in matched), max(item[1] for item in matched), len(matched))
 
 
-def _rank_status_categories(user_text: Any) -> list[tuple[int, int, int, str, tuple[str, ...]]]:
+_STATUS_CATEGORY_PRIORITY = {
+    # Prefer domain-specific categories over broad legacy groups on tied matches.
+    "files_general": 8,
+    "pdf_analysis": 20,
+    "image_understanding": 20,
+    "audio_processing": 20,
+    "video_processing": 20,
+    "data_extraction": 16,
+    "data_cleaning": 15,
+    "data_visualization": 20,
+    "statistics": 16,
+    "fact_checking": 20,
+    "source_citation": 20,
+    "code_testing": 20,
+    "code_review": 20,
+    "git_workflow": 20,
+    "deployment": 20,
+    "security_review": 20,
+    "architecture": 10,
+    "logs_monitoring": 20,
+    "connector_workflow": 20,
+    "calendar_scheduling": 20,
+    "memory_profile": 20,
+    "personalization": 20,
+    "project_management": 12,
+    "travel_planning": 20,
+    "shopping_research": 20,
+    "finance_analysis": 20,
+    "legal_documents": 20,
+    "health_information": 20,
+    "natural_science": 16,
+    "math_proofs": 20,
+    "probability_tasks": 20,
+    "requirements_analysis": 16,
+}
+
+
+def _rank_status_categories(user_text: Any) -> list[tuple[int, int, int, int, str, tuple[str, ...]]]:
     text = _normalize_status_text(user_text)
-    ranked: list[tuple[int, int, int, str, tuple[str, ...]]] = []
+    ranked: list[tuple[int, int, int, int, str, tuple[str, ...]]] = []
     for order, (name, keywords, statuses) in enumerate(_CATEGORIES):
         if name == "general":
             continue
-        score, longest_phrase, match_count = _category_score(text, keywords)
+        score, longest_phrase, _match_count = _category_score(text, keywords)
         if score:
-            # Specific phrases win close ties; earlier legacy categories are only a
-            # deterministic final tie-break, not a substitute for keyword matching.
-            ranked.append((score, longest_phrase, -order, name, statuses))
-    ranked.sort(reverse=True, key=lambda item: (item[0], item[1], item[2]))
+            # Keyword score stays primary; phrase length and category specificity
+            # resolve close ties before deterministic declaration order.
+            ranked.append((
+                score, longest_phrase, _STATUS_CATEGORY_PRIORITY.get(name, 0),
+                -order, name, statuses,
+            ))
+    ranked.sort(reverse=True, key=lambda item: (item[0], item[1], item[2], item[3]))
     return ranked
 
 
@@ -1230,10 +1282,10 @@ def select_progress_statuses(user_text: Any) -> list[str]:
     if not ranked:
         return list(next(statuses for name, _, statuses in _CATEGORIES if name == "general"))
 
-    primary_score, _, _, _, primary = ranked[0]
+    primary_score, _, _, _, _, primary = ranked[0]
     # Mix categories only when multiple independent cues support a genuinely mixed task.
     if len(ranked) > 1:
-        secondary_score, _, _, _, secondary = ranked[1]
+        secondary_score, _, _, _, _, secondary = ranked[1]
         if secondary_score >= max(5, int(primary_score * 0.72)):
             return list(primary[:7] + secondary[:3])
     return list(primary)
@@ -1298,4 +1350,4 @@ def select_progress_emoji(user_text: Any) -> str:
     ranked = _rank_status_categories(user_text)
     if not ranked:
         return _CATEGORY_EMOJI["general"]
-    return _CATEGORY_EMOJI.get(ranked[0][3], _CATEGORY_EMOJI["general"])
+    return _CATEGORY_EMOJI.get(ranked[0][4], _CATEGORY_EMOJI["general"])

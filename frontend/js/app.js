@@ -4133,7 +4133,7 @@
     hydrateReadableTextStatuses(entries);
 
     if (opts.focusMessageId) {
-      const target = $('..msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
+      const target = $$('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
       const content = target ? $('.content.md', target) : null;
       if (content) content.classList.add('answer-arrive');
       requestAnimationFrame(() => {

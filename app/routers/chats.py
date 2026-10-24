@@ -2,17 +2,81 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..database import SessionLocal
 from ..deps import get_current_user, get_db, get_owned_chat, require_csrf
-from ..models import Attachment, Chat, Message, MessageStatus, ModelSet, ModelSetEntry, Project, Role, RouteType, Suggestion, User
+from ..models import Attachment, Chat, Message, MessageStatus, ModelSet, ModelSetEntry, Project, Role, RouteType, Suggestion, User, utcnow
 from ..schemas import ChatCreate, ChatOut, ChatUpdate, ShareOut, SharedChatOut
 from ..services.limits import allow, get_limits, normalize_plan
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
+
+
+async def _is_safe_to_delete_empty_chat(
+    db: AsyncSession, chat: Chat, *, older_than=None
+) -> bool:
+    """Delete only disposable drafts; never erase actual or linked user data."""
+    if chat.deleted_at is not None or chat.is_public or chat.share_token:
+        return False
+    if chat.is_pinned or chat.project_id or chat.bundle_id or chat.source_chat_id:
+        return False
+    if chat.summary and chat.summary.strip():
+        return False
+    # A renamed chat is an explicit user action; preserve it even while empty.
+    if (chat.title or "").strip() != "Новый чат":
+        return False
+    if chat.mode not in ("chat", "research"):
+        return False
+    if older_than is not None and (chat.created_at is None or chat.created_at >= older_than):
+        return False
+
+    child_count = await db.scalar(
+        select(func.count()).select_from(Chat).where(Chat.source_chat_id == chat.id)
+    )
+    if child_count:
+        return False
+    message_count = await db.scalar(
+        select(func.count()).select_from(Message).where(Message.chat_id == chat.id)
+    )
+    if message_count:
+        return False
+    suggestion_count = await db.scalar(
+        select(func.count()).select_from(Suggestion).where(Suggestion.chat_id == chat.id)
+    )
+    return not suggestion_count
+
+
+async def cleanup_stale_empty_chats() -> int:
+    """Prune only untouched default drafts older than seven days."""
+    cutoff = utcnow() - timedelta(days=7)
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(Chat).where(
+                Chat.created_at < cutoff,
+                Chat.deleted_at.is_(None),
+                Chat.is_public.is_(False),
+                Chat.is_pinned.is_(False),
+                Chat.project_id.is_(None),
+                Chat.bundle_id.is_(None),
+                Chat.source_chat_id.is_(None),
+                Chat.mode.in_(("chat", "research")),
+                Chat.title == "Новый чат",
+            )
+        )
+        candidates = result.scalars().all()
+        deleted = 0
+        for chat in candidates:
+            if await _is_safe_to_delete_empty_chat(db, chat, older_than=cutoff):
+                await db.delete(chat)
+                deleted += 1
+        if deleted:
+            await db.commit()
+        return deleted
 
 
 @router.get("", response_model=list[ChatOut])
@@ -219,6 +283,23 @@ async def delete_chat(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ):
+    await db.delete(chat)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/{chat_id}/empty", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_empty_chat(
+    chat: Chat = Depends(get_owned_chat),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+):
+    """Best-effort frontend cleanup backed by a strict server-side safety check."""
+    if not await _is_safe_to_delete_empty_chat(db, chat):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Чат содержит данные или сохранённые настройки; он не был удалён.",
+        )
     await db.delete(chat)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

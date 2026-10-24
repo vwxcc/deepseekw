@@ -945,7 +945,7 @@
       const name = String(file.name || file.original_name || 'Созданный файл').slice(0, 180);
       const url = '/api/files/' + encodeURIComponent(file.file_id) + '/download';
       const mime = String(file.mime_type || file.mime || '').toLowerCase();
-      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml' || f.kind === 'svg';
+      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml';
       const image = isSvg || file.kind === 'image' || mime.indexOf('image/') === 0;
       const previewUrl = isSvg
         ? url + '?inline=1'
@@ -5644,7 +5644,7 @@
       const mime = String(f.mime_type || f.mime || (f.uploadFile && f.uploadFile.type) || '').toLowerCase();
       const isSvg = /\\.svg$/i.test(name) || mime === 'image/svg+xml';
       const isImage = isSvg || f.kind === 'image' || mime.startsWith('image/') ||
-        /\\.(png|jpe?g|gif|webp|avif|bmp|tiff|ico)$/i.test(name);
+        /\.(png|jpe?g|gif|webp|avif|bmp|tiff|ico)$/i.test(name);
       const previewUrl = f.id
         ? (isSvg
           ? '/api/files/' + encodeURIComponent(String(f.id)) + '/download?inline=1'

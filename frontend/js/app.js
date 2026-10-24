@@ -43,11 +43,18 @@
     const color = normalizeAccentColor(value) || DEFAULT_ACCENT_COLOR;
     const [r, g, b] = accentRgb(color);
     const root = document.documentElement;
+    const composite = [r, g, b].map(part => Math.round(part * .88 + 255 * .12));
+    const linear = composite.map(part => {
+      const channel = part / 255;
+      return channel <= .04045 ? channel / 12.92 : Math.pow((channel + .055) / 1.055, 2.4);
+    });
+    const luminance = .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
     const vars = {
       '--accent': color,
       '--accent-hover': accentDarken(color, .82),
       '--accent-rgb': r + ', ' + g + ', ' + b,
       '--accent-ink': accentDarken(color, .62),
+      '--accent-button-fg': luminance > .48 ? '#202020' : '#ffffff',
       '--accent-soft': 'rgba(' + r + ', ' + g + ', ' + b + ', .10)',
       '--accent-wash': 'rgba(' + r + ', ' + g + ', ' + b + ', .065)',
       '--accent-wash-hover': 'rgba(' + r + ', ' + g + ', ' + b + ', .12)',
@@ -9529,7 +9536,7 @@
       });
       const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
       updateAccentColorControls(state.accentColor);
-      const profileRoot = $('#modal-root');
+      const profileRoot = $('#modal-root') || document;
       $$('[data-accent-preset]', profileRoot).forEach(button => {
         button.addEventListener('click', () => saveAccountAccentColor(button.dataset.accentPreset));
       });

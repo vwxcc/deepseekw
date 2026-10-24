@@ -1776,11 +1776,14 @@
           (chat.mode === 'council' ? '<em class="mode-tag">совет</em>' : '') +
           (chat.bundle_id && chat.mode !== 'council' ? '<em class="bundle-tag">совет</em>' : '') +
         '</span>' : '') +
+      '<button type="button" class="chat-more-btn" data-act="more" title="Действия чата" aria-label="Действия чата">' +
+        '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M7 12h14M11 18h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' +
+      '</button>' +
       '<span class="acts">' +
-        (showPin ? '<button data-act="pin" title="' + (pinned ? 'Открепить чат' : 'Закрепить чат') + '" aria-label="' +
+        (showPin ? '<button type="button" data-act="pin" title="' + (pinned ? 'Открепить чат' : 'Закрепить чат') + '" aria-label="' +
           (pinned ? 'Открепить чат' : 'Закрепить чат') + '">' + icon('bookmark') + '</button>' : '') +
-        '<button data-act="rename" title="Переименовать" aria-label="Переименовать">' + icon('pencil') + '</button>' +
-        '<button data-act="delete" title="Удалить" aria-label="Удалить">' + icon('trash') + '</button>' +
+        '<button type="button" data-act="rename" title="Переименовать" aria-label="Переименовать">' + icon('pencil') + '</button>' +
+        '<button type="button" data-act="delete" title="Удалить" aria-label="Удалить">' + icon('trash') + '</button>' +
       '</span></div>';
   }
 
@@ -1794,10 +1797,18 @@
       if (button) {
         event.preventDefault();
         event.stopPropagation();
+        if (button.dataset.act === 'more') {
+          Array.from(document.querySelectorAll('.chat-item.actions-open')).forEach(item => {
+            if (item !== row) item.classList.remove('actions-open');
+          });
+          row.classList.toggle('actions-open');
+          return;
+        }
         if (button.dataset.act === 'rename') return openRename(id);
         if (button.dataset.act === 'delete') return removeChat(id);
         if (button.dataset.act === 'pin') return toggleChatPin(id);
       }
+      Array.from(document.querySelectorAll('.chat-item.actions-open')).forEach(item => item.classList.remove('actions-open'));
       openChat(id);
     };
   }
@@ -5457,9 +5468,9 @@
     refreshCurrentChatTitle();
     renderChatList();
     const sendButton = $('#send-btn');
-    if (sendButton) sendButton.disabled = !!(on || state.sending || state.chatLoading);
-    $('#send-btn').classList.remove('hidden');
-    $('#stop-btn').classList.toggle('hidden', !on);
+    // The same accent button remains active while streaming and becomes Stop.
+    if (sendButton) sendButton.disabled = !on && !!(state.sending || state.chatLoading);
+    if (sendButton) sendButton.classList.remove('hidden');
     $('#input').disabled = false;
     updateComposerActionButton();
   }
@@ -6579,7 +6590,6 @@
     state.pendingAttachments = Array.from(pending.values());
     renderAttachments();
     setAddChatView('main');
-    toast(added ? (added === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению') : 'Выбранные файлы уже прикреплены');
   }
 
   function setAddChatView(view) {
@@ -6987,12 +6997,14 @@
     const input = $('#input');
     if (!button || !input) return;
     const emptyComposer = !input.value.trim();
+    const isStopping = !!state.streaming;
     const useMic = emptyComposer && !activeVoiceRecorder && !voiceUploadInProgress &&
-      !state.streaming && !state.sending && !state.chatLoading;
-    const targetIcon = useMic ? 'mic' : 'arrow-up';
+      !isStopping && !state.sending && !state.chatLoading;
+    const targetIcon = isStopping ? 'stop' : (useMic ? 'mic' : 'arrow-up');
+    button.classList.toggle('is-stop', isStopping);
     button.innerHTML = '<svg class="ic"><use href="#i-' + targetIcon + '"/></svg>';
-    button.title = useMic ? 'Записать голосовое сообщение' :
-      (activeVoiceRecorder ? 'Отправить голосовое сообщение' : 'Отправить');
+    button.title = isStopping ? 'Остановить генерацию' : (useMic ? 'Записать голосовое сообщение' :
+      (activeVoiceRecorder ? 'Отправить голосовое сообщение' : 'Отправить'));
     button.setAttribute('aria-label', button.title);
   }
 
@@ -7301,6 +7313,10 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCurrent(); }
     });
     $('#send-btn').addEventListener('click', async () => {
+      if (state.streaming) {
+        if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
+        return;
+      }
       if (voiceUploadInProgress) return;
       if (activeVoiceRecorder) await finishVoiceRecordingAndSend();
       else if (!input.value.trim()) await startVoiceRecording();
@@ -7308,9 +7324,6 @@
     });
     $('#voice-cancel-btn')?.addEventListener('click', cancelVoiceRecording);
     $('#voice-pause-btn')?.addEventListener('click', toggleVoiceRecordingPause);
-    $('#stop-btn').addEventListener('click', async () => {
-      if (state.activeAssistantId) await api.post('/api/messages/' + state.activeAssistantId + '/stop');
-    });
     $('#attach-btn').addEventListener('click', () => {
       workspaceUploadIntent = false;
       const shell = $('#add-to-chat-shell');
@@ -8823,7 +8836,6 @@
           renderAttachments();
         }
         closeFilesWorkspace();
-        toast('Файл добавлен к сообщению');
         return;
       }
       const button = event.target.closest('[data-workspace-file-delete]');
@@ -9014,8 +9026,6 @@
         toast((successCount
           ? 'Не удалось загрузить часть файлов. Нажмите значок повтора рядом с файлом. '
           : 'Ошибка загрузки. Нажмите значок повтора рядом с файлом. ') + detail, 'error');
-      } else if (successCount) {
-        toast(successCount === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
       }
     }
   }

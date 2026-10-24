@@ -7,6 +7,7 @@ from pathlib import Path
 
 MEMORY_RE = re.compile(r"\[\[\s*memory\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 PREF_RE = re.compile(r"\[\[\s*pref\s*:\s*(.+?)\s*\]\]", re.S | re.I)
+HISTORY_RE = re.compile(r"\[\[\s*history\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 ASK_RE = re.compile(r"\[\[\s*ask\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 QUIZ_RE = re.compile(r"\[\[\s*quiz\s*:\s*(.+?)\s*\]\]", re.S | re.I)
 
@@ -516,9 +517,12 @@ def strip_sandbox_paths(text: str) -> str:
     return out
 
 MEMORY_SKILL = (
-    "\n\nПамять: устойчивый факт записывай строкой [[memory: факт]], предпочтение — [[pref: предпочтение]]. "
-    "Добавляй служебные строки только в самый конец ответа. Не дублируй уже сохранённое и никогда "
-    "не сохраняй пароли, ключи, токены, секреты или разовые чувствительные детали."
+    "\n\nПамять и персонализация: устойчивый факт записывай строкой [[memory: факт]], "
+    "постоянное предпочтение — [[pref: предпочтение]]. Для многошаговой задачи, проекта или заметного "
+    "продвижения добавляй одну короткую запись истории вида [[history: что делали, каким способом и где остановились]]. "
+    "История должна быть краткой, конкретной и полезной для продолжения работы; не записывай обычные разовые вопросы. "
+    "Все служебные строки помещай только в самый конец ответа. Не дублируй записи и никогда не сохраняй "
+    "пароли, ключи, токены, секреты или разовые чувствительные детали."
 )
 
 
@@ -537,7 +541,11 @@ def extract_memories(text: str) -> tuple[str, list[tuple[str, str]]]:
         value = m.group(1).strip()
         if value:
             items.append(("preference", value))
-    clean = PREF_RE.sub("", MEMORY_RE.sub("", src))
+    for m in HISTORY_RE.finditer(src):
+        value = m.group(1).strip()
+        if value:
+            items.append(("history", value))
+    clean = HISTORY_RE.sub("", PREF_RE.sub("", MEMORY_RE.sub("", src)))
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
     return clean, items
 

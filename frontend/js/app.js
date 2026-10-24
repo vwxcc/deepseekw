@@ -5636,6 +5636,8 @@
     if (share) share.classList.toggle('hidden', next !== 'share');
     if (agentDetail) agentDetail.classList.toggle('hidden', next !== 'agent-detail');
     if (shell) shell.classList.toggle('has-subview', next !== 'main');
+    const scrollArea = $('#add-chat-scroll-area', shell);
+    if (scrollArea) scrollArea.scrollTop = 0;
     const title = $('#add-to-chat-title');
     if (title) title.textContent = next === 'model' ? 'Выбор модели'
       : next === 'response-detail' ? 'Как отвечать'
@@ -5860,60 +5862,114 @@
     $('#add-chat-library-attach')?.addEventListener('click', attachSelectedLibraryFiles);
 
     const sheet = $('.add-to-chat-sheet', shell);
-    let drag = null;
-    if (sheet) {
-      // Start on the whole sheet, not only the small handle. We intercept only
-      // vertical gestures that should resize/close the sheet; normal content
-      // scrolling remains available when an expanded pane is scrolled.
+    const scrollArea = $('#add-chat-scroll-area', shell);
+    let pointerDrag = null;
+    let touchDrag = null;
+
+    const expandSheet = () => {
+      if (!sheet) return;
+      sheet.classList.add('is-expanded');
+      addChatExpandedThisSession = true;
+    };
+    const collapseSheet = () => {
+      if (sheet) sheet.classList.remove('is-expanded');
+      // Keep addChatExpandedThisSession true; the next opening should be expanded.
+    };
+    const finishSheetGesture = gesture => {
+      if (!gesture || !sheet || !gesture.mode) return;
+      if (gesture.mode === 'expand' && gesture.dy < -28) {
+        expandSheet();
+      } else if (gesture.mode === 'collapse' && gesture.dy > 35) {
+        collapseSheet();
+      } else if (gesture.mode === 'close' && gesture.dy > 110) {
+        closeAddToChatSheet();
+      }
+    };
+    const startSheetGesture = (x, y, target, expanded) => ({
+      x, y, dy: 0, expanded,
+      area: scrollArea && scrollArea.contains(target) ? scrollArea : null,
+      mode: null
+    });
+    const chooseSheetGesture = gesture => {
+      const dx = gesture.currentX - gesture.x;
+      const dy = gesture.currentY - gesture.y;
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+        gesture.mode = 'native';
+        return;
+      }
+      if (Math.abs(dy) < 5) return;
+      const atTop = !gesture.area || gesture.area.scrollTop <= 0;
+      if (!gesture.expanded && dy < 0) {
+        gesture.mode = 'expand';
+      } else if (gesture.expanded && dy > 0 && atTop) {
+        gesture.mode = 'collapse';
+      } else if (!gesture.expanded && dy > 0) {
+        gesture.mode = 'close';
+      } else {
+        // Expanded content scrolling is left to the browser's native scroller.
+        gesture.mode = 'native';
+      }
+    };
+
+    if (sheet && scrollArea) {
+      // Mouse drag support (touch uses Touch Events to avoid pointercancel on iOS Safari).
       sheet.addEventListener('pointerdown', event => {
-        if (!shell.classList.contains('open') || !event.isPrimary ||
-            (event.pointerType === 'mouse' && event.button !== 0)) return;
-        drag = {
-          id: event.pointerId,
-          x: event.clientX,
-          y: event.clientY,
-          dy: 0,
-          expanded: sheet.classList.contains('is-expanded'),
-          scrollArea: event.target.closest('.add-chat-sheet-content, .add-chat-subview')
-        };
+        if (!shell.classList.contains('open') || event.pointerType === 'touch' ||
+            !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+        pointerDrag = startSheetGesture(event.clientX, event.clientY, event.target,
+          sheet.classList.contains('is-expanded'));
       });
       sheet.addEventListener('pointermove', event => {
-        if (!drag || drag.id !== event.pointerId) return;
-        const dx = event.clientX - drag.x;
-        const dy = event.clientY - drag.y;
-        if (Math.abs(dy) < 8 || Math.abs(dx) > Math.abs(dy) * 1.15) return;
-        if (!drag.tracking) {
-          const atTop = !drag.scrollArea || drag.scrollArea.scrollTop <= 0;
-          const resizeUp = dy < 0 && !drag.expanded;
-          const resizeDown = dy > 0 && (drag.expanded ? atTop : true);
-          if (!resizeUp && !resizeDown) {
-            drag = null; // Let the scrollable pane handle this gesture naturally.
-            return;
-          }
-          drag.tracking = true;
-          try { sheet.setPointerCapture(event.pointerId); } catch (_) {}
+        if (!pointerDrag || pointerDrag.id != null && pointerDrag.id !== event.pointerId) return;
+        pointerDrag.currentX = event.clientX;
+        pointerDrag.currentY = event.clientY;
+        if (!pointerDrag.mode) chooseSheetGesture(pointerDrag);
+        const dy = event.clientY - pointerDrag.y;
+        if (pointerDrag.mode === 'expand' || pointerDrag.mode === 'collapse' || pointerDrag.mode === 'close') {
+          pointerDrag.dy = dy;
+          if (event.cancelable) event.preventDefault();
+        } else if (pointerDrag.mode === 'native') {
+          pointerDrag = null;
         }
-        drag.dy = dy;
-        if (event.cancelable) event.preventDefault();
       });
-      const finish = event => {
-        if (!drag || drag.id !== event.pointerId) return;
-        const current = drag;
-        drag = null;
-        if (!current.tracking) return;
-        if (current.dy < -28 && !current.expanded) {
-          sheet.classList.add('is-expanded');
-        } else if (current.dy > 35 && current.expanded) {
-          sheet.classList.remove('is-expanded');
-        } else if (current.dy > 110 && !current.expanded) {
-          closeAddToChatSheet();
+      const finishPointer = event => {
+        if (!pointerDrag) return;
+        const current = pointerDrag;
+        pointerDrag = null;
+        current.dy = event.clientY - current.y;
+        finishSheetGesture(current);
+      };
+      sheet.addEventListener('pointerup', finishPointer);
+      sheet.addEventListener('pointercancel', () => { pointerDrag = null; });
+
+      // On touch devices, intercept only the gesture that expands/collapses the sheet.
+      // All other vertical movement remains native scrolling inside #add-chat-scroll-area.
+      sheet.addEventListener('touchstart', event => {
+        if (!shell.classList.contains('open') || event.touches.length !== 1) {
+          touchDrag = null;
+          return;
         }
-      };
-      const cancel = event => {
-        if (drag && drag.id === event.pointerId) drag = null;
-      };
-      sheet.addEventListener('pointerup', finish);
-      sheet.addEventListener('pointercancel', cancel);
+        const touch = event.touches[0];
+        touchDrag = startSheetGesture(touch.clientX, touch.clientY, event.target,
+          sheet.classList.contains('is-expanded'));
+      }, { passive: true });
+      sheet.addEventListener('touchmove', event => {
+        if (!touchDrag || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        touchDrag.currentX = touch.clientX;
+        touchDrag.currentY = touch.clientY;
+        if (!touchDrag.mode) chooseSheetGesture(touchDrag);
+        touchDrag.dy = touch.clientY - touchDrag.y;
+        if (touchDrag.mode === 'expand' || touchDrag.mode === 'collapse' || touchDrag.mode === 'close') {
+          if (event.cancelable) event.preventDefault();
+        }
+      }, { passive: false });
+      sheet.addEventListener('touchend', () => {
+        const current = touchDrag;
+        touchDrag = null;
+        finishSheetGesture(current);
+      }, { passive: true });
+      sheet.addEventListener('touchcancel', () => { touchDrag = null; }, { passive: true });
     }
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && shell.classList.contains('open')) closeAddToChatSheet();

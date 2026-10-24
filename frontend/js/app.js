@@ -4429,7 +4429,7 @@
         restoreQuizSelectionViewport(snapshot);
         return;
       }
-      const index=Number(button.dataset.quizIndex); if(!Number.isInteger(index)||index<0)return;
+      const index=Number(button.dataset.quizIndex); if(!Number.isInteger(index)||index<0){ restoreQuizSelectionViewport(snapshot); return; }
       const value=String(button.dataset.quizOption||''), multi=button.dataset.quizMultiple==='true';
       const current=Array.isArray(message.quizAnswers[index])?message.quizAnswers[index].slice():[];
       // Selecting any option clears a custom answer too, otherwise grading would ignore this selection.

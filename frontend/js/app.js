@@ -1722,8 +1722,6 @@
       state.tree = [];
       state.choices = {};
       state.activeAssistantId = null;
-      state.tmpUser = null;
-      state.tmpAssistant = null;
       $('#chat-title').textContent = 'AI CH';
       $('#chat-title').classList.remove('is-generating');
       $('#project-btn')?.classList.add('hidden');

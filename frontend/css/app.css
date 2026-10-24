@@ -7218,3 +7218,19 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   border-color: #cccccc !important;
   color: #222222 !important;
 }
+
+/* Subtle one-second confirmation only after a message used prefetched file context. */
+#composer .composer-inner.prefetch-success {
+  border-color: rgba(112, 112, 112, .48) !important;
+  box-shadow:
+    0 0 0 3px rgba(105, 105, 105, .09),
+    0 10px 32px rgba(57, 57, 57, .07),
+    inset 0 1px 0 rgba(255, 255, 255, .96) !important;
+  transition: border-color .16s ease, box-shadow .16s ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  #composer .composer-inner.prefetch-success {
+    transition: none !important;
+  }
+}
+

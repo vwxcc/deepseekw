@@ -1053,9 +1053,14 @@ class AIRouter:
             return
         try:
             async with SessionLocal() as db:
-                if action.startswith("agent_step_") or action.endswith("_race_lost"):
-                    # These are extra paid calls attached to the same answer. Add their
-                    # tokens to the message stats as well as the usage journal.
+                if (
+                    action.startswith("agent_step_")
+                    or action.startswith("external_action_step_")
+                    or action.endswith("_race_lost")
+                ):
+                    # Extra agent/tool-planning calls are billed independently and also
+                    # folded into the same answer token totals, without double-counting
+                    # the final main/fast response in _finish.
                     await account(
                         db, job.chat_id, entry.model_set_id, tin, tout,
                         entry=entry, user_id=job.user_id, message_id=job.message_id,

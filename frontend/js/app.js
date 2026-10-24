@@ -5599,28 +5599,38 @@
   function openAddToChatSheet() {
     const shell = $('#add-to-chat-shell');
     if (!shell) { $('#file-input')?.click(); return; }
+    const sheet = $('.add-to-chat-sheet', shell);
+    // Each opening starts collapsed regardless of the previous gesture or subview.
+    if (sheet) {
+      sheet.classList.remove('is-expanded');
+      sheet.scrollTop = 0;
+      $('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
+      sheet.style.removeProperty('height');
+      sheet.style.removeProperty('max-height');
+      sheet.style.removeProperty('transform');
+      sheet.style.removeProperty('transition');
+    }
     setAddChatView('main');
     shell.classList.add('open');
     shell.setAttribute('aria-hidden', 'false');
     $('#attach-btn')?.classList.add('is-active');
-    const sheet = $('.add-chat-sheet', shell);
-    if (sheet) {
-      sheet.classList.remove('is-expanded');
-      sheet.scrollTop = 0;
-      requestAnimationFrame(() => sheet.focus({ preventScroll: true }));
-    }
+    if (sheet) requestAnimationFrame(() => sheet.focus({ preventScroll: true }));
   }
 
   function closeAddToChatSheet() {
     const shell = $('#add-to-chat-shell');
     if (!shell) return;
-    setAddChatView('main');
-    const sheet = $('.add-chat-sheet', shell);
+    const sheet = $('.add-to-chat-sheet', shell);
     if (sheet) {
       sheet.classList.remove('is-expanded');
+      sheet.scrollTop = 0;
+      $('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
+      sheet.style.removeProperty('height');
+      sheet.style.removeProperty('max-height');
       sheet.style.removeProperty('transition');
       sheet.style.removeProperty('transform');
     }
+    setAddChatView('main');
     shell.classList.remove('open');
     shell.setAttribute('aria-hidden', 'true');
     $('#attach-btn')?.classList.remove('is-active');
@@ -5782,39 +5792,61 @@
     $('#add-chat-library-cancel')?.addEventListener('click', () => setAddChatView('main'));
     $('#add-chat-library-attach')?.addEventListener('click', attachSelectedLibraryFiles);
 
-    const handle = $('[data-add-chat-handle]', shell);
     const sheet = $('.add-to-chat-sheet', shell);
     let drag = null;
-    if (handle && sheet) {
-      handle.addEventListener('pointerdown', event => {
-        if (event.button !== 0) return;
-        drag = { id: event.pointerId, x: event.clientX, y: event.clientY, dy: 0 };
-        try { handle.setPointerCapture(event.pointerId); } catch (_) {}
+    if (sheet) {
+      // Start on the whole sheet, not only the small handle. We intercept only
+      // vertical gestures that should resize/close the sheet; normal content
+      // scrolling remains available when an expanded pane is scrolled.
+      sheet.addEventListener('pointerdown', event => {
+        if (!shell.classList.contains('open') || !event.isPrimary ||
+            (event.pointerType === 'mouse' && event.button !== 0)) return;
+        drag = {
+          id: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          dy: 0,
+          expanded: sheet.classList.contains('is-expanded'),
+          scrollArea: event.target.closest('.add-chat-sheet-content, .add-chat-subview')
+        };
       });
-      handle.addEventListener('pointermove', event => {
+      sheet.addEventListener('pointermove', event => {
         if (!drag || drag.id !== event.pointerId) return;
         const dx = event.clientX - drag.x;
         const dy = event.clientY - drag.y;
-        if (Math.abs(dy) < 8 || Math.abs(dx) > Math.abs(dy)) return;
+        if (Math.abs(dy) < 8 || Math.abs(dx) > Math.abs(dy) * 1.15) return;
+        if (!drag.tracking) {
+          const atTop = !drag.scrollArea || drag.scrollArea.scrollTop <= 0;
+          const resizeUp = dy < 0 && !drag.expanded;
+          const resizeDown = dy > 0 && (drag.expanded ? atTop : true);
+          if (!resizeUp && !resizeDown) {
+            drag = null; // Let the scrollable pane handle this gesture naturally.
+            return;
+          }
+          drag.tracking = true;
+          try { sheet.setPointerCapture(event.pointerId); } catch (_) {}
+        }
         drag.dy = dy;
-        if (dy < -8 && event.cancelable) event.preventDefault();
+        if (event.cancelable) event.preventDefault();
       });
       const finish = event => {
         if (!drag || drag.id !== event.pointerId) return;
-        const dy = drag.dy;
+        const current = drag;
         drag = null;
-        if (dy < -28) {
+        if (!current.tracking) return;
+        if (current.dy < -28 && !current.expanded) {
           sheet.classList.add('is-expanded');
-        } else if (dy > 35 && sheet.classList.contains('is-expanded')) {
+        } else if (current.dy > 35 && current.expanded) {
           sheet.classList.remove('is-expanded');
-        } else if (dy > 110) {
+        } else if (current.dy > 110 && !current.expanded) {
           closeAddToChatSheet();
         }
-        sheet.style.removeProperty('transform');
-        sheet.style.removeProperty('transition');
       };
-      handle.addEventListener('pointerup', finish);
-      handle.addEventListener('pointercancel', finish);
+      const cancel = event => {
+        if (drag && drag.id === event.pointerId) drag = null;
+      };
+      sheet.addEventListener('pointerup', finish);
+      sheet.addEventListener('pointercancel', cancel);
     }
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && shell.classList.contains('open')) closeAddToChatSheet();
@@ -8094,7 +8126,7 @@
     overlay.style.removeProperty('opacity');
   }
   function openMobileSidebar() {
-    if (window.innerWidth > 860) return;
+    if (window.innerWidth > 860 || $('#add-to-chat-shell')?.classList.contains('open')) return;
     const sb = $('#sidebar');
     const overlay = $('#sidebar-overlay');
     sb.classList.add('open');
@@ -8118,7 +8150,8 @@
     let gesture = null;
 
     function onPointerDown(event) {
-      if (window.innerWidth > 860 || !event.isPrimary || event.button !== 0) return;
+      if (window.innerWidth > 860 || !event.isPrimary || event.button !== 0 ||
+          $('#add-to-chat-shell')?.classList.contains('open')) return;
       const startedOpen = sidebar.classList.contains('open');
       // The requested drawer gesture may start anywhere in the chat surface.
       // Vertical movement still keeps priority, so ordinary scrolling stays natural.
@@ -8158,6 +8191,11 @@
     function onPointerMove(event) {
       const active = gesture;
       if (!active || event.pointerId !== active.pointerId || window.innerWidth > 860) return;
+      if ($('#add-to-chat-shell')?.classList.contains('open')) {
+        if (active.tracking) finishGesture(active.startedOpen);
+        else gesture = null;
+        return;
+      }
       const dx = event.clientX - active.startX;
       const dy = event.clientY - active.startY;
       if (!active.tracking) {

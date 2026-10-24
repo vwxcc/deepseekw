@@ -4415,7 +4415,7 @@
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
       if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id, null, { preserveScroll: true });
     }));
-    $('.quiz-option[data-quiz-option]', scope).forEach(button => {
+    $$('.quiz-option[data-quiz-option]', scope).forEach(button => {
       button.addEventListener('pointerdown', () => snapshotQuizSelection(button), { capture: true });
       button.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === ' ') snapshotQuizSelection(button);
@@ -4441,7 +4441,7 @@
       else next=[value];
       message.quizAnswers=Array.isArray(message.quizAnswers)?message.quizAnswers:[];
       message.quizAnswers[index]=next;
-      $('[data-quiz-option]',question).forEach(option=>{
+      $$('[data-quiz-option]',question).forEach(option=>{
         const picked=next.includes(String(option.dataset.quizOption||''));
         option.classList.toggle('is-selected',picked);option.setAttribute('aria-pressed',String(picked));
       });

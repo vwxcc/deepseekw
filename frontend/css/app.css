@@ -7785,3 +7785,209 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
 @media (prefers-reduced-motion: reduce) {
   .deep-research-plan-toggle { transition: none; }
 }
+
+
+/* Temporary first-visit import prompt */
+.import-transfer-promo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  width: min(760px, calc(100% - 32px));
+  margin-inline: auto;
+  text-align: center;
+}
+.import-transfer-promo-title {
+  max-width: 760px;
+  margin: 0;
+  text-wrap: balance;
+}
+.import-transfer-open-btn,
+.import-transfer-attach-btn,
+.import-transfer-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid #d5d5d5;
+  border-radius: 15px;
+  background: #fff;
+  color: #222;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+.import-transfer-open-btn { padding: 12px 19px; }
+.import-transfer-open-btn:hover,
+.import-transfer-attach-btn:hover { background: #f5f5f5; border-color: #bdbdbd; }
+.import-transfer-open-btn:active,
+.import-transfer-attach-btn:active,
+.import-transfer-submit:active { transform: scale(.985); }
+.import-transfer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  background: #fff;
+  color: #202020;
+}
+.import-transfer-overlay.hidden { display: none !important; }
+.import-transfer-dialog {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+}
+.import-transfer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: max(22px, env(safe-area-inset-top)) clamp(18px, 4vw, 52px) 20px;
+  border-bottom: 1px solid #e8e8e8;
+}
+.import-transfer-kicker {
+  margin: 0 0 8px;
+  color: #777;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.import-transfer-header h2 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 32px);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -.025em;
+}
+.import-transfer-close {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 14px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+}
+.import-transfer-close:hover { background: #f4f4f4; }
+.import-transfer-close .ic { width: 20px; height: 20px; }
+.import-transfer-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 22px clamp(18px, 4vw, 52px) 28px;
+}
+.import-transfer-lead {
+  max-width: 920px;
+  margin: 0 0 20px;
+  color: #4b4b4b;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.import-transfer-info {
+  max-width: 980px;
+  margin: 0 0 20px;
+  padding: 18px 20px;
+  border: 1px solid #e5e5e5;
+  border-radius: 18px;
+  background: #fafafa;
+}
+.import-transfer-info h3 { margin: 0 0 10px; font-size: 15px; font-weight: 650; }
+.import-transfer-info ul { margin: 0 0 12px; padding-left: 21px; color: #3e3e3e; line-height: 1.65; }
+.import-transfer-info li + li { margin-top: 3px; }
+.import-transfer-info p { margin: 0; color: #666; font-size: 13px; line-height: 1.6; }
+.import-transfer-quota { margin: 0 0 20px; color: #555; font-size: 13px; line-height: 1.5; }
+.import-transfer-label { display: block; margin: 0 0 9px; font-size: 14px; font-weight: 600; }
+.import-transfer-textarea {
+  display: block;
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  padding: 15px 16px;
+  border: 1px solid #dcdcdc;
+  border-radius: 16px;
+  outline: none;
+  background: #fff;
+  color: #202020;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.import-transfer-textarea:focus { border-color: #a7a7a7; box-shadow: 0 0 0 3px rgba(0,0,0,.045); }
+.import-transfer-textarea::placeholder { color: #999; }
+.import-transfer-attach-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.import-transfer-attach-btn { padding: 10px 15px; min-height: 42px; font-size: 14px; }
+.import-transfer-attach-btn .ic { width: 17px; height: 17px; }
+.import-transfer-file-hint { color: #888; font-size: 12px; }
+.import-transfer-file-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 0; list-style: none; }
+.import-transfer-file-list:empty { display: none; }
+.import-transfer-file-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid #e7e7e7;
+  border-radius: 12px;
+  background: #fff;
+}
+.import-transfer-file-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.import-transfer-file-size { flex-shrink: 0; margin-left: auto; color: #888; font-size: 11px; }
+.import-transfer-file-list li button {
+  flex: 0 0 27px;
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 9px;
+  background: #f0f0f0;
+  color: #555;
+  cursor: pointer;
+  font-size: 18px;
+}
+.import-transfer-error { margin: 12px 0 0; color: #9a3434; font-size: 13px; line-height: 1.5; }
+.import-transfer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px clamp(18px, 4vw, 52px) max(18px, env(safe-area-inset-bottom));
+  border-top: 1px solid #e8e8e8;
+  background: #fff;
+}
+.import-transfer-footer-note { color: #777; font-size: 12px; line-height: 1.4; }
+.import-transfer-submit {
+  flex: 0 0 auto;
+  min-width: 178px;
+  padding: 12px 18px;
+  background: #252525;
+  border-color: #252525;
+  color: #fff;
+}
+.import-transfer-submit:hover { background: #444; border-color: #444; }
+.import-transfer-submit:disabled,
+.import-transfer-attach-btn:disabled { opacity: .55; cursor: wait; transform: none; }
+@media (max-width: 640px) {
+  .import-transfer-header { padding: max(16px, env(safe-area-inset-top)) 16px 15px; }
+  .import-transfer-header h2 { font-size: 22px; }
+  .import-transfer-close { flex-basis: 38px; width: 38px; height: 38px; border-radius: 12px; }
+  .import-transfer-content { padding: 16px 16px 22px; }
+  .import-transfer-info { padding: 15px; border-radius: 15px; }
+  .import-transfer-textarea { min-height: 130px; }
+  .import-transfer-footer { align-items: stretch; flex-direction: column; gap: 11px; padding: 13px 16px max(14px, env(safe-area-inset-bottom)); }
+  .import-transfer-submit { width: 100%; min-height: 48px; }
+}

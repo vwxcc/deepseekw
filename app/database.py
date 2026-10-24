@@ -191,5 +191,6 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "usage_reset_at": "DATETIME",
         "is_guest": "BOOLEAN DEFAULT 0",
         "signup_ip_hash": "VARCHAR(64)",
+        "import_transfer_used": "BOOLEAN NOT NULL DEFAULT 0",
     },
 }

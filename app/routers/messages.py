@@ -10,7 +10,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -631,6 +631,7 @@ async def _spawn(
         memory_enabled=memory_enabled,
         action_limit=action_limit,
         deep_research=bool(chat.mode == "research"),
+        free_transfer=first_free_transfer,
     )
     await ai_router.enqueue(job)
     return StreamingResponse(
@@ -668,6 +669,16 @@ async def _check_budget_before_send(user: User, db: AsyncSession) -> None:
             "Это скользящее окно: новые запросы откроются, когда старые расходы выйдут из окна.",
         )
 
+
+
+async def _claim_first_free_import_transfer(user: User, db: AsyncSession) -> bool:
+    """Atomically spend the first-transfer allowance for only one request."""
+    result = await db.execute(
+        update(User)
+        .where(User.id == user.id, User.import_transfer_used.is_(False))
+        .values(import_transfer_used=True)
+    )
+    return result.rowcount == 1
 
 
 async def _ensure_no_active_generation(user: User, db: AsyncSession) -> None:
@@ -724,6 +735,14 @@ async def _ensure_no_active_generation(user: User, db: AsyncSession) -> None:
         )
 
 
+@router.get("/import/status")
+async def import_transfer_status(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Return whether this account still has its one-time free transfer."""
+    return {"first_transfer_free": not bool(user.import_transfer_used)}
+
+
 @router.post("/chats/{chat_id}/messages")
 async def send_message(
     request: Request,
@@ -737,7 +756,6 @@ async def send_message(
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
     await _ensure_no_active_generation(user, db)
-    await _check_budget_before_send(user, db)
     data.model_set_id = await _choose_model_set(db, user, data.model_set_id, chat.model_set_id)
     if data.deep_research:
         chat.mode = "research"
@@ -773,6 +791,14 @@ async def send_message(
     prefetched_context = get_ready_prefetch_context(
         user.id, data.prefetch_ids or [], [rec.id for rec in attached]
     )
+
+    # Client requests cannot grant themselves free use: an atomic account update
+    # decides whether this is the first transfer. Every later transfer is billed normally.
+    first_free_transfer = False
+    if data.import_transfer:
+        first_free_transfer = await _claim_first_free_import_transfer(user, db)
+    if not first_free_transfer:
+        await _check_budget_before_send(user, db)
 
     user_msg = Message(
         chat_id=chat.id,
@@ -1041,7 +1067,6 @@ async def send_first_message(
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустое сообщение")
     await _ensure_no_active_generation(user, db)
-    await _check_budget_before_send(user, db)
     data.model_set_id = await _choose_model_set(db, user, data.model_set_id)
 
     # Validate attachments before creating a chat so invalid uploads do not leave
@@ -1057,6 +1082,11 @@ async def send_first_message(
         if project is None or project.user_id != user.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Проект не найден")
         project_id = project.id
+
+    # The first transfer is allowed to begin even at the normal budget cap.
+    # send_message() atomically claims it and otherwise performs the usual budget check.
+    if not (data.import_transfer and not user.import_transfer_used):
+        await _check_budget_before_send(user, db)
 
     # A new chat is always a new root branch.
     data.parent_message_id = None

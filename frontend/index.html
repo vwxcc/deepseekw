@@ -8,7 +8,7 @@
   <link rel="preload" href="/assets/fonts/ys-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/lora-cyrillic-600.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
   <link rel="preload" href="/assets/fonts/pt-400.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=87&rev=138" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=87&rev=139" />
   <link rel="stylesheet" href="/assets/css/workspaces.css?v=3&rev=131" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
 </head>
@@ -700,11 +700,54 @@
   </div>
 
   <input type="file" id="file-input" multiple class="hidden-file" />
+  <div id="import-transfer-overlay" class="import-transfer-overlay hidden" aria-hidden="true">
+    <section class="import-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="import-transfer-title">
+      <header class="import-transfer-header">
+        <div>
+          <p class="import-transfer-kicker">AI CH · перенос данных</p>
+          <h2 id="import-transfer-title">Перенести историю, настройки и данные</h2>
+        </div>
+        <button type="button" id="import-transfer-close" class="import-transfer-close" aria-label="Закрыть окно" title="Закрыть">
+          <svg class="ic"><use href="#i-x"/></svg>
+        </button>
+      </header>
+      <div class="import-transfer-content">
+        <p class="import-transfer-lead">Соберите всё, что важно перенести из GPT, Claude и других сервисов. Можно вставить данные текстом, приложить экспорт или совместить оба способа.</p>
+        <section class="import-transfer-info">
+          <h3>Что можно перенести</h3>
+          <ul>
+            <li>Историю диалогов, экспорты и важные контексты.</li>
+            <li>Память: устойчивые факты, цели, интересы и текущие проекты.</li>
+            <li>Персонализацию: стиль общения, язык, формат ответов и правила.</li>
+            <li>Пользовательские инструкции, предпочтения, заметки и задачи.</li>
+            <li>Документы, таблицы, архивы и другие приложенные материалы.</li>
+          </ul>
+          <p>ИИ изучит материалы, сам распределит информацию по подходящим категориям и начнёт глубокое исследование. В итоговом отчёте он отдельно укажет, что действительно сохранено, а что нужно применить вручную.</p>
+        </section>
+        <p class="import-transfer-quota" id="import-transfer-quota" role="status">Проверяем доступность первого бесплатного переноса…</p>
+        <label class="import-transfer-label" for="import-transfer-text">Текст, история, память или инструкции</label>
+        <textarea id="import-transfer-text" class="import-transfer-textarea" rows="7" placeholder="Вставьте сюда экспорт, историю чатов, пользовательские инструкции, память, персонализацию или любые дополнительные сведения…"></textarea>
+        <div class="import-transfer-attach-row">
+          <button type="button" id="import-transfer-attach" class="import-transfer-attach-btn">
+            <svg class="ic"><use href="#i-plus"/></svg><span>Прикрепить файлы</span>
+          </button>
+          <input type="file" id="import-transfer-files" multiple class="hidden-file">
+          <span class="import-transfer-file-hint">Можно выбрать несколько файлов</span>
+        </div>
+        <ul class="import-transfer-file-list" id="import-transfer-file-list" aria-live="polite"></ul>
+        <p class="import-transfer-error hidden" id="import-transfer-error" role="alert"></p>
+      </div>
+      <footer class="import-transfer-footer">
+        <span class="import-transfer-footer-note" id="import-transfer-footer-note">Статус и лимиты будут проверены сервером.</span>
+        <button type="button" id="import-transfer-submit" class="import-transfer-submit">Начать перенос →</button>
+      </footer>
+    </section>
+  </div>
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-  <script src="/assets/js/app.js?v=118&rev=138"></script>
+  <script src="/assets/js/app.js?v=118&rev=139"></script>
 </body>
 </html>

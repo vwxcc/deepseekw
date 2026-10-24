@@ -4415,14 +4415,40 @@
     });
   }
 
-  function renderEmptyState() {
-    const box = $('#messages');
-    box.classList.add('empty');
-    box.innerHTML = chatOriginBannerHtml() +
+  let importTransferPromoTimer = null;
+  let transferPromoShownThisSession = false;
+
+  function defaultEmptyStateHtml() {
+    return chatOriginBannerHtml() +
       '<div class="empty-state">' +
         '<h2 class="greet" id="greet-text">' +
           escapeHtml(GREETINGS[state.greetIdx % GREETINGS.length]) + '</h2>' +
       '</div>';
+  }
+
+  function renderEmptyState() {
+    const box = $('#messages');
+    if (!box) return;
+    box.classList.add('empty');
+    stopRotation();
+    if (!transferPromoShownThisSession && !state.readonly) {
+      transferPromoShownThisSession = true;
+      box.innerHTML = chatOriginBannerHtml() +
+        '<div class="empty-state import-transfer-promo" id="import-transfer-promo">' +
+          '<h2 class="greet import-transfer-promo-title">Быстрый перенос данных из GPT, Claude и др.</h2>' +
+          '<button type="button" class="import-transfer-open-btn" id="import-transfer-open-btn">Перенести историю, настройки и данные</button>' +
+        '</div>';
+      $('#import-transfer-open-btn')?.addEventListener('click', openImportTransferModal);
+      importTransferPromoTimer = window.setTimeout(() => {
+        importTransferPromoTimer = null;
+        if (!box.isConnected || !box.classList.contains('empty') || !$('#import-transfer-promo')) return;
+        box.innerHTML = defaultEmptyStateHtml();
+        rollPlaceholder();
+        startRotation();
+      }, 9000);
+      return;
+    }
+    box.innerHTML = defaultEmptyStateHtml();
     rollPlaceholder();
     startRotation();
   }
@@ -4450,6 +4476,196 @@
   function stopRotation() {
     if (state.greetTimer) { clearInterval(state.greetTimer); state.greetTimer = null; }
     if (state.tileTimer) { clearInterval(state.tileTimer); state.tileTimer = null; }
+    if (importTransferPromoTimer) { clearTimeout(importTransferPromoTimer); importTransferPromoTimer = null; }
+  }
+
+  let importTransferUiBound = false;
+  let importTransferEscapeHandler = null;
+
+  function closeImportTransferModal() {
+    const overlay = $('#import-transfer-overlay');
+    if (!overlay) return;
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+    if (importTransferEscapeHandler) {
+      document.removeEventListener('keydown', importTransferEscapeHandler);
+      importTransferEscapeHandler = null;
+    }
+  }
+
+  function openImportTransferModal() {
+    const overlay = $('#import-transfer-overlay');
+    if (!overlay) return;
+    if (!importTransferUiBound) bindImportTransferModal();
+    overlay.classList.remove('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+    importTransferEscapeHandler = event => {
+      if (event.key === 'Escape') closeImportTransferModal();
+    };
+    document.addEventListener('keydown', importTransferEscapeHandler);
+    const quota = $('#import-transfer-quota', overlay);
+    const footerNote = $('#import-transfer-footer-note', overlay);
+    if (quota) quota.textContent = 'Проверяем доступность первого бесплатного переноса…';
+    api.get('/api/import/status').then(status => {
+      if (!overlay.isConnected || overlay.classList.contains('hidden')) return;
+      const available = !!(status && status.first_transfer_free);
+      if (quota) quota.textContent = available
+        ? 'Для этого аккаунта доступен один бесплатный перенос. Его расходы и токены не попадут в обычные лимиты.'
+        : 'Бесплатный перенос на этом аккаунте уже использован. Для следующего применятся обычные лимиты.';
+      if (footerNote) footerNote.textContent = available
+        ? 'Первый перенос на этом аккаунте бесплатный.'
+        : 'Этот перенос учитывается по обычным лимитам аккаунта.';
+      overlay.dataset.firstTransferFree = available ? 'true' : 'false';
+    }).catch(() => {
+      if (!overlay.isConnected || overlay.classList.contains('hidden')) return;
+      if (quota) quota.textContent = 'Не удалось проверить статус. Сервер проверит доступность бесплатного переноса при отправке.';
+      if (footerNote) footerNote.textContent = 'Статус и лимиты будут проверены сервером.';
+      delete overlay.dataset.firstTransferFree;
+    });
+    $('#import-transfer-text', overlay)?.focus();
+  }
+
+  function bindImportTransferModal() {
+    if (importTransferUiBound) return;
+    const overlay = $('#import-transfer-overlay');
+    if (!overlay) return;
+    importTransferUiBound = true;
+    const textarea = $('#import-transfer-text', overlay);
+    const fileInput = $('#import-transfer-files', overlay);
+    const fileList = $('#import-transfer-file-list', overlay);
+    const attachButton = $('#import-transfer-attach', overlay);
+    const submitButton = $('#import-transfer-submit', overlay);
+    const errorBox = $('#import-transfer-error', overlay);
+    let selectedFiles = [];
+
+    const showError = message => {
+      if (!errorBox) return;
+      errorBox.textContent = String(message || '');
+      errorBox.classList.toggle('hidden', !message);
+    };
+    const fileSizeLabel = size => {
+      const bytes = Math.max(0, Number(size) || 0);
+      if (bytes < 1024) return bytes + ' Б';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' МБ';
+    };
+    const renderFiles = () => {
+      if (!fileList) return;
+      fileList.innerHTML = selectedFiles.map((file, index) =>
+        '<li><span class="import-transfer-file-name">' + escapeHtml(file.name) + '</span>' +
+        '<span class="import-transfer-file-size">' + fileSizeLabel(file.size) + '</span>' +
+        '<button type="button" data-import-remove="' + index + '" aria-label="Убрать файл" title="Убрать файл">×</button></li>'
+      ).join('');
+    };
+    const mergeUploadedFiles = uploaded => {
+      if (!uploaded.length) return;
+      const map = new Map((Array.isArray(state.files) ? state.files : [])
+        .filter(item => item && item.id).map(item => [String(item.id), item]));
+      uploaded.forEach(file => map.set(String(file.id), file));
+      state.files = Array.from(map.values());
+      renderFiles();
+    };
+
+    $('#import-transfer-close', overlay)?.addEventListener('click', closeImportTransferModal);
+    attachButton?.addEventListener('click', () => fileInput?.click());
+    fileInput?.addEventListener('change', () => {
+      for (const file of Array.from(fileInput.files || [])) {
+        const duplicate = selectedFiles.some(item =>
+          item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
+        );
+        if (!duplicate) selectedFiles.push(file);
+      }
+      fileInput.value = '';
+      showError('');
+      renderFiles();
+    });
+    fileList?.addEventListener('click', event => {
+      const button = event.target && event.target.closest('[data-import-remove]');
+      if (!button) return;
+      const index = Number(button.getAttribute('data-import-remove'));
+      if (Number.isInteger(index) && index >= 0) selectedFiles.splice(index, 1);
+      renderFiles();
+    });
+
+    submitButton?.addEventListener('click', async () => {
+      const notes = String(textarea && textarea.value || '').trim();
+      const mainInput = $('#input');
+      const previousDraft = String(mainInput && mainInput.value || '').trim();
+      if (!notes && !previousDraft && !selectedFiles.length && !(state.pendingAttachments || []).length) {
+        showError('Вставьте данные или прикрепите хотя бы один файл.');
+        return;
+      }
+      showError('');
+      submitButton.disabled = true;
+      if (attachButton) attachButton.disabled = true;
+      submitButton.textContent = 'Подготавливаю перенос…';
+      const filesToUpload = selectedFiles.slice();
+      const uploaded = [];
+      try {
+        for (const file of filesToUpload) {
+          const form = new FormData();
+          form.append('files', file, file.name);
+          const response = await api.postForm('/api/files', form);
+          const results = Array.isArray(response)
+            ? response
+            : (response && Array.isArray(response.files) ? response.files : (response && response.id ? [response] : []));
+          const saved = results.find(item => item && typeof item.id === 'string' && item.id);
+          if (!saved) throw new Error('Сервер не подтвердил загрузку файла «' + file.name + '».');
+          uploaded.push(saved);
+        }
+        mergeUploadedFiles(uploaded);
+
+        const fileNames = uploaded.map(file => file.original_name || file.name || 'файл').join(', ');
+        const prompt = [
+          '## Перенос данных в AI CH — задача для Deep Research',
+          'Выполни полный, аккуратный перенос всех предоставленных материалов. Сначала проанализируй каждый файл и весь текст, затем сам реши, какую информацию куда распределить. Не заменяй фактическую обработку общим ответом.',
+          '1. Извлеки историю диалогов, важные решения, незавершённые темы, проекты, задачи, даты и ссылки. Сохраняй порядок и источник; не выдумывай пропущенные сообщения или факты.',
+          '2. Выдели устойчивые сведения обо мне, цели, интересы, ограничения и предпочтения. Используй доступный механизм долговременной памяти AI CH для сохранения того, что полезно в будущих разговорах.',
+          '3. Выдели инструкции персонализации: язык, желаемый тон, формат, степень подробности, правила и нежелательные подходы. Сохрани через доступные в AI CH инструменты памяти, навыков или персонализации, если они действительно доступны.',
+          '4. Перенеси контекст истории в этот чат: создай понятный хронологический индекс и тематическое резюме, сохрани наиболее важные детали и различай исходные данные и выводы.',
+          '5. Разложи материалы по категориям: память, инструкции, проекты, текущие задачи, справочные данные, история чатов и документы. Удаляй только явные дубликаты; противоречия перечисли отдельно.',
+          '6. Не утверждай, что что-либо сохранено в память или настройках, если действие фактически не выполнено. Если автоматическое сохранение категории недоступно, укажи это и дай готовый текст для ручного применения.',
+          '7. В конце составь отчёт: что изучено, что реально сохранено, какие темы/диалоги включены в индекс, что не удалось обработать и что требует моего решения.',
+          '',
+          'Текст и дополнительные пояснения пользователя:',
+          notes || '(Отдельные пояснения не добавлены.)',
+          previousDraft ? '\nТекст, ранее введённый в обычное поле чата:\n' + previousDraft : '',
+          fileNames ? '\nПрикреплённые файлы: ' + fileNames : '',
+          uploaded.length ? '\nВсе прикреплённые файлы перечислены как вложения к этому сообщению. Прочитай и обработай содержимое каждого из них.' : '',
+        ].filter(Boolean).join('\n');
+
+        state.currentChatId = null;
+        state.tree = [];
+        state.choices = {};
+        state.pendingAttachments = (Array.isArray(state.pendingAttachments) ? state.pendingAttachments : []).concat(uploaded);
+        if (mainInput) {
+          mainInput.value = prompt;
+          autoGrow();
+        }
+        const previousDeepResearch = !!state.deepResearch;
+        state.deepResearch = true;
+        closeImportTransferModal();
+        if (overlay.dataset.firstTransferFree === 'true') {
+          toast('Запускаю первый бесплатный перенос: токены и расходы не попадут в обычные лимиты.', 'info');
+        } else if (overlay.dataset.firstTransferFree === 'false') {
+          toast('Запускаю перенос по обычным лимитам аккаунта.', 'info');
+        }
+        try {
+          await sendCurrent('site', { importTransfer: true });
+        } finally {
+          state.deepResearch = previousDeepResearch;
+        }
+      } catch (error) {
+        const errorMessage = usefulErrorMessage(error, 'Не удалось подготовить перенос.');
+        showError(errorMessage);
+        submitButton.disabled = false;
+        if (attachButton) attachButton.disabled = false;
+        submitButton.textContent = 'Начать перенос';
+        mergeUploadedFiles(uploaded);
+        if (uploaded.length) selectedFiles = filesToUpload.slice(uploaded.length);
+        renderFiles();
+      }
+    });
   }
 
   function updateShareButtonVisibility() {
@@ -5708,7 +5924,8 @@
     return (asksForCodeWork && refersToCode) || (hasFence && refersToCode);
   }
 
-  async function sendCurrent(executionTarget) {
+  async function sendCurrent(executionTarget, options) {
+    const importTransfer = !!(options && options.importTransfer);
     const input = $('#input');
     if (!input) return;
     if (!state.identityReady) { toast('Подключаем сессию…', 'info'); return; }
@@ -5825,6 +6042,7 @@
         style: state.style,
         response_detail: state.responseDetail,
         deep_research: !!state.deepResearch,
+        import_transfer: importTransfer,
       }, { optimistic: true, input, draft, attachments: sentAttachments });
       requestStarted = true;
 

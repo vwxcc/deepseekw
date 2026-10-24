@@ -130,6 +130,7 @@ class MessageCreate(BaseModel):
     deep_research: bool = False
     execution_target: str = "site"
     client_context: dict = Field(default_factory=dict)
+    import_transfer: bool = False
 
 
 class ResponseDetailIn(BaseModel):

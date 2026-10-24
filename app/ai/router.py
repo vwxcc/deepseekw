@@ -343,6 +343,8 @@ class Job:
     search_query: str = ""
     web_search: bool = True
     deep_research: bool = False
+    # Set only after the server atomically claims a user's first free import.
+    free_transfer: bool = False
     deep_research_started: bool = False
     deep_research_runs: list[dict] = field(default_factory=list)
     memory_enabled: bool = True
@@ -1031,7 +1033,7 @@ class AIRouter:
                     )
                 if ui_state is not None:
                     msg.ui_state = json.dumps(ui_state, ensure_ascii=False) if ui_state else None
-                if usage:
+                if usage and not (active_job is not None and active_job.free_transfer):
                     # Preserve tokens that title/search helpers already added to the same assistant message.
                     msg.tokens_in = int(msg.tokens_in or 0) + int(usage.get("prompt_tokens") or 0)
                     msg.tokens_out = int(msg.tokens_out or 0) + int(usage.get("completion_tokens") or 0)
@@ -1043,6 +1045,8 @@ class AIRouter:
         self, job: Job, entry: EntryConfig, usage: dict | None, action: str
     ) -> None:
         """Write the money record for one billed call."""
+        if job.free_transfer:
+            return
         if not usage:
             return
         tin = int(usage.get("prompt_tokens") or 0)
@@ -1092,6 +1096,8 @@ class AIRouter:
         Keep the parameter for existing call sites and compatibility.
         """
         del estimated_cost_usd
+        if job.free_transfer:
+            return None
         if not job.user_id:
             return None
         try:

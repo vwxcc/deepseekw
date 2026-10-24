@@ -1850,9 +1850,10 @@ class AIRouter:
             compact_context.append({"role": item["role"], "content": content})
             context_chars += len(content)
         conversation_context = list(reversed(compact_context))
-        recent_user_context = "\n".join(
+        recent_user_messages = [
             item["content"] for item in conversation_context if item["role"] == "user"
-        )
+        ]
+        recent_user_context = "\n".join(recent_user_messages)
 
         no_web_pattern = (
             r"(?:не\s+(?:используй|использовать|применяй|ищи|делай)\s+"
@@ -1861,7 +1862,9 @@ class AIRouter:
             r"\b(?:don't|do not|never)\s+(?:use|search)\s+(?:the\s+)?(?:web|internet)\b)"
         )
         current_no_web = bool(re.search(no_web_pattern, current_request, flags=re.IGNORECASE))
-        history_no_web = bool(re.search(no_web_pattern, recent_user_context, flags=re.IGNORECASE))
+        history_no_web = bool(re.search(
+            no_web_pattern, "\n".join(recent_user_messages[-3:]), flags=re.IGNORECASE
+        ))
         current_allows_web = bool(re.search(
             r"(?:используй|найди|поищи|ищи)\s+(?:веб[\s-]?поиск|в\s+интернете|источники)|"
             r"\b(?:use|search)\s+(?:the\s+)?web\b",
@@ -1927,7 +1930,8 @@ class AIRouter:
                     if key not in seen_expressions:
                         seen_expressions.add(key)
                         calculation_items.append({"expression": expression, "number": len(calculation_items) + 1})
-                if len(calculation_items) >= 40:
+                # Use the first relevant list/table rather than importing old unrelated examples.
+                if len(calculation_items) >= 2:
                     break
             calculation_items = calculation_items[:40]
 

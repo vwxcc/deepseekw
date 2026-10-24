@@ -33,6 +33,7 @@ from .routers import (
     messages,
     models,
     projects as projects_router,
+    prefetch,
     public,
     ready_answers as ready_answers_router,
     scheduled as scheduled_router,
@@ -118,6 +119,7 @@ app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=li
 app.include_router(auth.router)
 app.include_router(chats.router)
 app.include_router(messages.router)
+app.include_router(prefetch.router)
 app.include_router(files.router)
 app.include_router(models.router)
 app.include_router(admin.router)

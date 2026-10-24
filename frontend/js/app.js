@@ -3616,6 +3616,55 @@
     });
   }
 
+  function setCodeRunnerBusy(messageId, chatId, busy) {
+    const id = String(messageId || '');
+    if (!id) return;
+    if (!(state.codeRunnerChatByMessage instanceof Map)) state.codeRunnerChatByMessage = new Map();
+    if (!(state.codeRunningChatIds instanceof Set)) state.codeRunningChatIds = new Set();
+    if (busy) {
+      const resolvedChatId = String(chatId || state.codeRunnerChatByMessage.get(id) || state.currentChatId || '');
+      if (!resolvedChatId) return;
+      const previous = state.codeRunnerChatByMessage.get(id);
+      if (previous && previous !== resolvedChatId) {
+        if (![...state.codeRunnerChatByMessage.values()].some(value => value === previous && value !== id)) {
+          state.codeRunningChatIds.delete(previous);
+        }
+      }
+      state.codeRunnerChatByMessage.set(id, resolvedChatId);
+      state.codeRunningChatIds.add(resolvedChatId);
+    } else {
+      const previous = state.codeRunnerChatByMessage.get(id);
+      state.codeRunnerChatByMessage.delete(id);
+      if (previous && ![...state.codeRunnerChatByMessage.values()].includes(previous)) {
+        state.codeRunningChatIds.delete(previous);
+      }
+    }
+
+    const targetChatId = String(chatId || state.codeRunnerChatByMessage.get(id) || '');
+    const matchingItems = $('.chat-item[data-id]').filter(item => item.dataset.id === targetChatId);
+    if (!matchingItems.length) {
+      if ($('#chat-list') && Array.isArray(state.chats) && state.chats.some(chat => String(chat.id) === targetChatId)) {
+        renderChatList();
+      }
+      return;
+    }
+    const chat = (state.chats || []).find(item => String(item.id) === targetChatId);
+    const shouldSpin = !!(chat && chat.is_generating) || state.codeRunningChatIds.has(targetChatId);
+    matchingItems.forEach(item => {
+      let spinner = $('.chat-generating-spinner', item);
+      if (shouldSpin && !spinner) {
+        spinner = document.createElement('span');
+        spinner.className = 'chat-generating-spinner';
+        spinner.setAttribute('role', 'status');
+        spinner.setAttribute('aria-label', 'Запрос или выполнение кода обрабатывается');
+        const title = $('.title', item);
+        item.insertBefore(spinner, title || item.firstChild);
+      } else if (!shouldSpin && spinner) {
+        spinner.remove();
+      }
+    });
+  }
+
   function openDeviceCodeRunner(item, messageId, options) {
     const background = !!(options && options.background);
     const shell = $('#device-code-shell');
@@ -3626,6 +3675,7 @@
     if (!item || (!background && (!shell || !frame))) return;
     const normalizedMessageId = typeof messageId === 'string' && messageId ? messageId : null;
     if (background && !normalizedMessageId) return;
+    if (normalizedMessageId) setCodeRunnerBusy(normalizedMessageId, state.currentChatId, true);
     let targetFrame = frame;
     if (background) {
       const previous = backgroundDeviceRunners.get(normalizedMessageId);
@@ -3793,6 +3843,7 @@
       if (data.type === 'device-code-complete') {
         const pendingPersistence = deviceFilePersistence.get(messageId);
         if (pendingPersistence) await pendingPersistence;
+        setCodeRunnerBusy(messageId, null, false);
         if (messageNode) {
           messageNode.deviceRunnerFinishedAt = Date.now();
           const skippedFiles = Array.isArray(data.skipped) ? data.skipped.filter(Boolean).map(x => String(x).slice(0, 160)) : [];
@@ -3828,6 +3879,7 @@
         return;
       }
       if (data.type === 'device-code-error') {
+        setCodeRunnerBusy(messageId, null, false);
         const message = String(data.message || 'Неизвестная ошибка выполнения').slice(0, 50000);
         if (isBackground) {
           if (messageNode) {

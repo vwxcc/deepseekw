@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
@@ -62,6 +62,13 @@ GUEST_EMAIL_SUFFIX = "@guest.ai-ch.invalid"
 
 def _is_guest(user: User | None) -> bool:
     return bool(user is not None and getattr(user, "is_guest", False))
+
+
+async def _begin_identity_write_lock(db: AsyncSession) -> None:
+    """Serialize identity creation on SQLite so parallel requests cannot exceed the cap."""
+    bind = db.get_bind()
+    if bind.dialect.name == "sqlite":
+        await db.execute(text("BEGIN IMMEDIATE"))
 
 
 MAX_IDENTITIES_PER_IP = 2
@@ -251,6 +258,7 @@ async def create_guest_session(
     request: Request, response: Response, db: AsyncSession = Depends(get_db)
 ) -> AuthOut:
     """Create or reuse a free guest identity whose server-side lifetime is three days."""
+    await _begin_identity_write_lock(db)
     raw_token = request.cookies.get(COOKIE_NAME)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     if raw_token:
@@ -263,7 +271,7 @@ async def create_guest_session(
                 # part of future capacity checks.
                 if not existing_user.signup_ip_hash:
                     existing_user.signup_ip_hash = _request_ip_hash(request)
-                    await db.commit()
+                await db.commit()
                 remaining = max(1, int((existing_session.expires_at - now).total_seconds()))
                 cookie_age = remaining if _is_guest(existing_user) else settings.session_max_age
                 _set_cookies(response, raw_token, cookie_age)
@@ -277,9 +285,9 @@ async def create_guest_session(
         signup_ip_hash=ip_hash,
     )
     db.add(guest)
-    await db.commit()
-    await db.refresh(guest)
+    await db.flush()
     token = await _start_session(db, guest, GUEST_SESSION_SECONDS)
+    await db.refresh(guest)
     _set_cookies(response, token, GUEST_SESSION_SECONDS)
     return AuthOut(user=UserOut.model_validate(guest), csrf_token=csrf_token_for(token))
 
@@ -296,6 +304,7 @@ async def register(
     if result.scalar_one_or_none() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
 
+    await _begin_identity_write_lock(db)
     ip_hash = await _assert_ip_identity_capacity(request, db, replacing_guest=True)
     user = User(
         email=email,
@@ -311,11 +320,9 @@ async def register(
         user_id=user.id, amount=30_000, balance_after=30_000,
         action="signup_grant", reason="Стартовый баланс после регистрации",
     ))
-    await db.commit()
-    await db.refresh(user)
-
     await _claim_guest_data(request, db, user)
     token = await _start_session(db, user)
+    await db.refresh(user)
     _set_cookies(response, token)
     return AuthOut(user=UserOut.model_validate(user), csrf_token=csrf_token_for(token))
 

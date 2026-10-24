@@ -643,6 +643,7 @@ class UserPreference(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     memory_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    accent_color: Mapped[str] = mapped_column(String(7), default="#3b82f6", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

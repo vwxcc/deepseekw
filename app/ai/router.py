@@ -1900,6 +1900,7 @@ class AIRouter:
         calculation_items: list[dict] = []
         if calculation_only:
             expression_re = re.compile(r"^\s*\d+(?:[.,]\d+)?(?:\s*[+\-−×÷*/]\s*\d+(?:[.,]\d+)?)+\s*$")
+            expression_search_re = re.compile(r"\d+(?:[.,]\d+)?(?:\s*[+\-−×÷*/]\s*\d+(?:[.,]\d+)?)+")
             inline_item_re = re.compile(
                 r"(?<!\w)(\d{1,3})[.)]\s*((?:\d+(?:[.,]\d+)?\s*[+\-−×÷*/]\s*)+\d+(?:[.,]\d+)?)"
                 r"(?=\s+\d{1,3}[.)]\s*|[;,\n]|$)"
@@ -1912,6 +1913,8 @@ class AIRouter:
                 candidates = []
                 if expression_re.fullmatch(example_source.strip()):
                     candidates.append((None, example_source.strip()))
+                if example_source == current_request:
+                    candidates.extend((None, match.group(0).strip()) for match in expression_search_re.finditer(example_source))
                 for line in example_source.splitlines():
                     if "|" not in line:
                         continue
@@ -1931,6 +1934,9 @@ class AIRouter:
         research_web_enabled = bool(job.web_search) and not current_no_web and not (
             history_no_web and followup_request and not current_allows_web
         ) and not calculation_only
+        if not research_web_enabled:
+            # Also block WEB_SEARCH commands from the final synthesis model, not only workers.
+            job.web_search = False
 
         await job.output.put(("ui_status", "Распределяю исследование между агентами"))
         graph: dict = {"nodes": [], "edges": []}
@@ -2313,6 +2319,22 @@ class AIRouter:
                 clean_result = str(result_text or "").strip()
                 if not clean_result:
                     raise ProviderError("Агент вернул пустой ответ; результат не засчитан как успешный.")
+                if calculation_only and calculation_items:
+                    assigned_expressions = [
+                        match.group(2).strip()
+                        for match in re.finditer(r"(?m)^\s*(\d{1,3})\)\s*(.+?)\s*$", str(agent.get("task") or ""))
+                    ]
+                    compact_result = re.sub(r"\s+", "", clean_result).replace("−", "-").replace("×", "*").replace("÷", "/")
+                    missing_expressions = [
+                        expression for expression in assigned_expressions
+                        if re.sub(r"\s+", "", expression).replace("−", "-").replace("×", "*").replace("÷", "/")
+                        not in compact_result
+                    ]
+                    if missing_expressions:
+                        raise ProviderError(
+                            f"Агент не обработал {len(missing_expressions)} из "
+                            f"{len(assigned_expressions)} назначенных выражений."
+                        )
                 run["result"] = clean_result[:14000]
                 run["sources"] = [
                     {

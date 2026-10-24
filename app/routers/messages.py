@@ -530,7 +530,7 @@ async def _request_context_block(
     ))
     message_count = await db.scalar(select(func.count()).select_from(Message).join(
         Chat, Chat.id == Message.chat_id
-    ).where(Chat.user_id == user.id))
+    ).where(Chat.user_id == user.id, Chat.deleted_at.is_(None)))
 
     device: dict[str, object] = {
         "server_time_utc": utcnow().isoformat(),
@@ -586,7 +586,10 @@ async def _request_context_block(
         },
         "connected_integrations": connected_integrations[:30],
         "github_connected": github_connected,
-        "server_sandbox_configured": bool(settings.sandbox_url),
+        "tool_availability": {
+            "web_search_enabled": bool(settings.web_search_enabled),
+            "server_sandbox_url_configured": bool(settings.sandbox_url),
+        },
         "limits": safe_limits,
         "current_window": {
             "hours": hours, "billed_calls": int(calls or 0),

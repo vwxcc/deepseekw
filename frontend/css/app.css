@@ -8237,3 +8237,259 @@ input[type="range"], .council-row input { accent-color: var(--accent) !important
   .profile-accent-swatch { padding: 5px 7px; }
   .profile-accent-heading small { width: 100%; }
 }
+
+/* AI CH final pass: fixed neutral + sheet, white sidebar actions, resilient tables. */
+
+/* The + trigger is neutral grey again; its open state stays grey too. */
+#composer .composer-row #attach-btn,
+#attach-btn {
+  background: #e8e8e8 !important;
+  background-image: none !important;
+  border: 1px solid #d5d5d5 !important;
+  color: #555555 !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+#composer .composer-row #attach-btn .ic,
+#attach-btn .ic {
+  color: #555555 !important;
+  stroke: currentColor !important;
+}
+#composer .composer-row #attach-btn:hover,
+#attach-btn:hover {
+  background: #dedede !important;
+  border-color: #cdcdcd !important;
+  color: #444444 !important;
+}
+#composer .composer-row #attach-btn.is-active,
+#attach-btn.is-active,
+#composer .composer-row #attach-btn:active,
+#attach-btn:active {
+  background: #dedede !important;
+  border-color: #c9c9c9 !important;
+}
+
+/* The + menu is an opaque white surface, not an accent-tinted/glass overlay. */
+#add-to-chat-shell .add-to-chat-sheet {
+  background: #ffffff !important;
+  color: #626262 !important;
+  border: 1px solid #e1e1e1 !important;
+  box-shadow: 0 18px 54px rgba(0, 0, 0, .14), inset 0 1px 0 rgba(255, 255, 255, .98) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+#add-to-chat-shell .add-chat-head {
+  background: #ffffff !important;
+  border-bottom-color: #ededed !important;
+}
+#add-to-chat-shell #add-to-chat-title,
+#add-to-chat-shell .add-chat-back-label,
+#add-to-chat-shell .add-chat-head-action,
+#add-to-chat-shell .add-chat-action-copy strong,
+#add-to-chat-shell .add-chat-action-copy small {
+  color: #626262 !important;
+}
+#add-to-chat-shell .add-chat-action-copy small {
+  color: #858585 !important;
+}
+#add-to-chat-shell .add-chat-head button,
+#add-to-chat-shell .add-chat-scroll-area button {
+  background: #ffffff !important;
+  background-image: none !important;
+  border-color: #e4e4e4 !important;
+  color: #626262 !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+#add-to-chat-shell .add-chat-head button:hover,
+#add-to-chat-shell .add-chat-scroll-area button:hover {
+  background: #f5f5f5 !important;
+  border-color: #d8d8d8 !important;
+  color: #505050 !important;
+}
+#add-to-chat-shell .add-chat-scroll-area button[aria-selected="true"],
+#add-to-chat-shell .add-chat-scroll-area button[aria-pressed="true"],
+#add-to-chat-shell .add-chat-scroll-area button.is-active,
+#add-to-chat-shell .add-chat-scroll-area button.active,
+#add-to-chat-shell .add-chat-scroll-area button.selected {
+  background: #ffffff !important;
+  border-color: #b9d0f5 !important;
+  color: #626262 !important;
+  box-shadow: inset 0 0 0 1px rgba(42, 112, 220, .06) !important;
+}
+#add-to-chat-shell .add-chat-primary-icon,
+#add-to-chat-shell .add-chat-row-icon {
+  background: #ffffff !important;
+  border-color: #e4e4e4 !important;
+  color: #2878e8 !important;
+}
+#add-to-chat-shell .add-chat-primary-icon .ic,
+#add-to-chat-shell .add-chat-row-icon .ic,
+#add-to-chat-shell .add-chat-row-chevron,
+#add-to-chat-shell .add-chat-head button .ic {
+  color: #2878e8 !important;
+  stroke: currentColor !important;
+}
+#add-to-chat-shell .add-chat-sheet-content,
+#add-to-chat-shell .add-chat-action-group,
+#add-to-chat-shell .add-chat-subview,
+#add-to-chat-shell .add-chat-scroll-area {
+  background-color: #ffffff !important;
+}
+
+/* Sidebar action buttons are white; labels stay grey and icons stay restrained. */
+#sidebar .new-chat,
+#sidebar .side-row.top-account-actions .side-item,
+#sidebar .side-row.primary-actions .side-item,
+#sidebar .sidebar-account-settings,
+#sidebar .sidebar-quick-tools button,
+#sidebar .sidebar-skills-connectors button,
+#sidebar .sidebar-skills-connectors .chip-btn,
+#sidebar .side-row .chip-btn,
+#sidebar #sidebar-limits-btn,
+#sidebar .sidebar-usage {
+  background: #ffffff !important;
+  background-image: none !important;
+  border-color: #e4e4e4 !important;
+  color: #5f5f5f !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+#sidebar .new-chat .ic,
+#sidebar .side-row.top-account-actions .side-item .ic,
+#sidebar .side-row.primary-actions .side-item .ic,
+#sidebar .sidebar-account-settings .ic,
+#sidebar .sidebar-quick-tools button .ic,
+#sidebar .sidebar-skills-connectors button .ic,
+#sidebar .side-row .chip-btn .ic,
+#sidebar #sidebar-limits-btn .ic {
+  color: #696969 !important;
+}
+#sidebar .new-chat:hover,
+#sidebar .side-row.top-account-actions .side-item:hover,
+#sidebar .side-row.primary-actions .side-item:hover,
+#sidebar .sidebar-account-settings:hover,
+#sidebar .sidebar-quick-tools button:hover,
+#sidebar .sidebar-skills-connectors button:hover,
+#sidebar .side-row .chip-btn:hover,
+#sidebar #sidebar-limits-btn:hover {
+  background: #f5f5f5 !important;
+  border-color: #dcdcdc !important;
+  color: #4d4d4d !important;
+}
+
+/* Canonical Markdown table layout: only the table frame scrolls horizontally. */
+#messages .msg .content.md .table-wrap {
+  display: block !important;
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: #c8c8c8 transparent;
+  margin: 10px 0 14px !important;
+  padding: 0 0 4px !important;
+}
+#messages .msg .content.md .table-wrap > table {
+  display: table !important;
+  width: max-content !important;
+  min-width: 100% !important;
+  max-width: none !important;
+  table-layout: auto !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+#messages .msg .content.md .table-wrap > table thead {
+  display: table-header-group !important;
+  visibility: visible !important;
+}
+#messages .msg .content.md .table-wrap > table tbody {
+  display: table-row-group !important;
+}
+#messages .msg .content.md .table-wrap > table tr {
+  display: table-row !important;
+  visibility: visible !important;
+}
+#messages .msg .content.md .table-wrap > table th,
+#messages .msg .content.md .table-wrap > table td {
+  display: table-cell !important;
+  box-sizing: border-box !important;
+  min-width: 88px !important;
+  max-width: 420px !important;
+  padding: 8px 11px !important;
+  border: 1px solid #e2e2e2 !important;
+  vertical-align: top !important;
+  text-align: left !important;
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  line-height: 1.5 !important;
+  font-size: 14px !important;
+  visibility: visible !important;
+}
+#messages .msg .content.md .table-wrap > table th {
+  background: #f4f4f4 !important;
+  color: #505050 !important;
+  font-weight: 650 !important;
+}
+#messages .msg .content.md .table-wrap > table td {
+  background: #ffffff !important;
+  color: inherit !important;
+}
+#messages .msg .content.md .table-wrap > table tbody tr:nth-child(even) td {
+  background: #fcfcfc !important;
+}
+#messages .msg .content.md .table-wrap > table code,
+#messages .msg .content.md .table-wrap > table pre,
+#messages .msg .content.md .table-wrap > table .katex,
+#messages .msg .content.md .table-wrap > table .katex *,
+#messages .msg .content.md .table-wrap > table .MathJax,
+#messages .msg .content.md .table-wrap > table .MathJax *,
+#messages .msg .content.md .table-wrap > table math {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+}
+#messages .msg .content.md .table-wrap > table pre {
+  max-width: none !important;
+  overflow-x: auto !important;
+}
+#messages .msg .content.md .table-wrap > .tbl-dl {
+  position: relative !important;
+  inset: auto !important;
+  display: grid !important;
+  flex: 0 0 30px !important;
+  width: 30px !important;
+  height: 30px !important;
+  margin: 0 0 6px auto !important;
+  opacity: 1 !important;
+  background: #ffffff !important;
+  border: 1px solid #dedede !important;
+  color: #666666 !important;
+  box-shadow: none !important;
+}
+#messages .msg .content.md .table-wrap > .tbl-dl:hover {
+  background: #f5f5f5 !important;
+  color: #4f4f4f !important;
+}
+@media (max-width: 620px) {
+  #messages .msg .content.md .table-wrap > table th,
+  #messages .msg .content.md .table-wrap > table td {
+    min-width: 78px !important;
+    max-width: 280px !important;
+    padding: 7px 9px !important;
+  }
+}
+

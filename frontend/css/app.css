@@ -409,8 +409,6 @@ a { color: var(--accent); }
 .send-btn:hover { background: var(--accent-hover); }
 .send-btn:active { transform: scale(.94); }
 .send-btn:disabled { opacity: .4; cursor: default; }
-.send-btn.stop { background: #525252; }
-.send-btn.stop:hover { background: #3d3d3d; }
 .send-btn .ic { width: 17px; height: 17px; stroke-width: 2; }
 
 .chip-btn {
@@ -780,9 +778,6 @@ a { color: var(--accent); }
   transition: background-position .9s ease, transform 0.17s ease, box-shadow .4s ease;
 }
 .send-btn:hover { background-position: 100% 100%; box-shadow: 0 6px 24px rgba(40, 40, 40, .55); }
-.send-btn.stop { background-image: linear-gradient(135deg, #5f5f5f, #454545); }
-.send-btn.stop:hover { box-shadow: 0 6px 22px rgba(0, 0, 0, .3); }
-
 .icon-btn { transition: background 0.38s ease, color 0.38s ease, transform 0.31s ease; }
 .icon-btn:hover { transform: translateY(-1px); }
 
@@ -2238,8 +2233,7 @@ body { font-weight: 400; }
   padding-right: 8px;
 }
 .composer-row .spacer { flex: 1 1 auto; min-width: 0; }
-.composer-row #send-btn,
-.composer-row #stop-btn {
+.composer-row #send-btn {
   margin-left: 0;
   margin-right: 0;
   flex: 0 0 34px;
@@ -2601,7 +2595,7 @@ body { font-weight: 400; }
 
 .composer-inner::after, .composer-inner:focus-within::after { content: none !important; display: none !important; animation: none !important; }
 #input { background: var(--bg); border-radius: 9px; padding-left: 10px; padding-right: 10px; }
-.composer-row #send-btn, .composer-row #stop-btn { position: relative; top: -2px; }
+.composer-row #send-btn { position: relative; top: -2px; }
 .audio-rate-label { display:flex; align-items:center; justify-content:center; gap:10px; margin:13px auto 0; color:var(--fg-muted); font-size:13px; }
 .audio-rate-label select { max-width:100%; padding:6px 9px; border:1px solid var(--border); border-radius:8px; color:var(--fg); background:var(--bg-panel); font:inherit; }
 .ask-card { background:var(--bg); border:1px solid var(--border-soft); border-radius:13px; }
@@ -2740,8 +2734,7 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   height: 36px;
   align-self: flex-end;
 }
-#composer .composer-row #send-btn,
-#composer .composer-row #stop-btn {
+#composer .composer-row #send-btn {
   position: relative;
   top: -2px;
   flex: 0 0 36px;
@@ -2754,8 +2747,7 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
   #composer .composer-inner { width: calc(100% - 22px); }
   #composer .composer-row { gap: 6px; }
   #composer .composer-row #attach-btn,
-  #composer .composer-row #send-btn,
-  #composer .composer-row #stop-btn { flex-basis: 36px; width: 36px; height: 36px; }
+  #composer .composer-row #send-btn { flex-basis: 36px; width: 36px; height: 36px; }
   #composer .composer-row #attach-btn .ic { width: 23px; height: 23px; stroke-width: 3; }
 }
 
@@ -2921,10 +2913,8 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 /* Align composer controls in the middle of the input and lift the complete row slightly. */
 #composer .composer-row { transform: translateY(-2px); }
 #composer .composer-row #attach-btn,
-#composer .composer-row #send-btn,
-#composer .composer-row #stop-btn { align-self: center; }
-#composer .composer-row #send-btn,
-#composer .composer-row #stop-btn { top: -1px; }
+#composer .composer-row #send-btn { align-self: center; }
+#composer .composer-row #send-btn { top: -1px; }
 
 
 /* White composer surface, matching the panel and adjacent composer controls. */
@@ -3051,13 +3041,11 @@ a.aich-web-image-media:hover img { transform:scale(1.035); }
 }
 #composer .composer-row #attach-btn,
 #composer .composer-row #input,
-#composer .composer-row #send-btn,
-#composer .composer-row #stop-btn {
+#composer .composer-row #send-btn {
   align-self: center;
 }
 #composer .composer-row #attach-btn { margin-left: -4px; }
-#composer .composer-row #send-btn,
-#composer .composer-row #stop-btn { top: 0; }
+#composer .composer-row #send-btn { top: 0; }
 
 
 /* Subscription dialog: compact, readable Pro benefit cards. */
@@ -6688,22 +6676,19 @@ body,
 #sidebar .chat-item .acts button:hover {
   background-color: rgba(255, 255, 255,.74);
 }
-#send-btn,
-#stop-btn,
+#send-btn,,
 .send-btn {
   border: 1px solid rgba(255, 255, 255,.48) !important;
   background: linear-gradient(160deg, #505050 0%, #2a2a2a 72%, #202020 100%) !important;
   color: #fff !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255,.28), 0 4px 12px rgba(27, 27, 27,.18);
 }
-#send-btn:hover,
-#stop-btn:hover,
+#send-btn:hover,:hover,
 .send-btn:hover {
   background: linear-gradient(160deg, #5f5f5f 0%, #353535 72%, #252525 100%) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255,.34), 0 7px 18px rgba(27, 27, 27,.20);
 }
-#send-btn:active,
-#stop-btn:active,
+#send-btn:active,:active,
 .send-btn:active {
   transform: scale(.95);
 }
@@ -8024,27 +8009,7 @@ a { color: var(--accent) !important; }
 
 /* Send and stop stay clearly actionable, but are slightly softened rather than neon. */
 .send-btn,
-.send-btn.stop {
-  border: 1px solid var(--accent-border) !important;
-  background: rgba(var(--accent-rgb), .82) !important;
-  background-image: linear-gradient(
-    135deg,
-    rgba(var(--accent-rgb), .74),
-    rgba(var(--accent-rgb), .84)
-  ) !important;
-  color: var(--accent-button-fg) !important;
-  box-shadow: 0 3px 10px rgba(var(--accent-rgb), .14) !important;
-}
 .send-btn:hover,
-.send-btn.stop:hover {
-  background: rgba(var(--accent-rgb), .90) !important;
-  background-image: linear-gradient(
-    135deg,
-    rgba(var(--accent-rgb), .84),
-    rgba(var(--accent-rgb), .93)
-  ) !important;
-  box-shadow: 0 5px 15px rgba(var(--accent-rgb), .19) !important;
-}
 .send-btn:disabled { box-shadow: none !important; }
 
 /* Muted accent fills for sidebar controls, plus, and Share. */
@@ -8506,4 +8471,84 @@ input[type="range"], .council-row input { accent-color: var(--accent) !important
 #messages .msg .content.md .table-wrap > table td {
   font-family: var(--font-ui, system-ui), -apple-system, BlinkMacSystemFont,
     "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif !important;
+}
+
+
+/* Composer and sidebar interaction polish (kept at the end to win over older theme overrides). */
+#composer #attach-list:not(:empty) {
+  margin-bottom: 5px !important;
+  padding-bottom: 8px !important;
+  gap: 8px !important;
+}
+#composer .composer-row { gap: 10px !important; }
+@media (max-width: 620px) {
+  #composer .composer-row { gap: 8px !important; }
+}
+
+/* The single action button stays vividly filled with the user's selected accent. */
+#composer .composer-row #send-btn,
+#composer .composer-row #send-btn.is-stop {
+  background: var(--accent) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: 0 4px 13px color-mix(in srgb, var(--accent) 30%, transparent) !important;
+}
+#composer .composer-row #send-btn:hover:not(:disabled) {
+  background: var(--accent-hover) !important;
+  background-image: none !important;
+}
+#composer .composer-row #send-btn .ic { color: #fff !important; }
+
+/* The active plus/x and photo-from-device controls stay neutral grey. */
+#composer .composer-row #attach-btn.is-active,
+#composer .composer-row #attach-btn.is-active .ic,
+#add-to-chat-shell #add-chat-nav,
+#add-to-chat-shell #add-chat-nav .ic,
+#add-to-chat-shell .add-chat-head-action,
+#add-to-chat-shell .add-chat-primary-icon,
+#add-to-chat-shell .add-chat-row-icon {
+  color: #858585 !important;
+}
+
+/* Increase the + sheet's text sizing by approximately 15%, without scaling its layout. */
+#add-to-chat-shell .add-chat-head h2 { font-size: 19.55px !important; }
+#add-to-chat-shell .add-chat-head .add-chat-back-label { font-size: 16.1px !important; }
+#add-to-chat-shell .add-chat-head-action { font-size: 17.25px !important; }
+#add-to-chat-shell .add-chat-action-copy strong { font-size: 16.675px !important; }
+#add-to-chat-shell .add-chat-action-copy small { font-size: 13.225px !important; }
+
+/* Chat items open on the first row click; management actions appear only on demand. */
+#sidebar .chat-item .chat-more-btn {
+  display: grid !important;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin-left: auto;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 7px;
+  background: transparent !important;
+  color: var(--fg-soft) !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+#sidebar .chat-item .chat-more-btn .ic {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+}
+#sidebar .chat-item .chat-more-btn:hover,
+#sidebar .chat-item .chat-more-btn:focus-visible {
+  background: #ededed !important;
+  color: #555 !important;
+}
+#sidebar .chat-item .acts,
+#sidebar .chat-item:hover .acts { display: none !important; }
+#sidebar .chat-item.actions-open .acts {
+  display: flex !important;
+  flex: 1 0 100%;
+  justify-content: flex-end;
+  order: 10;
+  padding-top: 3px;
 }

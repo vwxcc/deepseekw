@@ -5961,6 +5961,18 @@
     const shell = $('#add-to-chat-shell');
     const allowed = ['model', 'response-detail', 'memory', 'connectors', 'library', 'project', 'share', 'agent-detail'];
     const next = allowed.includes(view) ? view : 'main';
+    const previous = addChatActiveView;
+    const sheet = shell ? $('.add-to-chat-sheet', shell) : null;
+    if (sheet && shell?.classList.contains('plus-fixed')) {
+      if (next === 'main') {
+        sheet.style.removeProperty('--plus-main-sheet-height');
+      } else if (previous === 'main') {
+        // Capture the visible main + menu before hiding it, so short subviews
+        // keep the same outer height and only their contents scroll.
+        const mainHeight = Math.round(sheet.getBoundingClientRect().height);
+        if (mainHeight > 0) sheet.style.setProperty('--plus-main-sheet-height', mainHeight + 'px');
+      }
+    }
     addChatActiveView = next;
     const main = $('#add-chat-main-view');
     const model = $('#add-chat-model-view');

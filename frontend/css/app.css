@@ -6979,3 +6979,14 @@ input[type="range"]:hover::-webkit-slider-thumb {
   background: rgba(194, 200, 208, .86);
   color: #3f4650;
 }
+
+
+/* Small, quiet reliability note at the end of every completed AI CH answer. */
+.answer-disclaimer {
+  margin: 10px 0 2px;
+  color: var(--text-muted, #858b95);
+  font-size: 11px;
+  line-height: 1.45;
+  font-weight: 400;
+  opacity: .82;
+}

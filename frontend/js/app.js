@@ -8227,9 +8227,12 @@
     }));
     $$('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
       const f = state.files.find(x => x.id === b.dataset.attach);
-      if (f && !state.pendingAttachments.some(x => x && x.id === f.id)) {
-        state.pendingAttachments.push(f);
-        renderAttachments();
+      if (f) {
+        if (!state.pendingAttachments.some(x => x && x.id === f.id)) {
+          state.pendingAttachments.push(f);
+          renderAttachments();
+        }
+        window.prefetchManager?.startPrefetch(f.id);
       }
       toggleFiles(false);
     }));
@@ -10243,8 +10246,9 @@
     });
     $$('[data-att]').forEach(b => b.addEventListener('click', () => {
       const f = state.files.find(x => x.id === b.dataset.att);
-      if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
+      if (f && !state.pendingAttachments.some(x => x && x.id === f.id)) {
         state.pendingAttachments.push(f);
+        window.prefetchManager?.startPrefetch(f.id);
         renderAttachments();
         toast('Прикреплено: ' + f.original_name);
       }

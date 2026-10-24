@@ -46,7 +46,7 @@ async def _is_enabled(db: AsyncSession) -> bool:
 def cancel_all_prefetches() -> None:
     """Prevent in-flight results from being used after the admin disables prefetch."""
     for job in _store.values():
-        if job.get("status") in {"PENDING", "PROCESSING"}:
+        if job.get("status") in {"PENDING", "PROCESSING", "READY"}:
             job["status"] = "CANCELLED"
 
 

@@ -896,14 +896,14 @@ async def send_message(
         latest = history_messages[-1]
         existing = latest.get("content", "")
         if isinstance(existing, list):
-            existing = "\\n".join(
+            existing = "\n".join(
                 str(part.get("text") or "")
                 for part in existing
                 if isinstance(part, dict) and part.get("type") in {"text", "input_text"}
             )
         latest["content"] = (
             str(existing or "")
-            + "\\n\\n[Контекст файлов, заранее подготовленный для ускорения обработки]\\n"
+            + "\n\n[Контекст файлов, заранее подготовленный для ускорения обработки]\n"
             + prefetched_context
         )
 

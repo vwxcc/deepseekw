@@ -4,7 +4,7 @@
 
   // ---------- utils ----------
   const $ = (sel, root = document) => root.querySelector(sel);
-  const $ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   // Process files in the background while the user composes a prompt.
   // On Send, give ALL attachments one shared 1000 ms readiness budget.

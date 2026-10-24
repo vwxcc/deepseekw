@@ -6062,10 +6062,10 @@ input[type="range"]:focus-visible {
   }
 }
 
-/* Keep the + menu itself fixed while its options scroll inside the available space. */
-#add-chat-main-view.add-chat-sheet-content {
+/* Keep the + sheet fixed while the main option list scrolls inside it. */
+.add-to-chat-sheet > #add-chat-main-view.add-chat-sheet-content {
   flex: 1 1 0%;
-  height: 0;
+  height: auto;
   min-height: 0;
   max-height: 100%;
   min-width: 0;
@@ -6076,4 +6076,30 @@ input[type="range"]:focus-visible {
   scroll-behavior: smooth;
   scrollbar-gutter: stable;
   box-sizing: border-box;
+}
+
+/* In-chat tables use the same text size as the surrounding answer. Keep the
+   download control in its own row so it cannot cover the table header. */
+#messages .msg .content.md .table-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+#messages .msg .content.md .table-wrap > .tbl-dl {
+  position: sticky;
+  top: auto;
+  right: 0;
+  align-self: flex-end;
+  flex: 0 0 27px;
+  margin: 0 0 4px;
+}
+#messages .msg .content.md .table-wrap > table {
+  flex: 0 0 auto;
+  font-size: 1em !important;
+  line-height: 1.45;
+}
+#messages .msg .content.md .table-wrap > table th,
+#messages .msg .content.md .table-wrap > table td {
+  vertical-align: top;
+  line-height: inherit;
 }

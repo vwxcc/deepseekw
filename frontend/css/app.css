@@ -7417,3 +7417,141 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   ) !important;
   min-height: 0 !important;
 }
+
+
+/* Compact Deep Research status, expandable agent map, and floating collapse control. */
+.deep-research-flow {
+  gap: 9px;
+  border-radius: 16px;
+  padding: 10px 12px;
+}
+.deep-research-flow-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.deep-research-flow-title {
+  flex: 0 0 auto;
+  font-weight: 650;
+}
+.deep-research-flow-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+.deep-research-status-dot {
+  display: inline-block;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8a8a8a;
+}
+.deep-research-status-dot.is-running {
+  background: #858585;
+  box-shadow: 0 0 0 3px rgba(125, 125, 125, .11);
+  animation: deepResearchStatusPulse 1.6s ease-in-out infinite;
+}
+.deep-research-status-dot.is-done {
+  background: #6e9475;
+  box-shadow: 0 0 0 3px rgba(110, 148, 117, .12);
+}
+.deep-research-status-dot.is-error {
+  background: #bd625d;
+  box-shadow: 0 0 0 3px rgba(189, 98, 93, .12);
+}
+.deep-research-status-dot.is-stopped {
+  background: #b28b4c;
+  box-shadow: 0 0 0 3px rgba(178, 139, 76, .12);
+}
+.deep-research-flow-progress {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.deep-research-expand-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 6px 11px;
+  border: 1px solid #dedede;
+  border-radius: 999px;
+  background: #f1f1f1;
+  color: #3e3e3e;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+.deep-research-expand-button:hover {
+  background: #e8e8e8;
+  border-color: #d0d0d0;
+}
+.deep-research-expand-button:active { transform: scale(.97); }
+.deep-research-expanded-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.deep-research-expanded-content.hidden { display: none !important; }
+.deep-research-flow.is-collapsed { gap: 0; }
+.deep-research-flow.is-collapsed .deep-research-flow-head { row-gap: 7px; }
+.deep-research-collapse-floating {
+  position: absolute;
+  z-index: 35;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  min-height: 34px;
+  padding: 7px 17px;
+  border: 1px solid rgba(128, 128, 128, .22);
+  border-radius: 999px;
+  background: rgba(250, 250, 250, .78);
+  color: #424242;
+  box-shadow: 0 4px 18px rgba(30, 30, 30, .08), inset 0 1px 0 rgba(255, 255, 255, .8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.15;
+  opacity: .88;
+  cursor: pointer;
+  transform: translateX(-50%);
+  transition: opacity .18s ease, background .18s ease, transform .18s ease;
+}
+.deep-research-collapse-floating:hover {
+  opacity: 1;
+  background: rgba(245, 245, 245, .94);
+}
+.deep-research-collapse-floating:active { transform: translateX(-50%) scale(.97); }
+.deep-research-collapse-floating.hidden { display: none !important; }
+#composer { position: relative; }
+@keyframes deepResearchStatusPulse {
+  0%, 100% { opacity: .58; }
+  50% { opacity: 1; }
+}
+@media (max-width: 620px) {
+  .deep-research-flow { padding: 9px 10px; }
+  .deep-research-flow-head { gap: 7px; }
+  .deep-research-flow-title { font-size: 12.5px; }
+  .deep-research-flow-status, .deep-research-flow-progress { font-size: 11px; }
+  .deep-research-expand-button { padding: 6px 9px; font-size: 11px; }
+  .deep-research-collapse-floating { min-height: 32px; bottom: calc(100% + 6px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deep-research-status-dot.is-running { animation: none; }
+  .deep-research-expand-button, .deep-research-collapse-floating { transition: none; }
+}

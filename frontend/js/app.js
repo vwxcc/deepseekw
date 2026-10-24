@@ -4176,7 +4176,6 @@
         '</span>' + (edge.label ? '<small>' + escapeHtml(edge.label) + '</small>' : '') + '</div>';
     }).filter(Boolean).join('');
 
-    const activeStates = ['queued', 'waiting', 'working', 'searching'];
     const finishedStates = ['done', 'failed', 'cancelled'];
     const active = agents.some(agent => !finishedStates.includes(String(agent.status || '')));
     const failed = agents.some(agent => String(agent.status || '') === 'failed');

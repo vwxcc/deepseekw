@@ -42,22 +42,29 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
 
-    # Legacy accounts created before the IP guard get their first observed IP
-    # recorded the next time their existing session is used. Never overwrite it.
-    if not user.signup_ip_hash:
-        raw_ip = str(request.headers.get("x-forwarded-for", "").split(",", 1)[0] or "").strip()
-        if not raw_ip and request.client is not None:
-            raw_ip = str(request.client.host or "").strip()
-        try:
-            canonical_ip = ipaddress.ip_address(raw_ip).compressed
-        except ValueError:
-            canonical_ip = ""
-        secret = str(settings.session_secret or "").encode("utf-8")
-        if canonical_ip and secret:
-            user.signup_ip_hash = hmac.new(
-                secret, canonical_ip.encode("utf-8"), hashlib.sha256
-            ).hexdigest()
-            await db.commit()
+    # Refresh the IP hash on an active session, and backfill legacy account hashes
+    # once. This lets the guard count accounts already signed in on this IP.
+    raw_ip = str(request.headers.get("x-forwarded-for", "").split(",", 1)[0] or "").strip()
+    if not raw_ip and request.client is not None:
+        raw_ip = str(request.client.host or "").strip()
+    try:
+        canonical_ip = ipaddress.ip_address(raw_ip).compressed
+    except ValueError:
+        canonical_ip = ""
+    secret = str(settings.session_secret or "").encode("utf-8")
+    changed = False
+    if canonical_ip and secret:
+        current_ip_hash = hmac.new(
+            secret, canonical_ip.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        if sess.ip_hash != current_ip_hash:
+            sess.ip_hash = current_ip_hash
+            changed = True
+        if not user.signup_ip_hash:
+            user.signup_ip_hash = current_ip_hash
+            changed = True
+    if changed:
+        await db.commit()
 
     request.state.session_token = token
     return user

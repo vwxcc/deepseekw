@@ -1047,8 +1047,23 @@
     const flushPara = () => { if (para.length) { out.push('<p>' + inlineFmt(para.join(' ')) + '</p>'); para = []; } };
     const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
     const closeQuote = () => { if (inQuote) { out.push('</blockquote>'); inQuote = false; } };
-    const isTableSep = (s) => s.includes('|') && /^[\s:|-]+$/.test(s) && s.includes('-');
-    const splitRow = (r) => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+    const splitRow = (r) => r.trim().replace(/^\\|/, '').replace(/\\|$/, '').split('|').map(c => c.trim());
+    // Be tolerant of a blank line between a Markdown table header and its separator.
+    // Models occasionally emit that spacing even though the header is still a table row.
+    const isTableSep = (s) => {
+      if (!String(s || '').includes('|')) return false;
+      const cells = splitRow(s);
+      return cells.length > 1 && cells.every(cell => /^:?-{1,}:?$/.test(cell.replace(/\\s+/g, '')));
+    };
+    const findTableSep = (start) => {
+      let index = start;
+      let blankLines = 0;
+      while (index < lines.length && !lines[index].trim() && blankLines < 2) {
+        index++;
+        blankLines++;
+      }
+      return index < lines.length && isTableSep(lines[index]) ? index : -1;
+    };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -1064,13 +1079,15 @@
       if (!line.trim()) { flushPara(); closeList(); closeQuote(); continue; }
       let m;
 
-      // tables: header row followed by a |---| separator row
-      if (line.includes('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      // Tables: accept the usual immediate separator and one or two accidental blank lines.
+      // Keep the first row as <thead> so spacing quirks cannot drop the table header.
+      const tableSeparatorIndex = line.includes('|') ? findTableSep(i + 1) : -1;
+      if (tableSeparatorIndex >= 0) {
         flushPara(); closeList(); closeQuote();
         const head = splitRow(line);
         const body = [];
-        let j = i + 2;
-        while (j < lines.length && lines[j].includes('|') && lines[j].trim()) {
+        let j = tableSeparatorIndex + 1;
+        while (j < lines.length && lines[j].trim() && lines[j].includes('|') && !isTableSep(lines[j])) {
           body.push(splitRow(lines[j]));
           j++;
         }

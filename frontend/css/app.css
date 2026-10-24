@@ -6135,3 +6135,107 @@ input[type="range"]:focus-visible {
   vertical-align: top;
   line-height: inherit;
 }
+
+
+/* Final reliability fixes: consistent Markdown table typography and a real + sheet scroller. */
+/* Every table uses one type size, including strong/code/link text inside cells. */
+#messages .msg .content.md .table-wrap > table,
+#messages .msg .content.md .table-wrap > table th,
+#messages .msg .content.md .table-wrap > table td,
+#messages .msg .content.md .table-wrap > table th *,
+#messages .msg .content.md .table-wrap > table td * {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+#messages .msg .content.md .table-wrap > table {
+  display: table !important;
+  width: max-content !important;
+  min-width: 100% !important;
+  max-width: none !important;
+  table-layout: auto !important;
+  border-collapse: collapse !important;
+}
+#messages .msg .content.md .table-wrap > table thead {
+  display: table-header-group !important;
+}
+#messages .msg .content.md .table-wrap > table thead > tr {
+  display: table-row !important;
+  visibility: visible !important;
+}
+#messages .msg .content.md .table-wrap > table th,
+#messages .msg .content.md .table-wrap > table td {
+  min-width: 74px !important;
+  max-width: 360px !important;
+  padding: 8px 10px !important;
+  vertical-align: top !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  visibility: visible !important;
+}
+#messages .msg .content.md .table-wrap > .tbl-dl {
+  position: relative !important;
+  inset: auto !important;
+  display: grid !important;
+  flex: 0 0 30px !important;
+  width: 30px !important;
+  height: 30px !important;
+  margin: 0 0 6px auto !important;
+  opacity: 1 !important;
+}
+
+/* Use a flex column with one explicitly sized scroll pane.
+   This avoids the mobile Safari grid/min-height issue and keeps the header fixed. */
+#add-to-chat-shell .add-to-chat-sheet {
+  display: flex !important;
+  flex-direction: column !important;
+  grid-template-rows: none !important;
+  align-content: stretch !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+}
+#add-to-chat-shell .add-chat-handle-wrap,
+#add-to-chat-shell .add-chat-head {
+  flex: 0 0 auto !important;
+}
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content:not(.hidden),
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-subview:not(.hidden) {
+  display: block !important;
+  flex: 1 1 0% !important;
+  width: 100% !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scroll-behavior: smooth;
+  scrollbar-width: auto !important;
+  scrollbar-color: color-mix(in srgb, var(--fg-muted) 68%, var(--bg-panel)) var(--bg-side) !important;
+  scrollbar-gutter: stable;
+  box-sizing: border-box;
+}
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content:not(.hidden) {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch;
+}
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content::-webkit-scrollbar,
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-subview::-webkit-scrollbar {
+  width: 9px;
+}
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content::-webkit-scrollbar-track,
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-subview::-webkit-scrollbar-track {
+  background: var(--bg-side);
+  border-radius: 999px;
+  margin: 4px 1px;
+}
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content::-webkit-scrollbar-thumb,
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-subview::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg-muted) 68%, var(--bg-panel));
+  border: 2px solid var(--bg-panel);
+  border-radius: 999px;
+  background-clip: padding-box;
+}

@@ -1053,7 +1053,7 @@
     const isTableSep = (s) => {
       if (!String(s || '').includes('|')) return false;
       const cells = splitRow(s);
-      return cells.length > 1 && cells.every(cell => /^:?-{1,}:?$/.test(cell.replace(/\s+/g, '')));
+      return cells.length > 0 && cells.every(cell => /^:?-{1,}:?$/.test(cell.replace(/\s+/g, '')));
     };
     const findTableSep = (start) => {
       let index = start;

@@ -1134,7 +1134,17 @@ class AIRouter:
             except Exception as e:  # pragma: no cover - defensive
                 log.exception("AI worker error: %s", e)
                 if job.kind == "message":
-                    await job.output.put(("error", f"{type(e).__name__}: {e}"))
+                    detail = f"{type(e).__name__}: {e}"
+                    # Never leave a queued/processing DB row behind after an unexpected
+                    # worker failure: it would block every later message for this user.
+                    try:
+                        await self._finish(job.message_id, MessageStatus.failed, error=detail)
+                    except Exception:
+                        log.exception(
+                            "Could not persist failed state for AI message %s",
+                            job.message_id,
+                        )
+                    await job.output.put(("error", detail))
             finally:
                 if job.kind == "message":
                     _log_job_timing(job)
@@ -1948,10 +1958,8 @@ class AIRouter:
             for dependency in agent["depends_on"]:
                 if not any(edge["from"] == dependency and edge["to"] == agent["id"] for edge in edges):
                     edges.append({"from": dependency, "to": agent["id"], "label": "Передача результата"})
-        if not edges and len(agents) > 1:
-            for previous, current in zip(agents, agents[1:]):
-                current["depends_on"] = list(dict.fromkeys(current["depends_on"] + [previous["id"]]))
-                edges.append({"from": previous["id"], "to": current["id"], "label": "Передача результата"})
+        # Keep independent research tasks independent: only planner-specified dependencies
+        # constrain ordering. With no edges, all agents can work concurrently.
 
         flow = {"kind": "deep_research_flow", "edges": edges}
         agent_runs = [

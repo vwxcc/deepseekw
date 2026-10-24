@@ -9541,7 +9541,7 @@
         button.addEventListener('click', () => saveAccountAccentColor(button.dataset.accentPreset));
       });
       const customAccent = $('#profile-accent-custom', profileRoot);
-      if (customAccent) customAccent.addEventListener('input', () => saveAccountAccentColor(customAccent.value));
+      if (customAccent) customAccent.addEventListener('change', () => saveAccountAccentColor(customAccent.value));
       on('#set-memory', () => { closeModal(); openMemory(); });
       on('#set-links', () => { closeModal(); openLinks(); });
       on('#set-files', () => { closeModal(); toggleFiles(true); });

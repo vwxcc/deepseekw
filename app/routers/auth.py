@@ -300,11 +300,11 @@ async def register(
     if not email or "@" not in email:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid email")
 
+    await _begin_identity_write_lock(db)
     result = await db.execute(select(User).where(User.email == email))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
 
-    await _begin_identity_write_lock(db)
     ip_hash = await _assert_ip_identity_capacity(request, db, replacing_guest=True)
     user = User(
         email=email,

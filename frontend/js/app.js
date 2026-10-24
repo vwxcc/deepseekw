@@ -471,24 +471,24 @@
         push('x', s.x || 0); push('y', s.y || 0);
         push('width', s.w || 0); push('height', s.h || 0);
         if (s.rx) push('rx', s.rx);
-        if (s.fill == null && s.stroke == null) push('fill', '#4b4a46');
+        if (s.fill == null && s.stroke == null) push('fill', '#4a4a4a');
         common();
         return '<rect ' + a.join(' ') + '/>';
       case 'circle':
         push('cx', s.cx || 0); push('cy', s.cy || 0); push('r', s.r || 0);
-        if (s.fill == null) push('fill', '#4b4a46');
+        if (s.fill == null) push('fill', '#4a4a4a');
         common();
         return '<circle ' + a.join(' ') + '/>';
       case 'ellipse':
         push('cx', s.cx || 0); push('cy', s.cy || 0);
         push('rx', s.rx || 0); push('ry', s.ry || 0);
-        if (s.fill == null) push('fill', '#4b4a46');
+        if (s.fill == null) push('fill', '#4a4a4a');
         common();
         return '<ellipse ' + a.join(' ') + '/>';
       case 'line':
         push('x1', s.x1 || 0); push('y1', s.y1 || 0);
         push('x2', s.x2 || 0); push('y2', s.y2 || 0);
-        push('stroke', s.stroke || '#1f1e1d');
+        push('stroke', s.stroke || '#1e1e1e');
         push('stroke-width', s.width || 2);
         if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
         push('opacity', s.opacity);
@@ -505,7 +505,7 @@
         push('d', 'M ' + x0.toFixed(2) + ' ' + y0.toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' +
           large + ' 1 ' + x1.toFixed(2) + ' ' + y1.toFixed(2));
         push('fill', s.fill || 'none');
-        push('stroke', s.stroke || '#4b4a46');
+        push('stroke', s.stroke || '#4a4a4a');
         push('stroke-width', s.width || 2);
         push('opacity', s.opacity);
         if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
@@ -522,7 +522,7 @@
           out.push([(cx + rad * Math.cos(ang)).toFixed(2), (cy + rad * Math.sin(ang)).toFixed(2)]);
         }
         push('points', out.map(p => p[0] + ',' + p[1]).join(' '));
-        if (s.fill == null) push('fill', '#f2c14e');
+        if (s.fill == null) push('fill', '#c3c3c3');
         common();
         return '<polygon ' + a.join(' ') + '/>';
       }
@@ -530,7 +530,7 @@
         // blueprint dimension line: extension ticks + arrows + centred label
         const x1 = Number(s.x1) || 0, y1 = Number(s.y1) || 0;
         const x2 = Number(s.x2) || 0, y2 = Number(s.y2) || 0;
-        const stroke = s.stroke || '#1f1e1d';
+        const stroke = s.stroke || '#1e1e1e';
         const w = s.width || 1.4;
         const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
         const tick = 6;
@@ -551,10 +551,10 @@
       case 'polygon': {
         push('points', pts(s.points));
         if (String(s.type) === 'polygon') {
-          if (s.fill == null) push('fill', '#4b4a46');
+          if (s.fill == null) push('fill', '#4a4a4a');
         } else {
           push('fill', 'none');
-          push('stroke', s.stroke || '#4b4a46');
+          push('stroke', s.stroke || '#4a4a4a');
           push('stroke-width', s.width || 2);
         }
         common();
@@ -563,7 +563,7 @@
       case 'path':
         push('d', s.d || '');
         push('fill', s.fill || 'none');
-        push('stroke', s.stroke || '#4b4a46');
+        push('stroke', s.stroke || '#4a4a4a');
         push('stroke-width', s.width || 2);
         push('opacity', s.opacity);
         if (s.dash) push('stroke-dasharray', typeof s.dash === 'number' ? (s.dash + ' ' + s.dash) : s.dash);
@@ -571,7 +571,7 @@
       case 'text':
         push('x', s.x || 0); push('y', s.y || 0);
         push('font-size', s.size || 16);
-        push('fill', s.fill || '#1f1e1d');
+        push('fill', s.fill || '#1e1e1e');
         push('opacity', s.opacity);
         if (s.anchor) push('text-anchor', s.anchor);
         if (s.weight) push('font-weight', s.weight);
@@ -585,7 +585,7 @@
   function arrowSvg(s) {
     const x1 = Number(s.x1) || 0, y1 = Number(s.y1) || 0;
     let x2 = Number(s.x2) || 0, y2 = Number(s.y2) || 0;
-    const stroke = s.stroke || '#2f6fb0';
+    const stroke = s.stroke || '#666666';
     const w = Number(s.width) || 2;
     const head = Math.max(6, w * 3.2);
     const ang = Math.atan2(y2 - y1, x2 - x1);
@@ -639,10 +639,10 @@
         if (item.anchor == null && item.textAnchor != null) item.anchor = item.textAnchor;
         if (item.weight == null && item.fontWeight != null) item.weight = item.fontWeight;
       }
-      if (item.stroke == null) item.stroke = '#77756e';
+      if (item.stroke == null) item.stroke = '#757575';
       if (item.width == null) item.width = 1.5;
       if (item.type === 'text') {
-        if (item.fill == null) item.fill = '#66645d';
+        if (item.fill == null) item.fill = '#646464';
       } else if (item.fill == null) {
         item.fill = 'none';
       }
@@ -945,7 +945,7 @@
       const name = String(file.name || file.original_name || 'Созданный файл').slice(0, 180);
       const url = '/api/files/' + encodeURIComponent(file.file_id) + '/download';
       const mime = String(file.mime_type || file.mime || '').toLowerCase();
-      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml' || file.kind === 'svg';
+      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml' || f.kind === 'svg';
       const image = isSvg || file.kind === 'image' || mime.indexOf('image/') === 0;
       const previewUrl = isSvg
         ? url + '?inline=1'
@@ -2090,25 +2090,25 @@
       "    with PdfPages(filename) as pdf:",
       "        pages=[blocks[i:i+7] for i in range(0,len(blocks),7)] or [[]]",
       "        for pi,page in enumerate(pages):",
-      "            fig=plt.figure(figsize=(8.27,11.69)); fig.patch.set_facecolor('#FAF9F5'); fig.text(.09,.94,title,fontsize=22,fontweight='bold',color='#304F70',wrap=True); y=.87",
-      "            if plan.get('subtitle') and pi==0: fig.text(.09,y,str(plan['subtitle']),fontsize=11,color='#66645D',wrap=True); y-=.05",
+      "            fig=plt.figure(figsize=(8.27,11.69)); fig.patch.set_facecolor('#f9f9f9'); fig.text(.09,.94,title,fontsize=22,fontweight='bold',color='#4b4b4b',wrap=True); y=.87",
+      "            if plan.get('subtitle') and pi==0: fig.text(.09,y,str(plan['subtitle']),fontsize=11,color='#646464',wrap=True); y-=.05",
       "            for i,b in enumerate(page):",
-      "                fig.text(.09,y,heading(b,i),fontsize=14,fontweight='bold',color='#304F70',wrap=True); y-=.035; txt=textwrap.fill(body(b),width=88)[:3500]; fig.text(.1,y,txt,fontsize=10,color='#282824',va='top',linespacing=1.4); y-=min(.24,.025*(txt.count('\\n')+1)+.055)",
+      "                fig.text(.09,y,heading(b,i),fontsize=14,fontweight='bold',color='#4b4b4b',wrap=True); y-=.035; txt=textwrap.fill(body(b),width=88)[:3500]; fig.text(.1,y,txt,fontsize=10,color='#282828',va='top',linespacing=1.4); y-=min(.24,.025*(txt.count('\\n')+1)+.055)",
       "            pdf.savefig(fig,bbox_inches='tight'); plt.close(fig)",
       "elif fmt == 'svg':",
-      "    esc=html.escape; width=1200; height=max(900,240+len(blocks[:16])*150); parts=[f'<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#FAF9F5\"/><rect width=\"12\" height=\"100%\" fill=\"#426992\"/><text x=\"58\" y=\"90\" font-family=\"Arial,sans-serif\" font-size=\"38\" font-weight=\"700\" fill=\"#262522\">{esc(title)}</text>']",
+      "    esc=html.escape; width=1200; height=max(900,240+len(blocks[:16])*150); parts=[f'<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#f9f9f9\"/><rect width=\"12\" height=\"100%\" fill=\"#646464\"/><text x=\"58\" y=\"90\" font-family=\"Arial,sans-serif\" font-size=\"38\" font-weight=\"700\" fill=\"#252525\">{esc(title)}</text>']",
       "    y=155",
       "    for i,b in enumerate(blocks[:16]):",
-      "        parts.append(f'<rect x=\"58\" y=\"{y}\" width=\"1080\" height=\"118\" rx=\"15\" fill=\"#FFFFFF\" stroke=\"#D9D6CE\"/><text x=\"82\" y=\"{y+36}\" font-family=\"Arial,sans-serif\" font-size=\"22\" font-weight=\"700\" fill=\"#426992\">{esc(heading(b,i))}</text><text x=\"82\" y=\"{y+72}\" font-family=\"Arial,sans-serif\" font-size=\"17\" fill=\"#393832\">{esc(textwrap.shorten(body(b),width=115,placeholder=\"…\"))}</text>'); y+=145",
+      "        parts.append(f'<rect x=\"58\" y=\"{y}\" width=\"1080\" height=\"118\" rx=\"15\" fill=\"#ffffff\" stroke=\"#d6d6d6\"/><text x=\"82\" y=\"{y+36}\" font-family=\"Arial,sans-serif\" font-size=\"22\" font-weight=\"700\" fill=\"#646464\">{esc(heading(b,i))}</text><text x=\"82\" y=\"{y+72}\" font-family=\"Arial,sans-serif\" font-size=\"17\" fill=\"#383838\">{esc(textwrap.shorten(body(b),width=115,placeholder=\"…\"))}</text>'); y+=145",
       "    parts.append('</svg>'); Path(filename).write_text('\\n'.join(parts),encoding='utf-8')",
       "elif fmt == 'png':",
       "    from PIL import Image, ImageDraw, ImageFont",
-      "    w=1600; h=min(4400,max(900,300+250*max(1,len(blocks)))); im=Image.new('RGB',(w,h),'#FAF9F5'); d=ImageDraw.Draw(im)",
+      "    w=1600; h=min(4400,max(900,300+250*max(1,len(blocks)))); im=Image.new('RGB',(w,h),'#f9f9f9'); d=ImageDraw.Draw(im)",
       "    try: title_font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',42); body_font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',23)",
       "    except Exception: title_font=ImageFont.load_default(); body_font=ImageFont.load_default()",
-      "    d.rectangle((0,0,w,14),fill='#426992'); d.text((70,60),title,font=title_font,fill='#262522'); y=170",
+      "    d.rectangle((0,0,w,14),fill='#646464'); d.text((70,60),title,font=title_font,fill='#252525'); y=170",
       "    for i,b in enumerate(blocks[:16]):",
-      "        d.rounded_rectangle((65,y,w-65,y+205),radius=18,fill='#FFFFFF',outline='#D9D6CE',width=2); d.text((90,y+25),heading(b,i),font=body_font,fill='#426992'); d.text((90,y+85),textwrap.shorten(body(b),width=125,placeholder='…'),font=body_font,fill='#393832'); y+=235",
+      "        d.rounded_rectangle((65,y,w-65,y+205),radius=18,fill='#ffffff',outline='#d6d6d6',width=2); d.text((90,y+25),heading(b,i),font=body_font,fill='#646464'); d.text((90,y+85),textwrap.shorten(body(b),width=125,placeholder='…'),font=body_font,fill='#383838'); y+=235",
       "    im.save(filename,format='PNG',optimize=True)",
       "elif fmt == 'csv':",
       "    sheets=plan.get('sheets') or [{'head':plan.get('head') or [],'rows':plan.get('rows') or []}]",
@@ -2437,8 +2437,8 @@
     popup.document.open();
     popup.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>Полный поток · AI CH</title><style>' +
-      ':root{color-scheme:light;--bg:#ffffff;--fg:#34332f;--muted:#777777;--line:#e5e5e5}' +
-      '@media not all{:root{--bg:#20201e;--fg:#ecebe5;--muted:#a7a69f;--line:#41413d}}' +
+      ':root{color-scheme:light;--bg:#ffffff;--fg:#333333;--muted:#777777;--line:#e5e5e5}' +
+      '@media not all{:root{--bg:#202020;--fg:#ebebeb;--muted:#a6a6a6;--line:#414141}}' +
       '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif}' +
       'header{position:sticky;top:0;background:var(--bg);padding:18px 22px 12px;border-bottom:1px solid var(--line)}' +
       'h1{font-size:18px;font-weight:600;margin:0 0 3px}p{margin:0;color:var(--muted);font-size:12px}' +
@@ -3746,13 +3746,13 @@
     const base64 = btoa(unescape(encodeURIComponent(code)));
     const runnerHook = "<script>(function(){function send(message){try{parent.postMessage({type:\"device-code-error\",message:String(message).slice(0,50000)},\"*\")}catch(_){}}window.addEventListener(\"error\",function(e){send((e.message||\"JavaScript error\")+(e.filename?\" (\"+e.filename+\":\"+e.lineno+\")\":\"\"))});window.addEventListener(\"unhandledrejection\",function(e){send(e.reason&&(e.reason.message||e.reason.stack)||e.reason||\"Unhandled promise rejection\")});})();</script>";
     const pageStart = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272722;background:#faf9f5}' +
-      'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{display:block;box-sizing:border-box;padding:12px;background:#f0eee6;border:1px solid #e4e0d5;border-radius:10px;min-height:120px;max-height:52vh;overflow:auto;overscroll-behavior:contain}' +
-      '.note{color:#6f6f67}.demo-board{max-width:680px;margin:18px auto;padding:18px;border:1px solid #e4e2db;border-radius:16px}' +
-      '.demo-header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.demo-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#e9e7df;font-weight:800}' +
-      '.demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.demo-card{padding:16px;border:1px solid #e5e3dd;border-radius:12px;background:#faf9f6}' +
-      '.demo-button{border:0;border-radius:10px;padding:10px 15px;background:#34332e;color:#fff;font:inherit}' +
-      '.demo-pill{display:inline-block;border:1px solid #dedbd2;border-radius:999px;padding:4px 9px;font-size:12px}' +
+      '<style>body{font:14px/1.5 system-ui,sans-serif;padding:16px;margin:0;color:#272727;background:#f9f9f9}' +
+      'pre{white-space:pre-wrap;overflow-wrap:anywhere}#output{display:block;box-sizing:border-box;padding:12px;background:#eeeeee;border:1px solid #e0e0e0;border-radius:10px;min-height:120px;max-height:52vh;overflow:auto;overscroll-behavior:contain}' +
+      '.note{color:#6e6e6e}.demo-board{max-width:680px;margin:18px auto;padding:18px;border:1px solid #e2e2e2;border-radius:16px}' +
+      '.demo-header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.demo-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#e7e7e7;font-weight:800}' +
+      '.demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.demo-card{padding:16px;border:1px solid #e3e3e3;border-radius:12px;background:#f9f9f9}' +
+      '.demo-button{border:0;border-radius:10px;padding:10px 15px;background:#333333;color:#fff;font:inherit}' +
+      '.demo-pill{display:inline-block;border:1px solid #dbdbdb;border-radius:999px;padding:4px 9px;font-size:12px}' +
       '</style>' + runnerHook + '</head><body>';
     const output = '<pre id="output" aria-live="polite">Запуск…</pre>';
     let doc = '';
@@ -5473,6 +5473,14 @@
     // Validate pending attachments before reading IDs; a stale/null item must not abort sending.
     const pending = Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [];
     state.pendingAttachments = pending;
+    if (pending.some(file => file && file.localUploadId && file.uploadStatus === 'uploading')) {
+      toast('Подождите, пока прикреплённые файлы загрузятся.', 'info');
+      return;
+    }
+    if (pending.some(file => file && file.localUploadId && file.uploadStatus === 'error')) {
+      toast('Не все файлы загружены. Нажмите значок повтора рядом с файлом.', 'error');
+      return;
+    }
     const hasInvalidAttachment = pending.some(f =>
       !f || typeof f !== 'object' || typeof f.id !== 'string' || !f.id
     );
@@ -5603,35 +5611,75 @@
     updateScrollDownButton();
   }
 
+  async function retryAttachmentUpload(localUploadId) {
+    const id = String(localUploadId || '');
+    const item = state.pendingAttachments.find(file =>
+      file && String(file.localUploadId || '') === id && file.uploadStatus === 'error' &&
+      file.uploadFile && typeof file.uploadFile.name === 'string'
+    );
+    if (!item) return;
+    item.uploadStatus = 'uploading';
+    item.uploadError = '';
+    renderAttachments();
+    await uploadFiles([item.uploadFile], { retryLocalUploadId: id });
+  }
+
   function renderAttachments() {
     const box = $('#attach-list');
     if (!box) return;
     state.pendingAttachments = Array.isArray(state.pendingAttachments)
-      ? state.pendingAttachments.filter(f => f && typeof f === 'object' && typeof f.id === 'string' && f.id)
+      ? state.pendingAttachments.filter(file => file && typeof file === 'object' && (
+          (typeof file.id === 'string' && file.id) ||
+          (typeof file.localUploadId === 'string' && file.localUploadId &&
+            file.uploadFile && typeof file.uploadFile.name === 'string')
+        ))
       : [];
     box.innerHTML = state.pendingAttachments.map(f => {
-      const id = String(f.id);
-      const name = String(f.original_name || f.name || 'Файл').slice(0, 180);
-      const mime = String(f.mime_type || f.mime || '').toLowerCase();
-      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml';
+      const isLocalUpload = !f.id && !!f.localUploadId;
+      const id = String(f.id || f.localUploadId || '');
+      const name = String(f.original_name || f.name || (f.uploadFile && f.uploadFile.name) || 'Файл').slice(0, 180);
+      const uploadState = isLocalUpload ? String(f.uploadStatus || '') : '';
+      const isUploading = uploadState === 'uploading';
+      const isError = uploadState === 'error';
+      const mime = String(f.mime_type || f.mime || (f.uploadFile && f.uploadFile.type) || '').toLowerCase();
+      const isSvg = /\\.svg$/i.test(name) || mime === 'image/svg+xml';
       const isImage = isSvg || f.kind === 'image' || mime.startsWith('image/') ||
         /\.(png|jpe?g|gif|webp|avif|bmp|tiff|ico)$/i.test(name);
-      const previewUrl = isSvg
-        ? '/api/files/' + encodeURIComponent(id) + '/download?inline=1'
-        : '/api/files/' + encodeURIComponent(id) + '/thumbnail';
-      const visual = isImage
-        ? '<img class="attach-thumb" src="' + previewUrl +
-          '" alt="" loading="lazy" decoding="async" />'
+      const previewUrl = f.id
+        ? (isSvg
+          ? '/api/files/' + encodeURIComponent(String(f.id)) + '/download?inline=1'
+          : '/api/files/' + encodeURIComponent(String(f.id)) + '/thumbnail')
+        : '';
+      const visual = isImage && previewUrl
+        ? '<img class="attach-thumb" src="' + previewUrl + '" alt="" loading="lazy" decoding="async" />'
         : icon('file');
-      return '<span class="attach-chip' + (isImage ? ' has-thumb' : '') + '" title="' +
-        escapeHtml(name) + '">' + visual + '<span class="attach-name">' + escapeHtml(name) +
-        '</span><button type="button" data-rm="' + escapeHtml(id) +
+      const classes = 'attach-chip' + (isImage ? ' has-thumb' : '') +
+        (isUploading ? ' is-uploading' : '') + (isError ? ' is-error' : '');
+      const tooltip = isError && f.uploadError ? name + ' — ' + f.uploadError : name;
+      const status = isUploading
+        ? '<span class="attach-status-spinner" role="status" aria-label="Загрузка файла" title="Загрузка файла"></span>'
+        : (isError
+          ? '<button type="button" class="attach-status-retry" data-retry-attachment="' +
+            escapeHtml(String(f.localUploadId)) + '" title="Повторить загрузку" aria-label="Повторить загрузку ' +
+            escapeHtml(name) + '">' + icon('refresh') + '</button>'
+          : '');
+      return '<span class="' + classes + '" title="' + escapeHtml(tooltip) + '">' +
+        visual + '<span class="attach-name">' + escapeHtml(name) + '</span>' + status +
+        '<button type="button" data-rm="' + escapeHtml(id) +
         '" title="Убрать" aria-label="Убрать ' + escapeHtml(name) + '">' + icon('x') +
         '</button></span>';
     }).join('');
-    $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
-      state.pendingAttachments = state.pendingAttachments.filter(x => x.id !== b.dataset.rm);
+    $$('[data-rm]', box).forEach(button => button.addEventListener('click', () => {
+      const id = String(button.dataset.rm || '');
+      state.pendingAttachments = state.pendingAttachments.filter(file =>
+        String(file && file.id || '') !== id && String(file && file.localUploadId || '') !== id
+      );
       renderAttachments();
+    }));
+    $$('[data-retry-attachment]', box).forEach(button => button.addEventListener('click', () => {
+      retryAttachmentUpload(button.dataset.retryAttachment).catch(error => {
+        console.error('Attachment retry failed:', error);
+      });
     }));
   }
 
@@ -5772,7 +5820,8 @@
       return;
     }
     const pending = new Map((Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [])
-      .filter(file => file && file.id).map(file => [String(file.id), file]));
+      .filter(file => file && (file.id || file.localUploadId))
+      .map(file => [String(file.id || file.localUploadId), file]));
     let added = 0;
     files.forEach(file => {
       const id = String(file.id);
@@ -6739,7 +6788,7 @@
         return '<div class="kv" style="align-items:flex-start;gap:10px;border-bottom:1px solid var(--border,#ddd);padding:10px 0"><div style="flex:1;min-width:0"><b>' +
           esc(labels[t.status] || t.status) + '</b> · ' + (t.source === 'prepared' ? 'подготовленный вопрос' : 'ручной запрос') +
           '<div style="white-space:pre-wrap;overflow-wrap:anywhere">' + esc(t.query) + '</div>' +
-          (t.error ? '<p class="usage-note" style="color:var(--danger,#b33)">' + esc(t.error) + '</p>' : '') +
+          (t.error ? '<p class="usage-note" style="color:var(--danger,#555)">' + esc(t.error) + '</p>' : '') +
           '</div><div style="display:flex;gap:5px;flex-wrap:wrap">' + controls + '</div></div>';
       }).join('') || '<p class="usage-note">Очередь пока пустая.</p>';
       const seeds = (d.seed_questions || []).map(x => '<div class="kv"><span>' + esc(x.position) + '. ' + esc(x.question) +
@@ -7002,10 +7051,10 @@
       const max=Math.max(1,...points.map(p=>p.v)), y=p=>142-(p.v/max)*108;
       const path=points.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+y(p).toFixed(1)).join(' ');
       const area=path+' L '+points[points.length-1].x.toFixed(1)+' 150 L '+points[0].x.toFixed(1)+' 150 Z';
-      return '<div class="personal-api-chart-wrap"><svg class="personal-api-chart" viewBox="0 0 760 190" role="img" aria-label="Использование токенов за 14 дней"><defs><linearGradient id="api-token-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#6c7d9d" stop-opacity=".24"/><stop offset="100%" stop-color="#6c7d9d" stop-opacity=".01"/></linearGradient></defs>'+
+      return '<div class="personal-api-chart-wrap"><svg class="personal-api-chart" viewBox="0 0 760 190" role="img" aria-label="Использование токенов за 14 дней"><defs><linearGradient id="api-token-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#7c7c7c" stop-opacity=".24"/><stop offset="100%" stop-color="#7c7c7c" stop-opacity=".01"/></linearGradient></defs>'+
         [34,70,106,142].map(gy=>'<line x1="28" x2="736" y1="'+gy+'" y2="'+gy+'" stroke="currentColor" stroke-opacity=".10"/>').join('')+
-        '<path d="'+area+'" fill="url(#api-token-gradient)"/><path d="'+path+'" fill="none" stroke="#526b91" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+
-        points.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+y(p).toFixed(1)+'" r="3.1" fill="#526b91"><title>'+shortDate(p.day)+': '+number(p.v)+' токенов</title></circle>').join('')+
+        '<path d="'+area+'" fill="url(#api-token-gradient)"/><path d="'+path+'" fill="none" stroke="#686868" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+
+        points.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+y(p).toFixed(1)+'" r="3.1" fill="#686868"><title>'+shortDate(p.day)+': '+number(p.v)+' токенов</title></circle>').join('')+
         points.filter((p,i)=>i%2===0||i===13).map(p=>'<text x="'+p.x.toFixed(1)+'" y="174" text-anchor="middle" fill="currentColor" fill-opacity=".58" font-size="10">'+shortDate(p.day)+'</text>').join('')+'</svg></div>';
     };
     const renderCostChart=chart=>{
@@ -8086,33 +8135,116 @@
   async function uploadFiles(files, options) {
     const selectedFiles = Array.from(files || []).filter(file => file instanceof File);
     if (!selectedFiles.length) return;
-    const fd = new FormData();
-    selectedFiles.forEach(file => fd.append('files', file, file.name));
-    try {
-      const response = await api.postForm('/api/files', fd);
-      const uploaded = Array.isArray(response)
-        ? response.filter(file => file && typeof file.id === 'string' && file.id)
-        : [];
-      if (!uploaded.length) throw new Error('Сервер не подтвердил загрузку файлов');
-      const fileMap = new Map();
-      uploaded.concat(Array.isArray(state.files) ? state.files : []).forEach(file => {
-        if (file && file.id) fileMap.set(String(file.id), file);
-      });
-      state.files = Array.from(fileMap.values());
-      renderFiles();
-      renderFilesWorkspace();
-      if (!(options && options.libraryOnly)) {
-        const attachedMap = new Map((Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [])
-          .filter(file => file && file.id).map(file => [String(file.id), file]));
-        uploaded.forEach(file => attachedMap.set(String(file.id), file));
-        state.pendingAttachments = Array.from(attachedMap.values());
-        renderAttachments();
-        toast(uploaded.length === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
-      } else {
+    const uploadOptions = options || {};
+
+    // Library uploads are not attached to the active message: keep their existing batch behavior.
+    if (uploadOptions.libraryOnly) {
+      const fd = new FormData();
+      selectedFiles.forEach(file => fd.append('files', file, file.name));
+      try {
+        const response = await api.postForm('/api/files', fd);
+        const uploaded = Array.isArray(response)
+          ? response.filter(file => file && typeof file.id === 'string' && file.id)
+          : [];
+        if (!uploaded.length) throw new Error('Сервер не подтвердил загрузку файлов');
+        const fileMap = new Map();
+        uploaded.concat(Array.isArray(state.files) ? state.files : []).forEach(file => {
+          if (file && file.id) fileMap.set(String(file.id), file);
+        });
+        state.files = Array.from(fileMap.values());
+        renderFiles();
+        renderFilesWorkspace();
         toast(uploaded.length === 1 ? 'Файл загружен в библиотеку' : 'Файлы загружены в библиотеку');
+      } catch (err) {
+        toast('Ошибка загрузки: ' + usefulErrorMessage(err, 'не удалось загрузить файлы'), 'error');
       }
-    } catch (err) {
-      toast('Ошибка загрузки: ' + usefulErrorMessage(err, 'не удалось загрузить файлы'), 'error');
+      return;
+    }
+
+    if (!(options && options.libraryOnly)) {
+      // Create visible per-file rows before the network request so the status remains visible
+      // even when the user closes the + sheet while a file is uploading.
+      const retryLocalUploadId = String(uploadOptions.retryLocalUploadId || '');
+      const localItems = selectedFiles.map(file => {
+        if (retryLocalUploadId) {
+          const existing = state.pendingAttachments.find(item =>
+            item && String(item.localUploadId || '') === retryLocalUploadId
+          );
+          if (existing) {
+            existing.uploadFile = file;
+            existing.uploadStatus = 'uploading';
+            existing.uploadError = '';
+            return existing;
+          }
+        }
+        const item = {
+          localUploadId: 'tmp_upload_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9),
+          original_name: file.name,
+          name: file.name,
+          size: Number(file.size) || 0,
+          mime_type: String(file.type || ''),
+          uploadFile: file,
+          uploadStatus: 'uploading',
+          uploadError: '',
+        };
+        state.pendingAttachments.push(item);
+        return item;
+      });
+      renderAttachments();
+  
+      let successCount = 0;
+      const failures = [];
+      await Promise.all(selectedFiles.map(async (file, index) => {
+        const localItem = localItems[index];
+        const form = new FormData();
+        form.append('files', file, file.name);
+        try {
+          // Upload one file per request so a single failure can be retried independently.
+          const response = await api.postForm('/api/files', form);
+          const received = Array.isArray(response)
+            ? response
+            : (response && Array.isArray(response.files)
+              ? response.files
+              : (response && response.id ? [response] : []));
+          const saved = received.find(item => item && typeof item.id === 'string' && item.id);
+          if (!saved) throw new Error('Сервер не подтвердил загрузку файла');
+  
+          const fileMap = new Map((Array.isArray(state.files) ? state.files : [])
+            .filter(item => item && item.id).map(item => [String(item.id), item]));
+          fileMap.set(String(saved.id), saved);
+          state.files = Array.from(fileMap.values());
+  
+          const pendingIndex = state.pendingAttachments.findIndex(item =>
+            item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
+          );
+          // If the user removed the chip while uploading, do not re-attach it on completion.
+          if (pendingIndex >= 0) state.pendingAttachments.splice(pendingIndex, 1, saved);
+          successCount += 1;
+        } catch (err) {
+          const message = usefulErrorMessage(err, 'не удалось загрузить файл');
+          const pendingItem = state.pendingAttachments.find(item =>
+            item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
+          );
+          if (pendingItem) {
+            pendingItem.uploadStatus = 'error';
+            pendingItem.uploadError = message;
+          }
+          failures.push({ name: String(file.name || 'Файл'), message });
+        } finally {
+          renderFiles();
+          renderFilesWorkspace();
+          renderAttachments();
+        }
+      }));
+  
+      if (failures.length) {
+        const detail = failures.map(item => '«' + item.name + '»: ' + item.message).join('; ');
+        toast((successCount
+          ? 'Не удалось загрузить часть файлов. Нажмите значок повтора рядом с файлом. '
+          : 'Ошибка загрузки. Нажмите значок повтора рядом с файлом. ') + detail, 'error');
+      } else if (successCount) {
+        toast(successCount === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
+      }
     }
   }
 
@@ -9356,7 +9488,7 @@
     if (!w) { toast('Разрешите всплывающие окна для PDF', 'error'); return; }
     w.document.write('<html><head><meta charset="utf-8"><title>' + escapeHtml(title) + '</title>' +
       '<style>body{font-family:system-ui,-apple-system,sans-serif;line-height:1.6;padding:34px;' +
-      'max-width:820px;margin:0 auto;color:#1f1e1d}pre{background:#f4f2ec;padding:12px;border-radius:8px;' +
+      'max-width:820px;margin:0 auto;color:#1e1e1e}pre{background:#f2f2f2;padding:12px;border-radius:8px;' +
       'overflow-x:auto;white-space:pre-wrap}code{font-family:ui-monospace,Menlo,monospace;font-size:13px}' +
       'table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px 10px;text-align:left}' +
       'h1,h2,h3{margin-top:1.2em}blockquote{border-left:3px solid #ddd;margin:0;padding:2px 14px;color:#666}' +
@@ -10260,7 +10392,7 @@
   // ---------- main page: action tiles ----------
   const ACTION_TILES = [
     {
-      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#f2c14e',
+      id: 'essay', label: 'Написать сочинение', icon: 'i-pencil', color: '#c3c3c3',
       title: 'Сочинение',
       questions: '**Сочинение.** Ответьте, пожалуйста, на пару вопросов — и я сразу напишу.\n\n' +
         '1. Тема или вопрос сочинения?\n2. Объём (например, 250 слов / 2 страницы)?\n' +
@@ -10268,7 +10400,7 @@
         'Можно ответить одной строкой — остальное подберу сам.',
     },
     {
-      id: 'doc', label: 'Документ Word', icon: 'i-doc', color: '#2f6fb0',
+      id: 'doc', label: 'Документ Word', icon: 'i-doc', color: '#666666',
       title: 'Документ Word',
       questions: '**Документ Word.** Чтобы получилось то, что нужно, уточните:\n\n' +
         '1. Тема и назначение документа?\n2. Какие разделы должны быть?\n' +
@@ -10276,7 +10408,7 @@
         'Ответьте одной строкой — оформлю в лучшем виде.',
     },
     {
-      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#55544f',
+      id: 'slides', label: 'Презентация', icon: 'i-slides', color: '#545454',
       title: 'Презентация',
       questions: '**Презентация.** Расскажите:\n\n' +
         '1. О чём презентация (тема)?\n2. Для кого (школа, инвесторы, коллеги)?\n' +
@@ -10284,7 +10416,7 @@
         'Достаточно одной строки.',
     },
     {
-      id: 'sheet', label: 'Таблица Excel', icon: 'i-sheet', color: '#2f8f6f',
+      id: 'sheet', label: 'Таблица Excel', icon: 'i-sheet', color: '#787878',
       title: 'Таблица Excel',
       questions: '**Таблица Excel.** Уточните:\n\n' +
         '1. Какие данные и по какой теме?\n2. Какие колонки нужны?\n' +
@@ -10292,7 +10424,7 @@
         'Ответьте одной строкой.',
     },
     {
-      id: 'code', label: 'Написать код', icon: 'i-terminal', color: '#7c5cbf',
+      id: 'code', label: 'Написать код', icon: 'i-terminal', color: '#6a6a6a',
       title: 'Код',
       questions: '**Код.** Что нужно написать?\n\n' +
         '1. Задача и язык (Python, JS, SQL)?\n2. Есть ли входные данные или пример?\n' +
@@ -10300,22 +10432,22 @@
         'Если нужен полноценный проект с файлами — опишите задачу, я напишу код и файлы.',
     },
     {
-      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#4b4a46',
+      id: 'draw', label: 'Нарисовать схему', icon: 'i-sparkle', color: '#4a4a4a',
       title: 'Схема',
       questions: '**Схема.** Опишите:\n\n' +
         '1. Что изобразить (блок-схема, чертёж, план, диаграмма)?\n' +
         '2. Какие элементы и связи между ними?\n3. Нужны ли размеры и подписи?\n\n' +
         'Нарисую в SVG — можно будет скачать.',
     },
-    { id: 'image', label: 'Сделать график', icon: 'i-chart', color: '#0e7c9b', title: 'График',
+    { id: 'image', label: 'Сделать график', icon: 'i-chart', color: '#676767', title: 'График',
       questions: '**График.** Какие данные построить? Пришлите числа или опишите, откуда их взять, и укажите тип графика (линия, столбцы, круговая).' },
-    { id: 'research', label: 'Найти в интернете', icon: 'i-globe', color: '#3f7a3f', title: 'Поиск',
+    { id: 'research', label: 'Найти в интернете', icon: 'i-globe', color: '#696969', title: 'Поиск',
       questions: '**Поиск.** Что именно найти? Сформулируйте вопрос — я поищу в интернете и дам ответ со ссылками на источники.' },
-    { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#a03f6f', title: 'Объяснение',
+    { id: 'explain', label: 'Объяснить простыми словами', icon: 'i-brain', color: '#575757', title: 'Объяснение',
       questions: '**Объяснение.** Что объяснить? Напишите тему — объясню простыми словами, с примерами.' },
-    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#4b4a46', title: 'План',
+    { id: 'plan', label: 'Составить план', icon: 'i-file', color: '#4a4a4a', title: 'План',
       questions: '**План.** Уточните:\n\n1. План чего (проект, обучение, неделя, статья)?\n2. На какой срок?\n3. Какие есть ограничения по времени и ресурсам?\n\nОтветьте одной строкой — составлю подробный план.' },
-    { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#4a5568', title: 'Перевод',
+    { id: 'translate', label: 'Перевести', icon: 'i-globe-box', color: '#545454', title: 'Перевод',
       questions: '**Перевод.** Пришлите текст и укажите язык, на который перевести (и стиль: деловой, литературный, разговорный).' },
   ];
 
@@ -10635,15 +10767,15 @@
               '<rect x="2" y="2" width="356" height="128" rx="15" fill="var(--bg)" stroke="var(--border-soft)"/>' +
               '<rect x="18" y="24" width="118" height="72" rx="14" fill="var(--bg-panel)" stroke="currentColor" stroke-opacity=".42" stroke-width="1.6"/>' +
               '<path d="M42 45h68M42 57h50M42 69h39" fill="none" stroke="currentColor" stroke-opacity=".72" stroke-width="3" stroke-linecap="round"/>' +
-              '<circle cx="115" cy="87" r="11" fill="var(--bg-panel)" stroke="var(--keep-chatting-accent, #C77D52)" stroke-width="1.7"/>' +
-              '<path d="m110 87 3 3 6-7" fill="none" stroke="var(--keep-chatting-accent, #C77D52)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+              '<circle cx="115" cy="87" r="11" fill="var(--bg-panel)" stroke="var(--keep-chatting-accent, #8a8a8a)" stroke-width="1.7"/>' +
+              '<path d="m110 87 3 3 6-7" fill="none" stroke="var(--keep-chatting-accent, #8a8a8a)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
               '<path d="M151 61h31m-7-7 7 7-7 7" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
-              '<rect x="199" y="76" width="18" height="30" rx="4" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".22" stroke="var(--keep-chatting-accent, #C77D52)" stroke-opacity=".72"/>' +
-              '<rect x="226" y="61" width="18" height="45" rx="4" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".36" stroke="var(--keep-chatting-accent, #C77D52)" stroke-opacity=".72"/>' +
-              '<rect x="253" y="43" width="18" height="63" rx="4" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".56" stroke="var(--keep-chatting-accent, #C77D52)" stroke-opacity=".72"/>' +
+              '<rect x="199" y="76" width="18" height="30" rx="4" fill="var(--keep-chatting-accent, #8a8a8a)" fill-opacity=".22" stroke="var(--keep-chatting-accent, #8a8a8a)" stroke-opacity=".72"/>' +
+              '<rect x="226" y="61" width="18" height="45" rx="4" fill="var(--keep-chatting-accent, #8a8a8a)" fill-opacity=".36" stroke="var(--keep-chatting-accent, #8a8a8a)" stroke-opacity=".72"/>' +
+              '<rect x="253" y="43" width="18" height="63" rx="4" fill="var(--keep-chatting-accent, #8a8a8a)" fill-opacity=".56" stroke="var(--keep-chatting-accent, #8a8a8a)" stroke-opacity=".72"/>' +
               '<path d="m199 56 28-12 25 5 27-22m-11 0h11v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
-              '<path d="m315 73 4 10 10 4-10 4-4 10-4-10-10-4 10-4Z" fill="var(--keep-chatting-accent, #C77D52)" fill-opacity=".28" stroke="var(--keep-chatting-accent, #C77D52)" stroke-width="1.4" stroke-linejoin="round"/>' +
-              '<circle cx="310" cy="28" r="3" fill="var(--keep-chatting-accent, #C77D52)"/><circle cx="336" cy="51" r="2" fill="currentColor" fill-opacity=".45"/>' +
+              '<path d="m315 73 4 10 10 4-10 4-4 10-4-10-10-4 10-4Z" fill="var(--keep-chatting-accent, #8a8a8a)" fill-opacity=".28" stroke="var(--keep-chatting-accent, #8a8a8a)" stroke-width="1.4" stroke-linejoin="round"/>' +
+              '<circle cx="310" cy="28" r="3" fill="var(--keep-chatting-accent, #8a8a8a)"/><circle cx="336" cy="51" r="2" fill="currentColor" fill-opacity=".45"/>' +
             '</svg>' +
             '<div class="sub-keep-chatting-copy"><strong>Продолжай работу над идеей</strong>' +
               '<span><i class="sub-keep-chatting-dot"></i>Сравни актуальные лимиты Free и Pro ниже</span></div>' +

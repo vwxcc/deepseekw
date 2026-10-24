@@ -105,6 +105,28 @@ def _request_ip_hash(request: Request) -> str | None:
     return hmac.new(secret, canonical_ip.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+async def _stamp_current_session_ip(
+    request: Request, db: AsyncSession, ip_hash: str, *, commit: bool = False
+) -> User | None:
+    """Associate a legacy active session with its observed IP without overwriting an existing hash."""
+    raw_token = request.cookies.get(COOKIE_NAME)
+    if not raw_token:
+        return None
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    result = await db.execute(
+        select(Session).where(Session.token_hash == hash_token(raw_token))
+    )
+    session = result.scalar_one_or_none()
+    if session is None or session.expires_at <= now:
+        return None
+    user = await db.get(User, session.user_id)
+    if user is not None and not user.signup_ip_hash:
+        user.signup_ip_hash = ip_hash
+        if commit:
+            await db.commit()
+    return user
+
+
 async def _count_active_ip_accounts(
     db: AsyncSession, ip_hash: str, *, exclude_user_id: str | None = None
 ) -> int:
@@ -150,6 +172,7 @@ async def _assert_ip_identity_capacity(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Не удалось безопасно определить IP-адрес. Попробуйте обновить страницу.",
         )
+    await _stamp_current_session_ip(request, db, ip_hash)
     guest = await _claimable_guest_for_ip(request, db, ip_hash) if replacing_guest else None
     count = await _count_active_ip_accounts(
         db, ip_hash, exclude_user_id=guest.id if guest is not None else None
@@ -240,6 +263,7 @@ async def account_creation_eligibility(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Не удалось безопасно определить IP-адрес. Попробуйте обновить страницу.",
         )
+    await _stamp_current_session_ip(request, db, ip_hash, commit=True)
     guest = await _claimable_guest_for_ip(request, db, ip_hash)
     count = await _count_active_ip_accounts(
         db, ip_hash, exclude_user_id=guest.id if guest is not None else None

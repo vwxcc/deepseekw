@@ -4178,7 +4178,7 @@
 
     const activeStates = ['queued', 'waiting', 'working', 'searching'];
     const finishedStates = ['done', 'failed', 'cancelled'];
-    const active = agents.some(agent => activeStates.includes(String(agent.status || '')));
+    const active = agents.some(agent => !finishedStates.includes(String(agent.status || '')));
     const failed = agents.some(agent => String(agent.status || '') === 'failed');
     const cancelled = agents.some(agent => String(agent.status || '') === 'cancelled');
     const finishedCount = agents.filter(agent => finishedStates.includes(String(agent.status || ''))).length;
@@ -4194,7 +4194,7 @@
 
     const agentCards = agents.map(agent => {
       const state = String(agent.status || 'queued');
-      const marker = ['queued', 'waiting', 'working', 'searching'].includes(state)
+      const marker = !finishedStates.includes(state)
         ? '<span class="deep-agent-spinner" aria-hidden="true"></span>'
         : state === 'done' ? '<span class="deep-agent-state-dot is-done">✓</span>'
         : state === 'cancelled' ? '<span class="deep-agent-state-dot is-stopped">–</span>'

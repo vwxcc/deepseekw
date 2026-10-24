@@ -7298,9 +7298,11 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   overflow: hidden !important;
 }
 #add-to-chat-shell .add-chat-handle-wrap {
-  flex-basis: 10px !important;
-  height: 10px !important;
-  min-height: 10px !important;
+  display: none !important;
+  flex-basis: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
   touch-action: auto !important;
   cursor: default !important;
 }

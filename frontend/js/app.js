@@ -60,7 +60,7 @@
   }
 
   // Map common text emojis to minimalist neutral SVG line art.
-  const THEMED_EMOJI_ITEMS = [["✅","check-circle","Готово"],["✔️","check-circle","Готово"],["☑️","check-circle","Отмечено"],["❌","x","Ошибка"],["✖️","x","Закрыть"],["⚠️","alert","Внимание"],["⚠","alert","Внимание"],["❗","alert","Важно"],["❓","question","Вопрос"],["ℹ️","info","Информация"],["💡","lightbulb","Идея"],["🧠","brain","Мышление"],["🎯","target","Цель"],["📌","bookmark","Закрепить"],["📍","map-pin","Метка"],["📎","paperclip","Вложение"],["📝","pencil","Заметка"],["✏️","pencil","Редактировать"],["📄","file-text","Документ"],["📃","file-text","Документ"],["📑","book","Закладки"],["📚","book-open","Книги"],["📖","book-open","Читать"],["🔖","bookmark","Закладка"],["📁","folder","Папка"],["📂","folder-open","Открытая папка"],["💾","save","Сохранить"],["📦","package","Пакет"],["📤","upload","Загрузить"],["📥","download","Скачать"],["🖼️","image","Изображение"],["🎨","palette","Палитра"],["🖌️","brush","Кисть"],["📊","chart","Диаграмма"],["📈","chart-line","Рост"],["📉","chart-line","Снижение"],["🧮","calculator","Расчёт"],["💻","terminal","Компьютер"],["🖥️","terminal","Монитор"],["⌨️","table","Клавиатура"],["🖱️","target","Мышь"],["📱","phone","Телефон"],["🔋","gauge","Батарея"],["🔌","settings","Питание"],["⚙️","settings","Настройки"],["🛠️","wrench","Инструменты"],["🔧","wrench","Инструмент"],["🧰","package","Набор инструментов"],["🧪","flask","Эксперимент"],["🔬","microscope","Исследование"],["🧬","network","ДНК"],["🧫","flask","Образец"],["🧹","x","Очистка"],["🧯","shield-check","Безопасность"],["🚀","rocket","Запуск"],["✈️","arrow-right","Самолёт"],["🚗","package","Машина"],["🚲","compass","Велосипед"],["🏠","folder","Дом"],["🏢","package","Здание"],["🌍","globe","Мир"],["🌐","globe-box","Сеть"],["🔗","link","Ссылка"],["🔒","lock","Защита"],["🔓","unlock","Открыть доступ"],["🛡️","shield-check","Защита"],["🔑","lock","Ключ"],["👤","user","Пользователь"],["👥","users","Люди"],["🧑","user","Человек"],["🧑‍💻","code","Разработка"],["🤖","robot","Робот"],["💬","chat","Сообщение"],["🗣️","chat","Обсуждение"],["✉️","mail","Письмо"],["📣","megaphone","Объявление"],["🔔","bell","Уведомление"],["🔕","bell-off","Без звука"],["⭐","star","Избранное"],["🌟","star","Звезда"],["❤️","heart","Нравится"],["💚","heart","Нравится"],["🔥","fire","Огонь"],["⚡","zap","Молния"],["💎","diamond","Ценность"],["🏆","trophy","Победа"],["🎉","party","Праздник"],["🎁","gift-open","Подарок"],["🎓","graduation-cap","Обучение"],["🏅","medal","Медаль"],["⏳","hourglass","Ожидание"],["⏰","clock","Будильник"],["🕒","clock","Время"],["⏱️","clock","Таймер"],["📅","calendar","Календарь"],["➡️","arrow-right","Далее"],["⬆️","arrow-up","Вверх"],["↗️","arrow-up-right","Переход"],["🔄","refresh","Обновить"],["🔃","refresh","Повтор"],["➕","plus","Добавить"],["➖","x","Убрать"],["🧩","puzzle","Часть"],["🪄","wand","Магия"],["👀","eye","Просмотр"],["👍","thumb-up","Нравится"],["👎","thumb-down","Не нравится"],["🙌","users","Ура"],["💪","target","Сила"],["🙏","user","Пожалуйста"],["😊","smile","Радость"],["😎","smile-cool","Круто"],["🚫","x","Запрет"],["🗺️","map","Карта"],["🧵","link","Нить"],["🔀","refresh","Перемешать"],["🔁","refresh","Повторить"],["📡","network","Сигнал"],["🕸️","network","Связи"],["🧱","package","Блоки"],["📋","copy","Буфер"],["🛒","package","Корзина"],["💰","gauge","Деньги"],["🪙","gauge","Монета"],["💵","gauge","Купюра"],["☁️","globe","Облако"],["☀️","sparkle","Солнце"],["🌙","sparkle","Луна"],["🍃","sparkle","Лист"],["🌱","sparkle","Росток"],["🎵","audio","Музыка"],["🎬","image","Видео"],["🎮","puzzle","Игра"],["☕","sparkle","Кофе"],["🍎","sparkle","Яблоко"],["🍕","package","Пицца"],["🌈","palette","Радуга"],["💧","sparkle","Вода"],["🐱","sparkle","Кот"],["🐶","sparkle","Собака"],["🐾","sparkle","Следы"],["🤝","users","Сотрудничество"],["🏁","bookmark","Финиш"],["🌻","sparkle","Цветок"],["🌳","package","Дерево"],["🍰","gift-open","Торт"],["🪫","gauge","Низкий заряд"],["🛟","shield-check","Помощь"],["⚖️","calculator","Баланс"],["♻️","refresh","Переработка"],["🫶","heart","Поддержка"]];
+  const THEMED_EMOJI_ITEMS = [["✅","check-circle","Готово"],["✔️","check-circle","Готово"],["☑️","check-circle","Отмечено"],["❌","x","Ошибка"],["✖️","x","Закрыть"],["⚠️","alert","Внимание"],["⚠","alert","Внимание"],["❗","alert","Важно"],["❓","question","Вопрос"],["ℹ️","info","Информация"],["💡","lightbulb","Идея"],["🧠","brain","Мышление"],["🧭","compass","Глубокое исследование"],["🎯","target","Цель"],["📌","bookmark","Закрепить"],["📍","map-pin","Метка"],["📎","paperclip","Вложение"],["📝","pencil","Заметка"],["✏️","pencil","Редактировать"],["📄","file-text","Документ"],["📃","file-text","Документ"],["📑","book","Закладки"],["📚","book-open","Книги"],["📖","book-open","Читать"],["🔖","bookmark","Закладка"],["📁","folder","Папка"],["📂","folder-open","Открытая папка"],["💾","save","Сохранить"],["📦","package","Пакет"],["📤","upload","Загрузить"],["📥","download","Скачать"],["🖼️","image","Изображение"],["🎨","palette","Палитра"],["🖌️","brush","Кисть"],["📊","chart","Диаграмма"],["📈","chart-line","Рост"],["📉","chart-line","Снижение"],["🧮","calculator","Расчёт"],["💻","terminal","Компьютер"],["🖥️","terminal","Монитор"],["⌨️","table","Клавиатура"],["🖱️","target","Мышь"],["📱","phone","Телефон"],["🔋","gauge","Батарея"],["🔌","settings","Питание"],["⚙️","settings","Настройки"],["🛠️","wrench","Инструменты"],["🔧","wrench","Инструмент"],["🧰","package","Набор инструментов"],["🧪","flask","Эксперимент"],["🔬","microscope","Исследование"],["🧬","network","ДНК"],["🧫","flask","Образец"],["🧹","x","Очистка"],["🧯","shield-check","Безопасность"],["🚀","rocket","Запуск"],["✈️","arrow-right","Самолёт"],["🚗","package","Машина"],["🚲","compass","Велосипед"],["🏠","folder","Дом"],["🏢","package","Здание"],["🌍","globe","Мир"],["🌐","globe-box","Сеть"],["🔗","link","Ссылка"],["🔒","lock","Защита"],["🔓","unlock","Открыть доступ"],["🛡️","shield-check","Защита"],["🔑","lock","Ключ"],["👤","user","Пользователь"],["👥","users","Люди"],["🧑","user","Человек"],["🧑‍💻","code","Разработка"],["🤖","robot","Робот"],["💬","chat","Сообщение"],["🗣️","chat","Обсуждение"],["✉️","mail","Письмо"],["📣","megaphone","Объявление"],["🔔","bell","Уведомление"],["🔕","bell-off","Без звука"],["⭐","star","Избранное"],["🌟","star","Звезда"],["❤️","heart","Нравится"],["💚","heart","Нравится"],["🔥","fire","Огонь"],["⚡","zap","Молния"],["💎","diamond","Ценность"],["🏆","trophy","Победа"],["🎉","party","Праздник"],["🎁","gift-open","Подарок"],["🎓","graduation-cap","Обучение"],["🏅","medal","Медаль"],["⏳","hourglass","Ожидание"],["⏰","clock","Будильник"],["🕒","clock","Время"],["⏱️","clock","Таймер"],["📅","calendar","Календарь"],["➡️","arrow-right","Далее"],["⬆️","arrow-up","Вверх"],["↗️","arrow-up-right","Переход"],["🔄","refresh","Обновить"],["🔃","refresh","Повтор"],["➕","plus","Добавить"],["➖","x","Убрать"],["🧩","puzzle","Часть"],["🪄","wand","Магия"],["👀","eye","Просмотр"],["👍","thumb-up","Нравится"],["👎","thumb-down","Не нравится"],["🙌","users","Ура"],["💪","target","Сила"],["🙏","user","Пожалуйста"],["😊","smile","Радость"],["😎","smile-cool","Круто"],["🚫","x","Запрет"],["🗺️","map","Карта"],["🧵","link","Нить"],["🔀","refresh","Перемешать"],["🔁","refresh","Повторить"],["📡","network","Сигнал"],["🕸️","network","Связи"],["🧱","package","Блоки"],["📋","copy","Буфер"],["🛒","package","Корзина"],["💰","gauge","Деньги"],["🪙","gauge","Монета"],["💵","gauge","Купюра"],["☁️","globe","Облако"],["☀️","sparkle","Солнце"],["🌙","sparkle","Луна"],["🍃","sparkle","Лист"],["🌱","sparkle","Росток"],["🎵","audio","Музыка"],["🎬","image","Видео"],["🎮","puzzle","Игра"],["☕","sparkle","Кофе"],["🍎","sparkle","Яблоко"],["🍕","package","Пицца"],["🌈","palette","Радуга"],["💧","sparkle","Вода"],["🐱","sparkle","Кот"],["🐶","sparkle","Собака"],["🐾","sparkle","Следы"],["🤝","users","Сотрудничество"],["🏁","bookmark","Финиш"],["🌻","sparkle","Цветок"],["🌳","package","Дерево"],["🍰","gift-open","Торт"],["🪫","gauge","Низкий заряд"],["🛟","shield-check","Помощь"],["⚖️","calculator","Баланс"],["♻️","refresh","Переработка"],["🫶","heart","Поддержка"]];
   const THEMED_EMOJI_MAP = new Map();
   THEMED_EMOJI_ITEMS.forEach(([glyph, symbol, label]) => {
     const item = { symbol, label };
@@ -4310,6 +4310,46 @@
   }
 
 
+  // Keep a quiz question anchored in the viewport while selecting an option.
+  // Some mobile browsers scroll the page on button focus/tap, and a live answer
+  // stream must not pull the reader back to the bottom while the quiz is in use.
+  const quizSelectionSnapshots = new WeakMap();
+
+  function snapshotQuizSelection(button) {
+    const question = button && button.closest('.quiz-question');
+    const messages = $('#messages');
+    const snapshot = {
+      question,
+      questionTop: question ? question.getBoundingClientRect().top : null,
+      messages,
+      messagesScrollTop: messages ? messages.scrollTop : null,
+      pageX: window.scrollX || 0,
+      pageY: window.scrollY || 0,
+    };
+    quizSelectionSnapshots.set(button, snapshot);
+    state.stickBottom = false;
+  }
+
+  function restoreQuizSelectionViewport(snapshot) {
+    if (!snapshot) return;
+    if (snapshot.messages && snapshot.messagesScrollTop !== null) {
+      snapshot.messages.scrollTop = snapshot.messagesScrollTop;
+    }
+    if ((window.scrollX || 0) !== snapshot.pageX || (window.scrollY || 0) !== snapshot.pageY) {
+      window.scrollTo(snapshot.pageX, snapshot.pageY);
+    }
+    if (snapshot.question && snapshot.question.isConnected && snapshot.questionTop !== null) {
+      const delta = snapshot.question.getBoundingClientRect().top - snapshot.questionTop;
+      if (Math.abs(delta) > 1) {
+        if (snapshot.messages && snapshot.messages.contains(snapshot.question)) {
+          snapshot.messages.scrollTop += delta;
+        } else {
+          window.scrollBy(0, delta);
+        }
+      }
+    }
+  }
+
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
     $$('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
@@ -4375,10 +4415,21 @@
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
       if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id, null, { preserveScroll: true });
     }));
-    $$('.quiz-option[data-quiz-option]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('.quiz-option[data-quiz-option]', scope).forEach(button => {
+      button.addEventListener('pointerdown', () => snapshotQuizSelection(button), { capture: true });
+      button.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') snapshotQuizSelection(button);
+      }, { capture: true });
+      button.addEventListener('click', event => {
+      event.preventDefault();
+      const snapshot = quizSelectionSnapshots.get(button);
+      quizSelectionSnapshots.delete(button);
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null, question=button.closest('.quiz-question');
-      if (!message||!question||message.quizSubmitted) return;
-      const index=Number(button.dataset.quizIndex); if(!Number.isInteger(index)||index<0)return;
+      if (!message||!question||message.quizSubmitted) {
+        restoreQuizSelectionViewport(snapshot);
+        return;
+      }
+      const index=Number(button.dataset.quizIndex); if(!Number.isInteger(index)||index<0){ restoreQuizSelectionViewport(snapshot); return; }
       const value=String(button.dataset.quizOption||''), multi=button.dataset.quizMultiple==='true';
       const current=Array.isArray(message.quizAnswers[index])?message.quizAnswers[index].slice():[];
       // Selecting any option clears a custom answer too, otherwise grading would ignore this selection.
@@ -4394,7 +4445,13 @@
         const picked=next.includes(String(option.dataset.quizOption||''));
         option.classList.toggle('is-selected',picked);option.setAttribute('aria-pressed',String(picked));
       });
-    }));
+      restoreQuizSelectionViewport(snapshot);
+      requestAnimationFrame(() => {
+        restoreQuizSelectionViewport(snapshot);
+        requestAnimationFrame(() => restoreQuizSelectionViewport(snapshot));
+      });
+      });
+    });
     $$('.quiz-custom-answer', scope).forEach(input => input.addEventListener('input', () => {
       const el=input.closest('.msg'),message=el?findNode(state.tree,el.dataset.mid):null,index=Number(input.dataset.quizCustom);
       if(!message||!Number.isInteger(index)||index<0||message.quizSubmitted)return;

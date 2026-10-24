@@ -6941,3 +6941,41 @@ input[type="range"]:hover::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   #composer .deep-research-chip { animation: none; }
 }
+
+
+/* Quiz controls should never trigger mobile double-tap zoom or scroll anchoring. */
+.quiz-option {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 13px;
+}
+
+/* AI CH line-icon and neutral gray, slightly rounder Deep Research chip. */
+#composer .deep-research-chip {
+  border-color: rgba(112, 119, 129, .24);
+  border-radius: 16px;
+  background: rgba(235, 237, 240, .94);
+  color: #5b626c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .98), 0 2px 7px rgba(32, 38, 48, .045);
+}
+.deep-research-chip-icon {
+  border-radius: 10px;
+  background: rgba(213, 217, 223, .76);
+  color: #5b626c;
+}
+.deep-research-chip-mark {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.8;
+}
+.deep-research-chip-copy strong { color: #4b525c; }
+.deep-research-chip-copy small { color: #737b86; }
+#composer .deep-research-chip button {
+  border-radius: 9px;
+  background: rgba(207, 212, 219, .62);
+  color: #626a75;
+}
+#composer .deep-research-chip button:hover {
+  background: rgba(194, 200, 208, .86);
+  color: #3f4650;
+}

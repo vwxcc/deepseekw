@@ -5918,6 +5918,7 @@
             !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
         pointerDrag = startSheetGesture(event.clientX, event.clientY, event.target,
           sheet.classList.contains('is-expanded'));
+        pointerDrag.id = event.pointerId;
       });
       sheet.addEventListener('pointermove', event => {
         if (!pointerDrag || pointerDrag.id != null && pointerDrag.id !== event.pointerId) return;

@@ -7991,3 +7991,96 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   .import-transfer-footer { align-items: stretch; flex-direction: column; gap: 11px; padding: 13px 16px max(14px, env(safe-area-inset-bottom)); }
   .import-transfer-submit { width: 100%; min-height: 48px; }
 }
+
+
+/* AI CH orange accent: keep page surfaces white and use orange only for emphasis. */
+:root {
+  --accent: #f28c28 !important;
+  --accent-hover: #d97716 !important;
+  --accent-soft: rgba(242, 140, 40, .12) !important;
+}
+a { color: var(--accent) !important; }
+.aich-themed-emoji,
+.aich-ui-emoji,
+.aich-ui-action-emoji,
+.aich-ui-actions-heading > span:first-child,
+.chat-mode-emoji,
+.deep-research-flow-mark,
+.deep-research-plan-icon {
+  color: var(--accent) !important;
+}
+.aich-themed-emoji-icon,
+.aich-themed-emoji use {
+  stroke: currentColor !important;
+}
+.send-btn,
+.send-btn.stop {
+  border: 1px solid rgba(211, 105, 13, .18) !important;
+  background: linear-gradient(135deg, #f8a13d 0%, #ef8420 58%, #dc6a10 100%) !important;
+  background-image: linear-gradient(135deg, #f8a13d 0%, #ef8420 58%, #dc6a10 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 3px 10px rgba(217, 119, 22, .17);
+}
+.send-btn:hover,
+.send-btn.stop:hover {
+  background: linear-gradient(135deg, #ffb34f 0%, #f28c28 58%, #d97716 100%) !important;
+  background-image: linear-gradient(135deg, #ffb34f 0%, #f28c28 58%, #d97716 100%) !important;
+  box-shadow: 0 5px 16px rgba(217, 119, 22, .25);
+}
+.send-btn:disabled { box-shadow: none; }
+.send-btn.preparing { box-shadow: 0 0 0 3px rgba(242, 140, 40, .10); }
+
+/* Sidebar buttons get a restrained warm tint; the app's panels stay white. */
+#sidebar .new-chat,
+#sidebar .side-row.top-account-actions .side-item,
+#sidebar .sidebar-account-settings,
+#sidebar .sidebar-quick-tools button,
+#sidebar #sidebar-limits-btn,
+#sidebar .sidebar-usage {
+  background: rgba(242, 140, 40, .085) !important;
+  border-color: rgba(217, 119, 22, .19) !important;
+  color: #704315 !important;
+}
+#sidebar .new-chat .ic,
+#sidebar .side-row.top-account-actions .side-item .ic,
+#sidebar .sidebar-quick-tools button .ic {
+  color: #d97716 !important;
+}
+#sidebar .new-chat:hover,
+#sidebar .side-row.top-account-actions .side-item:hover,
+#sidebar .sidebar-account-settings:hover,
+#sidebar .sidebar-quick-tools button:hover,
+#sidebar #sidebar-limits-btn:hover,
+#sidebar .sidebar-usage:hover {
+  background: rgba(242, 140, 40, .14) !important;
+  border-color: rgba(217, 119, 22, .28) !important;
+  color: #5e350d !important;
+}
+#share-btn {
+  background: rgba(242, 140, 40, .09) !important;
+  border-color: rgba(217, 119, 22, .22) !important;
+  color: #8a4d14 !important;
+}
+#share-btn .ic { color: #d97716 !important; }
+#share-btn:hover {
+  background: rgba(242, 140, 40, .16) !important;
+  border-color: rgba(217, 119, 22, .32) !important;
+  color: #65380d !important;
+}
+
+/* Voice recorder controls and waveform share the orange accent. */
+#voice-recorder-ui .voice-control {
+  background: rgba(242, 140, 40, .12) !important;
+  border: 1px solid rgba(217, 119, 22, .20) !important;
+  color: #9b560f !important;
+}
+#voice-recorder-ui .voice-control:hover {
+  background: rgba(242, 140, 40, .19) !important;
+}
+#voice-recorder-ui .voice-cancel {
+  background: rgba(242, 140, 40, .07) !important;
+  color: #b96812 !important;
+}
+#voice-waveform span { background: #f28c28 !important; }
+input[type="range"], .council-row input { accent-color: #f28c28 !important; }
+:focus-visible { outline-color: rgba(217, 119, 22, .75) !important; }

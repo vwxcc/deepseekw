@@ -5473,6 +5473,14 @@
     // Validate pending attachments before reading IDs; a stale/null item must not abort sending.
     const pending = Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [];
     state.pendingAttachments = pending;
+    if (pending.some(file => file && file.localUploadId && file.uploadStatus === 'uploading')) {
+      toast('Подождите, пока прикреплённые файлы загрузятся.', 'info');
+      return;
+    }
+    if (pending.some(file => file && file.localUploadId && file.uploadStatus === 'error')) {
+      toast('Не все файлы загружены. Нажмите значок повтора рядом с файлом.', 'error');
+      return;
+    }
     const hasInvalidAttachment = pending.some(f =>
       !f || typeof f !== 'object' || typeof f.id !== 'string' || !f.id
     );
@@ -5603,35 +5611,75 @@
     updateScrollDownButton();
   }
 
+  async function retryAttachmentUpload(localUploadId) {
+    const id = String(localUploadId || '');
+    const item = state.pendingAttachments.find(file =>
+      file && String(file.localUploadId || '') === id && file.uploadStatus === 'error' &&
+      file.uploadFile && typeof file.uploadFile.name === 'string'
+    );
+    if (!item) return;
+    item.uploadStatus = 'uploading';
+    item.uploadError = '';
+    renderAttachments();
+    await uploadFiles([item.uploadFile], { retryLocalUploadId: id });
+  }
+
   function renderAttachments() {
     const box = $('#attach-list');
     if (!box) return;
     state.pendingAttachments = Array.isArray(state.pendingAttachments)
-      ? state.pendingAttachments.filter(f => f && typeof f === 'object' && typeof f.id === 'string' && f.id)
+      ? state.pendingAttachments.filter(file => file && typeof file === 'object' && (
+          (typeof file.id === 'string' && file.id) ||
+          (typeof file.localUploadId === 'string' && file.localUploadId &&
+            file.uploadFile && typeof file.uploadFile.name === 'string')
+        ))
       : [];
     box.innerHTML = state.pendingAttachments.map(f => {
-      const id = String(f.id);
-      const name = String(f.original_name || f.name || 'Файл').slice(0, 180);
-      const mime = String(f.mime_type || f.mime || '').toLowerCase();
-      const isSvg = /\.svg$/i.test(name) || mime === 'image/svg+xml';
+      const isLocalUpload = !f.id && !!f.localUploadId;
+      const id = String(f.id || f.localUploadId || '');
+      const name = String(f.original_name || f.name || (f.uploadFile && f.uploadFile.name) || 'Файл').slice(0, 180);
+      const uploadState = isLocalUpload ? String(f.uploadStatus || '') : '';
+      const isUploading = uploadState === 'uploading';
+      const isError = uploadState === 'error';
+      const mime = String(f.mime_type || f.mime || (f.uploadFile && f.uploadFile.type) || '').toLowerCase();
+      const isSvg = /\\.svg$/i.test(name) || mime === 'image/svg+xml';
       const isImage = isSvg || f.kind === 'image' || mime.startsWith('image/') ||
-        /\.(png|jpe?g|gif|webp|avif|bmp|tiff|ico)$/i.test(name);
-      const previewUrl = isSvg
-        ? '/api/files/' + encodeURIComponent(id) + '/download?inline=1'
-        : '/api/files/' + encodeURIComponent(id) + '/thumbnail';
-      const visual = isImage
-        ? '<img class="attach-thumb" src="' + previewUrl +
-          '" alt="" loading="lazy" decoding="async" />'
+        /\\.(png|jpe?g|gif|webp|avif|bmp|tiff|ico)$/i.test(name);
+      const previewUrl = f.id
+        ? (isSvg
+          ? '/api/files/' + encodeURIComponent(String(f.id)) + '/download?inline=1'
+          : '/api/files/' + encodeURIComponent(String(f.id)) + '/thumbnail')
+        : '';
+      const visual = isImage && previewUrl
+        ? '<img class="attach-thumb" src="' + previewUrl + '" alt="" loading="lazy" decoding="async" />'
         : icon('file');
-      return '<span class="attach-chip' + (isImage ? ' has-thumb' : '') + '" title="' +
-        escapeHtml(name) + '">' + visual + '<span class="attach-name">' + escapeHtml(name) +
-        '</span><button type="button" data-rm="' + escapeHtml(id) +
+      const classes = 'attach-chip' + (isImage ? ' has-thumb' : '') +
+        (isUploading ? ' is-uploading' : '') + (isError ? ' is-error' : '');
+      const tooltip = isError && f.uploadError ? name + ' — ' + f.uploadError : name;
+      const status = isUploading
+        ? '<span class="attach-status-spinner" role="status" aria-label="Загрузка файла" title="Загрузка файла"></span>'
+        : (isError
+          ? '<button type="button" class="attach-status-retry" data-retry-attachment="' +
+            escapeHtml(String(f.localUploadId)) + '" title="Повторить загрузку" aria-label="Повторить загрузку ' +
+            escapeHtml(name) + '">' + icon('refresh') + '</button>'
+          : '');
+      return '<span class="' + classes + '" title="' + escapeHtml(tooltip) + '">' +
+        visual + '<span class="attach-name">' + escapeHtml(name) + '</span>' + status +
+        '<button type="button" data-rm="' + escapeHtml(id) +
         '" title="Убрать" aria-label="Убрать ' + escapeHtml(name) + '">' + icon('x') +
         '</button></span>';
     }).join('');
-    $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
-      state.pendingAttachments = state.pendingAttachments.filter(x => x.id !== b.dataset.rm);
+    $$('[data-rm]', box).forEach(button => button.addEventListener('click', () => {
+      const id = String(button.dataset.rm || '');
+      state.pendingAttachments = state.pendingAttachments.filter(file =>
+        String(file && file.id || '') !== id && String(file && file.localUploadId || '') !== id
+      );
       renderAttachments();
+    }));
+    $$('[data-retry-attachment]', box).forEach(button => button.addEventListener('click', () => {
+      retryAttachmentUpload(button.dataset.retryAttachment).catch(error => {
+        console.error('Attachment retry failed:', error);
+      });
     }));
   }
 
@@ -5772,7 +5820,8 @@
       return;
     }
     const pending = new Map((Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [])
-      .filter(file => file && file.id).map(file => [String(file.id), file]));
+      .filter(file => file && (file.id || file.localUploadId))
+      .map(file => [String(file.id || file.localUploadId), file]));
     let added = 0;
     files.forEach(file => {
       const id = String(file.id);
@@ -8086,33 +8135,114 @@
   async function uploadFiles(files, options) {
     const selectedFiles = Array.from(files || []).filter(file => file instanceof File);
     if (!selectedFiles.length) return;
-    const fd = new FormData();
-    selectedFiles.forEach(file => fd.append('files', file, file.name));
-    try {
-      const response = await api.postForm('/api/files', fd);
-      const uploaded = Array.isArray(response)
-        ? response.filter(file => file && typeof file.id === 'string' && file.id)
-        : [];
-      if (!uploaded.length) throw new Error('Сервер не подтвердил загрузку файлов');
-      const fileMap = new Map();
-      uploaded.concat(Array.isArray(state.files) ? state.files : []).forEach(file => {
-        if (file && file.id) fileMap.set(String(file.id), file);
-      });
-      state.files = Array.from(fileMap.values());
-      renderFiles();
-      renderFilesWorkspace();
-      if (!(options && options.libraryOnly)) {
-        const attachedMap = new Map((Array.isArray(state.pendingAttachments) ? state.pendingAttachments : [])
-          .filter(file => file && file.id).map(file => [String(file.id), file]));
-        uploaded.forEach(file => attachedMap.set(String(file.id), file));
-        state.pendingAttachments = Array.from(attachedMap.values());
-        renderAttachments();
-        toast(uploaded.length === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
-      } else {
+    const uploadOptions = options || {};
+
+    // Library uploads are not attached to the active message: keep their existing batch behavior.
+    if (uploadOptions.libraryOnly) {
+      const fd = new FormData();
+      selectedFiles.forEach(file => fd.append('files', file, file.name));
+      try {
+        const response = await api.postForm('/api/files', fd);
+        const uploaded = Array.isArray(response)
+          ? response.filter(file => file && typeof file.id === 'string' && file.id)
+          : [];
+        if (!uploaded.length) throw new Error('Сервер не подтвердил загрузку файлов');
+        const fileMap = new Map();
+        uploaded.concat(Array.isArray(state.files) ? state.files : []).forEach(file => {
+          if (file && file.id) fileMap.set(String(file.id), file);
+        });
+        state.files = Array.from(fileMap.values());
+        renderFiles();
+        renderFilesWorkspace();
         toast(uploaded.length === 1 ? 'Файл загружен в библиотеку' : 'Файлы загружены в библиотеку');
+      } catch (err) {
+        toast('Ошибка загрузки: ' + usefulErrorMessage(err, 'не удалось загрузить файлы'), 'error');
       }
-    } catch (err) {
-      toast('Ошибка загрузки: ' + usefulErrorMessage(err, 'не удалось загрузить файлы'), 'error');
+      return;
+    }
+
+    // Create visible per-file rows before the network request so the status remains visible
+    // even when the user closes the + sheet while a file is uploading.
+    const retryLocalUploadId = String(uploadOptions.retryLocalUploadId || '');
+    const localItems = selectedFiles.map(file => {
+      if (retryLocalUploadId) {
+        const existing = state.pendingAttachments.find(item =>
+          item && String(item.localUploadId || '') === retryLocalUploadId
+        );
+        if (existing) {
+          existing.uploadFile = file;
+          existing.uploadStatus = 'uploading';
+          existing.uploadError = '';
+          return existing;
+        }
+      }
+      const item = {
+        localUploadId: 'tmp_upload_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9),
+        original_name: file.name,
+        name: file.name,
+        size: Number(file.size) || 0,
+        mime_type: String(file.type || ''),
+        uploadFile: file,
+        uploadStatus: 'uploading',
+        uploadError: '',
+      };
+      state.pendingAttachments.push(item);
+      return item;
+    });
+    renderAttachments();
+
+    let successCount = 0;
+    const failures = [];
+    await Promise.all(selectedFiles.map(async (file, index) => {
+      const localItem = localItems[index];
+      const form = new FormData();
+      form.append('files', file, file.name);
+      try {
+        // Upload one file per request so a single failure can be retried independently.
+        const response = await api.postForm('/api/files', form);
+        const received = Array.isArray(response)
+          ? response
+          : (response && Array.isArray(response.files)
+            ? response.files
+            : (response && response.id ? [response] : []));
+        const saved = received.find(item => item && typeof item.id === 'string' && item.id);
+        if (!saved) throw new Error('Сервер не подтвердил загрузку файла');
+
+        const fileMap = new Map((Array.isArray(state.files) ? state.files : [])
+          .filter(item => item && item.id).map(item => [String(item.id), item]));
+        fileMap.set(String(saved.id), saved);
+        state.files = Array.from(fileMap.values());
+
+        const pendingIndex = state.pendingAttachments.findIndex(item =>
+          item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
+        );
+        // If the user removed the chip while uploading, do not re-attach it on completion.
+        if (pendingIndex >= 0) state.pendingAttachments.splice(pendingIndex, 1, saved);
+        successCount += 1;
+      } catch (err) {
+        const message = usefulErrorMessage(err, 'не удалось загрузить файл');
+        const pendingItem = state.pendingAttachments.find(item =>
+          item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
+        );
+        if (pendingItem) {
+          pendingItem.uploadStatus = 'error';
+          pendingItem.uploadError = message;
+        }
+        failures.push({ name: String(file.name || 'Файл'), message });
+      } finally {
+        renderFiles();
+        renderFilesWorkspace();
+        renderAttachments();
+      }
+    }));
+
+    if (failures.length) {
+      const detail = failures.map(item => '«' + item.name + '»: ' + item.message).join('; ');
+      toast((successCount
+        ? 'Не удалось загрузить часть файлов. Нажмите значок повтора рядом с файлом. '
+        : 'Ошибка загрузки. Нажмите значок повтора рядом с файлом. ') + detail, 'error');
+    } else if (successCount) {
+      toast(successCount === 1 ? 'Файл прикреплён к сообщению' : 'Файлы прикреплены к сообщению');
     }
   }
 

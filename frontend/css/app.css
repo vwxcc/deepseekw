@@ -6151,7 +6151,7 @@ input[type="range"]:focus-visible {
   justify-content: flex-start !important;
   width: min(calc(100vw - 20px), 760px);
   height: min(56dvh, 520px);
-  min-height: min(300px, calc(var(--app-height, 100dvh) - 32px));
+  min-height: min(300px, calc(var(--app-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px));
   max-height: calc(var(--app-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
   min-width: 0;
   box-sizing: border-box;

@@ -118,10 +118,10 @@ async def _stream_job(
     user_attachments: list | None = None,
 ):
     if user_msg is not None:
-        yield _sse(
-            "user_message",
-            _json(message_out(user_msg, attachments=user_attachments or [])),
-        )
+        user_payload = _json(message_out(user_msg, attachments=user_attachments or []))
+        if getattr(user_msg, "prefetch_used", False):
+            user_payload["prefetch_used"] = True
+        yield _sse("user_message", user_payload)
     yield _sse("assistant_message", _json(message_out(assistant)))
 
     finished = False
@@ -792,6 +792,8 @@ async def send_message(
         await db.commit()
 
     user_atts = (await message_attachments(db, [user_msg.id])).get(user_msg.id, [])
+    # Pass this transport-only flag to the stream so the UI can signal actual prefetch use.
+    user_msg.prefetch_used = bool(prefetched_context)
 
     # Browser SpeechRecognition is not available everywhere. Transcribe audio on the
     # server before constructing the model history, so an attached recording is usable

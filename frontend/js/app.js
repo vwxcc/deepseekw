@@ -97,6 +97,21 @@
   }
   window.prefetchManager = new PrefetchManager();
 
+  let prefetchSuccessHighlightTimer = null;
+  function showPrefetchSuccessHighlight() {
+    const surface = $('#composer .composer-inner');
+    if (!surface) return;
+    if (prefetchSuccessHighlightTimer) clearTimeout(prefetchSuccessHighlightTimer);
+    surface.classList.remove('prefetch-success');
+    // Restart the short highlight if another successful prefetch arrives quickly.
+    void surface.offsetWidth;
+    surface.classList.add('prefetch-success');
+    prefetchSuccessHighlightTimer = setTimeout(() => {
+      surface.classList.remove('prefetch-success');
+      prefetchSuccessHighlightTimer = null;
+    }, 1000);
+  }
+
   let workspaceUploadIntent = false;
   let pendingNewChatProjectId = '';
   let pendingNewChatProjectLabel = '';
@@ -5066,6 +5081,9 @@
             }
           }
         } else if (ev === 'user_message' || ev === 'assistant_message') {
+          if (ev === 'user_message' && data && data.prefetch_used === true) {
+            showPrefetchSuccessHighlight();
+          }
           const tmp = ev === 'user_message' ? state.tmpUser : state.tmpAssistant;
           const previousId = tmp && tmp.id;
           if (ev === 'assistant_message') streamContext.assistantId = data && data.id ? data.id : null;

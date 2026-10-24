@@ -1,6 +1,8 @@
 """User memory: what the assistant remembers about the user."""
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +32,10 @@ async def get_memory_settings(
 ) -> dict:
     """Memory is on by default until a user explicitly turns it off."""
     setting = await db.get(UserPreference, user.id)
-    return {"memory_enabled": bool(setting.memory_enabled) if setting is not None else True}
+    return {
+        "memory_enabled": bool(setting.memory_enabled) if setting is not None else True,
+        "accent_color": str(setting.accent_color or "#3b82f6") if setting is not None else "#3b82f6",
+    }
 
 
 @router.put("/settings")
@@ -40,17 +45,39 @@ async def update_memory_settings(
     _csrf=Depends(require_csrf),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    enabled = (data or {}).get("memory_enabled")
-    if not isinstance(enabled, bool):
+    body = data if isinstance(data, dict) else {}
+    enabled = body.get("memory_enabled")
+    accent_color = body.get("accent_color")
+    if enabled is not None and not isinstance(enabled, bool):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "memory_enabled должен быть true или false")
+    if accent_color is not None:
+        if not isinstance(accent_color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", accent_color.strip()):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "accent_color должен быть HEX-цветом формата #RRGGBB",
+            )
+        accent_color = accent_color.strip().lower()
+    if enabled is None and accent_color is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Не переданы настройки для сохранения")
+
     setting = await db.get(UserPreference, user.id)
     if setting is None:
-        setting = UserPreference(user_id=user.id, memory_enabled=enabled)
+        setting = UserPreference(
+            user_id=user.id,
+            memory_enabled=True if enabled is None else enabled,
+            accent_color=accent_color or "#3b82f6",
+        )
         db.add(setting)
     else:
-        setting.memory_enabled = enabled
+        if enabled is not None:
+            setting.memory_enabled = enabled
+        if accent_color is not None:
+            setting.accent_color = accent_color
     await db.commit()
-    return {"memory_enabled": enabled}
+    return {
+        "memory_enabled": bool(setting.memory_enabled),
+        "accent_color": str(setting.accent_color or "#3b82f6"),
+    }
 
 
 @router.post("", response_model=MemoryOut, status_code=status.HTTP_201_CREATED)

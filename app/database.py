@@ -47,6 +47,7 @@ async def init_db() -> None:
                     )
         # Index the HMAC IP identifier used by the two-account creation guard.
         await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_users_signup_ip_hash ON users(signup_ip_hash)")
+        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sessions_ip_hash ON sessions(ip_hash)")
         # Normalize the title key in Python for Unicode-safe case-insensitive matching.
         # Resolve pre-existing case-only collisions deterministically before the unique index.
         title_table = await conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='ready_answer_titles'")
@@ -178,6 +179,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "user_api_keys": {
         "is_revoked": "BOOLEAN NOT NULL DEFAULT 0",
+    },
+    "sessions": {
+        "ip_hash": "VARCHAR(64)",
     },
     "users": {
         "token_balance": "INTEGER NOT NULL DEFAULT 0",

@@ -5351,6 +5351,8 @@
       } else {
         state.tree.push(userNode, asstNode);
       }
+      // A newly submitted prompt deliberately takes the reader to the new turn.
+      state.stickBottom = true;
       state.activeAssistantId = asstId;
       renderMessages();
 

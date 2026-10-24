@@ -651,9 +651,9 @@ async def _check_budget_before_send(user: User, db: AsyncSession) -> None:
 
 
 async def _ensure_no_active_generation(user: User, db: AsyncSession) -> None:
-    """Allow one live assistant generation per user, including across browser tabs."""
-    active_id = await db.scalar(
-        select(Message.id)
+    """Allow one live generation per user and repair rows orphaned by a crash/restart."""
+    result = await db.execute(
+        select(Message)
         .join(Chat, Message.chat_id == Chat.id)
         .where(
             Chat.user_id == user.id,
@@ -661,9 +661,43 @@ async def _ensure_no_active_generation(user: User, db: AsyncSession) -> None:
             Message.role == Role.assistant,
             Message.status.in_([MessageStatus.queued, MessageStatus.processing]),
         )
-        .limit(1)
+        .order_by(Message.created_at.asc())
     )
-    if active_id:
+    active_messages = result.scalars().all()
+    if not active_messages:
+        return
+
+    now = utcnow()
+    if now.tzinfo is not None:
+        now = now.replace(tzinfo=None)
+    # A short grace period avoids racing the tiny gap between committing the
+    # assistant row and registering its Job in ai_router.active.
+    stale_before = now - timedelta(seconds=45)
+    has_live_generation = False
+    recovered_stale = False
+
+    for active_message in active_messages:
+        if active_message.id in ai_router.active:
+            has_live_generation = True
+            continue
+
+        created_at = active_message.created_at
+        if created_at is not None and created_at.tzinfo is not None:
+            created_at = created_at.replace(tzinfo=None)
+        if created_at is None or created_at >= stale_before:
+            # It may be a request that has just been committed and is about to enqueue.
+            has_live_generation = True
+            continue
+
+        # No in-memory worker owns this old row: the previous request was orphaned.
+        active_message.status = MessageStatus.failed
+        active_message.error = "Запрос был прерван до завершения. Отправьте сообщение повторно."
+        recovered_stale = True
+
+    if recovered_stale:
+        await db.commit()
+
+    if has_live_generation:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "У вас уже выполняется запрос. Дождитесь его завершения.",

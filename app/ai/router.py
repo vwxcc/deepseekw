@@ -1944,7 +1944,7 @@ class AIRouter:
                     "id": agent_id,
                     "name": str(raw_agent.get("name") or raw_agent.get("title") or f"Агент {index}").strip()[:80],
                     "task": task,
-                    "raw_depends": raw_agent.get("depends_on") if isinstance(raw_agent.get("depends_on"), list) else [],
+                    "raw_depends": raw_agent.get("depends_on", [])[:8] if isinstance(raw_agent.get("depends_on"), list) else [],
                 })
 
         if not agents:
@@ -1981,8 +1981,11 @@ class AIRouter:
                         "to": target,
                         "label": str(raw_edge.get("label") or "Передача результата")[:100],
                     })
+        max_graph_edges = min(120, agent_limit * 3)
         for agent in agents:
             for dependency in agent["depends_on"]:
+                if len(edges) >= max_graph_edges:
+                    break
                 if not any(edge["from"] == dependency and edge["to"] == agent["id"] for edge in edges):
                     edges.append({"from": dependency, "to": agent["id"], "label": "Передача результата"})
         # Keep independent research tasks independent: only planner-specified dependencies
@@ -2048,6 +2051,13 @@ class AIRouter:
                 return
             run["status"] = "working"
             await publish()
+            # Do not spend search requests when the account can no longer afford an agent turn.
+            budget_block = await self._budget_error(job)
+            if budget_block:
+                run["status"] = "failed"
+                run["result"] = str(budget_block)[:500]
+                await publish()
+                return
             await job.output.put(("ui_status", str(run["name"]) + ": выполняю задачу"))
             research_results: list[dict] = []
             if job.web_search:

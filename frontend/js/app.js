@@ -1047,13 +1047,13 @@
     const flushPara = () => { if (para.length) { out.push('<p>' + inlineFmt(para.join(' ')) + '</p>'); para = []; } };
     const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
     const closeQuote = () => { if (inQuote) { out.push('</blockquote>'); inQuote = false; } };
-    const splitRow = (r) => r.trim().replace(/^\\|/, '').replace(/\\|$/, '').split('|').map(c => c.trim());
+    const splitRow = (r) => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
     // Be tolerant of a blank line between a Markdown table header and its separator.
     // Models occasionally emit that spacing even though the header is still a table row.
     const isTableSep = (s) => {
       if (!String(s || '').includes('|')) return false;
       const cells = splitRow(s);
-      return cells.length > 1 && cells.every(cell => /^:?-{1,}:?$/.test(cell.replace(/\\s+/g, '')));
+      return cells.length > 1 && cells.every(cell => /^:?-{1,}:?$/.test(cell.replace(/\s+/g, '')));
     };
     const findTableSep = (start) => {
       let index = start;

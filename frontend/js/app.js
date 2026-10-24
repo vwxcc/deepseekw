@@ -1321,11 +1321,40 @@
     updateAuthCta();
   }
 
+  function showAccountCreationLimitWarning() {
+    openModal({
+      title: 'Лимит аккаунтов на IP',
+      okText: 'Понятно',
+      body: '<div class="account-ip-limit-warning"><p><strong>На одном IP-адресе разрешено не более двух аккаунтов.</strong></p>' +
+        '<p>В лимит входят новые гостевые сессии и новые регистрации. Уже созданные аккаунты продолжают работать — войдите в существующий аккаунт.</p>' +
+        '<p class="usage-note">Перед созданием гостя и регистрацией сервер повторно проверяет лимит.</p></div>',
+      onOk: () => true,
+    });
+  }
+
+  async function canCreateIdentityOnCurrentIp() {
+    try {
+      const result = await api.get('/api/auth/eligibility');
+      if (result && result.allowed === false) {
+        showAccountCreationLimitWarning();
+        return false;
+      }
+    } catch (error) {
+      if (String(error && error.message || error).includes('IP_ACCOUNT_LIMIT')) {
+        showAccountCreationLimitWarning();
+        return false;
+      }
+      // The final create endpoint performs an authoritative check even if preflight fails.
+    }
+    return true;
+  }
+
   function bindAuth() {
     const loginForm = $('#login-form'), regForm = $('#register-form');
     const registerButton = $('#register-btn');
     const continueGuestButton = $('#continue-guest-btn');
-    if (registerButton) registerButton.addEventListener('click', () => {
+    if (registerButton) registerButton.addEventListener('click', async () => {
+      if (!(await canCreateIdentityOnCurrentIp())) return;
       loginForm.classList.add('hidden');
       regForm.classList.remove('hidden');
       $('#auth-error').textContent = '';
@@ -1346,8 +1375,9 @@
         $('#auth-error').textContent = 'Не удалось открыть гостевую сессию: ' + err.message;
       }
     });
-    $$('[data-mode]').forEach(a => a.addEventListener('click', () => {
+    $('[data-mode]').forEach(a => a.addEventListener('click', async () => {
       const mode = a.dataset.mode;
+      if (mode === 'register' && !(await canCreateIdentityOnCurrentIp())) return;
       loginForm.classList.toggle('hidden', mode !== 'login');
       regForm.classList.toggle('hidden', mode !== 'register');
       $('#auth-error').textContent = '';
@@ -1381,7 +1411,10 @@
         state.user = out.user;
         state.identityReady = true;
         await boot();
-      } catch (err) { $('#auth-error').textContent = 'Ошибка регистрации: ' + err.message; }
+      } catch (err) {
+        $('#auth-error').textContent = 'Ошибка регистрации: ' + err.message;
+        if (String(err && err.message || err).includes('IP_ACCOUNT_LIMIT')) showAccountCreationLimitWarning();
+      }
     });
   }
 
@@ -10642,7 +10675,14 @@
       updateAuthCta();
       await boot();
     } catch (e) {
-      // Preserve the visible workspace during transient network failures.
+      // A full IP quota must not leave an unauthenticated guest workspace usable.
+      if (String(e && e.message || e).includes('IP_ACCOUNT_LIMIT')) {
+        state.user = null;
+        state.identityReady = false;
+        showAuth();
+        showAccountCreationLimitWarning();
+      }
+      // Preserve the visible workspace during other transient network failures.
       updateAuthCta();
       console.warn('AI CH session initialization failed:', e);
     }

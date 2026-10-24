@@ -117,7 +117,7 @@
   let pendingNewChatProjectLabel = '';
   let addChatProjects = [];
   let addChatActiveView = 'main';
-  // The sheet stays expanded for this page session after its first expansion.
+  // Persist the expanded preference for Share; the + root itself always stays fixed.
   let addChatExpandedThisSession = false;
   let addChatSelectedFileIds = new Set();
   // Keep execution controls scoped to explicitly marked file-generation blocks.
@@ -4147,6 +4147,7 @@
   function deepResearchStatusLabel(status) {
     return ({
       queued: 'В очереди',
+      waiting: 'Ожидает свободного агента',
       working: 'Работает',
       searching: 'Ищет данные',
       done: 'Готово',
@@ -4170,7 +4171,7 @@
         '</span><span class="deep-research-arrow">→</span><span>' + escapeHtml(to.name || 'Агент') +
         '</span>' + (edge.label ? '<small>' + escapeHtml(edge.label) + '</small>' : '') + '</div>';
     }).filter(Boolean).join('');
-    const active = agents.some(agent => ['queued', 'working', 'searching'].includes(String(agent.status || '')));
+    const active = agents.some(agent => ['queued', 'waiting', 'working', 'searching'].includes(String(agent.status || '')));
     const totalTokens = Math.max(0, Number(flow && flow.total_tokens) || 0);
     return '<section class="deep-research-flow" aria-label="Deep Research: ход исследования">' +
       '<div class="deep-research-flow-head"><span class="deep-research-flow-mark">🧭</span>' +
@@ -4201,7 +4202,7 @@
 
   function openDeepResearchAgentDetail(agent) {
     if (!agent) return;
-    openAddToChatSheet();
+    openAddToChatSheet('detail');
     setAddChatView('agent-detail');
     const root = $('#add-chat-agent-detail-content');
     if (!root) return;
@@ -5851,7 +5852,9 @@
       deepResearchButton.classList.toggle('deep-research-selected', !!state.deepResearch);
       deepResearchButton.setAttribute('aria-pressed', String(!!state.deepResearch));
     }
-    if (deepResearchLabel) deepResearchLabel.textContent = state.deepResearch ? 'Включён · до 5 агентов' : 'Выключен · до 5 агентов';
+    if (deepResearchLabel) deepResearchLabel.textContent = state.deepResearch
+      ? 'Включено вручную · можно запускать и автоматически'
+      : 'Выключено вручную · ИИ может включить при сложной задаче';
     const projectTitle = $('#add-chat-project-title');
     const projectLabel = $('#add-chat-project-current');
     const projectButton = $('#add-chat-project-action');
@@ -6010,13 +6013,14 @@
     if (next === 'main') renderAddChatActionLabels();
   }
 
-  function openAddToChatSheet() {
+  function openAddToChatSheet(mode = 'plus') {
     const shell = $('#add-to-chat-shell');
     if (!shell) { $('#file-input')?.click(); return; }
+    shell.classList.toggle('plus-fixed', mode === 'plus');
     const sheet = $('.add-to-chat-sheet', shell);
     if (sheet) {
-      // Compact on a fresh page; once expanded, preserve that preference for this page session.
-      sheet.classList.toggle('is-expanded', addChatExpandedThisSession);
+      if (mode === 'plus') sheet.classList.remove('is-expanded');
+      else sheet.classList.toggle('is-expanded', addChatExpandedThisSession);
       const scrollArea = $('#add-chat-scroll-area', sheet);
       if (scrollArea) scrollArea.scrollTop = 0;
       sheet.style.removeProperty('height');
@@ -6038,14 +6042,14 @@
     if (sheet) {
       const scrollArea = $('#add-chat-scroll-area', sheet);
       if (scrollArea) scrollArea.scrollTop = 0;
-      // Do not clear is-expanded: a previously expanded sheet reopens expanded until reload.
+      sheet.classList.remove('is-expanded');
       sheet.style.removeProperty('height');
       sheet.style.removeProperty('max-height');
       sheet.style.removeProperty('transition');
       sheet.style.removeProperty('transform');
     }
     setAddChatView('main');
-    shell.classList.remove('open');
+    shell.classList.remove('open', 'plus-fixed');
     shell.setAttribute('aria-hidden', 'true');
     $('#attach-btn')?.classList.remove('is-active');
   }
@@ -6174,7 +6178,9 @@
         localStorage.setItem('aich_deep_research', state.deepResearch ? '1' : '0');
         renderAddChatActionLabels();
         renderDeepResearchChip();
-        toast(state.deepResearch ? 'Deep Research включён: до 5 агентов' : 'Deep Research выключен');
+        toast(state.deepResearch
+          ? 'Deep Research включён; одновременно работают максимум 5 агентов'
+          : 'Deep Research выключен вручную; ИИ может запустить его сам при сложной задаче');
       } else if (action === 'memory') {
         setAddChatView('memory');
       } else if (action === 'project') {
@@ -6260,7 +6266,7 @@
     if (sheet && scrollArea) {
       // Mouse drag support (touch uses Touch Events to avoid pointercancel on iOS Safari).
       sheet.addEventListener('pointerdown', event => {
-        if (!shell.classList.contains('open') || event.pointerType === 'touch' ||
+        if (!shell.classList.contains('open') || shell.classList.contains('plus-fixed') || event.pointerType === 'touch' ||
             !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
         pointerDrag = startSheetGesture(event.clientX, event.clientY, event.target,
           sheet.classList.contains('is-expanded'));
@@ -6296,7 +6302,7 @@
       // On touch devices, intercept only the gesture that expands/collapses the sheet.
       // All other vertical movement remains native scrolling inside #add-chat-scroll-area.
       sheet.addEventListener('touchstart', event => {
-        if (!shell.classList.contains('open') || event.touches.length !== 1) {
+        if (!shell.classList.contains('open') || shell.classList.contains('plus-fixed') || event.touches.length !== 1) {
           touchDrag = null;
           return;
         }
@@ -9220,7 +9226,7 @@
     if (!shell || !content) { toast('Меню «Поделиться» недоступно.', 'error'); return; }
 
     // Open the actual + sheet immediately; never wait for share/status API calls before showing it.
-    openAddToChatSheet();
+    openAddToChatSheet('share');
     setAddChatView('share');
     content.innerHTML = '<p class="usage-note share-loading">Открываю действия чата…</p>';
 

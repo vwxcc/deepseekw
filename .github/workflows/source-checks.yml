@@ -79,15 +79,20 @@ jobs:
           assert.match(sheetCss, /overflow-y:\s*auto !important/);
           assert.match(sheetCss, /flex:\s*1 1 0 !important/);
           assert.doesNotMatch(sheetCss, /(?:^|[;{]\s*)height:\s*0 !important/);
-          assert.match(js, /let addChatExpandedThisSession = false/);
+          assert.match(js, /function openAddToChatSheet\(mode = 'plus'\)/);
+          assert.match(js, /shell\.classList\.toggle\('plus-fixed', mode === 'plus'\)/);
           assert.match(js, /addChatExpandedThisSession = true/);
           assert.match(js, /sheet\.addEventListener\('touchmove'/);
           assert.match(js, /passive:\s*false/);
-          assert.match(spec, /После первого успешного разворачивания/);
+          assert.match(js, /shell\.classList\.contains\('plus-fixed'\)/);
+          assert.match(css, /#add-to-chat-shell\.plus-fixed:not\(\.has-subview\) \.add-chat-scroll-area\s*\{[\s\S]*?overflow: hidden !important;/);
+          assert.match(css, /#add-to-chat-shell\.plus-fixed \.add-chat-handle-wrap\s*\{[\s\S]*?display: none !important;/);
+          assert.match(spec, /корневое окно «\+» фиксированное/i);
+          assert.match(spec, /После первого успешного раскрытия Share/);
           assert.match(spec, /Liquid Glass/);
           assert.match(html, /app\.css\?v=\d+&rev=\d+/);
           assert.match(html, /app\.js\?v=\d+&rev=\d+/);
-          console.log('Plus/Share has one scroll area, persistent expansion, iOS touch handling and Liquid Glass styles.');
+          console.log('The + root is fixed/no-scroll; Share preserves resize/touch scrolling; nested + views may scroll.');
           JS
       - name: Test subscription modal comparison rendering
         run: |

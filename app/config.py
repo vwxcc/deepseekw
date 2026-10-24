@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     agent_enabled: bool = True
     agent_max_steps: int = 6
     agent_timeout: int = 40
+    # Total Deep Research task nodes per request; concurrency is capped separately at five.
+    deep_research_max_agents_free: int = Field(default=30, ge=1, le=100)
+    deep_research_max_agents_pro: int = Field(default=40, ge=1, le=100)
     # isolated runner (separate container, internal network, no internet)
     sandbox_url: str = Field(
         default_factory=lambda: (

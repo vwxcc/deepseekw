@@ -1893,7 +1893,7 @@ class AIRouter:
                 api_key=entry.api_key,
                 model=entry.model,
                 temperature=min(0.25, float(entry.temperature if entry.temperature is not None else 0.2)),
-                max_tokens=min(6000, max(2200, int(entry.max_tokens or 6000))),
+                max_tokens=max(512, min(6000, int(entry.max_tokens or 6000))),
                 timeout=min(90, max(20, int(entry.timeout or 60))),
                 disable_thinking=True,
             )

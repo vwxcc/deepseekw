@@ -1548,7 +1548,7 @@
     if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) return false;
     state.chats = (Array.isArray(state.chats) ? state.chats : [])
       .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && c.id);
-    const index = state.chats.findIndex(item => item.id === chat.id);
+    const index = state.chats.findIndex(item => item && typeof item === 'object' && item.id === chat.id);
     if (index >= 0) state.chats[index] = { ...state.chats[index], ...chat };
     else state.chats.unshift(chat);
     state.chatListVersion += 1;
@@ -1736,7 +1736,7 @@
   }
 
   function openRename(id) {
-    const chat = state.chats.find(c => c.id === id);
+    const chat = (Array.isArray(state.chats) ? state.chats : []).find(c => c && typeof c === 'object' && c.id === id);
     openModal({
       title: 'Переименовать чат',
       body: '<input id="rename-input" value="' + escapeHtml(chat ? chat.title : '') + '" />',
@@ -1744,11 +1744,17 @@
         const val = $('#rename-input', root).value.trim();
         if (!val) return false;
         const upd = await api.patch('/api/chats/' + id, { title: val });
-        const i = state.chats.findIndex(c => c.id === id);
-        if (i >= 0) state.chats[i] = upd;
+        const i = (Array.isArray(state.chats) ? state.chats : [])
+          .findIndex(c => c && typeof c === 'object' && c.id === id);
+        const patch = upd && typeof upd === 'object' ? upd : {};
+        if (i >= 0) state.chats[i] = {
+          ...state.chats[i],
+          ...patch,
+          title: typeof patch.title === 'string' ? patch.title : val,
+        };
         state.chatListVersion += 1;
         renderChatList();
-        if (state.currentChatId === id) refreshCurrentChatTitle(upd.title);
+        if (state.currentChatId === id) refreshCurrentChatTitle(typeof patch.title === 'string' ? patch.title : val);
         return true;
       },
     });
@@ -1758,7 +1764,8 @@
     if (!confirm('Удалить чат вместе со всеми сообщениями?')) return;
     await api.del('/api/chats/' + id);
     state.chatListVersion += 1;
-    state.chats = state.chats.filter(c => c.id !== id);
+    state.chats = (Array.isArray(state.chats) ? state.chats : [])
+      .filter(c => c && typeof c === 'object' && c.id !== id);
     if (state.currentChatId === id) {
       state.currentChatId = null; state.tree = []; state.choices = {};
       $('#chat-title').textContent = 'AI CH';
@@ -3269,7 +3276,8 @@
     const shell = $('#audio-player-shell'), audio = $('#audio-player-source');
     if (!shell || !audio) return;
     state.audioMessageId = String(messageId);
-    const chat = state.chats.find(c => c.id === state.currentChatId);
+    const chat = (Array.isArray(state.chats) ? state.chats : [])
+      .find(c => c && typeof c === 'object' && c.id === state.currentChatId);
     const playerTitle = (chat && chat.title) || 'Ответ';
     $('#audio-player-title').textContent = playerTitle;
     if (navigator.mediaSession && typeof window.MediaMetadata === 'function') {
@@ -3621,7 +3629,8 @@
 
     state.audioMessageId = id;
     deviceSpeechState.messageId = id;
-    const chat = state.chats.find(c => c.id === state.currentChatId);
+    const chat = (Array.isArray(state.chats) ? state.chats : [])
+      .find(c => c && typeof c === 'object' && c.id === state.currentChatId);
     const shell = $('#device-audio-player-shell');
     if (!shell) return;
     const title = $('#device-audio-title');
@@ -4796,7 +4805,8 @@
         if (n) {
           const el = $('.msg[data-mid="' + id + '"] .content');
           openSaveMenu({
-            title: (state.chats.find(c => c.id === state.currentChatId) || {}).title || 'AI CH',
+            title: ((Array.isArray(state.chats) ? state.chats : [])
+        .find(c => c && typeof c === 'object' && c.id === state.currentChatId) || {}).title || 'AI CH',
             text: n.content || '',
             html: el ? el.innerHTML : '',
           });
@@ -5644,9 +5654,11 @@
         setTimeout(async () => {
           try {
             const chat = await api.get('/api/chats/' + encodeURIComponent(completedChatId));
-            const i = state.chats.findIndex(c => c.id === chat.id);
-            if (i >= 0 && state.chats[i].title !== chat.title) {
-              state.chats[i] = chat; renderChatList();
+            if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) return;
+            const chats = Array.isArray(state.chats) ? state.chats : [];
+            const i = chats.findIndex(c => c && typeof c === 'object' && c.id === chat.id);
+            if (i >= 0 && chats[i].title !== chat.title) {
+              state.chats[i] = { ...chats[i], ...chat }; renderChatList();
               if (state.currentChatId === completedChatId) refreshCurrentChatTitle(chat.title);
             }
           } catch (e) { /* noop */ }
@@ -8085,7 +8097,9 @@
       } else if (action === 'add-current-chat' && project && state.currentChatId) {
         try {
           const updated = await api.patch('/api/chats/' + encodeURIComponent(state.currentChatId), { project_id: project.id });
-          const index = (state.chats || []).findIndex(chat => chat.id === updated.id);
+          const index = updated && typeof updated === 'object' && typeof updated.id === 'string' && updated.id
+            ? (Array.isArray(state.chats) ? state.chats : []).findIndex(chat => chat && typeof chat === 'object' && chat.id === updated.id)
+            : -1;
           if (index >= 0) state.chats[index] = { ...state.chats[index], ...updated };
           await Promise.all([loadWorkspaceProjectChats(), loadChats()]);
           toast('Чат добавлен в проект «' + project.title + '»');

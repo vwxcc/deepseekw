@@ -617,14 +617,10 @@
           </button>
           <button type="button" class="add-chat-action" data-add-chat-action="model">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-layers"/></svg></span>
-            <span class="add-chat-action-copy"><strong>Выбор модели</strong><small id="add-chat-model-current">Текущая модель</small></span>
+            <span class="add-chat-action-copy"><strong>Модель и усилие</strong><small id="add-chat-model-current">Текущая модель</small></span>
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
-          <button type="button" class="add-chat-action" data-add-chat-action="response-detail">
-            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-sparkle"/></svg></span>
-            <span class="add-chat-action-copy"><strong>Как отвечать</strong><small id="add-chat-response-detail-current">Стандарт</small></span>
-            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
-          </button>
+          <div class="add-chat-action response-detail-inline-control"><span class="add-chat-row-icon"><svg class="ic"><use href="#i-sparkle"/></svg></span><div class="add-chat-action-copy response-detail-inline-copy"><div class="response-detail-inline-heading"><strong>Как отвечать</strong><small id="add-chat-response-detail-current">Стандарт</small></div><input type="range" id="add-chat-response-detail-range" class="orange-range" min="0" max="2" step="1" value="1" aria-label="Подробность ответа" aria-valuetext="Стандарт" /><div class="response-detail-inline-labels" aria-hidden="true"><span>Минимум</span><span>Стандарт</span><span>Максимум</span></div></div></div>
           <button type="button" class="add-chat-action deep-research-toggle" data-add-chat-action="deep-research" aria-pressed="false">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
             <span class="add-chat-action-copy"><strong>Deep Research</strong><small id="add-chat-deep-research-current">Выключен · до 5 агентов</small></span>
@@ -637,22 +633,14 @@
           </button>
           <button type="button" class="add-chat-action" id="add-chat-project-action" data-add-chat-action="project">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-folder"/></svg></span>
-            <span class="add-chat-action-copy"><strong id="add-chat-project-title">Добавить сразу в проект</strong><small id="add-chat-project-current">Не выбрано</small></span>
+            <span class="add-chat-action-copy"><strong id="add-chat-project-title">Проект и коннекторы</strong><small id="add-chat-project-current">Не выбрано</small></span>
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
         </div>
+
         
-        <div class="add-chat-action-group add-chat-connectors-group">
-          <button type="button" class="add-chat-action" data-add-chat-action="connectors">
-            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-plug"/></svg></span>
-            <span class="add-chat-action-copy"><strong>Коннекторы</strong><small>Подключения к внешним сервисам</small></span>
-            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
-          </button>
-        </div>
       </div>
-      <div id="add-chat-model-view" class="add-chat-subview hidden">
-        <div id="model-picker" class="model-picker hidden" role="listbox" aria-label="Выбор модели"></div>
-      </div>
+      <div id="add-chat-model-view" class="add-chat-subview hidden"><div id="model-picker" class="model-picker hidden" role="listbox" aria-label="Выбор модели"></div><section class="add-chat-effort-control" aria-labelledby="add-chat-effort-title"><div class="add-chat-effort-heading"><strong id="add-chat-effort-title">Усилие модели</strong><small id="add-chat-effort-current">Стандарт</small></div><input type="range" id="add-chat-effort-range" class="orange-range" min="0" max="2" step="1" value="1" aria-label="Усилие модели" aria-valuetext="Стандарт" /><div class="add-chat-effort-labels" aria-hidden="true"><span>Минимум</span><span>Стандарт</span><span>Максимум</span></div><p>Определяет глубину рассуждений модели.</p></section></div>
       <div id="add-chat-response-detail-view" class="add-chat-subview hidden">
         <div id="add-chat-response-detail-options" class="response-detail-options" role="radiogroup" aria-label="Подробность ответа"></div>
         <p class="response-detail-help">Меняется только подробность текста. Инструменты, поиск, цепочка агента и интерактивные блоки остаются доступны.</p>
@@ -667,11 +655,7 @@
           <button type="button" id="add-chat-library-attach" class="primary">Добавить выбранные (<span id="add-chat-library-selected-count">0</span>)</button>
         </div>
       </div>
-      <div id="add-chat-project-view" class="add-chat-subview hidden">
-        <div id="add-chat-project-picker" class="add-chat-project-picker">
-          <div id="add-chat-project-picker-content"></div>
-        </div>
-      </div>
+      <div id="add-chat-project-view" class="add-chat-subview hidden"><div id="add-chat-project-picker" class="add-chat-project-picker"><div id="add-chat-project-picker-content"></div></div><section class="add-chat-project-connectors" aria-labelledby="add-chat-project-connectors-title"><div class="add-chat-project-connectors-heading"><h3 id="add-chat-project-connectors-title">Коннекторы</h3><p>Подключения к внешним сервисам.</p></div><div id="add-chat-project-connectors-list" class="connector-catalog-panel" aria-live="polite"><p class="usage-note">Загрузка списка…</p></div></section></div>
       <div id="add-chat-memory-view" class="add-chat-subview hidden">
         <div class="memory-settings-view">
           <p class="usage-note">При включённой памяти AI CH получает сохранённые факты и предпочтения. Когда память выключена, они не отправляются модели, а новые факты не сохраняются автоматически. Существующие записи не удаляются.</p>

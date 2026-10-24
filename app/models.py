@@ -527,6 +527,17 @@ class PlanLimit(Base):
     text_value: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class PrefetchSettings(Base):
+    """Global administrator-controlled switch for file prefetch."""
+
+    __tablename__ = "prefetch_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class StatusModelConfig(Base):
     __tablename__ = "status_model_config"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)

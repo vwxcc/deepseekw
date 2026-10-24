@@ -46,6 +46,49 @@ jobs:
         run: sudo python -m unittest discover -s tests -p 'test_sandbox_runner.py' -v
       - name: Check browser JavaScript syntax
         run: node --check frontend/js/app.js
+      - name: Validate the plus and Share sheet scroll contract
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const html = fs.readFileSync('frontend/index.html', 'utf8');
+          const css = fs.readFileSync('frontend/css/app.css', 'utf8');
+          const js = fs.readFileSync('frontend/js/app.js', 'utf8');
+          const spec = fs.readFileSync('docs/PLUS-LIQUID-GLASS-SPEC.md', 'utf8');
+
+          assert.equal((html.match(/id="add-chat-scroll-area"/g) || []).length, 1,
+            'The sheet must have exactly one scroll container.');
+          const shellStart = html.indexOf('<div id="add-to-chat-shell"');
+          const shellEnd = html.indexOf('  <input type="file" id="file-input"', shellStart);
+          assert.ok(shellStart >= 0 && shellEnd > shellStart, 'Sheet markup must be present.');
+          const shell = html.slice(shellStart, shellEnd);
+          const scrollStart = shell.indexOf('id="add-chat-scroll-area"');
+          const mainView = shell.indexOf('id="add-chat-main-view"');
+          const shareView = shell.indexOf('id="add-chat-share-view"');
+          const lastView = shell.indexOf('id="add-chat-agent-detail-view"');
+          const scrollClose = shell.indexOf('      </div>\\n    </section>', shareView);
+          assert.ok(scrollStart >= 0 && scrollStart < mainView && mainView < shareView,
+            'The main and Share views must live inside the shared scroll container.');
+          assert.ok(lastView > shareView && scrollClose > lastView,
+            'All subviews must be enclosed in the single scroll container.');
+
+          const canonicalStart = css.indexOf('Canonical + / Share sheet');
+          const glassStart = css.indexOf('Liquid Glass design system', canonicalStart);
+          assert.ok(canonicalStart >= 0 && glassStart > canonicalStart, 'Canonical sheet and glass styles must exist.');
+          const sheetCss = css.slice(canonicalStart, glassStart);
+          assert.match(sheetCss, /overflow-y:\\s*auto !important/);
+          assert.match(sheetCss, /flex:\\s*1 1 0 !important/);
+          assert.doesNotMatch(sheetCss, /(?:^|[;{]\\s*)height:\\s*0 !important/);
+          assert.match(js, /let addChatExpandedThisSession = false/);
+          assert.match(js, /addChatExpandedThisSession = true/);
+          assert.match(js, /sheet\\.addEventListener\\('touchmove'/);
+          assert.match(js, /passive:\\s*false/);
+          assert.match(spec, /После первого успешного разворачивания/);
+          assert.match(spec, /Liquid Glass/);
+          assert.match(html, /app\\.css\\?v=\\d+&rev=\\d+/);
+          assert.match(html, /app\\.js\\?v=\\d+&rev=\\d+/);
+          console.log('Plus/Share has one scroll area, persistent expansion, iOS touch handling and Liquid Glass styles.');
+          JS
       - name: Test subscription modal comparison rendering
         run: |
           node <<'JS'

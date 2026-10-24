@@ -5642,7 +5642,7 @@
     if (sheet) {
       sheet.classList.remove('is-expanded');
       sheet.scrollTop = 0;
-      $('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
+      $$('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
       sheet.style.removeProperty('height');
       sheet.style.removeProperty('max-height');
       sheet.style.removeProperty('transform');
@@ -5662,7 +5662,7 @@
     if (sheet) {
       sheet.classList.remove('is-expanded');
       sheet.scrollTop = 0;
-      $('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
+      $$('.add-chat-sheet-content, .add-chat-subview', sheet).forEach(pane => { pane.scrollTop = 0; });
       sheet.style.removeProperty('height');
       sheet.style.removeProperty('max-height');
       sheet.style.removeProperty('transition');

@@ -81,10 +81,9 @@ IP_ACCOUNT_LIMIT_DETAIL = (
 
 def _request_ip_hash(request: Request) -> str | None:
     """Return a stable, non-reversible HMAC of the client IP; never store the raw address."""
+    # Render's edge proxy supplies X-Forwarded-For; configure any other reverse
+    # proxy to overwrite this header rather than pass through a client-supplied value.
     candidates = [
-        request.headers.get("cf-connecting-ip", ""),
-        request.headers.get("true-client-ip", ""),
-        request.headers.get("x-real-ip", ""),
         (request.headers.get("x-forwarded-for", "").split(",", 1)[0]),
         request.client.host if request.client is not None else "",
     ]

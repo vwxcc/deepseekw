@@ -117,8 +117,6 @@
   let pendingNewChatProjectLabel = '';
   let addChatProjects = [];
   let addChatActiveView = 'main';
-  // The sheet stays expanded for this page session after its first expansion.
-  let addChatExpandedThisSession = false;
   let addChatSelectedFileIds = new Set();
   // Keep execution controls scoped to explicitly marked file-generation blocks.
   const actionCarouselTimers = new WeakMap();
@@ -4147,6 +4145,7 @@
   function deepResearchStatusLabel(status) {
     return ({
       queued: 'В очереди',
+      waiting: 'Ожидает свободного агента',
       working: 'Работает',
       searching: 'Ищет данные',
       done: 'Готово',
@@ -4170,7 +4169,7 @@
         '</span><span class="deep-research-arrow">→</span><span>' + escapeHtml(to.name || 'Агент') +
         '</span>' + (edge.label ? '<small>' + escapeHtml(edge.label) + '</small>' : '') + '</div>';
     }).filter(Boolean).join('');
-    const active = agents.some(agent => ['queued', 'working', 'searching'].includes(String(agent.status || '')));
+    const active = agents.some(agent => ['queued', 'waiting', 'working', 'searching'].includes(String(agent.status || '')));
     const totalTokens = Math.max(0, Number(flow && flow.total_tokens) || 0);
     return '<section class="deep-research-flow" aria-label="Deep Research: ход исследования">' +
       '<div class="deep-research-flow-head"><span class="deep-research-flow-mark">🧭</span>' +
@@ -5851,7 +5850,9 @@
       deepResearchButton.classList.toggle('deep-research-selected', !!state.deepResearch);
       deepResearchButton.setAttribute('aria-pressed', String(!!state.deepResearch));
     }
-    if (deepResearchLabel) deepResearchLabel.textContent = state.deepResearch ? 'Включён · до 5 агентов' : 'Выключен · до 5 агентов';
+    if (deepResearchLabel) deepResearchLabel.textContent = state.deepResearch
+      ? 'Включено вручную · можно запускать и автоматически'
+      : 'Выключено вручную · ИИ может включить при сложной задаче';
     const projectTitle = $('#add-chat-project-title');
     const projectLabel = $('#add-chat-project-current');
     const projectButton = $('#add-chat-project-action');
@@ -6015,8 +6016,7 @@
     if (!shell) { $('#file-input')?.click(); return; }
     const sheet = $('.add-to-chat-sheet', shell);
     if (sheet) {
-      // Compact on a fresh page; once expanded, preserve that preference for this page session.
-      sheet.classList.toggle('is-expanded', addChatExpandedThisSession);
+      sheet.classList.remove('is-expanded');
       const scrollArea = $('#add-chat-scroll-area', sheet);
       if (scrollArea) scrollArea.scrollTop = 0;
       sheet.style.removeProperty('height');
@@ -6038,7 +6038,7 @@
     if (sheet) {
       const scrollArea = $('#add-chat-scroll-area', sheet);
       if (scrollArea) scrollArea.scrollTop = 0;
-      // Do not clear is-expanded: a previously expanded sheet reopens expanded until reload.
+      sheet.classList.remove('is-expanded');
       sheet.style.removeProperty('height');
       sheet.style.removeProperty('max-height');
       sheet.style.removeProperty('transition');
@@ -6174,7 +6174,9 @@
         localStorage.setItem('aich_deep_research', state.deepResearch ? '1' : '0');
         renderAddChatActionLabels();
         renderDeepResearchChip();
-        toast(state.deepResearch ? 'Deep Research включён: до 5 агентов' : 'Deep Research выключен');
+        toast(state.deepResearch
+          ? 'Deep Research включён; одновременно работают максимум 5 агентов'
+          : 'Deep Research выключен вручную; ИИ может запустить его сам при сложной задаче');
       } else if (action === 'memory') {
         setAddChatView('memory');
       } else if (action === 'project') {
@@ -6207,121 +6209,7 @@
     $('#add-chat-library-cancel')?.addEventListener('click', () => setAddChatView('main'));
     $('#add-chat-library-attach')?.addEventListener('click', attachSelectedLibraryFiles);
 
-    const sheet = $('.add-to-chat-sheet', shell);
-    const scrollArea = $('#add-chat-scroll-area', shell);
-    let pointerDrag = null;
-    let touchDrag = null;
-
-    const expandSheet = () => {
-      if (!sheet) return;
-      sheet.classList.add('is-expanded');
-      addChatExpandedThisSession = true;
-    };
-    const collapseSheet = () => {
-      if (sheet) sheet.classList.remove('is-expanded');
-      // Keep addChatExpandedThisSession true; the next opening should be expanded.
-    };
-    const finishSheetGesture = gesture => {
-      if (!gesture || !sheet || !gesture.mode) return;
-      if (gesture.mode === 'expand' && gesture.dy < -28) {
-        expandSheet();
-      } else if (gesture.mode === 'collapse' && gesture.dy > 35) {
-        collapseSheet();
-      } else if (gesture.mode === 'close' && gesture.dy > 110) {
-        closeAddToChatSheet();
-      }
-    };
-    const startSheetGesture = (x, y, target, expanded) => ({
-      x, y, dy: 0, expanded,
-      area: scrollArea && scrollArea.contains(target) ? scrollArea : null,
-      mode: null
-    });
-    const chooseSheetGesture = gesture => {
-      const dx = gesture.currentX - gesture.x;
-      const dy = gesture.currentY - gesture.y;
-      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.15) {
-        gesture.mode = 'native';
-        return;
-      }
-      if (Math.abs(dy) < 5) return;
-      const atTop = !gesture.area || gesture.area.scrollTop <= 0;
-      if (!gesture.expanded && dy < 0) {
-        gesture.mode = 'expand';
-      } else if (gesture.expanded && dy > 0 && atTop) {
-        gesture.mode = 'collapse';
-      } else if (!gesture.expanded && dy > 0) {
-        gesture.mode = 'close';
-      } else {
-        // Expanded content scrolling is left to the browser's native scroller.
-        gesture.mode = 'native';
-      }
-    };
-
-    if (sheet && scrollArea) {
-      // Mouse drag support (touch uses Touch Events to avoid pointercancel on iOS Safari).
-      sheet.addEventListener('pointerdown', event => {
-        if (!shell.classList.contains('open') || event.pointerType === 'touch' ||
-            !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
-        pointerDrag = startSheetGesture(event.clientX, event.clientY, event.target,
-          sheet.classList.contains('is-expanded'));
-        pointerDrag.id = event.pointerId;
-      });
-      sheet.addEventListener('pointermove', event => {
-        if (!pointerDrag || pointerDrag.id != null && pointerDrag.id !== event.pointerId) return;
-        pointerDrag.currentX = event.clientX;
-        pointerDrag.currentY = event.clientY;
-        if (!pointerDrag.mode) chooseSheetGesture(pointerDrag);
-        const dy = event.clientY - pointerDrag.y;
-        if (pointerDrag.mode === 'expand' || pointerDrag.mode === 'collapse' || pointerDrag.mode === 'close') {
-          pointerDrag.dy = dy;
-          if (!pointerDrag.captured) {
-            pointerDrag.captured = true;
-            try { sheet.setPointerCapture(event.pointerId); } catch (_) {}
-          }
-          if (event.cancelable) event.preventDefault();
-        } else if (pointerDrag.mode === 'native') {
-          pointerDrag = null;
-        }
-      });
-      const finishPointer = event => {
-        if (!pointerDrag) return;
-        const current = pointerDrag;
-        pointerDrag = null;
-        current.dy = event.clientY - current.y;
-        finishSheetGesture(current);
-      };
-      sheet.addEventListener('pointerup', finishPointer);
-      sheet.addEventListener('pointercancel', () => { pointerDrag = null; });
-
-      // On touch devices, intercept only the gesture that expands/collapses the sheet.
-      // All other vertical movement remains native scrolling inside #add-chat-scroll-area.
-      sheet.addEventListener('touchstart', event => {
-        if (!shell.classList.contains('open') || event.touches.length !== 1) {
-          touchDrag = null;
-          return;
-        }
-        const touch = event.touches[0];
-        touchDrag = startSheetGesture(touch.clientX, touch.clientY, event.target,
-          sheet.classList.contains('is-expanded'));
-      }, { passive: true });
-      sheet.addEventListener('touchmove', event => {
-        if (!touchDrag || event.touches.length !== 1) return;
-        const touch = event.touches[0];
-        touchDrag.currentX = touch.clientX;
-        touchDrag.currentY = touch.clientY;
-        if (!touchDrag.mode) chooseSheetGesture(touchDrag);
-        touchDrag.dy = touch.clientY - touchDrag.y;
-        if (touchDrag.mode === 'expand' || touchDrag.mode === 'collapse' || touchDrag.mode === 'close') {
-          if (event.cancelable) event.preventDefault();
-        }
-      }, { passive: false });
-      sheet.addEventListener('touchend', () => {
-        const current = touchDrag;
-        touchDrag = null;
-        finishSheetGesture(current);
-      }, { passive: true });
-      sheet.addEventListener('touchcancel', () => { touchDrag = null; }, { passive: true });
-    }
+    // The + sheet is fixed and compact: no drag-to-expand/collapse gestures.
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && shell.classList.contains('open')) closeAddToChatSheet();
     });

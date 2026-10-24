@@ -8026,22 +8026,22 @@ a { color: var(--accent) !important; }
 .send-btn,
 .send-btn.stop {
   border: 1px solid var(--accent-border) !important;
-  background: rgba(var(--accent-rgb), .88) !important;
+  background: rgba(var(--accent-rgb), .82) !important;
   background-image: linear-gradient(
     135deg,
-    rgba(var(--accent-rgb), .80),
-    rgba(var(--accent-rgb), .92)
+    rgba(var(--accent-rgb), .74),
+    rgba(var(--accent-rgb), .84)
   ) !important;
   color: var(--accent-button-fg) !important;
   box-shadow: 0 3px 10px rgba(var(--accent-rgb), .14) !important;
 }
 .send-btn:hover,
 .send-btn.stop:hover {
-  background: rgba(var(--accent-rgb), .96) !important;
+  background: rgba(var(--accent-rgb), .90) !important;
   background-image: linear-gradient(
     135deg,
-    rgba(var(--accent-rgb), .90),
-    rgba(var(--accent-rgb), .98)
+    rgba(var(--accent-rgb), .84),
+    rgba(var(--accent-rgb), .93)
   ) !important;
   box-shadow: 0 5px 15px rgba(var(--accent-rgb), .19) !important;
 }

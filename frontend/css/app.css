@@ -6012,3 +6012,52 @@ input[type="range"]:focus-visible {
     max-height: min(90dvh, 820px);
   }
 }
+
+
+/* Floating chat navigation: visible only when there is an answer above the current viewport. */
+.scroll-to-bottom-btn {
+  position: absolute;
+  right: 18px;
+  bottom: 112px;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-panel);
+  color: var(--fg);
+  box-shadow: 0 4px 18px rgba(20, 20, 20, .13);
+  cursor: pointer;
+  transition: background .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.scroll-to-bottom-btn .ic { width: 20px; height: 20px; stroke-width: 2.2; }
+.scroll-to-bottom-btn:hover,
+.scroll-to-bottom-btn:focus-visible {
+  background: var(--bg-hover);
+  box-shadow: 0 6px 22px rgba(20, 20, 20, .18);
+}
+.scroll-to-bottom-btn:active { transform: scale(.96); }
+.scroll-to-bottom-btn.hidden { display: none !important; }
+
+.add-to-chat-sheet > .add-chat-sheet-content,
+.add-to-chat-sheet > .add-chat-subview {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+.add-to-chat-sheet {
+  transition: height .32s cubic-bezier(.22, 1, .36, 1),
+              max-height .32s cubic-bezier(.22, 1, .36, 1),
+              transform .4s cubic-bezier(.22, 1, .36, 1);
+}
+@media (max-width: 860px) {
+  .scroll-to-bottom-btn { right: 14px; }
+  .add-to-chat-sheet > .add-chat-sheet-content,
+  .add-to-chat-sheet > .add-chat-subview {
+    scroll-padding-block: 8px;
+    scrollbar-width: auto;
+  }
+}

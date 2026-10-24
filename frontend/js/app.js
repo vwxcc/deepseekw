@@ -1624,7 +1624,10 @@
       if (requestToken !== state.chatOpenToken) return false;
       if (!Array.isArray(loadedTree)) throw new Error('Сервер вернул некорректную историю чата');
 
-      if (state.currentChatId !== id) closeChatSearch();
+      if (state.currentChatId !== id) {
+        closeChatSearch();
+        state.stickBottom = true;
+      }
       state.currentChatId = id;
       state.choices = {};
       state.tree = loadedTree.filter(node => node && typeof node === 'object' && !Array.isArray(node));
@@ -4106,12 +4109,16 @@
 
   function renderMessages(options) {
     const box = $('#messages');
+    if (!box) return;
     const opts = options || {};
+    const wasAtBottom = state.stickBottom !== false;
+    const previousScrollTop = box.scrollTop;
     updateShareButtonVisibility();
     const entries = allMessages(state.tree);
     if (!entries.length) {
       // Keep the existing empty-state DOM and animation instead of rebuilding it on every no-op render.
       if (!box.classList.contains('empty') || !box.querySelector('.empty-state')) renderEmptyState();
+      updateScrollDownButton();
       return;
     }
     box.classList.remove('empty');
@@ -4126,13 +4133,21 @@
     hydrateReadableTextStatuses(entries);
 
     if (opts.focusMessageId) {
-      const target = $$('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
+      const target = $('.msg', box).find(el => el.dataset.mid === String(opts.focusMessageId));
       const content = target ? $('.content.md', target) : null;
       if (content) content.classList.add('answer-arrive');
-      requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
-    } else {
+      requestAnimationFrame(() => {
+        scrollToMessageStart(opts.focusMessageId);
+        requestAnimationFrame(updateScrollDownButton);
+      });
+    } else if (wasAtBottom) {
       scrollToBottom();
+    } else {
+      // A final/status refresh must not pull a reader back to the latest answer.
+      box.scrollTop = previousScrollTop;
+      state.stickBottom = false;
     }
+    updateScrollDownButton();
   }
 
   function renderMessageInPlace(messageId, previousMessageId, options) {
@@ -4171,6 +4186,7 @@
     } else if (state.stickBottom !== false) {
       scrollToBottom();
     }
+    updateScrollDownButton();
     return true;
   }
 
@@ -4472,8 +4488,27 @@
 
   function scrollToBottom() {
     const box = $('#messages');
+    if (!box) return;
     box.scrollTop = box.scrollHeight;
     state.stickBottom = true;
+    updateScrollDownButton();
+  }
+
+  function updateScrollDownButton() {
+    const button = $('#scroll-to-bottom-btn');
+    const box = $('#messages');
+    if (!button || !box) return;
+    const hasAnswer = allMessages(state.tree).some(entry => {
+      const node = entry && entry.node;
+      return !!(node && node.role === 'assistant' && String(node.content || '').trim());
+    });
+    const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
+    const visible = hasAnswer && !box.classList.contains('empty') && distanceFromBottom > 70;
+    button.classList.toggle('hidden', !visible);
+    button.setAttribute('aria-hidden', String(!visible));
+    button.tabIndex = visible ? 0 : -1;
+    const composer = $('#composer');
+    button.style.bottom = Math.ceil((composer ? composer.getBoundingClientRect().height : 0) + 12) + 'px';
   }
 
   function scrollToMessageStart(messageId) {
@@ -5384,6 +5419,7 @@
     const contentHeight = t.scrollHeight;
     t.style.height = Math.min(contentHeight, maxHeight) + 'px';
     t.style.overflowY = contentHeight > maxHeight + 1 ? 'auto' : 'hidden';
+    updateScrollDownButton();
   }
 
   function renderAttachments() {
@@ -8316,7 +8352,16 @@
     $('#messages').addEventListener('scroll', () => {
       const box = $('#messages');
       state.stickBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 70;
+      updateScrollDownButton();
     });
+    $('#scroll-to-bottom-btn')?.addEventListener('click', () => {
+      const box = $('#messages');
+      if (!box) return;
+      state.stickBottom = true;
+      box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
+      requestAnimationFrame(updateScrollDownButton);
+    });
+    window.addEventListener('resize', updateScrollDownButton, { passive: true });
     $('#settings-btn').addEventListener('click', () => {
       const u = state.user || {};
       const isAdmin = !!u.is_admin;

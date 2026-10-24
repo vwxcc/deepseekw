@@ -7380,3 +7380,30 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   min-width: 0 !important;
   box-sizing: border-box !important;
 }
+
+/* Keep submenu back navigation unfilled and give the + header breathing room. */
+#add-to-chat-shell.has-subview .add-chat-head .add-chat-close,
+#add-to-chat-shell.has-subview .add-chat-head .add-chat-close:hover,
+#add-to-chat-shell.has-subview .add-chat-head .add-chat-close:active {
+  width: auto !important;
+  min-width: 0 !important;
+  height: 40px !important;
+  padding: 0 4px 0 0 !important;
+  justify-content: flex-start !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  transform: none !important;
+}
+#add-to-chat-shell.plus-fixed:not(.has-subview) .add-chat-head {
+  padding-top: 8px !important;
+}
+#add-to-chat-shell.plus-fixed:not(.has-subview) .add-chat-head .add-chat-close {
+  align-self: center !important;
+  transform: translateY(3px) !important;
+}

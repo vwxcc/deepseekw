@@ -6,6 +6,124 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+  // Accent color is per account. localStorage is only an instant-apply cache;
+  // the canonical value is loaded from and saved to the account preferences API.
+  const DEFAULT_ACCENT_COLOR = '#3b82f6';
+  const ACCENT_PRESETS = [
+    { value: '#3b82f6', label: 'Синий' },
+    { value: '#f28c28', label: 'Оранжевый' },
+    { value: '#8b5cf6', label: 'Фиолетовый' },
+    { value: '#16a34a', label: 'Зелёный' },
+    { value: '#e11d48', label: 'Розовый' },
+    { value: '#0891b2', label: 'Бирюзовый' },
+  ];
+  let accentSaveQueue = Promise.resolve();
+
+  function normalizeAccentColor(value) {
+    const color = String(value || '').trim();
+    return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : '';
+  }
+
+  function accentRgb(value) {
+    const color = normalizeAccentColor(value) || DEFAULT_ACCENT_COLOR;
+    return [
+      parseInt(color.slice(1, 3), 16),
+      parseInt(color.slice(3, 5), 16),
+      parseInt(color.slice(5, 7), 16),
+    ];
+  }
+
+  function accentDarken(value, factor) {
+    return '#' + accentRgb(value).map(part =>
+      Math.max(0, Math.min(255, Math.round(part * factor))).toString(16).padStart(2, '0')
+    ).join('');
+  }
+
+  function applyAccentColor(value) {
+    const color = normalizeAccentColor(value) || DEFAULT_ACCENT_COLOR;
+    const [r, g, b] = accentRgb(color);
+    const root = document.documentElement;
+    const composite = [r, g, b].map(part => Math.round(part * .82 + 255 * .18));
+    const linear = composite.map(part => {
+      const channel = part / 255;
+      return channel <= .04045 ? channel / 12.92 : Math.pow((channel + .055) / 1.055, 2.4);
+    });
+    const luminance = .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
+    const vars = {
+      '--accent': color,
+      '--accent-hover': accentDarken(color, .82),
+      '--accent-rgb': r + ', ' + g + ', ' + b,
+      '--accent-ink': accentDarken(color, .62),
+      '--accent-button-fg': luminance > .18 ? '#202020' : '#ffffff',
+      '--accent-soft': 'rgba(' + r + ', ' + g + ', ' + b + ', .10)',
+      '--accent-wash': 'rgba(' + r + ', ' + g + ', ' + b + ', .065)',
+      '--accent-wash-hover': 'rgba(' + r + ', ' + g + ', ' + b + ', .12)',
+      '--accent-border': 'rgba(' + r + ', ' + g + ', ' + b + ', .18)',
+    };
+    Object.entries(vars).forEach(([name, val]) => root.style.setProperty(name, val, 'important'));
+    return color;
+  }
+
+  function updateAccentColorControls(value) {
+    const color = normalizeAccentColor(value) || DEFAULT_ACCENT_COLOR;
+    $$('[data-accent-preset]').forEach(button => {
+      const selected = button.dataset.accentPreset === color;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    const custom = $('#profile-accent-custom');
+    if (custom && custom.value.toLowerCase() !== color) custom.value = color;
+  }
+
+  async function loadAppearanceSettings() {
+    try {
+      const result = await api.get('/api/memory/settings');
+      const color = normalizeAccentColor(result && result.accent_color) || DEFAULT_ACCENT_COLOR;
+      state.accentColor = color;
+      localStorage.setItem('aich_accent_color', color);
+      applyAccentColor(color);
+      updateAccentColorControls(color);
+    } catch (error) {
+      // Preserve the session cache if the account-settings endpoint is temporarily unavailable.
+      const cached = normalizeAccentColor(localStorage.getItem('aich_accent_color')) || DEFAULT_ACCENT_COLOR;
+      state.accentColor = cached;
+      applyAccentColor(cached);
+      updateAccentColorControls(cached);
+    }
+  }
+
+  async function saveAccountAccentColor(value) {
+    const color = normalizeAccentColor(value);
+    if (!color) {
+      toast('Выберите цвет в формате HEX.', 'error');
+      return;
+    }
+    state.accentColor = color;
+    localStorage.setItem('aich_accent_color', color);
+    applyAccentColor(color);
+    updateAccentColorControls(color);
+
+    // Serialize rapid palette clicks so the last chosen color is also the last
+    // account write, even on a slow mobile connection.
+    const pending = accentSaveQueue.catch(() => {}).then(() =>
+      api.put('/api/memory/settings', { accent_color: color })
+    );
+    accentSaveQueue = pending;
+    try {
+      const saved = await pending;
+      const confirmed = normalizeAccentColor(saved && saved.accent_color) || color;
+      if (state.accentColor === color) {
+        state.accentColor = confirmed;
+        localStorage.setItem('aich_accent_color', confirmed);
+        applyAccentColor(confirmed);
+        updateAccentColorControls(confirmed);
+      }
+      if (state.accentColor === color) toast('Акцентный цвет сохранён в аккаунте');
+    } catch (error) {
+      toast('Цвет изменён в этой сессии, но не сохранён в аккаунте: ' + (error.message || error), 'error');
+    }
+  }
+
   // Process files in the background while the user composes a prompt.
   // On Send, give ALL attachments one shared 1000 ms readiness budget.
   class PrefetchManager {
@@ -1342,6 +1460,7 @@
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
+    accentColor: normalizeAccentColor(localStorage.getItem('aich_accent_color')) || DEFAULT_ACCENT_COLOR,
     responseDetail: 'standard',
     deepResearch: false,
     codeRunningChatIds: new Set(),
@@ -9376,6 +9495,18 @@
           '<span>' + escapeHtml(u.email || '') + '</span>' +
           '<span class="role-chip">' + (isAdmin ? 'администратор' : 'пользователь') + '</span></div>' +
           '</div>' +
+          '<section class="profile-accent-setting" aria-label="Акцентный цвет">' +
+          '<div class="profile-accent-heading"><strong>Акцентный цвет</strong><small>Сохраняется в аккаунте</small></div>' +
+          '<div class="profile-accent-options" role="group" aria-label="Выбрать акцентный цвет">' +
+          ACCENT_PRESETS.map(preset => '<button type="button" class="profile-accent-swatch' +
+            (state.accentColor === preset.value ? ' is-selected' : '') +
+            '" data-accent-preset="' + preset.value + '" aria-label="' + preset.label +
+            '" aria-pressed="' + String(state.accentColor === preset.value) +
+            '" title="' + preset.label + '"><span class="profile-accent-swatch-dot" style="--swatch-color:' +
+            preset.value + '"></span><span>' + preset.label + '</span></button>').join('') +
+          '<label class="profile-accent-custom"><span>Свой</span><input type="color" id="profile-accent-custom" value="' +
+            escapeHtml(state.accentColor) + '" aria-label="Свой акцентный цвет" /></label>' +
+          '</div></section>' +
           '<button type="button" class="profile-limits-action" id="profile-limits-btn">' +
           '<span class="profile-limits-icon">' + icon('gauge') + '</span>' +
           '<span class="profile-limits-copy"><strong>Лимиты и баланс</strong><small>Расход, остаток и статистика использования</small></span>' +
@@ -9404,6 +9535,13 @@
         onOk: () => true,
       });
       const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+      updateAccentColorControls(state.accentColor);
+      const profileRoot = $('#modal-root') || document;
+      $$('[data-accent-preset]', profileRoot).forEach(button => {
+        button.addEventListener('click', () => saveAccountAccentColor(button.dataset.accentPreset));
+      });
+      const customAccent = $('#profile-accent-custom', profileRoot);
+      if (customAccent) customAccent.addEventListener('change', () => saveAccountAccentColor(customAccent.value));
       on('#set-memory', () => { closeModal(); openMemory(); });
       on('#set-links', () => { closeModal(); openLinks(); });
       on('#set-files', () => { closeModal(); toggleFiles(true); });
@@ -11433,7 +11571,7 @@
     }
     $('#menu-btn').style.display = window.innerWidth <= 860 ? 'grid' : 'none';
     await Promise.allSettled([
-      loadChats(), loadFiles(), loadModelSets(), loadMemory(), loadLimits(), loadUsage(),
+      loadChats(), loadFiles(), loadModelSets(), loadMemory(), loadLimits(), loadUsage(), loadAppearanceSettings(),
     ]);
     if (!welcomeRenderedEarly) renderMessages();
   }
@@ -11453,6 +11591,8 @@
     const token = new URLSearchParams(location.search).get('share');
     if (token) { await showPublicView(token); return; }
 
+    // Apply the last local session value instantly; the account value is fetched in boot().
+    applyAccentColor(state.accentColor);
     // Show the working screen synchronously; resolve identity and history behind it.
     showApp();
     if (!state.currentChatId && allMessages(state.tree).length === 0) renderMessages();

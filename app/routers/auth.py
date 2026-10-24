@@ -259,6 +259,11 @@ async def create_guest_session(
         if existing_session is not None and existing_session.expires_at > now:
             existing_user = await db.get(User, existing_session.user_id)
             if existing_user is not None:
+                # Existing sessions are not blocked, but their first observed IP becomes
+                # part of future capacity checks.
+                if not existing_user.signup_ip_hash:
+                    existing_user.signup_ip_hash = _request_ip_hash(request)
+                    await db.commit()
                 remaining = max(1, int((existing_session.expires_at - now).total_seconds()))
                 cookie_age = remaining if _is_guest(existing_user) else settings.session_max_age
                 _set_cookies(response, raw_token, cookie_age)

@@ -120,6 +120,7 @@ class MessageCreate(BaseModel):
     content: str
     parent_message_id: str | None = None
     attachment_ids: list[str] = Field(default_factory=list)
+    prefetch_ids: list[str] = Field(default_factory=list)
     model_set_id: str | None = None
     project_id: str | None = None
     web_search: bool = True

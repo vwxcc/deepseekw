@@ -80,6 +80,7 @@ from ..services.audio_state import (
 )
 from ..services.sandbox import list_project_files
 from ..services.ready_answers import find_ready_answer_exact
+from ..routers.prefetch import get_ready_prefetch_context
 from ..services.tts import (
     AUDIO_MEDIA_TYPES,
     TTSGenerationError,
@@ -768,6 +769,11 @@ async def send_message(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Файл {fid} не найден")
         attached.append(rec)
 
+    # Only a complete matching set of READY jobs may bypass inline file handling.
+    prefetched_context = get_ready_prefetch_context(
+        user.id, data.prefetch_ids or [], [rec.id for rec in attached]
+    )
+
     user_msg = Message(
         chat_id=chat.id,
         user_id=user.id,
@@ -881,7 +887,25 @@ async def send_message(
         chat.effort = data.effort
 
     # Keep the complete ancestor chain; do not trim older turns before sending to the model.
-    history_messages = await ancestor_chain(db, user_msg.id)
+    history_messages = await ancestor_chain(
+        db,
+        user_msg.id,
+        exclude_attachment_message_ids={user_msg.id} if prefetched_context else None,
+    )
+    if prefetched_context and history_messages:
+        latest = history_messages[-1]
+        existing = latest.get("content", "")
+        if isinstance(existing, list):
+            existing = "\n".join(
+                str(part.get("text") or "")
+                for part in existing
+                if isinstance(part, dict) and part.get("type") in {"text", "input_text"}
+            )
+        latest["content"] = (
+            str(existing or "")
+            + "\n\n[Контекст файлов, заранее подготовленный для ускорения обработки]\n"
+            + prefetched_context
+        )
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM

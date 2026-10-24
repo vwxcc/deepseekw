@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_current_admin, get_current_user, get_db, require_csrf
-from ..models import AudioGeneration, Chat, File, Message, ModelSet, PlanLimit, Post, Role, RouteType, TokenTransaction, UsageEvent, User, utcnow
+from ..models import AudioGeneration, Chat, File, Message, ModelSet, PlanLimit, Post, PrefetchSettings, Role, RouteType, TokenTransaction, UsageEvent, User, utcnow
 from ..services.limits import (
     LABELS,
     PLANS,
@@ -22,6 +22,11 @@ from ..services.limits import (
 from ..services.usage import window_spend as usage_window_spend
 
 router = APIRouter(prefix="/api/limits", tags=["limits"])
+
+
+async def _prefetch_enabled(db: AsyncSession) -> bool:
+    row = await db.get(PrefetchSettings, 1)
+    return bool(row.enabled) if row is not None else True
 
 
 async def _window_spend(
@@ -67,7 +72,7 @@ async def my_limits(
             + func.coalesce(func.sum(UsageEvent.tokens_out), 0)
         ).where(
             UsageEvent.user_id == user.id,
-            UsageEvent.action.in_(("readable_text", "status_generation", "api_v1")),
+            UsageEvent.action.in_(("readable_text", "status_generation", "api_v1", "prefetch")),
         )
     )
     reqs = await db.scalar(
@@ -134,7 +139,29 @@ async def limits_all(
         "allowed": {
             plan: await get_models_for_plan(db, plan) for plan in PLANS
         },
+        "prefetch_enabled": await _prefetch_enabled(db),
     }
+
+
+@router.put("/prefetch")
+async def update_prefetch_setting(
+    data: dict,
+    admin: User = Depends(get_current_admin),
+    _csrf=Depends(require_csrf),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    enabled = bool((data or {}).get("enabled", False))
+    row = await db.get(PrefetchSettings, 1)
+    if row is None:
+        row = PrefetchSettings(id=1, enabled=enabled)
+        db.add(row)
+    else:
+        row.enabled = enabled
+    await db.commit()
+    if not enabled:
+        from ..routers.prefetch import cancel_all_prefetches
+        cancel_all_prefetches()
+    return {"enabled": enabled}
 
 
 @router.put("/{plan}/models")
@@ -174,7 +201,7 @@ async def users_overview(
             func.coalesce(func.sum(UsageEvent.cost_usd), 0.0).label("cost"),
             func.count(UsageEvent.id).label("calls"),
         )
-        .where(UsageEvent.action.in_(("readable_text", "status_generation", "api_v1")))
+        .where(UsageEvent.action.in_(("readable_text", "status_generation", "api_v1", "prefetch")))
         .group_by(UsageEvent.user_id)
         .subquery()
     )

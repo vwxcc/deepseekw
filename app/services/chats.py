@@ -126,6 +126,7 @@ async def ancestor_chain(
     message_id: str,
     include_attachments: bool = True,
     summary_upto: str | None = None,
+    exclude_attachment_message_ids: set[str] | None = None,
 ) -> list[dict]:
     """Linear dialogue (oldest first) ending at ``message_id``.
 
@@ -191,6 +192,8 @@ async def ancestor_chain(
         text = msg.content or ""
         images: list[dict] = []
         for rec in attachments_by_message.get(msg.id, []):
+            if exclude_attachment_message_ids and msg.id in exclude_attachment_message_ids:
+                break
             if rec.kind == "image":
                 url = image_to_data_url(rec.storage_path, rec.mime_type or "")
                 if url:

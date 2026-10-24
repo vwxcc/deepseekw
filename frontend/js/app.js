@@ -5,6 +5,98 @@
   // ---------- utils ----------
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  // Process files in the background while the user composes a prompt.
+  // On Send, give ALL attachments one shared 1000 ms readiness budget.
+  class PrefetchManager {
+    constructor() { this.jobs = new Map(); }
+    startPrefetch(fileId) {
+      const id = String(fileId || "");
+      if (!id) return null;
+      const previous = this.jobs.get(id);
+      if (previous && ["PENDING", "PROCESSING", "READY"].includes(previous.status)) return previous;
+      const job = { fileId: id, prefetchId: null, status: "PENDING", promise: null };
+      this.jobs.set(id, job);
+      job.promise = this._start(job).catch(() => {
+        if (job.status !== "CANCELLED") job.status = "FAILED";
+        return null;
+      });
+      return job;
+    }
+    async _start(job) {
+      const started = await api.postTimed("/api/prefetch", { file_id: job.fileId }, 6000);
+      if (job.status === "CANCELLED") {
+        if (started && started.prefetch_id) {
+          api.post("/api/prefetch/" + encodeURIComponent(started.prefetch_id) + "/cancel", {}).catch(() => {});
+        }
+        return null;
+      }
+      if (!started || started.enabled === false || !started.prefetch_id) {
+        job.status = "DISABLED";
+        return null;
+      }
+      job.prefetchId = String(started.prefetch_id);
+      job.status = "PROCESSING";
+      return this._poll(job);
+    }
+    async _poll(job) {
+      while (job.status === "PROCESSING") {
+        const result = await api.getTimed("/api/prefetch/" + encodeURIComponent(job.prefetchId), 5000);
+        if (job.status !== "PROCESSING") return null;
+        const status = String(result && result.status || "").toUpperCase();
+        if (status === "READY") { job.status = "READY"; return true; }
+        if (status === "FAILED" || status === "CANCELLED") {
+          job.status = status;
+          throw new Error("prefetch " + status.toLowerCase());
+        }
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      return null;
+    }
+    async resolveBeforeSend(fileIds) {
+      const ids = Array.from(fileIds || [], id => String(id || "")).filter(Boolean);
+      if (!ids.length) return { mode: "inline", prefetchIds: [] };
+      const jobs = ids.map(id => this.jobs.get(id));
+      if (jobs.some(job => !job)) {
+        this.cancelAll(jobs.filter(Boolean));
+        return { mode: "inline", prefetchIds: [] };
+      }
+      let timer;
+      try {
+        await Promise.race([
+          Promise.all(jobs.map(job => job.promise)),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("budget_exceeded")), 1000); }),
+        ]);
+        if (jobs.every(job => job.status === "READY" && job.prefetchId)) {
+          return { mode: "prefetch", prefetchIds: jobs.map(job => job.prefetchId) };
+        }
+      } catch (_) {
+        // All-or-nothing fallback: cancel every job that is still pending.
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      this.cancelAll(jobs);
+      return { mode: "inline", prefetchIds: [] };
+    }
+    cancelAll(jobs) {
+      (jobs || []).forEach(job => {
+        if (!job || !["PENDING", "PROCESSING"].includes(job.status)) return;
+        job.status = "CANCELLED";
+        if (job.prefetchId) {
+          api.post("/api/prefetch/" + encodeURIComponent(job.prefetchId) + "/cancel", {}).catch(() => {});
+        }
+      });
+    }
+    removePrefetch(fileId) {
+      const id = String(fileId || "");
+      const job = this.jobs.get(id);
+      if (job) this.cancelAll([job]);
+      this.jobs.delete(id);
+    }
+    clear(fileIds) { (fileIds || []).forEach(id => this.removePrefetch(id)); }
+  }
+  window.prefetchManager = new PrefetchManager();
+
   let workspaceUploadIntent = false;
   let pendingNewChatProjectId = '';
   let pendingNewChatProjectLabel = '';
@@ -5500,6 +5592,11 @@
       kind: f.kind || 'other', size: f.size || 0,
     }));
     const isNewChat = !state.currentChatId;
+    // Start checking immediately on click; the shared wait budget is capped at 1 second.
+    const prefetchResolutionPromise = window.prefetchManager
+      ? window.prefetchManager.resolveBeforeSend(attachments)
+      : Promise.resolve({ mode: "inline", prefetchIds: [] });
+    let submittedPrefetchIds = [];
 
     state.sending = true;
     setSendPreparing(true);
@@ -5552,10 +5649,13 @@
       const endpoint = isNewChat
         ? '/api/new-chat/messages'
         : '/api/chats/' + encodeURIComponent(state.currentChatId) + '/messages';
+      const prefetchResolution = await prefetchResolutionPromise;
+      submittedPrefetchIds = attachments.slice();
       const request = streamRequest(endpoint, {
         content,
         parent_message_id: parentId,
         attachment_ids: attachments,
+        prefetch_ids: prefetchResolution.mode === 'prefetch' ? prefetchResolution.prefetchIds : [],
         model_set_id: state.modelSetId || null,
         project_id: isNewChat ? (pendingNewChatProjectId || null) : null,
         web_search: true,
@@ -5590,6 +5690,7 @@
       state.tmpUser = null;
       state.tmpAssistant = null;
     } finally {
+      window.prefetchManager?.clear(submittedPrefetchIds);
       state.sending = false;
       setSendPreparing(false);
     }
@@ -5674,6 +5775,7 @@
       state.pendingAttachments = state.pendingAttachments.filter(file =>
         String(file && file.id || '') !== id && String(file && file.localUploadId || '') !== id
       );
+      window.prefetchManager?.removePrefetch(id);
       renderAttachments();
     }));
     $$('[data-retry-attachment]', box).forEach(button => button.addEventListener('click', () => {
@@ -5826,6 +5928,7 @@
     files.forEach(file => {
       const id = String(file.id);
       if (!pending.has(id)) { pending.set(id, file); added += 1; }
+      window.prefetchManager?.startPrefetch(id);
     });
     state.pendingAttachments = Array.from(pending.values());
     renderAttachments();
@@ -8124,9 +8227,12 @@
     }));
     $$('[data-attach]', box).forEach(b => b.addEventListener('click', () => {
       const f = state.files.find(x => x.id === b.dataset.attach);
-      if (f && !state.pendingAttachments.some(x => x && x.id === f.id)) {
-        state.pendingAttachments.push(f);
-        renderAttachments();
+      if (f) {
+        if (!state.pendingAttachments.some(x => x && x.id === f.id)) {
+          state.pendingAttachments.push(f);
+          renderAttachments();
+        }
+        window.prefetchManager?.startPrefetch(f.id);
       }
       toggleFiles(false);
     }));
@@ -8217,8 +8323,11 @@
           const pendingIndex = state.pendingAttachments.findIndex(item =>
             item && localItem && String(item.localUploadId || '') === String(localItem.localUploadId || '')
           );
-          // If the user removed the chip while uploading, do not re-attach it on completion.
-          if (pendingIndex >= 0) state.pendingAttachments.splice(pendingIndex, 1, saved);
+          // If the user removed the chip while uploading, do not re-attach or prefetch it.
+          if (pendingIndex >= 0) {
+            state.pendingAttachments.splice(pendingIndex, 1, saved);
+            window.prefetchManager?.startPrefetch(saved.id);
+          }
           successCount += 1;
         } catch (err) {
           const message = usefulErrorMessage(err, 'не удалось загрузить файл');
@@ -10137,8 +10246,9 @@
     });
     $$('[data-att]').forEach(b => b.addEventListener('click', () => {
       const f = state.files.find(x => x.id === b.dataset.att);
-      if (f && !state.pendingAttachments.some(x => x.id === f.id)) {
+      if (f && !state.pendingAttachments.some(x => x && x.id === f.id)) {
         state.pendingAttachments.push(f);
+        window.prefetchManager?.startPrefetch(f.id);
         renderAttachments();
         toast('Прикреплено: ' + f.original_name);
       }
@@ -10209,7 +10319,10 @@
     openModal({
       title: 'Тарифы, лимиты и деньги',
       okText: 'Сохранить',
-      body: '<p class="usage-note">Бюджет — суммарная стоимость вызовов ИИ за скользящее окно; длина окна задаётся в часах. ' +
+      body: '<section class="lim-prefetch-control"><label><input type="checkbox" id="lim-prefetch-enabled"' +
+        (data.prefetch_enabled !== false ? ' checked' : '') + ' /><span><strong>Препроцессинг файлов (Prefetch)</strong>' +
+        '<small>Обрабатывать прикреплённые файлы в фоне. При отправке AI CH ждёт максимум 1 секунду; если все файлы не готовы, отправляет их обычным способом.</small></span></label></section>' +
+        '<p class="usage-note">Бюджет — суммарная стоимость вызовов ИИ за скользящее окно; длина окна задаётся в часах. ' +
         'Цены входных, выходных и кэшированных токенов задаются в моделях MAIN или переменными QWEN_PRICE_IN, ' +
         'QWEN_PRICE_OUT и QWEN_PRICE_CACHE (доллары за 1 млн токенов). Пустой бюджет — без ограничения; ' +
         'размеры указаны в МБ. Прочие лимиты ограничивают файлы, чаты, код-агенты, консилиум, запуск кода и озвучивание.</p>' +
@@ -10221,6 +10334,10 @@
         '<div class="lim-plans">' + (data.plans || ['free', 'pro']).map(block).join('') + '</div>' +
         '<h4 class="sec">Пользователи</h4><div id="lim-users">Загрузка…</div>',
       onOk: async (root) => {
+        const prefetchToggle = $('#lim-prefetch-enabled', root);
+        if (prefetchToggle && prefetchToggle.checked !== (data.prefetch_enabled !== false)) {
+          await api.put('/api/limits/prefetch', { enabled: prefetchToggle.checked });
+        }
         const grouped = {};
         $$('[data-plan]', root).forEach(inp => {
           const plan = inp.dataset.plan;

@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     tts_preprocess_max_tokens: int = 12000
     tts_preprocess_temperature: float = 0.1
 
+    # --- File prefetch (DeepSeek Flash helper) ---
+    prefetch_base_url: str = "https://api.deepseek.com"
+    prefetch_api_key: str = Field(default_factory=lambda: os.getenv("PREFETCH_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or "")
+    prefetch_model: str = "deepseek-flash"
+    prefetch_timeout: int = Field(default=60, ge=5, le=180)
+    prefetch_max_tokens: int = Field(default=4096, ge=256, le=12000)
+
     # --- Files ---
     max_file_size: int = 25 * 1024 * 1024        # 25 MB per file
     max_total_file_size: int = 100 * 1024 * 1024  # 100 MB per request

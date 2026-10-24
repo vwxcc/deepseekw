@@ -5708,18 +5708,24 @@
               runs.push(data);
             }
             n.tool_runs = runs;
+            let resultStatus;
             if (data.files && data.files.length) {
               n.attachments = (n.attachments || []).concat(data.files.map(f => ({
                 id: f.id, file_id: f.file_id, name: normaliseOutputFilename(f.name, ''),
                 kind: f.kind, size: f.size,
               })));
-              appendActivity(n, { kind: 'status', text: 'Файлы подготовлены · завершаю проверку результата' });
+              resultStatus = 'Файлы подготовлены · завершаю проверку результата';
             } else if (suppressSandboxFailure) {
-              appendActivity(n, { kind: 'status', text: 'Продолжаю подготовку результата' });
+              resultStatus = 'Продолжаю подготовку результата';
             } else {
-              appendActivity(n, { kind: 'status', text: data.ok && !data.timed_out
-                ? 'Результат выполнения готов · завершаю проверку' : 'Продолжаю обработку результата' });
+              resultStatus = data.ok && !data.timed_out
+                ? 'Результат выполнения готов · завершаю проверку' : 'Продолжаю обработку результата';
             }
+            n.activityStatusCurrent = resultStatus;
+            n.activityStatusSource = 'system';
+            n.statusModelCurrent = '';
+            n.statusPreviewCurrent = '';
+            appendActivity(n, { kind: 'status', text: resultStatus });
           }
           if (state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(streamContext.assistantId);

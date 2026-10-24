@@ -1215,9 +1215,8 @@
     draftTail: null,
     memories: [],
     style: localStorage.getItem('cs_style') || 'auto',
-    responseDetail: ['minimum', 'standard', 'max'].includes(localStorage.getItem('aich_response_detail'))
-      ? localStorage.getItem('aich_response_detail') : 'standard',
-    deepResearch: localStorage.getItem('aich_deep_research') === '1',
+    responseDetail: 'standard',
+    deepResearch: false,
     generatingChatId: '',
     readonly: false,
     publicToken: null,
@@ -1558,6 +1557,7 @@
       if (selectionToken === state.chatOpenToken) {
         const opened = await openChat(chat.id);
         if (opened) {
+          resetNewChatResponseOptions();
           const input = $('#input');
           if (input) input.focus();
         }
@@ -5454,6 +5454,16 @@
       state.pendingAttachments = state.pendingAttachments.filter(x => x.id !== b.dataset.rm);
       renderAttachments();
     }));
+  }
+
+  function resetNewChatResponseOptions() {
+    state.deepResearch = false;
+    state.responseDetail = 'standard';
+    try {
+      localStorage.setItem('aich_deep_research', '0');
+      localStorage.setItem('aich_response_detail', 'standard');
+    } catch (_) {}
+    renderAddChatActionLabels();
   }
 
   function responseDetailName(value) {
@@ -10115,7 +10125,8 @@
       }
       upsertChat(chat);
       if (selectionToken === state.chatOpenToken) {
-        await openChat(chat.id);
+        const opened = await openChat(chat.id);
+        if (opened) resetNewChatResponseOptions();
       } else {
         renderChatList();
       }

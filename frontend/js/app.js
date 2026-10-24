@@ -1375,7 +1375,7 @@
         $('#auth-error').textContent = 'Не удалось открыть гостевую сессию: ' + err.message;
       }
     });
-    $('[data-mode]').forEach(a => a.addEventListener('click', async () => {
+    $$('[data-mode]').forEach(a => a.addEventListener('click', async () => {
       const mode = a.dataset.mode;
       if (mode === 'register' && !(await canCreateIdentityOnCurrentIp())) return;
       loginForm.classList.toggle('hidden', mode !== 'login');

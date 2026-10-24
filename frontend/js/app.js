@@ -2651,7 +2651,10 @@
 
     return '<div class="msg ' + n.role + '" data-mid="' + n.id + '">' +
       '<div class="role">' + (isUser ? 'Вы' : 'AI CH') + '</div>' +
-      inner + askCard + quizCard + actionsRow + memLine + '</div>';
+      inner + askCard + quizCard + actionsRow + memLine +
+      (!isUser && n.status === 'completed' && String(n.content || '').trim()
+        ? '<div class="answer-disclaimer">ИИ может допускать ошибки. Проверяйте важную информацию.</div>'
+        : '') + '</div>';
   }
 
   function audioQuotaSnapshot() {

@@ -355,7 +355,7 @@
         <div class="composer-inner">
           <div id="deep-research-chip" class="deep-research-chip hidden" role="status" aria-hidden="true">
             <span class="deep-research-chip-icon" aria-hidden="true"><svg class="ic deep-research-chip-mark"><use href="#i-compass"/></svg></span>
-            <span class="deep-research-chip-copy"><strong>Глубокое исследование</strong><small>До 5 агентов</small></span>
+            <span class="deep-research-chip-copy"><strong>Глубокое исследование</strong><small>До 5 одновременно</small></span>
             <button type="button" id="deep-research-chip-remove" title="Выключить глубокое исследование" aria-label="Отменить глубокое исследование"><svg class="ic"><use href="#i-x"/></svg></button>
           </div>
           <div class="attach-list" id="attach-list"></div>
@@ -625,11 +625,6 @@
             <span class="add-chat-action-copy"><strong>Модель и усилие</strong><small id="add-chat-model-current">Текущая модель</small></span>
             <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
           </button>
-          <button type="button" class="add-chat-action deep-research-toggle" data-add-chat-action="deep-research" aria-pressed="false">
-            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
-            <span class="add-chat-action-copy"><strong>Deep Research</strong><small id="add-chat-deep-research-current">Выключен · до 5 агентов</small></span>
-            <svg class="ic add-chat-row-chevron"><use href="#i-chevron"/></svg>
-          </button>
           <button type="button" class="add-chat-action" data-add-chat-action="memory">
             <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
             <span class="add-chat-action-copy"><strong>Память и предпочтения</strong><small id="add-chat-memory-current">Включена по умолчанию</small></span>
@@ -649,7 +644,12 @@
         <section class="add-chat-model-settings" aria-label="Настройки ответа">
           <div class="add-chat-settings-section-title">Как отвечать</div>
           <div id="add-chat-response-detail-options" class="response-detail-options" role="radiogroup" aria-label="Подробность ответа"></div>
-          <p class="response-detail-help">Меняется только подробность текста. Инструменты, поиск, цепочка агента и интерактивные блоки остаются доступны.</p>
+          <p class="response-detail-help">Меняется подробность ответа. При сложной задаче ИИ также может сам запустить исследование.</p>
+          <button type="button" class="add-chat-action deep-research-toggle deep-research-model-toggle" data-add-chat-action="deep-research" aria-pressed="false">
+            <span class="add-chat-row-icon"><svg class="ic"><use href="#i-brain"/></svg></span>
+            <span class="add-chat-action-copy"><strong>Глубокое исследование</strong><small id="add-chat-deep-research-current">Выключено · автозапуск по решению ИИ</small></span>
+            <span class="deep-research-switch" aria-hidden="true"><span></span></span>
+          </button>
         </section>
       </div>
       <div id="add-chat-response-detail-view" class="add-chat-subview hidden"></div>

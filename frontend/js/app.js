@@ -4179,10 +4179,22 @@
     }).filter(Boolean).join('');
 
     const finishedStates = ['done', 'failed', 'cancelled'];
-    const active = agents.some(agent => !finishedStates.includes(String(agent.status || '')));
-    const failed = agents.some(agent => String(agent.status || '') === 'failed');
-    const cancelled = agents.some(agent => String(agent.status || '') === 'cancelled');
-    const finishedCount = agents.filter(agent => finishedStates.includes(String(agent.status || ''))).length;
+    const missingOutput = agent => {
+      const result = String(agent && agent.result || '').trim();
+      return !result || result === 'Агент не вернул текстовый результат.';
+    };
+    const normalizedStatus = agent =>
+      String(agent && agent.status || '') === 'done' && missingOutput(agent)
+        ? 'failed' : String(agent && agent.status || '');
+    const active = agents.some(agent => !finishedStates.includes(normalizedStatus(agent)));
+    const failedCount = agents.filter(agent => normalizedStatus(agent) === 'failed').length;
+    const cancelledCount = agents.filter(agent => normalizedStatus(agent) === 'cancelled').length;
+    const answerCount = agents.filter(agent =>
+      normalizedStatus(agent) === 'done' && !missingOutput(agent)
+    ).length;
+    const failed = failedCount > 0;
+    const cancelled = cancelledCount > 0;
+    const finishedCount = agents.filter(agent => finishedStates.includes(normalizedStatus(agent))).length;
     const total = agents.length;
     const percent = total ? Math.round(finishedCount / total * 100) : 0;
     const overallStatus = active ? 'Исследование идёт'
@@ -4190,6 +4202,13 @@
       : cancelled ? 'Остановлено'
       : 'Завершено';
     const statusClass = active ? 'is-running' : failed ? 'is-error' : cancelled ? 'is-stopped' : 'is-done';
+    const outcomeParts = [answerCount + ' с ответом'];
+    if (failedCount) outcomeParts.push(failedCount + ' с ошибкой');
+    if (cancelledCount) outcomeParts.push(cancelledCount + ' отменено');
+    const outcomeSummary = (failed || cancelled)
+      ? '<div class="deep-research-outcome ' + (failed ? 'is-error' : 'is-stopped') + '">' +
+        escapeHtml(outcomeParts.join(' · ')) + '</div>'
+      : '';
     const totalTokens = Math.max(0, Number(flow && flow.total_tokens) || 0);
     const messageIdAttr = escapeHtml(messageId);
 
@@ -4206,7 +4225,8 @@
     }).join('');
 
     const agentCards = agents.map(agent => {
-      const state = String(agent.status || 'queued');
+      const rawState = String(agent.status || 'queued');
+      const state = rawState === 'done' && missingOutput(agent) ? 'failed' : rawState;
       const marker = !finishedStates.includes(state)
         ? '<span class="deep-agent-spinner" aria-hidden="true"></span>'
         : state === 'done' ? '<span class="deep-agent-state-dot is-done">✓</span>'
@@ -4236,8 +4256,8 @@
       '<div class="deep-research-summary-row">' +
       '<span class="deep-research-flow-status"><span class="deep-research-status-dot ' + statusClass + '" aria-hidden="true"></span>' +
       '<span>' + escapeHtml(overallStatus) + '</span></span>' +
-      '<span class="deep-research-flow-progress">' + finishedCount + ' из ' + total + ' · ' + percent + '%</span>' +
-      '</div>' +
+      '<span class="deep-research-flow-progress">' + finishedCount + ' из ' + total + ' завершено · ' + percent + '%</span>' +
+      '</div>' + outcomeSummary +
       '<div class="deep-research-expanded-content' + (expanded ? '' : ' hidden') + '">' +
       '<div class="deep-research-plan-block">' +
       '<button type="button" class="deep-research-plan-toggle" data-deep-research-plan-toggle data-message-id="' + messageIdAttr +
@@ -4245,7 +4265,11 @@
       '<span>' + (planExpanded ? 'Скрыть план главного агента' : 'План главного агента') + '</span>' +
       '<span class="deep-research-plan-chevron" aria-hidden="true">' + (planExpanded ? '−' : '+') + '</span></button>' +
       '<div class="deep-research-plan-content' + (planExpanded ? '' : ' hidden') + '">' +
-      '<p class="deep-research-plan-intro">План распределения задач и зависимостей, составленный координатором исследования.</p>' +
+      '<p class="deep-research-plan-intro">' +
+        (flow && flow.plan_mode === 'calculation_split'
+          ? 'Примеры переданы напрямую вычислительным агентам; каждый отвечает за свой набор и проверяет результаты.'
+          : 'План распределения задач и зависимостей, составленный координатором исследования.') +
+        '</p>' +
       '<ol class="deep-research-plan-steps">' + plannerSteps + '</ol></div></div>' +
       '<div class="deep-research-total-tokens">Токены планировщика и всех агентов: <strong>' +
       totalTokens.toLocaleString('ru-RU') + '</strong></div>' +

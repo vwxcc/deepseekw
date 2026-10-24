@@ -7557,18 +7557,19 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
 }
 
 
-/* Larger Deep Research summary and a separate public planner-plan disclosure. */
+/* Roomier Deep Research summary: readable status, percentage, and honest outcome details. */
 .deep-research-flow {
-  gap: 10px;
-  padding: 13px 15px;
-  border-radius: 17px;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 18px;
 }
 .deep-research-flow-head {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 12px 16px;
   min-width: 0;
+  padding-bottom: 4px;
   font-size: 15px;
 }
 .deep-research-flow-mark { font-size: 18px; }
@@ -7588,23 +7589,24 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   white-space: nowrap;
 }
 .deep-research-summary-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  column-gap: 24px;
+  row-gap: 12px;
   width: 100%;
   min-width: 0;
-  padding-top: 1px;
+  padding: 8px 2px;
 }
 .deep-research-flow-status {
-  flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 11px;
   min-width: 0;
+  min-height: 25px;
   color: var(--fg-muted);
-  font-size: 13.5px;
-  line-height: 1.35;
+  font-size: 14.5px;
+  line-height: 1.5;
 }
 .deep-research-status-dot {
   flex-basis: 9px;
@@ -7612,15 +7614,37 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   height: 9px;
 }
 .deep-research-flow-progress {
-  flex: 0 0 auto;
+  justify-self: end;
   color: var(--fg);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
+  padding: 6px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg-user);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.45;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.deep-research-expanded-content { gap: 11px; }
+.deep-research-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  margin: -2px 0 2px;
+  padding: 10px 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  background: #f7f7f7;
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.deep-research-outcome.is-error { color: #8d4d49; }
+.deep-research-outcome.is-stopped { color: #80633b; }
+.deep-research-expanded-content { gap: 16px; margin-top: 3px; }
+.deep-research-agents { gap: 10px; }
 .deep-research-total-tokens { font-size: 12.5px; }
 .deep-agent-card-top strong { font-size: 14px; }
 .deep-agent-card-top small { font-size: 12px; }
@@ -7744,12 +7768,18 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
   overflow-wrap: anywhere;
 }
 @media (max-width: 620px) {
-  .deep-research-flow { padding: 12px; }
-  .deep-research-flow-head { gap: 8px; }
+  .deep-research-flow { padding: 14px 15px; gap: 14px; }
+  .deep-research-flow-head { flex-wrap: wrap; gap: 9px 12px; }
   .deep-research-flow-title { font-size: 15px; }
-  .deep-research-flow-status { font-size: 12.8px; }
-  .deep-research-flow-progress { font-size: 12.5px; }
-  .deep-research-expand-button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+  .deep-research-summary-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 7px 0;
+  }
+  .deep-research-flow-status { font-size: 13.5px; }
+  .deep-research-flow-progress { justify-self: start; font-size: 13px; }
+  .deep-research-outcome { padding: 9px 11px; font-size: 12.5px; }
+  .deep-research-expand-button { min-height: 34px; padding: 6px 10px; font-size: 12px; }
   .deep-research-plan-toggle { min-height: 42px; font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -127,7 +127,7 @@ class MessageCreate(BaseModel):
     style: str = "auto"
     response_detail: str = "standard"
     deep_research: bool = False
-    execution_target: str = "site
+    execution_target: str = "site"
     client_context: dict = Field(default_factory=dict)
 
 

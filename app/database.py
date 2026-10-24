@@ -45,6 +45,8 @@ async def init_db() -> None:
                     await conn.exec_driver_sql(
                         f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"
                     )
+        # Index the HMAC IP identifier used by the two-account creation guard.
+        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_users_signup_ip_hash ON users(signup_ip_hash)")
         # Normalize the title key in Python for Unicode-safe case-insensitive matching.
         # Resolve pre-existing case-only collisions deterministically before the unique index.
         title_table = await conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='ready_answer_titles'")
@@ -184,5 +186,6 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "github_token": "VARCHAR(255)",
         "usage_reset_at": "DATETIME",
         "is_guest": "BOOLEAN DEFAULT 0",
+        "signup_ip_hash": "VARCHAR(64)",
     },
 }

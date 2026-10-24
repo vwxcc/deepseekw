@@ -346,27 +346,46 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
     return settings.model_context_len
 
 
-async def _memory_block(db: AsyncSession, user_id: str) -> str:
-    """Facts + preferences. Preferences are sent with EVERY request on purpose."""
+async def _memory_block(
+    db: AsyncSession, user_id: str, request_text: str = ""
+) -> str:
+    """Keep personalization available; retrieve facts/history only when relevant."""
     res = await db.execute(
         select(Memory)
         .where(Memory.user_id == user_id)
         .order_by(Memory.created_at.desc())
-        .limit(60)
+        .limit(120)
     )
     rows = [m for m in res.scalars().all() if m.content]
-    facts = [m.content for m in rows if (m.kind or "fact") == "fact"]
-    prefs = [m.content for m in rows if (m.kind or "fact") == "preference"]
+    prefs = [m.content[:300] for m in rows if (m.kind or "fact") == "preference"][:15]
+    query = str(request_text or "").casefold()
+    recall_terms = (
+        "памят", "истори", "вспомни", "что ты знаешь", "обо мне", "раньше", "прошлый раз", "прошлой бесед",
+        "что мы делали", "что делали", "что обсуждали", "что ты помнишь",
+        "помнишь", "продолж", "вернись к", "вернёмся к", "вернемся к",
+        "где останов", "на чём останов", "на чем останов", "предыдущ",
+        "возобнов", "по проекту", "контекст проекта", "сводк", "our previous", "what did we",
+        "remember", "continue where", "project history",
+    )
+    needs_recall = any(term in query for term in recall_terms)
+    facts = [m.content[:500] for m in rows if (m.kind or "fact") == "fact"][:15] if needs_recall else []
+    history = [m.content[:600] for m in rows if m.kind == "history"][:12] if needs_recall else []
     out = ""
-    if facts:
-        out += (
-            "\n\n[Что ты помнишь о пользователе]\n"
-            + "\n".join("- " + x for x in reversed(facts))
-        )
     if prefs:
         out += (
-            "\n\n[ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ — соблюдай их ВСЕГДА, в каждом ответе]\n"
-            + "\n".join("- " + x for x in reversed(prefs))
+            "\n\n[Персонализация — постоянные предпочтения пользователя]\n"
+            + "\n".join("- " + value for value in reversed(prefs))
+        )
+    if facts:
+        out += (
+            "\n\n[Память о пользователе — извлечена по запросу]\n"
+            + "\n".join("- " + value for value in reversed(facts))
+        )
+    if history:
+        out += (
+            "\n\n[Краткая история предыдущей работы — извлечена по запросу]\n"
+            + "\n".join("- " + value for value in reversed(history))
+            + "\nИспользуй эти записи как контекст для продолжения; приоритет имеют последние сообщения текущего чата."
         )
     return out
 
@@ -551,7 +570,7 @@ async def _spawn(
         )
     if user_id:
         if memory_enabled:
-            system_prompt += await _memory_block(db, user_id)
+            system_prompt += await _memory_block(db, user_id, _last_user_text(history_messages))
         else:
             system_prompt += (
                 "\n\n[ПАМЯТЬ ВЫКЛЮЧЕНА пользователем: не используй сохранённые факты и предпочтения, "

@@ -6792,3 +6792,152 @@ input[type="range"]:hover::-webkit-slider-thumb {
 .add-chat-project-connectors-heading h3{margin:0 0 4px;color:var(--fg);font-size:15px;font-weight:650}
 .add-chat-project-connectors-heading p{margin:0;color:var(--fg-muted);font-size:12.5px;line-height:1.45}
 #add-chat-project-connectors-list{min-width:0}
+
+
+/* ---------- Brighter liquid glass finish ---------- */
+:root {
+  --bg: #ffffff;
+  --bg-side: rgba(255, 255, 255, .96);
+  --bg-panel: rgba(255, 255, 255, .94);
+  --bg-user: #f8fafc;
+  --bg-hover: rgba(229, 237, 247, .42);
+  --bg-active: rgba(221, 232, 245, .56);
+  --bg-code: #f9fbfd;
+  --fg: #202630;
+  --fg-muted: #687484;
+  --fg-soft: #8994a2;
+  --border: rgba(105, 124, 148, .18);
+  --border-soft: rgba(105, 124, 148, .11);
+  --accent: #51657e;
+  --accent-hover: #42566f;
+  --accent-soft: #edf3fa;
+  --glass-panel: rgba(255, 255, 255, .86);
+  --glass-panel-strong: rgba(255, 255, 255, .95);
+  --glass-panel-soft: rgba(255, 255, 255, .70);
+  --glass-edge: rgba(255, 255, 255, .96);
+  --glass-stroke: rgba(83, 105, 134, .15);
+  --glass-shadow: 0 18px 52px rgba(43, 59, 79, .09), 0 3px 10px rgba(43, 59, 79, .035);
+  --glass-shadow-soft: 0 8px 26px rgba(43, 59, 79, .055), inset 0 1px 0 rgba(255, 255, 255, .96);
+}
+#sidebar,
+#chat-header,
+#composer .composer-inner,
+#modal-root .modal,
+.modal-back-sheet .modal,
+#add-to-chat-shell .add-to-chat-sheet,
+.model-picker-anchor .model-picker {
+  background-color: rgba(255, 255, 255, .86);
+  border-color: rgba(105, 124, 148, .16);
+}
+.chat-item:hover,
+.side-action:hover,
+.icon-btn:hover,
+.chip-btn:hover {
+  background-color: rgba(228, 237, 248, .46);
+}
+.chat-item.active,
+.chat-item[aria-current="page"] {
+  background-color: rgba(221, 232, 246, .62);
+}
+#composer .composer-inner {
+  box-shadow: 0 10px 32px rgba(43, 59, 79, .07), inset 0 1px 0 rgba(255, 255, 255, .96);
+  transition: border-color .22s ease, box-shadow .22s ease, padding .22s ease;
+}
+#composer .composer-inner:focus-within {
+  border-color: rgba(93, 119, 151, .26);
+  box-shadow: 0 12px 36px rgba(43, 59, 79, .09), inset 0 1px 0 rgba(255, 255, 255, .98);
+}
+
+/* Deep Research stays attached to the composer, like a removable file chip. */
+#composer .deep-research-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 40px;
+  margin: 0 0 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid rgba(109, 124, 144, .17);
+  border-radius: 13px;
+  background: rgba(239, 243, 248, .83);
+  color: #596675;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .98), 0 2px 6px rgba(52, 68, 89, .035);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+  transform-origin: bottom left;
+  animation: deep-research-chip-in .2s cubic-bezier(.2, .8, .2, 1) both;
+}
+#composer .deep-research-chip.hidden { display: none !important; }
+.deep-research-chip-icon {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  border-radius: 9px;
+  background: rgba(211, 220, 231, .5);
+  font-size: 15px;
+}
+.deep-research-chip-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.25;
+}
+.deep-research-chip-copy strong {
+  font-size: 13px;
+  font-weight: 620;
+  color: #465362;
+}
+.deep-research-chip-copy small {
+  font-size: 11px;
+  color: #7a8796;
+}
+#composer .deep-research-chip button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: #798594;
+  background: rgba(213, 221, 231, .42);
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+#composer .deep-research-chip button:hover {
+  color: #394655;
+  background: rgba(197, 208, 222, .65);
+}
+#composer .deep-research-chip button:active { transform: scale(.93); }
+#composer .deep-research-chip button .ic { width: 15px; height: 15px; }
+#composer .composer-inner.deep-research-active { padding-top: 12px; }
+.deep-research-total-tokens {
+  margin: 0 0 9px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.deep-research-total-tokens strong {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.deep-agent-token-count {
+  display: block;
+  width: fit-content;
+  margin-top: 5px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+@keyframes deep-research-chip-in {
+  from { opacity: 0; transform: translateY(5px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #composer .deep-research-chip { animation: none; }
+}

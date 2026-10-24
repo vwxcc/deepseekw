@@ -1053,9 +1053,14 @@ class AIRouter:
             return
         try:
             async with SessionLocal() as db:
-                if action.startswith("agent_step_") or action.endswith("_race_lost"):
-                    # These are extra paid calls attached to the same answer. Add their
-                    # tokens to the message stats as well as the usage journal.
+                if (
+                    action.startswith("agent_step_")
+                    or action.startswith("external_action_step_")
+                    or action.endswith("_race_lost")
+                ):
+                    # Extra agent/tool-planning calls are billed independently and also
+                    # folded into the same answer token totals, without double-counting
+                    # the final main/fast response in _finish.
                     await account(
                         db, job.chat_id, entry.model_set_id, tin, tout,
                         entry=entry, user_id=job.user_id, message_id=job.message_id,
@@ -1860,6 +1865,7 @@ class AIRouter:
             },
         ]
         plan_text = ""
+        planner_usage = {"tokens_in": 0, "tokens_out": 0, "tokens_cached": 0}
         try:
             blocked = await self._budget_error(job)
             if blocked:
@@ -1875,6 +1881,12 @@ class AIRouter:
                 disable_thinking=True,
             )
             plan_usage = _usage_or_estimate(plan_usage, plan_messages, plan_text)
+            planner_details = plan_usage.get("prompt_tokens_details") or {}
+            planner_usage = {
+                "tokens_in": int(plan_usage.get("prompt_tokens") or 0),
+                "tokens_out": int(plan_usage.get("completion_tokens") or 0),
+                "tokens_cached": int(planner_details.get("cached_tokens") or 0),
+            }
             await self._bill(job, entry, plan_usage, "agent_step_deep_research_head")
         except Exception as exc:
             log.warning("Deep Research planning fell back to default roles (%s)", type(exc).__name__)
@@ -1961,7 +1973,13 @@ class AIRouter:
         # Keep independent research tasks independent: only planner-specified dependencies
         # constrain ordering. With no edges, all agents can work concurrently.
 
-        flow = {"kind": "deep_research_flow", "edges": edges}
+        flow = {
+            "kind": "deep_research_flow",
+            "edges": edges,
+            "tokens_in": planner_usage["tokens_in"],
+            "tokens_out": planner_usage["tokens_out"],
+            "tokens_cached": planner_usage["tokens_cached"],
+        }
         agent_runs = [
             {
                 "kind": "deep_research_agent",
@@ -1972,6 +1990,9 @@ class AIRouter:
                 "status": "queued",
                 "result": "",
                 "sources": [],
+                "tokens_in": 0,
+                "tokens_out": 0,
+                "tokens_cached": 0,
             }
             for agent in agents
         ]
@@ -1980,6 +2001,10 @@ class AIRouter:
 
         async def publish() -> None:
             async with publish_lock:
+                flow["total_tokens"] = (
+                    int(flow.get("tokens_in") or 0) + int(flow.get("tokens_out") or 0)
+                    + sum(int(run.get("tokens_in") or 0) + int(run.get("tokens_out") or 0) for run in agent_runs)
+                )
                 snapshot = [dict(flow), *[dict(run) for run in agent_runs]]
                 job.deep_research_runs = snapshot
                 payload = {
@@ -2066,6 +2091,10 @@ class AIRouter:
                     disable_thinking=True,
                 )
                 usage = _usage_or_estimate(usage, agent_messages, result_text)
+                details = usage.get("prompt_tokens_details") or {}
+                run["tokens_in"] = int(usage.get("prompt_tokens") or 0)
+                run["tokens_out"] = int(usage.get("completion_tokens") or 0)
+                run["tokens_cached"] = int(details.get("cached_tokens") or 0)
                 await self._bill(job, entry, usage, "agent_step_deep_research_" + str(agent["id"])[:24])
                 run["result"] = str(result_text or "").strip()[:14000] or "Агент не вернул текстовый результат."
                 run["sources"] = [

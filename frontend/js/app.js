@@ -1235,6 +1235,8 @@
     style: localStorage.getItem('cs_style') || 'auto',
     responseDetail: 'standard',
     deepResearch: false,
+    codeRunningChatIds: new Set(),
+    codeRunnerChatByMessage: new Map(),
     generatingChatId: '',
     readonly: false,
     publicToken: null,
@@ -1319,11 +1321,40 @@
     updateAuthCta();
   }
 
+  function showAccountCreationLimitWarning() {
+    openModal({
+      title: 'Лимит аккаунтов на IP',
+      okText: 'Понятно',
+      body: '<div class="account-ip-limit-warning"><p><strong>На одном IP-адресе разрешено не более двух аккаунтов.</strong></p>' +
+        '<p>В лимит входят новые гостевые сессии и новые регистрации. Уже созданные аккаунты продолжают работать — войдите в существующий аккаунт.</p>' +
+        '<p class="usage-note">Перед созданием гостя и регистрацией сервер повторно проверяет лимит.</p></div>',
+      onOk: () => true,
+    });
+  }
+
+  async function canCreateIdentityOnCurrentIp() {
+    try {
+      const result = await api.get('/api/auth/eligibility');
+      if (result && result.allowed === false) {
+        showAccountCreationLimitWarning();
+        return false;
+      }
+    } catch (error) {
+      if (String(error && error.message || error).includes('IP_ACCOUNT_LIMIT')) {
+        showAccountCreationLimitWarning();
+        return false;
+      }
+      // The final create endpoint performs an authoritative check even if preflight fails.
+    }
+    return true;
+  }
+
   function bindAuth() {
     const loginForm = $('#login-form'), regForm = $('#register-form');
     const registerButton = $('#register-btn');
     const continueGuestButton = $('#continue-guest-btn');
-    if (registerButton) registerButton.addEventListener('click', () => {
+    if (registerButton) registerButton.addEventListener('click', async () => {
+      if (!(await canCreateIdentityOnCurrentIp())) return;
       loginForm.classList.add('hidden');
       regForm.classList.remove('hidden');
       $('#auth-error').textContent = '';
@@ -1344,8 +1375,9 @@
         $('#auth-error').textContent = 'Не удалось открыть гостевую сессию: ' + err.message;
       }
     });
-    $$('[data-mode]').forEach(a => a.addEventListener('click', () => {
+    $$('[data-mode]').forEach(a => a.addEventListener('click', async () => {
       const mode = a.dataset.mode;
+      if (mode === 'register' && !(await canCreateIdentityOnCurrentIp())) return;
       loginForm.classList.toggle('hidden', mode !== 'login');
       regForm.classList.toggle('hidden', mode !== 'register');
       $('#auth-error').textContent = '';
@@ -1379,7 +1411,10 @@
         state.user = out.user;
         state.identityReady = true;
         await boot();
-      } catch (err) { $('#auth-error').textContent = 'Ошибка регистрации: ' + err.message; }
+      } catch (err) {
+        $('#auth-error').textContent = 'Ошибка регистрации: ' + err.message;
+        if (String(err && err.message || err).includes('IP_ACCOUNT_LIMIT')) showAccountCreationLimitWarning();
+      }
     });
   }
 
@@ -1442,7 +1477,7 @@
     const pinned = !!chat.is_pinned;
     const showPin = !(options && options.hidePin);
     return '<div class="chat-item' + (chat.id === state.currentChatId ? ' active' : '') + '" data-id="' + escapeHtml(chat.id) + '">' +
-      (chat.is_generating ? '<span class="chat-generating-spinner" role="status" aria-label="Запрос обрабатывается"></span>' : '') +
+      ((chat.is_generating || (state.codeRunningChatIds && state.codeRunningChatIds.has(String(chat.id)))) ? '<span class="chat-generating-spinner" role="status" aria-label="Запрос или выполнение кода обрабатывается"></span>' : '') +
       (chat.mode === 'research' ? '<span class="chat-mode-emoji" title="Deep Research" aria-label="Deep Research">🧭</span>' : '') +
       '<span class="title">' + escapeHtml(chat.title || 'Новый чат') + '</span>' +
       ((chat.mode === 'code' || chat.mode === 'council' || (chat.bundle_id && chat.mode !== 'council')) ?
@@ -3614,6 +3649,58 @@
     });
   }
 
+  function setCodeRunnerBusy(messageId, chatId, busy) {
+    const id = String(messageId || '');
+    if (!id) return;
+    if (!(state.codeRunnerChatByMessage instanceof Map)) state.codeRunnerChatByMessage = new Map();
+    if (!(state.codeRunningChatIds instanceof Set)) state.codeRunningChatIds = new Set();
+    let targetChatId = String(chatId || '');
+
+    if (busy) {
+      const resolvedChatId = targetChatId || state.codeRunnerChatByMessage.get(id) || state.currentChatId || '';
+      if (!resolvedChatId) return;
+      const previous = state.codeRunnerChatByMessage.get(id);
+      if (previous && previous !== resolvedChatId) {
+        const stillBusy = [...state.codeRunnerChatByMessage.entries()]
+          .some(([otherId, value]) => otherId !== id && value === previous);
+        if (!stillBusy) state.codeRunningChatIds.delete(previous);
+      }
+      targetChatId = String(resolvedChatId);
+      state.codeRunnerChatByMessage.set(id, targetChatId);
+      state.codeRunningChatIds.add(targetChatId);
+    } else {
+      const previous = state.codeRunnerChatByMessage.get(id);
+      targetChatId = targetChatId || String(previous || '');
+      state.codeRunnerChatByMessage.delete(id);
+      if (previous && ![...state.codeRunnerChatByMessage.values()].includes(previous)) {
+        state.codeRunningChatIds.delete(previous);
+      }
+    }
+
+    const matchingItems = $$('.chat-item[data-id]').filter(item => item.dataset.id === targetChatId);
+    if (!matchingItems.length) {
+      if ($('#chat-list') && Array.isArray(state.chats) && state.chats.some(chat => String(chat.id) === targetChatId)) {
+        renderChatList();
+      }
+      return;
+    }
+    const chat = (state.chats || []).find(item => String(item.id) === targetChatId);
+    const shouldSpin = !!(chat && chat.is_generating) || state.codeRunningChatIds.has(targetChatId);
+    matchingItems.forEach(item => {
+      let spinner = $('.chat-generating-spinner', item);
+      if (shouldSpin && !spinner) {
+        spinner = document.createElement('span');
+        spinner.className = 'chat-generating-spinner';
+        spinner.setAttribute('role', 'status');
+        spinner.setAttribute('aria-label', 'Запрос или выполнение кода обрабатывается');
+        const title = $('.title', item);
+        item.insertBefore(spinner, title || item.firstChild);
+      } else if (!shouldSpin && spinner) {
+        spinner.remove();
+      }
+    });
+  }
+
   function openDeviceCodeRunner(item, messageId, options) {
     const background = !!(options && options.background);
     const shell = $('#device-code-shell');
@@ -3624,6 +3711,7 @@
     if (!item || (!background && (!shell || !frame))) return;
     const normalizedMessageId = typeof messageId === 'string' && messageId ? messageId : null;
     if (background && !normalizedMessageId) return;
+    if (normalizedMessageId) setCodeRunnerBusy(normalizedMessageId, state.currentChatId, true);
     let targetFrame = frame;
     if (background) {
       const previous = backgroundDeviceRunners.get(normalizedMessageId);
@@ -3791,6 +3879,8 @@
       if (data.type === 'device-code-complete') {
         const pendingPersistence = deviceFilePersistence.get(messageId);
         if (pendingPersistence) await pendingPersistence;
+        setCodeRunnerBusy(messageId, null, false);
+        void loadChats().catch(() => {});
         if (messageNode) {
           messageNode.deviceRunnerFinishedAt = Date.now();
           const skippedFiles = Array.isArray(data.skipped) ? data.skipped.filter(Boolean).map(x => String(x).slice(0, 160)) : [];
@@ -3826,6 +3916,8 @@
         return;
       }
       if (data.type === 'device-code-error') {
+        setCodeRunnerBusy(messageId, null, false);
+        void loadChats().catch(() => {});
         const message = String(data.message || 'Неизвестная ошибка выполнения').slice(0, 50000);
         if (isBackground) {
           if (messageNode) {
@@ -3969,10 +4061,12 @@
         '</span>' + (edge.label ? '<small>' + escapeHtml(edge.label) + '</small>' : '') + '</div>';
     }).filter(Boolean).join('');
     const active = agents.some(agent => ['queued', 'working', 'searching'].includes(String(agent.status || '')));
+    const totalTokens = Math.max(0, Number(flow && flow.total_tokens) || 0);
     return '<section class="deep-research-flow" aria-label="Deep Research: ход исследования">' +
       '<div class="deep-research-flow-head"><span class="deep-research-flow-mark">🧭</span>' +
       '<strong>Deep Research</strong><span class="deep-research-flow-state">' +
       (active ? thinkAnim() + ' Исследуют' : 'Исследование завершено') + '</span></div>' +
+      '<div class="deep-research-total-tokens">Токены планировщика и всех агентов: <strong>' + totalTokens.toLocaleString('ru-RU') + '</strong></div>' +
       '<div class="deep-research-agents">' + agents.map(agent => {
         const state = String(agent.status || 'queued');
         const marker = ['queued', 'working', 'searching'].includes(state)
@@ -3980,12 +4074,14 @@
           : state === 'done' ? '<span class="deep-agent-state-dot is-done">✓</span>'
           : '<span class="deep-agent-state-dot is-error">!</span>';
         const id = escapeHtml(String(agent.agent_id || ''));
+        const agentTokens = Math.max(0, Number(agent.tokens_in) || 0) + Math.max(0, Number(agent.tokens_out) || 0);
+        const tokensLabel = agentTokens > 0 ? '<span class="deep-agent-token-count">' + agentTokens.toLocaleString('ru-RU') + ' токенов</span>' : '';
         return '<button type="button" class="deep-research-agent-card" data-deep-agent-id="' + id +
           '" data-message-id="' + escapeHtml(String(n.id || '')) + '" aria-label="Открыть результат агента ' +
           escapeHtml(agent.name || 'Агент') + '">' +
           '<span class="deep-agent-card-top">' + marker + '<strong>' + escapeHtml(agent.name || 'Агент') +
           '</strong><small>' + escapeHtml(deepResearchStatusLabel(state)) + '</small></span>' +
-          '<span class="deep-agent-card-task">' + escapeHtml(agent.task || '') + '</span>' +
+          '<span class="deep-agent-card-task">' + escapeHtml(agent.task || '') + '</span>' + tokensLabel +
           (agent.result ? '<span class="deep-agent-card-preview">' + escapeHtml(String(agent.result).slice(0, 180)) + '</span>' : '') +
           '</button>';
       }).join('') + '</div>' +
@@ -4171,6 +4267,8 @@
   function renderMessageInPlace(messageId, previousMessageId, options) {
     const box = $('#messages');
     const opts = options || {};
+    const previousScrollTop = box ? box.scrollTop : 0;
+    const previousStickBottom = state.stickBottom;
     const entries = allMessages(state.tree);
     const entryIndex = entries.findIndex(entry => String(entry.node.id) === String(messageId));
     const previousId = previousMessageId == null ? String(messageId) : String(previousMessageId);
@@ -4201,6 +4299,9 @@
       const content = $('.content.md', nextMessage);
       if (content) content.classList.add('answer-arrive');
       requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
+    } else if (opts.preserveScroll) {
+      box.scrollTop = previousScrollTop;
+      state.stickBottom = previousStickBottom;
     } else if (state.stickBottom !== false) {
       scrollToBottom();
     }
@@ -4272,7 +4373,7 @@
     }));
     $$('.quiz-card [data-quiz-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
-      if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id);
+      if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id, null, { preserveScroll: true });
     }));
     $$('.quiz-option[data-quiz-option]', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null, question=button.closest('.quiz-question');
@@ -4322,7 +4423,7 @@
       });
       const score=results.filter(item=>item.correct).length;
       message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=false;message.quizResponses=responses;message.quizResultSent=false;
-      renderMessageInPlace(message.id);toast('Результат: '+score+' из '+items.length);
+      renderMessageInPlace(message.id, null, { preserveScroll: true });toast('Результат: '+score+' из '+items.length);
       // The model opts in during quiz generation only when its follow-up needs the score.
       if(items.some(item=>item&&typeof item==='object'&&item.send_result_to_ai===true)){
         sendQuizResultToAI(message);
@@ -5476,6 +5577,7 @@
 
   function resetNewChatResponseOptions() {
     state.deepResearch = false;
+    renderDeepResearchChip();
     state.responseDetail = 'standard';
     try {
       localStorage.setItem('aich_deep_research', '0');
@@ -5507,6 +5609,7 @@
   }
 
   function renderAddChatActionLabels() {
+    renderDeepResearchChip();
     const modelLabel = $('#add-chat-model-current');
     if (modelLabel) {
       const selected = (state.modelSets || []).find(item => item && item.id === state.modelSetId);
@@ -5538,6 +5641,16 @@
         : 'Не выбрано';
     }
     if (projectButton) projectButton.setAttribute('aria-label', projectTitle.textContent);
+  }
+
+  function renderDeepResearchChip() {
+    const chip = $('#deep-research-chip');
+    const composer = $('#composer');
+    if (!chip) return;
+    const enabled = !!state.deepResearch;
+    chip.classList.toggle('hidden', !enabled);
+    chip.setAttribute('aria-hidden', String(!enabled));
+    if (composer) composer.classList.toggle('deep-research-active', enabled);
   }
 
   function renderAddChatLibraryFiles() {
@@ -5830,6 +5943,7 @@
         state.deepResearch = !state.deepResearch;
         localStorage.setItem('aich_deep_research', state.deepResearch ? '1' : '0');
         renderAddChatActionLabels();
+        renderDeepResearchChip();
         toast(state.deepResearch ? 'Deep Research включён: до 5 агентов' : 'Deep Research выключен');
       } else if (action === 'memory') {
         setAddChatView('memory');
@@ -6286,6 +6400,14 @@
     const input = $('#input');
     updateComposerActionButton();
     bindAddToChatSheet();
+    const deepResearchRemove = $('#deep-research-chip-remove');
+    if (deepResearchRemove) deepResearchRemove.addEventListener('click', () => {
+      state.deepResearch = false;
+      try { localStorage.setItem('aich_deep_research', '0'); } catch (_) {}
+      renderAddChatActionLabels();
+      renderDeepResearchChip();
+      toast('Глубокое исследование выключено');
+    });
     const modelButton = $('#model-select-btn'), modelPanel = $('#model-picker');
     if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); setAddChatView(state.modelPickerOpen ? 'main' : 'model'); });
     if (modelPanel) modelPanel.addEventListener('click', async event => {
@@ -9664,11 +9786,12 @@
     if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
     const facts = items.filter(m => (m.kind || 'fact') === 'fact');
     const prefs = items.filter(m => m.kind === 'preference');
+    const history = items.filter(m => m.kind === 'history');
     const row = (m) => '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
       '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>';
 
     openModal({
-      title: filterMessageId ? 'Что записано по этому ответу' : 'Память о вас',
+      title: filterMessageId ? 'Что записано по этому ответу' : 'Память, персонализация и история',
       okText: 'Закрыть',
       body:
         (!filterMessageId
@@ -9680,10 +9803,14 @@
           : '<p class="usage-note">Пока нет. Например: «отвечай кратко», «всегда с примерами кода».</p>') +
         '<div style="margin:8px 0 16px"><button class="chip-btn" id="mem-add-pref">' +
         icon('plus') + 'Добавить предпочтение</button></div>' +
-        '<h4 class="sec">Факты</h4>' +
+        '<h4 class="sec">Память · факты</h4>' +
         (facts.length
           ? '<div class="mem-list">' + facts.map(row).join('') + '</div>'
           : '<p class="usage-note">Пока пусто.</p>') +
+        '<h4 class="sec">История работы</h4>' +
+        (history.length
+          ? '<div class="mem-list">' + history.map(row).join('') + '</div>'
+          : '<p class="usage-note">Для многошаговых задач ИИ сохраняет кратко, что делали, каким способом и где остановились. История подмешивается в контекст только по запросу.</p>') +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить факт</button>' +
         (items.length && !filterMessageId
@@ -10550,7 +10677,14 @@
       updateAuthCta();
       await boot();
     } catch (e) {
-      // Preserve the visible workspace during transient network failures.
+      // A full IP quota must not leave an unauthenticated guest workspace usable.
+      if (String(e && e.message || e).includes('IP_ACCOUNT_LIMIT')) {
+        state.user = null;
+        state.identityReady = false;
+        showAuth();
+        showAccountCreationLimitWarning();
+      }
+      // Preserve the visible workspace during other transient network failures.
       updateAuthCta();
       console.warn('AI CH session initialization failed:', e);
     }

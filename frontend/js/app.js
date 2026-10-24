@@ -5928,6 +5928,10 @@
         const dy = event.clientY - pointerDrag.y;
         if (pointerDrag.mode === 'expand' || pointerDrag.mode === 'collapse' || pointerDrag.mode === 'close') {
           pointerDrag.dy = dy;
+          if (!pointerDrag.captured) {
+            pointerDrag.captured = true;
+            try { sheet.setPointerCapture(event.pointerId); } catch (_) {}
+          }
           if (event.cancelable) event.preventDefault();
         } else if (pointerDrag.mode === 'native') {
           pointerDrag = null;

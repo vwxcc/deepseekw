@@ -5997,3 +5997,18 @@ input[type="range"]:focus-visible {
   .add-to-chat-sheet.is-expanded { height: min(88dvh, 760px); }
   .deep-research-flow { padding: 9px; }
 }
+
+/* Plus sheet: mobile height is per-open state and expands smoothly on a vertical swipe. */
+@media (max-width: 860px) {
+  .add-to-chat-sheet {
+    height: min(58dvh, 520px);
+    max-height: min(58dvh, 520px);
+    transition: height .3s cubic-bezier(.22, 1, .36, 1),
+                max-height .3s cubic-bezier(.22, 1, .36, 1),
+                transform .4s cubic-bezier(.22, 1, .36, 1);
+  }
+  .add-to-chat-sheet.is-expanded {
+    height: min(90dvh, 820px);
+    max-height: min(90dvh, 820px);
+  }
+}

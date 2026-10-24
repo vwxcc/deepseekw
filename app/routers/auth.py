@@ -1,13 +1,16 @@
 """Auth endpoints: register, login, logout, me, csrf."""
 from __future__ import annotations
 
+import hashlib
+import hmac
+import ipaddress
 import random
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
@@ -59,6 +62,95 @@ GUEST_EMAIL_SUFFIX = "@guest.ai-ch.invalid"
 
 def _is_guest(user: User | None) -> bool:
     return bool(user is not None and getattr(user, "is_guest", False))
+
+
+MAX_IDENTITIES_PER_IP = 2
+IP_ACCOUNT_LIMIT_DETAIL = (
+    "На одном IP-адресе разрешено не более двух аккаунтов, включая гостевые. "
+    "Войдите в существующий аккаунт или используйте уже созданную гостевую сессию. "
+    "[IP_ACCOUNT_LIMIT]"
+)
+
+
+def _request_ip_hash(request: Request) -> str | None:
+    """Return a stable, non-reversible HMAC of the client IP; never store the raw address."""
+    candidates = [
+        request.headers.get("cf-connecting-ip", ""),
+        request.headers.get("true-client-ip", ""),
+        request.headers.get("x-real-ip", ""),
+        (request.headers.get("x-forwarded-for", "").split(",", 1)[0]),
+        request.client.host if request.client is not None else "",
+    ]
+    canonical_ip = ""
+    for candidate in candidates:
+        candidate = str(candidate or "").strip().strip('"')
+        if not candidate:
+            continue
+        try:
+            canonical_ip = ipaddress.ip_address(candidate).compressed
+            break
+        except ValueError:
+            continue
+    if not canonical_ip:
+        return None
+    secret = (settings.session_secret or "").encode("utf-8")
+    if not secret:
+        return None
+    return hmac.new(secret, canonical_ip.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+async def _count_active_ip_accounts(
+    db: AsyncSession, ip_hash: str, *, exclude_user_id: str | None = None
+) -> int:
+    """Count registered accounts and guests with a live session at a hashed IP."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    active_guest_ids = select(Session.user_id).where(Session.expires_at > now)
+    filters = [
+        User.signup_ip_hash == ip_hash,
+        or_(User.is_guest.is_(False), User.id.in_(active_guest_ids)),
+    ]
+    if exclude_user_id:
+        filters.append(User.id != exclude_user_id)
+    count = await db.scalar(select(func.count(User.id)).where(*filters))
+    return int(count or 0)
+
+
+async def _claimable_guest_for_ip(
+    request: Request, db: AsyncSession, ip_hash: str
+) -> User | None:
+    """Find the current same-IP guest that registration will replace, not duplicate."""
+    raw_token = request.cookies.get(COOKIE_NAME)
+    if not raw_token:
+        return None
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    result = await db.execute(
+        select(Session).where(Session.token_hash == hash_token(raw_token))
+    )
+    sess = result.scalar_one_or_none()
+    if sess is None or sess.expires_at <= now:
+        return None
+    guest = await db.get(User, sess.user_id)
+    if _is_guest(guest) and guest.signup_ip_hash == ip_hash:
+        return guest
+    return None
+
+
+async def _assert_ip_identity_capacity(
+    request: Request, db: AsyncSession, *, replacing_guest: bool = False
+) -> str:
+    ip_hash = _request_ip_hash(request)
+    if not ip_hash:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Не удалось безопасно определить IP-адрес. Попробуйте обновить страницу.",
+        )
+    guest = await _claimable_guest_for_ip(request, db, ip_hash) if replacing_guest else None
+    count = await _count_active_ip_accounts(
+        db, ip_hash, exclude_user_id=guest.id if guest is not None else None
+    )
+    if count >= MAX_IDENTITIES_PER_IP:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, IP_ACCOUNT_LIMIT_DETAIL)
+    return ip_hash
 
 
 async def _start_session(
@@ -131,6 +223,29 @@ async def cleanup_expired_guests() -> int:
     return removed
 
 
+@router.get("/eligibility")
+async def account_creation_eligibility(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Preflight only: registration and guest creation repeat the same check server-side."""
+    ip_hash = _request_ip_hash(request)
+    if not ip_hash:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Не удалось безопасно определить IP-адрес. Попробуйте обновить страницу.",
+        )
+    guest = await _claimable_guest_for_ip(request, db, ip_hash)
+    count = await _count_active_ip_accounts(
+        db, ip_hash, exclude_user_id=guest.id if guest is not None else None
+    )
+    return {
+        "allowed": count < MAX_IDENTITIES_PER_IP,
+        "limit": MAX_IDENTITIES_PER_IP,
+        "existing": count,
+        "detail": "" if count < MAX_IDENTITIES_PER_IP else IP_ACCOUNT_LIMIT_DETAIL,
+    }
+
+
 @router.post("/guest", response_model=AuthOut)
 async def create_guest_session(
     request: Request, response: Response, db: AsyncSession = Depends(get_db)
@@ -149,10 +264,12 @@ async def create_guest_session(
                 _set_cookies(response, raw_token, cookie_age)
                 return AuthOut(user=UserOut.model_validate(existing_user), csrf_token=csrf_token_for(raw_token))
 
+    ip_hash = await _assert_ip_identity_capacity(request, db)
     guest = User(
         email=f"guest+{secrets.token_hex(16)}{GUEST_EMAIL_SUFFIX}",
         password_hash=hash_password(secrets.token_urlsafe(32)),
         name="Гость", plan="free", avatar=0, is_guest=True,
+        signup_ip_hash=ip_hash,
     )
     db.add(guest)
     await db.commit()
@@ -174,12 +291,14 @@ async def register(
     if result.scalar_one_or_none() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
 
+    ip_hash = await _assert_ip_identity_capacity(request, db, replacing_guest=True)
     user = User(
         email=email,
         name=data.name.strip(),
         password_hash=hash_password(data.password),
         avatar=random.randrange(AVATAR_COUNT),
         token_balance=30_000,
+        signup_ip_hash=ip_hash,
     )
     db.add(user)
     await db.flush()
@@ -205,6 +324,12 @@ async def login(
     user = result.scalar_one_or_none()
     if user is None or not verify_password(data.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+
+    # Existing accounts remain usable. Stamp their first observed IP so the cap can
+    # account for legacy users without requiring any account migration or lockout.
+    if not user.signup_ip_hash:
+        user.signup_ip_hash = _request_ip_hash(request)
+        await db.commit()
 
     await _claim_guest_data(request, db, user)
     token = await _start_session(db, user)

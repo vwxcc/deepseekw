@@ -1266,13 +1266,13 @@ def _rank_status_categories(user_text: Any) -> list[tuple[int, int, int, int, st
             continue
         score, longest_phrase, _match_count = _category_score(text, keywords)
         if score:
-            # Keyword score stays primary; phrase length and category specificity
-            # resolve close ties before deterministic declaration order.
+            # Keyword score stays primary; domain specificity then phrase length
+            # resolve ties before deterministic declaration order.
             ranked.append((
                 score, longest_phrase, _STATUS_CATEGORY_PRIORITY.get(name, 0),
                 -order, name, statuses,
             ))
-    ranked.sort(reverse=True, key=lambda item: (item[0], item[1], item[2], item[3]))
+    ranked.sort(reverse=True, key=lambda item: (item[0], item[2], item[1], item[3]))
     return ranked
 
 

@@ -37,7 +37,7 @@ class PrefetchContextTests(unittest.TestCase):
 
         self.assertEqual(
             result,
-            "[Файл: f1]\\nfirst text\\n\\n---\\n\\n[Файл: f2]\\nsecond text",
+            "[Файл: f1]\nfirst text\n\n---\n\n[Файл: f2]\nsecond text",
         )
 
     def test_missing_or_unready_job_falls_back_for_every_file(self) -> None:

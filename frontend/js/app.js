@@ -5607,6 +5607,7 @@
   }
 
   function renderAddChatActionLabels() {
+    renderDeepResearchChip();
     const modelLabel = $('#add-chat-model-current');
     if (modelLabel) {
       const selected = (state.modelSets || []).find(item => item && item.id === state.modelSetId);
@@ -5638,7 +5639,6 @@
         : 'Не выбрано';
     }
     if (projectButton) projectButton.setAttribute('aria-label', projectTitle.textContent);
-    renderDeepResearchChip();
   }
 
   function renderDeepResearchChip() {

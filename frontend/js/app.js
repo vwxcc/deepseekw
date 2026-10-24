@@ -1276,7 +1276,47 @@
     const flushPara = () => { if (para.length) { out.push('<p>' + inlineFmt(para.join(' ')) + '</p>'); para = []; } };
     const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
     const closeQuote = () => { if (inQuote) { out.push('</blockquote>'); inQuote = false; } };
-    const splitRow = (r) => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+    // Split Markdown rows without treating escaped pipes or pipes inside inline code as separators.
+    // An internal sentinel keeps an escaped \| intact until the cell is formatted.
+    const splitRow = (row) => {
+      let value = String(row == null ? '' : row).trim();
+      if (value.startsWith('|')) value = value.slice(1);
+      if (value.endsWith('|')) {
+        let slashCount = 0;
+        for (let p = value.length - 2; p >= 0 && value[p] === '\\'; p--) slashCount++;
+        if (slashCount % 2 === 0) value = value.slice(0, -1);
+      }
+      const cells = [];
+      let cell = '';
+      let codeTicks = 0;
+      for (let i = 0; i < value.length; i++) {
+        const ch = value[i];
+        if (ch === '\\' && value[i + 1] === '|') {
+          cell += '\u0002';
+          i++;
+          continue;
+        }
+        if (value.charCodeAt(i) === 96) {
+          let end = i + 1;
+          while (value.charCodeAt(end) === 96) end++;
+          const runLength = end - i;
+          cell += value.slice(i, end);
+          if (!codeTicks) codeTicks = runLength;
+          else if (codeTicks === runLength) codeTicks = 0;
+          i = end - 1;
+          continue;
+        }
+        if (ch === '|' && codeTicks === 0) {
+          cells.push(cell.trim());
+          cell = '';
+          continue;
+        }
+        cell += ch;
+      }
+      cells.push(cell.trim());
+      return cells;
+    };
+    const tableCellHtml = (cell) => inlineFmt(String(cell == null ? '' : cell).replace(/\u0002/g, '|'));
     // Be tolerant of a blank line between a Markdown table header and its separator.
     // Models occasionally emit that spacing even though the header is still a table row.
     const isTableSep = (s) => {
@@ -1316,21 +1356,43 @@
         const head = splitRow(line);
         const body = [];
         let j = tableSeparatorIndex + 1;
-        while (j < lines.length && lines[j].trim() && lines[j].includes('|') && !isTableSep(lines[j])) {
+        while (j < lines.length) {
+          if (!lines[j].trim()) {
+            // Tolerate one accidental blank line between table rows, but don't absorb paragraphs.
+            let next = j;
+            let blanks = 0;
+            while (next < lines.length && !lines[next].trim() && blanks < 2) {
+              next++;
+              blanks++;
+            }
+            if (blanks === 1 && next < lines.length &&
+                lines[next].includes('|') && !isTableSep(lines[next])) {
+              j = next;
+              continue;
+            }
+            break;
+          }
+          if (!lines[j].includes('|') || isTableSep(lines[j])) break;
           body.push(splitRow(lines[j]));
           j++;
         }
+        // Keep every cell even if a generated row has a missing or extra column.
+        const columnCount = Math.max(head.length, ...body.map(row => row.length));
+        while (head.length < columnCount) head.push('');
+        const normalizedBody = body.map(row =>
+          Array.from({ length: columnCount }, (_, k) => row[k] == null ? '' : row[k])
+        );
         const tid = 'tbl_' + Math.random().toString(36).slice(2);
         window.__tableStore = window.__tableStore || {};
-        window.__tableStore[tid] = [head].concat(body);
+        window.__tableStore[tid] = [head.slice()].concat(normalizedBody.map(row => row.slice()));
         out.push('<div class="table-wrap" data-tbl="' + tid + '">' +
           '<button class="tbl-dl" data-dl-table="' + tid + '" title="Скачать таблицу">' +
           icon('download') + '</button>' +
           '<table><thead><tr>' +
-          head.map(c => '<th>' + inlineFmt(c) + '</th>').join('') +
+          head.map(c => '<th>' + tableCellHtml(c) + '</th>').join('') +
           '</tr></thead><tbody>' +
-          body.map(r => '<tr>' +
-            head.map((_, k) => '<td>' + inlineFmt(r[k] || '') + '</td>').join('') +
+          normalizedBody.map(row => '<tr>' +
+            row.map(cell => '<td>' + tableCellHtml(cell) + '</td>').join('') +
           '</tr>').join('') +
           '</tbody></table></div>');
         i = j - 1;

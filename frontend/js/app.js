@@ -10339,7 +10339,7 @@
           await api.put('/api/limits/prefetch', { enabled: prefetchToggle.checked });
         }
         const grouped = {};
-        $('[data-plan]', root).forEach(inp => {
+        $$('[data-plan]', root).forEach(inp => {
           const plan = inp.dataset.plan;
           const key = inp.dataset.key;
           const raw = inp.value.trim();

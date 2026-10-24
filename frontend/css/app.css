@@ -8348,6 +8348,10 @@ input[type="range"], .council-row input { accent-color: var(--accent) !important
 #sidebar .sidebar-skills-connectors button,
 #sidebar .sidebar-skills-connectors .chip-btn,
 #sidebar .side-row .chip-btn,
+#sidebar .sidebar-more-btn,
+#sidebar .pinned-all-btn,
+#sidebar .chat-item .acts button,
+#sidebar #collapse-btn,
 #sidebar #sidebar-limits-btn,
 #sidebar .sidebar-usage {
   background: #ffffff !important;
@@ -8375,6 +8379,10 @@ input[type="range"], .council-row input { accent-color: var(--accent) !important
 #sidebar .sidebar-quick-tools button:hover,
 #sidebar .sidebar-skills-connectors button:hover,
 #sidebar .side-row .chip-btn:hover,
+#sidebar .sidebar-more-btn:hover,
+#sidebar .pinned-all-btn:hover,
+#sidebar .chat-item .acts button:hover,
+#sidebar #collapse-btn:hover,
 #sidebar #sidebar-limits-btn:hover {
   background: #f5f5f5 !important;
   border-color: #dcdcdc !important;

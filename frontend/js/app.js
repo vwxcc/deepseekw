@@ -117,6 +117,8 @@
   let pendingNewChatProjectLabel = '';
   let addChatProjects = [];
   let addChatActiveView = 'main';
+  // Persist the expanded preference for Share; the + root itself always stays fixed.
+  let addChatExpandedThisSession = false;
   let addChatSelectedFileIds = new Set();
   // Keep execution controls scoped to explicitly marked file-generation blocks.
   const actionCarouselTimers = new WeakMap();
@@ -4200,7 +4202,7 @@
 
   function openDeepResearchAgentDetail(agent) {
     if (!agent) return;
-    openAddToChatSheet();
+    openAddToChatSheet('detail');
     setAddChatView('agent-detail');
     const root = $('#add-chat-agent-detail-content');
     if (!root) return;
@@ -6011,12 +6013,14 @@
     if (next === 'main') renderAddChatActionLabels();
   }
 
-  function openAddToChatSheet() {
+  function openAddToChatSheet(mode = 'plus') {
     const shell = $('#add-to-chat-shell');
     if (!shell) { $('#file-input')?.click(); return; }
+    shell.classList.toggle('plus-fixed', mode === 'plus');
     const sheet = $('.add-to-chat-sheet', shell);
     if (sheet) {
-      sheet.classList.remove('is-expanded');
+      if (mode === 'plus') sheet.classList.remove('is-expanded');
+      else sheet.classList.toggle('is-expanded', addChatExpandedThisSession);
       const scrollArea = $('#add-chat-scroll-area', sheet);
       if (scrollArea) scrollArea.scrollTop = 0;
       sheet.style.removeProperty('height');
@@ -6045,7 +6049,7 @@
       sheet.style.removeProperty('transform');
     }
     setAddChatView('main');
-    shell.classList.remove('open');
+    shell.classList.remove('open', 'plus-fixed');
     shell.setAttribute('aria-hidden', 'true');
     $('#attach-btn')?.classList.remove('is-active');
   }
@@ -6209,7 +6213,121 @@
     $('#add-chat-library-cancel')?.addEventListener('click', () => setAddChatView('main'));
     $('#add-chat-library-attach')?.addEventListener('click', attachSelectedLibraryFiles);
 
-    // The + sheet is fixed and compact: no drag-to-expand/collapse gestures.
+    const sheet = $('.add-to-chat-sheet', shell);
+    const scrollArea = $('#add-chat-scroll-area', shell);
+    let pointerDrag = null;
+    let touchDrag = null;
+
+    const expandSheet = () => {
+      if (!sheet) return;
+      sheet.classList.add('is-expanded');
+      addChatExpandedThisSession = true;
+    };
+    const collapseSheet = () => {
+      if (sheet) sheet.classList.remove('is-expanded');
+      // Keep addChatExpandedThisSession true; the next opening should be expanded.
+    };
+    const finishSheetGesture = gesture => {
+      if (!gesture || !sheet || !gesture.mode) return;
+      if (gesture.mode === 'expand' && gesture.dy < -28) {
+        expandSheet();
+      } else if (gesture.mode === 'collapse' && gesture.dy > 35) {
+        collapseSheet();
+      } else if (gesture.mode === 'close' && gesture.dy > 110) {
+        closeAddToChatSheet();
+      }
+    };
+    const startSheetGesture = (x, y, target, expanded) => ({
+      x, y, dy: 0, expanded,
+      area: scrollArea && scrollArea.contains(target) ? scrollArea : null,
+      mode: null
+    });
+    const chooseSheetGesture = gesture => {
+      const dx = gesture.currentX - gesture.x;
+      const dy = gesture.currentY - gesture.y;
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+        gesture.mode = 'native';
+        return;
+      }
+      if (Math.abs(dy) < 5) return;
+      const atTop = !gesture.area || gesture.area.scrollTop <= 0;
+      if (!gesture.expanded && dy < 0) {
+        gesture.mode = 'expand';
+      } else if (gesture.expanded && dy > 0 && atTop) {
+        gesture.mode = 'collapse';
+      } else if (!gesture.expanded && dy > 0) {
+        gesture.mode = 'close';
+      } else {
+        // Expanded content scrolling is left to the browser's native scroller.
+        gesture.mode = 'native';
+      }
+    };
+
+    if (sheet && scrollArea) {
+      // Mouse drag support (touch uses Touch Events to avoid pointercancel on iOS Safari).
+      sheet.addEventListener('pointerdown', event => {
+        if (!shell.classList.contains('open') || shell.classList.contains('plus-fixed') || event.pointerType === 'touch' ||
+            !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+        pointerDrag = startSheetGesture(event.clientX, event.clientY, event.target,
+          sheet.classList.contains('is-expanded'));
+        pointerDrag.id = event.pointerId;
+      });
+      sheet.addEventListener('pointermove', event => {
+        if (!pointerDrag || pointerDrag.id != null && pointerDrag.id !== event.pointerId) return;
+        pointerDrag.currentX = event.clientX;
+        pointerDrag.currentY = event.clientY;
+        if (!pointerDrag.mode) chooseSheetGesture(pointerDrag);
+        const dy = event.clientY - pointerDrag.y;
+        if (pointerDrag.mode === 'expand' || pointerDrag.mode === 'collapse' || pointerDrag.mode === 'close') {
+          pointerDrag.dy = dy;
+          if (!pointerDrag.captured) {
+            pointerDrag.captured = true;
+            try { sheet.setPointerCapture(event.pointerId); } catch (_) {}
+          }
+          if (event.cancelable) event.preventDefault();
+        } else if (pointerDrag.mode === 'native') {
+          pointerDrag = null;
+        }
+      });
+      const finishPointer = event => {
+        if (!pointerDrag) return;
+        const current = pointerDrag;
+        pointerDrag = null;
+        current.dy = event.clientY - current.y;
+        finishSheetGesture(current);
+      };
+      sheet.addEventListener('pointerup', finishPointer);
+      sheet.addEventListener('pointercancel', () => { pointerDrag = null; });
+
+      // On touch devices, intercept only the gesture that expands/collapses the sheet.
+      // All other vertical movement remains native scrolling inside #add-chat-scroll-area.
+      sheet.addEventListener('touchstart', event => {
+        if (!shell.classList.contains('open') || shell.classList.contains('plus-fixed') || event.touches.length !== 1) {
+          touchDrag = null;
+          return;
+        }
+        const touch = event.touches[0];
+        touchDrag = startSheetGesture(touch.clientX, touch.clientY, event.target,
+          sheet.classList.contains('is-expanded'));
+      }, { passive: true });
+      sheet.addEventListener('touchmove', event => {
+        if (!touchDrag || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        touchDrag.currentX = touch.clientX;
+        touchDrag.currentY = touch.clientY;
+        if (!touchDrag.mode) chooseSheetGesture(touchDrag);
+        touchDrag.dy = touch.clientY - touchDrag.y;
+        if (touchDrag.mode === 'expand' || touchDrag.mode === 'collapse' || touchDrag.mode === 'close') {
+          if (event.cancelable) event.preventDefault();
+        }
+      }, { passive: false });
+      sheet.addEventListener('touchend', () => {
+        const current = touchDrag;
+        touchDrag = null;
+        finishSheetGesture(current);
+      }, { passive: true });
+      sheet.addEventListener('touchcancel', () => { touchDrag = null; }, { passive: true });
+    }
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && shell.classList.contains('open')) closeAddToChatSheet();
     });
@@ -9108,7 +9226,7 @@
     if (!shell || !content) { toast('Меню «Поделиться» недоступно.', 'error'); return; }
 
     // Open the actual + sheet immediately; never wait for share/status API calls before showing it.
-    openAddToChatSheet();
+    openAddToChatSheet('share');
     setAddChatView('share');
     content.innerHTML = '<p class="usage-note share-loading">Открываю действия чата…</p>';
 

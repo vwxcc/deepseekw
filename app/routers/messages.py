@@ -610,6 +610,7 @@ async def _spawn(
         history_messages=history_messages,
         memory_enabled=memory_enabled,
         action_limit=action_limit,
+        deep_research=bool(chat.mode == "research"),
     )
     await ai_router.enqueue(job)
     return StreamingResponse(

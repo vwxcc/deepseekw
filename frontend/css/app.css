@@ -6061,3 +6061,19 @@ input[type="range"]:focus-visible {
     scrollbar-width: auto;
   }
 }
+
+/* Keep the + menu itself fixed while its options scroll inside the available space. */
+#add-chat-main-view.add-chat-sheet-content {
+  flex: 1 1 0%;
+  height: 0;
+  min-height: 0;
+  max-height: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+  box-sizing: border-box;
+}

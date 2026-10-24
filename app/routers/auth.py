@@ -120,10 +120,15 @@ async def _stamp_current_session_ip(
     if session is None or session.expires_at <= now:
         return None
     user = await db.get(User, session.user_id)
+    changed = False
+    if session.ip_hash != ip_hash:
+        session.ip_hash = ip_hash
+        changed = True
     if user is not None and not user.signup_ip_hash:
         user.signup_ip_hash = ip_hash
-        if commit:
-            await db.commit()
+        changed = True
+    if commit and changed:
+        await db.commit()
     return user
 
 
@@ -133,8 +138,12 @@ async def _count_active_ip_accounts(
     """Count registered accounts and guests with a live session at a hashed IP."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     active_guest_ids = select(Session.user_id).where(Session.expires_at > now)
+    active_ip_user_ids = select(Session.user_id).where(
+        Session.expires_at > now,
+        Session.ip_hash == ip_hash,
+    )
     filters = [
-        User.signup_ip_hash == ip_hash,
+        or_(User.signup_ip_hash == ip_hash, User.id.in_(active_ip_user_ids)),
         or_(User.is_guest.is_(False), User.id.in_(active_guest_ids)),
     ]
     if exclude_user_id:
@@ -158,7 +167,9 @@ async def _claimable_guest_for_ip(
     if sess is None or sess.expires_at <= now:
         return None
     guest = await db.get(User, sess.user_id)
-    if _is_guest(guest) and guest.signup_ip_hash == ip_hash:
+    if _is_guest(guest) and (
+        guest.signup_ip_hash == ip_hash or sess.ip_hash == ip_hash
+    ):
         return guest
     return None
 
@@ -183,7 +194,11 @@ async def _assert_ip_identity_capacity(
 
 
 async def _start_session(
-    db: AsyncSession, user: User, lifetime_seconds: int | None = None
+    db: AsyncSession,
+    user: User,
+    lifetime_seconds: int | None = None,
+    *,
+    ip_hash: str | None = None,
 ) -> str:
     token = generate_session_token()
     expires_at = session_expiry()
@@ -191,7 +206,12 @@ async def _start_session(
         expires_at = (
             datetime.now(timezone.utc) + timedelta(seconds=lifetime_seconds)
         ).replace(tzinfo=None)
-    db.add(Session(token_hash=hash_token(token), user_id=user.id, expires_at=expires_at))
+    db.add(Session(
+        token_hash=hash_token(token),
+        user_id=user.id,
+        expires_at=expires_at,
+        ip_hash=ip_hash,
+    ))
     await db.commit()
     return token
 
@@ -290,11 +310,17 @@ async def create_guest_session(
         if existing_session is not None and existing_session.expires_at > now:
             existing_user = await db.get(User, existing_session.user_id)
             if existing_user is not None:
-                # Existing sessions are not blocked, but their first observed IP becomes
-                # part of future capacity checks.
-                if not existing_user.signup_ip_hash:
-                    existing_user.signup_ip_hash = _request_ip_hash(request)
-                await db.commit()
+                # Reuse the current identity but refresh its observed client IP.
+                current_ip_hash = _request_ip_hash(request)
+                changed = False
+                if current_ip_hash and existing_session.ip_hash != current_ip_hash:
+                    existing_session.ip_hash = current_ip_hash
+                    changed = True
+                if current_ip_hash and not existing_user.signup_ip_hash:
+                    existing_user.signup_ip_hash = current_ip_hash
+                    changed = True
+                if changed:
+                    await db.commit()
                 remaining = max(1, int((existing_session.expires_at - now).total_seconds()))
                 cookie_age = remaining if _is_guest(existing_user) else settings.session_max_age
                 _set_cookies(response, raw_token, cookie_age)
@@ -309,7 +335,9 @@ async def create_guest_session(
     )
     db.add(guest)
     await db.flush()
-    token = await _start_session(db, guest, GUEST_SESSION_SECONDS)
+    token = await _start_session(
+        db, guest, GUEST_SESSION_SECONDS, ip_hash=ip_hash
+    )
     await db.refresh(guest)
     _set_cookies(response, token, GUEST_SESSION_SECONDS)
     return AuthOut(user=UserOut.model_validate(guest), csrf_token=csrf_token_for(token))
@@ -344,7 +372,7 @@ async def register(
         action="signup_grant", reason="Стартовый баланс после регистрации",
     ))
     await _claim_guest_data(request, db, user)
-    token = await _start_session(db, user)
+    token = await _start_session(db, user, ip_hash=ip_hash)
     await db.refresh(user)
     _set_cookies(response, token)
     return AuthOut(user=UserOut.model_validate(user), csrf_token=csrf_token_for(token))
@@ -360,14 +388,15 @@ async def login(
     if user is None or not verify_password(data.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
-    # Existing accounts remain usable. Stamp their first observed IP so the cap can
-    # account for legacy users without requiring any account migration or lockout.
-    if not user.signup_ip_hash:
-        user.signup_ip_hash = _request_ip_hash(request)
+    # Existing accounts remain usable. Record the current IP on the new session;
+    # only fill the permanent signup hash when a legacy account has none.
+    login_ip_hash = _request_ip_hash(request)
+    if login_ip_hash and not user.signup_ip_hash:
+        user.signup_ip_hash = login_ip_hash
         await db.commit()
 
     await _claim_guest_data(request, db, user)
-    token = await _start_session(db, user)
+    token = await _start_session(db, user, ip_hash=login_ip_hash)
     _set_cookies(response, token)
     return AuthOut(user=UserOut.model_validate(user), csrf_token=csrf_token_for(token))
 

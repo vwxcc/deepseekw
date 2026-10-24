@@ -6062,40 +6062,72 @@ input[type="range"]:focus-visible {
   }
 }
 
-/* Keep the + sheet fixed while the main option list scrolls inside it. */
-.add-to-chat-sheet > #add-chat-main-view.add-chat-sheet-content {
-  flex: 1 1 0%;
-  height: auto;
+/* The + sheet uses a fixed header and one explicitly sized scrolling content row.
+   Grid avoids the flex min-height/overflow issue on mobile Safari. */
+#add-to-chat-shell .add-to-chat-sheet {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 24px auto minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden !important;
   min-height: 0;
-  max-height: 100%;
+}
+#add-to-chat-shell .add-chat-handle-wrap {
+  grid-row: 1;
+  min-height: 0;
+}
+#add-to-chat-shell .add-chat-head {
+  grid-row: 2;
+  min-height: 0;
+}
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-sheet-content,
+#add-to-chat-shell .add-to-chat-sheet > .add-chat-subview {
+  grid-row: 3;
+  grid-column: 1;
+  align-self: stretch;
+  width: 100%;
+  height: auto !important;
   min-width: 0;
+  min-height: 0 !important;
+  max-height: none !important;
   overflow-x: hidden;
-  overflow-y: scroll;
+  overflow-y: auto !important;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
   scrollbar-gutter: stable;
   box-sizing: border-box;
+  padding-right: 8px;
 }
 
-/* In-chat tables use the same text size as the surrounding answer. Keep the
-   download control in its own row so it cannot cover the table header. */
+/* Tables stay in normal text size. The download button occupies its own line
+   so it never covers the header/first row, and wide tables scroll horizontally. */
 #messages .msg .content.md .table-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: block !important;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 #messages .msg .content.md .table-wrap > .tbl-dl {
-  position: sticky;
-  top: auto;
-  right: 0;
-  align-self: flex-end;
-  flex: 0 0 27px;
-  margin: 0 0 4px;
+  position: relative !important;
+  inset: auto !important;
+  display: grid;
+  margin: 0 0 5px auto;
+  flex: none;
 }
 #messages .msg .content.md .table-wrap > table {
-  flex: 0 0 auto;
-  font-size: 1em !important;
+  display: table !important;
+  width: max-content !important;
+  min-width: 100% !important;
+  max-width: none !important;
+  table-layout: auto !important;
+  margin: 0 !important;
+  font-size: inherit !important;
   line-height: 1.45;
 }
 #messages .msg .content.md .table-wrap > table th,

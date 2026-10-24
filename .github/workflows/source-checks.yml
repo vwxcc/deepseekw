@@ -66,7 +66,7 @@ jobs:
           const mainView = shell.indexOf('id="add-chat-main-view"');
           const shareView = shell.indexOf('id="add-chat-share-view"');
           const lastView = shell.indexOf('id="add-chat-agent-detail-view"');
-          const scrollClose = shell.indexOf('      </div>\\n    </section>', shareView);
+          const scrollClose = shell.indexOf('      </div>\n    </section>', shareView);
           assert.ok(scrollStart >= 0 && scrollStart < mainView && mainView < shareView,
             'The main and Share views must live inside the shared scroll container.');
           assert.ok(lastView > shareView && scrollClose > lastView,
@@ -76,17 +76,17 @@ jobs:
           const glassStart = css.indexOf('Liquid Glass design system', canonicalStart);
           assert.ok(canonicalStart >= 0 && glassStart > canonicalStart, 'Canonical sheet and glass styles must exist.');
           const sheetCss = css.slice(canonicalStart, glassStart);
-          assert.match(sheetCss, /overflow-y:\\s*auto !important/);
-          assert.match(sheetCss, /flex:\\s*1 1 0 !important/);
-          assert.doesNotMatch(sheetCss, /(?:^|[;{]\\s*)height:\\s*0 !important/);
+          assert.match(sheetCss, /overflow-y:\s*auto !important/);
+          assert.match(sheetCss, /flex:\s*1 1 0 !important/);
+          assert.doesNotMatch(sheetCss, /(?:^|[;{]\s*)height:\s*0 !important/);
           assert.match(js, /let addChatExpandedThisSession = false/);
           assert.match(js, /addChatExpandedThisSession = true/);
-          assert.match(js, /sheet\\.addEventListener\\('touchmove'/);
-          assert.match(js, /passive:\\s*false/);
+          assert.match(js, /sheet\.addEventListener\('touchmove'/);
+          assert.match(js, /passive:\s*false/);
           assert.match(spec, /После первого успешного разворачивания/);
           assert.match(spec, /Liquid Glass/);
-          assert.match(html, /app\\.css\\?v=\\d+&rev=\\d+/);
-          assert.match(html, /app\\.js\\?v=\\d+&rev=\\d+/);
+          assert.match(html, /app\.css\?v=\d+&rev=\d+/);
+          assert.match(html, /app\.js\?v=\d+&rev=\d+/);
           console.log('Plus/Share has one scroll area, persistent expansion, iOS touch handling and Liquid Glass styles.');
           JS
       - name: Test subscription modal comparison rendering

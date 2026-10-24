@@ -7348,3 +7348,35 @@ html, body, #main-screen, #sidebar, #chat-header, #messages,
 @media (max-width: 620px) {
   .deep-research-agents { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Keep every + submenu as wide as the parent sheet. */
+#add-to-chat-shell.plus-fixed .add-to-chat-sheet,
+#add-to-chat-shell.plus-fixed.has-subview .add-to-chat-sheet {
+  width: min(calc(100vw - 20px), 760px) !important;
+  max-width: calc(100vw - 20px) !important;
+  box-sizing: border-box !important;
+}
+#add-to-chat-shell.plus-fixed .add-chat-scroll-area,
+#add-to-chat-shell.plus-fixed.has-subview .add-chat-scroll-area {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+#add-to-chat-shell.plus-fixed .add-chat-scroll-area > .add-chat-subview:not(.hidden),
+#add-to-chat-shell.plus-fixed.has-subview .add-chat-scroll-area > .add-chat-subview:not(.hidden) {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+#add-to-chat-shell.plus-fixed .connector-catalog-panel,
+#add-to-chat-shell.plus-fixed .memory-settings-view,
+#add-to-chat-shell.plus-fixed .add-chat-project-picker,
+#add-to-chat-shell.plus-fixed .add-chat-model-settings {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}

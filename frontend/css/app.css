@@ -6787,20 +6787,8 @@ input[type="range"]:hover::-webkit-slider-thumb {
   }
 }
 
-/* Inline effort/detail sliders and combined project/connectors view. */
-#add-to-chat-shell .response-detail-inline-control{min-height:86px;align-items:flex-start;cursor:default;padding:10px 12px}
-#add-to-chat-shell .response-detail-inline-control:active{transform:none}
-#add-to-chat-shell .response-detail-inline-copy{display:grid;flex:1 1 auto;gap:8px;width:100%;min-width:0;align-self:center}
-.response-detail-inline-heading,.add-chat-effort-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
-.response-detail-inline-heading strong,.add-chat-effort-heading strong{color:var(--fg);font-size:14px;font-weight:650;line-height:1.35}
-.response-detail-inline-heading small,.add-chat-effort-heading small{color:var(--fg-muted);font-size:12px;line-height:1.3;white-space:nowrap}
-#add-chat-response-detail-range,#add-chat-effort-range{display:block;width:100%;min-width:0;margin:0;touch-action:pan-y}
-.response-detail-inline-labels,.add-chat-effort-labels{display:flex;justify-content:space-between;gap:8px;color:var(--fg-muted);font-size:10.5px;line-height:1.3}
-.response-detail-inline-labels span,.add-chat-effort-labels span{white-space:nowrap}
-.add-chat-effort-control{display:grid;gap:11px;min-width:0;margin-top:14px;padding:15px;border:1px solid var(--border-soft);border-radius:16px;background:var(--bg-panel)}
-.add-chat-effort-control p{margin:0;color:var(--fg-muted);font-size:12px;line-height:1.45}
+/* Combined project and connectors section. */
 .add-chat-project-connectors{display:grid;gap:10px;min-width:0;margin-top:16px}
 .add-chat-project-connectors-heading h3{margin:0 0 4px;color:var(--fg);font-size:15px;font-weight:650}
 .add-chat-project-connectors-heading p{margin:0;color:var(--fg-muted);font-size:12.5px;line-height:1.45}
 #add-chat-project-connectors-list{min-width:0}
-@media(max-width:420px){#add-to-chat-shell .response-detail-inline-control{gap:8px;padding:9px}#add-to-chat-shell .response-detail-inline-copy{gap:7px}.response-detail-inline-heading strong,.add-chat-effort-heading strong{font-size:13px}.response-detail-inline-labels,.add-chat-effort-labels{font-size:9.5px;gap:4px}}

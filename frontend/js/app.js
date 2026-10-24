@@ -4177,7 +4177,7 @@
 
   function bindMessageEvents(root) {
     const scope = root || $('#messages');
-    $('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
+    $$('[data-deep-agent-id]', scope).forEach(button => button.addEventListener('click', () => {
       const messageId = String(button.dataset.messageId || '');
       const agentId = String(button.dataset.deepAgentId || '');
       const message = findNode(state.tree, messageId);
@@ -4185,7 +4185,7 @@
         .find(run => run && run.kind === 'deep_research_agent' && String(run.agent_id || '') === agentId);
       openDeepResearchAgentDetail(agent);
     }));
-    $('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-tool-toggle]', scope).forEach(btn => btn.addEventListener('click', () => {
       const box = btn.closest('.tool-box');
       if (!box) return;
       const expanded = box.classList.toggle('collapsed') === false;

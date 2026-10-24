@@ -1229,7 +1229,6 @@
     modelSets: [],
     modelSetId: localStorage.getItem('aich_model_set_id') || '',
     modelPickerOpen: false,
-    effort: ['low', 'medium', 'high'].includes(localStorage.getItem('aich_effort')) ? localStorage.getItem('aich_effort') : 'medium',
     usage: null,
     draftTail: null,
     memories: [],
@@ -5485,9 +5484,9 @@
     renderAddChatActionLabels();
   }
 
-  function responseDetailName(value) { return ({ minimum: 'Минимум', standard: 'Стандарт', max: 'Максимум' })[value] || 'Стандарт'; }
-  function effortName(value) { return ({ low: 'Минимум', medium: 'Стандарт', high: 'Максимум' })[value] || 'Стандарт'; }
-  function effortLevel(value) { return ({ low: 0, medium: 1, high: 2 })[value] ?? 1; }
+  function responseDetailName(value) {
+    return ({ minimum: 'Минимум', standard: 'Стандарт', max: 'Max' })[value] || 'Стандарт';
+  }
 
   function renderAddChatResponseDetailView() {
     const root = $('#add-chat-response-detail-options');
@@ -5514,12 +5513,7 @@
       modelLabel.textContent = selected ? selected.name : 'Модель по умолчанию';
     }
     const responseDetailLabel = $('#add-chat-response-detail-current');
-    const responseDetailRange = $('#add-chat-response-detail-range');
     if (responseDetailLabel) responseDetailLabel.textContent = responseDetailName(state.responseDetail);
-    if (responseDetailRange) { const level = ({ minimum: 0, standard: 1, max: 2 })[state.responseDetail] ?? 1; responseDetailRange.value = String(level); responseDetailRange.setAttribute('aria-valuetext', responseDetailName(state.responseDetail)); }
-    const effortRange = $('#add-chat-effort-range'), effortLabel = $('#add-chat-effort-current');
-    if (effortRange) { effortRange.value = String(effortLevel(state.effort)); effortRange.setAttribute('aria-valuetext', effortName(state.effort)); }
-    if (effortLabel) effortLabel.textContent = effortName(state.effort);
     const deepResearchButton = $('[data-add-chat-action="deep-research"]');
     const deepResearchLabel = $('#add-chat-deep-research-current');
     if (deepResearchButton) {
@@ -5666,6 +5660,7 @@
     renderModelPicker();
     if (next === 'model') renderAddChatActionLabels();
     if (next === 'response-detail') renderAddChatResponseDetailView();
+    if (next === 'model') renderAddChatResponseDetailView();
     if (next === 'memory') renderAddChatMemoryView();
     if (next === 'connectors') renderConnectorsInto($('#add-chat-connectors-list'));
     if (next === 'project') renderConnectorsInto($('#add-chat-project-connectors-list'));
@@ -5844,14 +5839,15 @@
         setAddChatView('connectors');
       }
     });
-    $('#add-chat-response-detail-range')?.addEventListener('input', event => { state.responseDetail = ['minimum', 'standard', 'max'][Math.max(0, Math.min(2, Number(event.currentTarget.value) || 0))]; try { localStorage.setItem('aich_response_detail', state.responseDetail); } catch (_) {} renderAddChatActionLabels(); });
-    $('#add-chat-effort-range')?.addEventListener('input', event => { state.effort = ['low', 'medium', 'high'][Math.max(0, Math.min(2, Number(event.currentTarget.value) || 0))]; try { localStorage.setItem('aich_effort', state.effort); } catch (_) {} renderAddChatActionLabels(); });
     $('#add-chat-response-detail-options')?.addEventListener('click', event => {
       const button = event.target.closest('[data-response-detail]');
       if (!button) return;
       const value = button.dataset.responseDetail;
       if (!['minimum', 'standard', 'max'].includes(value)) return;
-      state.responseDetail = value; localStorage.setItem('aich_response_detail', value); renderAddChatActionLabels(); setAddChatView('main');
+      state.responseDetail = value;
+      localStorage.setItem('aich_response_detail', value);
+      renderAddChatActionLabels();
+      setAddChatView('model');
     });
     $('#add-chat-library-search')?.addEventListener('input', renderAddChatLibraryFiles);
     $('#add-chat-library-list')?.addEventListener('change', event => {

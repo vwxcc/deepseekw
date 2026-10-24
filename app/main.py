@@ -74,6 +74,12 @@ async def _storage_watchdog() -> None:
                 await auth.cleanup_expired_guests()
             except Exception as e:
                 log.warning("Guest cleanup failed: %s", e)
+            try:
+                removed_empty = await chats.cleanup_stale_empty_chats()
+                if removed_empty:
+                    log.info("Removed %s stale empty draft chats", removed_empty)
+            except Exception as e:
+                log.warning("Empty draft chat cleanup failed: %s", e)
             free = disk_free()
             if free < settings.disk_min_free:
                 log.warning(
@@ -98,6 +104,12 @@ async def lifespan(app: FastAPI):
         await auth.cleanup_expired_guests()
     except Exception as e:
         log.warning("Guest cleanup failed during startup: %s", e)
+    try:
+        removed_empty = await chats.cleanup_stale_empty_chats()
+        if removed_empty:
+            log.info("Removed %s stale empty draft chats at startup", removed_empty)
+    except Exception as e:
+        log.warning("Empty draft chat cleanup failed during startup: %s", e)
     await bootstrap()
     init_provider_client()
     await ai_router.start()

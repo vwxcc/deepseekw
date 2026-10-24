@@ -32,6 +32,7 @@ from ..models import (
     AudioGeneration,
     Attachment,
     Chat,
+    ConnectorConnection,
     File,
     Memory,
     Project,
@@ -350,48 +351,136 @@ async def _model_context(db: AsyncSession, model_set_id: str | None) -> int:
 
 
 async def _memory_block(
-    db: AsyncSession, user_id: str, request_text: str = ""
+    db: AsyncSession,
+    user_id: str,
+    request_text: str = "",
+    *,
+    current_chat_id: str | None = None,
 ) -> str:
-    """Keep personalization available; retrieve facts/history only when relevant."""
-    res = await db.execute(
+    """Supply saved personalization and, on explicit recall, bounded cross-chat context."""
+    result = await db.execute(
         select(Memory)
         .where(Memory.user_id == user_id)
         .order_by(Memory.created_at.desc())
         .limit(120)
     )
-    rows = [m for m in res.scalars().all() if m.content]
-    prefs = [m.content[:300] for m in rows if (m.kind or "fact") == "preference"][:15]
+    rows = [item for item in result.scalars().all() if (item.content or "").strip()]
+    preferences = [
+        item.content.strip()[:300]
+        for item in rows
+        if (item.kind or "fact") == "preference"
+    ][:15]
+    facts = [
+        item.content.strip()[:420]
+        for item in rows
+        if (item.kind or "fact") == "fact"
+    ][:12]
+
     query = str(request_text or "").casefold()
     recall_terms = (
-        "памят", "истори", "вспомни", "что ты знаешь", "обо мне", "раньше", "прошлый раз", "прошлой бесед",
-        "что мы делали", "что делали", "что обсуждали", "что ты помнишь",
-        "помнишь", "продолж", "вернись к", "вернёмся к", "вернемся к",
-        "где останов", "на чём останов", "на чем останов", "предыдущ",
-        "возобнов", "по проекту", "контекст проекта", "сводк", "our previous", "what did we",
-        "remember", "continue where", "project history",
+        "памят", "истори", "вспомни", "что ты знаешь", "обо мне", "про меня",
+        "мой профиль", "мой аккаунт", "все данные", "раньше", "прошлый раз",
+        "прошлой бесед", "что мы делали", "что делали", "что обсуждали",
+        "что ты помнишь", "помнишь", "продолж", "вернись к", "вернёмся к",
+        "вернемся к", "где останов", "на чём останов", "на чем останов",
+        "предыдущ", "возобнов", "по проекту", "контекст проекта", "сводк",
+        "предыдущие чаты", "другие чаты", "our previous", "what do you know about me",
+        "what did we", "remember", "continue where", "project history",
     )
     needs_recall = any(term in query for term in recall_terms)
-    facts = [m.content[:500] for m in rows if (m.kind or "fact") == "fact"][:15] if needs_recall else []
-    history = [m.content[:600] for m in rows if m.kind == "history"][:12] if needs_recall else []
+    saved_history = [
+        item.content.strip()[:550]
+        for item in rows
+        if item.kind == "history"
+    ][:10] if needs_recall else []
+
     out = ""
-    if prefs:
+    if preferences:
         out += (
-            "\n\n[Персонализация — постоянные предпочтения пользователя]\n"
-            + "\n".join("- " + value for value in reversed(prefs))
+            "\n\n[Сохранённая персонализация — предпочтения пользователя]\n"
+            + "\n".join("- " + value for value in reversed(preferences))
         )
     if facts:
         out += (
-            "\n\n[Память о пользователе — извлечена по запросу]\n"
+            "\n\n[Сохранённая память — факты, добавленные в этом аккаунте]\n"
             + "\n".join("- " + value for value in reversed(facts))
         )
-    if history:
+    if saved_history:
         out += (
-            "\n\n[Краткая история предыдущей работы — извлечена по запросу]\n"
-            + "\n".join("- " + value for value in reversed(history))
-            + "\nИспользуй эти записи как контекст для продолжения; приоритет имеют последние сообщения текущего чата."
+            "\n\n[Сохранённые заметки об истории предыдущей работы]\n"
+            + "\n".join("- " + value for value in reversed(saved_history))
         )
-    return out
 
+    if needs_recall:
+        chat_query = (
+            select(Chat)
+            .where(
+                Chat.user_id == user_id,
+                Chat.deleted_at.is_(None),
+                Chat.id.in_(
+                    select(Message.chat_id).where(Message.content != "")
+                ),
+            )
+            .order_by(Chat.updated_at.desc())
+            .limit(8)
+        )
+        if current_chat_id:
+            chat_query = chat_query.where(Chat.id != current_chat_id)
+        chat_result = await db.execute(chat_query)
+        previous_chats = chat_result.scalars().all()
+        if previous_chats:
+            prior_ids = [item.id for item in previous_chats]
+            message_result = await db.execute(
+                select(Message)
+                .where(
+                    Message.chat_id.in_(prior_ids),
+                    Message.role.in_((Role.user, Role.assistant)),
+                    Message.content != "",
+                )
+                .order_by(Message.created_at.desc())
+                .limit(100)
+            )
+            grouped: dict[str, list[Message]] = {}
+            for message in message_result.scalars().all():
+                grouped.setdefault(message.chat_id, []).append(message)
+
+            excerpts: list[str] = []
+            for prior_chat in previous_chats:
+                chat_messages = grouped.get(prior_chat.id, [])
+                latest_user = next(
+                    (m for m in chat_messages if m.role == Role.user and (m.content or "").strip()),
+                    None,
+                )
+                latest_assistant = next(
+                    (
+                        m for m in chat_messages
+                        if m.role == Role.assistant
+                        and m.status == MessageStatus.completed
+                        and (m.content or "").strip()
+                    ),
+                    None,
+                )
+                if latest_user is None:
+                    continue
+                date_label = str(prior_chat.updated_at or prior_chat.created_at or "")[:10]
+                title = (prior_chat.title or "Чат").strip()[:90]
+                excerpt = f"- {date_label} · «{title}»: запрос пользователя — {(latest_user.content or '').strip()[:260]}"
+                if latest_assistant is not None:
+                    excerpt += f"; ответ AI CH — {(latest_assistant.content or '').strip()[:300]}"
+                excerpts.append(excerpt)
+            if excerpts:
+                out += (
+                    "\n\n[Недавние другие чаты AI CH — ограниченные выдержки, не полный архив]\n"
+                    + "\n".join(excerpts)
+                    + "\nИспользуй эти записи для восстановления контекста, но не утверждай, что видел полный архив или чаты из других сервисов, если они не были импортированы сюда."
+                )
+        if not out:
+            out = (
+                "\n\n[Память и история AI CH]\n"
+                "В доступной сохранённой памяти и выбранных недавних чатах не найдено записей по этому запросу. "
+                "Не придумывай сведения о пользователе."
+            )
+    return out
 
 async def _request_context_block(
     request: Request, db: AsyncSession, user: User, client_context: dict | None = None
@@ -441,7 +530,7 @@ async def _request_context_block(
     ))
     message_count = await db.scalar(select(func.count()).select_from(Message).join(
         Chat, Chat.id == Message.chat_id
-    ).where(Chat.user_id == user.id))
+    ).where(Chat.user_id == user.id, Chat.deleted_at.is_(None)))
 
     device: dict[str, object] = {
         "server_time_utc": utcnow().isoformat(),
@@ -474,12 +563,32 @@ async def _request_context_block(
         if isinstance(value, bool):
             device[key] = value
 
+    integration_result = await db.execute(
+        select(ConnectorConnection.provider).where(ConnectorConnection.user_id == user.id)
+    )
+    connected_integrations = sorted({
+        str(provider).strip()[:48]
+        for provider in integration_result.scalars().all()
+        if isinstance(provider, str) and provider.strip()
+    })
+    github_connected = bool((user.github_user or "").strip() or (user.github_token or "").strip())
+    if github_connected and "github" not in {item.casefold() for item in connected_integrations}:
+        connected_integrations.append("github")
+        connected_integrations.sort(key=str.casefold)
+
     payload = {
         "account": {
             "display_name": (user.name or "")[:120],
+            "email": (user.email or "")[:320],
             "subscription_plan": normalize_plan(user.plan),
             "is_admin": bool(user.is_admin),
             "created_at": user.created_at.isoformat() if user.created_at else None,
+        },
+        "connected_integrations": connected_integrations[:30],
+        "github_connected": github_connected,
+        "tool_availability": {
+            "web_search_enabled": bool(settings.web_search_enabled),
+            "server_sandbox_url_configured": bool(settings.sandbox_url),
         },
         "limits": safe_limits,
         "current_window": {
@@ -494,9 +603,14 @@ async def _request_context_block(
         "device_and_time": device,
     }
     return (
-        "\n\n[КОНТЕКСТ АККАУНТА, ЛИМИТОВ И УСТРОЙСТВА. Используй для адаптации ответа; "
-        "не раскрывай без необходимости. Цены тарифов и ставки за токены не передаются. "
-        "Данные устройства предоставлены браузером и могут быть неполными.]\n"
+        "\n\n[КОНТЕКСТ АККАУНТА, ЛИМИТОВ, ИНТЕГРАЦИЙ И УСТРОЙСТВА. Используй для точных ответов о текущем аккаунте. "
+        "Значения полей account, usage, connected_integrations и github_connected получены из базы приложения; "
+        "не выдумывай тариф, роль, дату создания, числа файлов/чатов/сообщений или подключённые сервисы. "
+        "Если данных нет — прямо скажи об этом. При вопросе «что ты знаешь обо мне» разделяй сохранённую память, "
+        "предпочтения, выдержки истории AI CH и факты аккаунта; выводы обозначай как предположения. "
+        "Список интеграций содержит только названия подключений: никогда не раскрывай токены, ключи, cookie или секреты. "
+        "Не утверждай, что доступен полный архив других сервисов, если пользователь не импортировал его сюда. "
+        "Цены тарифов и ставки за токены не передаются. Данные устройства предоставлены браузером и могут быть неполными.]\n"
         + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     )
 
@@ -573,7 +687,9 @@ async def _spawn(
         )
     if user_id:
         if memory_enabled:
-            system_prompt += await _memory_block(db, user_id, _last_user_text(history_messages))
+            system_prompt += await _memory_block(
+                db, user_id, _last_user_text(history_messages), current_chat_id=chat.id
+            )
         else:
             system_prompt += (
                 "\n\n[ПАМЯТЬ ВЫКЛЮЧЕНА пользователем: не используй сохранённые факты и предпочтения, "

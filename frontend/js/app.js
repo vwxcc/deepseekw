@@ -1692,44 +1692,48 @@
 
   async function newChat(mode) {
     if (!state.identityReady) { toast('Подключаем сессию…', 'info'); return; }
-    // A second click during a slow POST must not create another empty chat.
     if (state.chatCreating) return;
+
+    // A new conversation is a local draft. Persist it atomically with its first message
+    // through /api/new-chat/messages; never create a database row just by opening it.
     setChatCreationPending(true);
-    const selectionToken = state.chatOpenToken;
-    let chat = null;
+    const selectionToken = ++state.chatOpenToken;
+    const previousChatId = state.currentChatId;
+    let removedEmptyDraft = false;
     try {
-      chat = await api.post('/api/chats', {
-        title: 'Новый чат',
-        mode: mode || 'chat',
-      });
-      if (!chat || typeof chat !== 'object' || typeof chat.id !== 'string' || !chat.id) {
-        throw new Error('Сервер не вернул созданный чат с корректным ID');
-      }
-      upsertChat(chat);
-      if (pendingNewChatProjectId) {
-        const projectId = pendingNewChatProjectId;
-        const updated = await api.patch('/api/chats/' + encodeURIComponent(chat.id), { project_id: projectId });
-        chat = { ...chat, ...updated };
-        upsertChat(chat);
-        pendingNewChatProjectId = '';
-        pendingNewChatProjectLabel = '';
-        renderAddChatActionLabels();
-      }
-      // Respect a later user selection made while the create request was in flight.
-      if (selectionToken === state.chatOpenToken) {
-        const opened = await openChat(chat.id);
-        if (opened) {
-          resetNewChatResponseOptions();
-          const input = $('#input');
-          if (input) input.focus();
+      if (previousChatId && (!Array.isArray(state.tree) || state.tree.length === 0)) {
+        try {
+          await api.del('/api/chats/' + encodeURIComponent(previousChatId) + '/empty');
+          removedEmptyDraft = true;
+        } catch (_) {
+          // The server refuses deletion if anything was saved or linked to the chat.
         }
-      } else {
+      }
+      if (removedEmptyDraft) {
+        state.chats = (Array.isArray(state.chats) ? state.chats : [])
+          .filter(chat => chat && typeof chat === 'object' && chat.id !== previousChatId);
+        state.chatListVersion += 1;
         renderChatList();
       }
+      // A later user selection always wins over this asynchronous cleanup.
+      if (selectionToken !== state.chatOpenToken) return;
+
+      state.currentChatId = null;
+      state.tree = [];
+      state.choices = {};
+      state.activeAssistantId = null;
+      $('#chat-title').textContent = 'AI CH';
+      $('#chat-title').classList.remove('is-generating');
+      $('#project-btn')?.classList.add('hidden');
+      toggleProjectPanel(false);
+      resetNewChatResponseOptions();
+      renderChatList();
+      renderMessages();
+      closeMobileSidebar();
+      const input = $('#input');
+      if (input) input.focus();
     } catch (error) {
-      toast(chat ? 'Чат создан, но не удалось открыть его: ' + (error.message || error)
-        : 'Не удалось создать чат: ' + (error.message || error), 'error');
-      if (chat) renderChatList();
+      toast('Не удалось открыть новый чат: ' + (error.message || error), 'error');
     } finally {
       setChatCreationPending(false);
     }
@@ -1792,6 +1796,29 @@
       const loadedTree = await api.get('/api/chats/' + encodeURIComponent(id) + '/messages');
       if (requestToken !== state.chatOpenToken) return false;
       if (!Array.isArray(loadedTree)) throw new Error('Сервер вернул некорректную историю чата');
+
+      // Clean up legacy drafts only after the destination history loaded successfully.
+      // The server re-checks ownership, messages, attachments, pins and links before deleting.
+      const previousChatId = state.currentChatId;
+      if (previousChatId && previousChatId !== id &&
+          (!Array.isArray(state.tree) || state.tree.length === 0)) {
+        let removedEmptyDraft = false;
+        try {
+          await api.del('/api/chats/' + encodeURIComponent(previousChatId) + '/empty');
+          removedEmptyDraft = true;
+        } catch (_) {
+          // Preserve any chat with actual data or user-selected links/settings.
+        }
+        if (removedEmptyDraft) {
+          state.chats = (Array.isArray(state.chats) ? state.chats : [])
+            .filter(chat => chat && typeof chat === 'object' && chat.id !== previousChatId);
+          state.chatListVersion += 1;
+        }
+      }
+      if (requestToken !== state.chatOpenToken) {
+        renderChatList();
+        return false;
+      }
 
       if (state.currentChatId !== id) {
         closeChatSearch();

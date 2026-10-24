@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
-from ..ai.router import Job, router as ai_router
+from ..ai.router import IMPORT_TRANSFER_SYSTEM_INSTRUCTION, Job, router as ai_router
 from ..ai.stream_lifecycle import detach_output_drain
 from ..ai.providers import ProviderError, complete_chat, transcribe_audio
 from ..deps import (
@@ -145,6 +145,8 @@ async def _stream_job(
                     yield _sse("status_preview", {"statuses": payload})
             elif kind == "delta":
                 yield _sse("delta", {"text": payload})
+            elif kind == "model_status":
+                yield _sse("model_status", {"text": str(payload or "")})
             elif kind == "ui_status":
                 yield _sse("ui_status", {"text": str(payload or "")})
             elif kind == "ui_action":
@@ -981,6 +983,11 @@ async def send_message(
             "предоставь обычный блок кода для локального превью; не выдавай его за серверное исполнение.]"
         )
 
+    if data.import_transfer:
+        # Append after ordinary preferences/context so the server-managed transfer
+        # rules remain authoritative and never appear in the user's chat message.
+        system_prompt += "\n\n" + IMPORT_TRANSFER_SYSTEM_INSTRUCTION
+
     # The answer must start immediately: web search runs inside the worker, which
     # is also where the query-writing call is billed.
     total = await db.scalar(
@@ -1023,6 +1030,8 @@ async def send_message(
         memory_enabled=memory_enabled,
         action_limit=action_limit,
         deep_research=bool(data.deep_research),
+        import_transfer=bool(data.import_transfer),
+        free_transfer=first_free_transfer,
     )
     # Start the normal AI job first. The exact-title lookup runs only after it has
     # entered the router; on a hit, cancel that work and return the prepared answer.

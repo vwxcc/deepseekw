@@ -2018,9 +2018,14 @@
   }
 
   function latestActivityLabel(n) {
-    // While the dedicated status model is preparing its first status, show the usual thinking label.
+    // A real tool/system activity wins over a rotating preview. A fresh model status
+    // replaces the preview until the next concrete operation starts.
+    const current = String(n && n.activityStatusCurrent || '').trim();
+    if (current) return current;
     const modelStatus = String(n && n.statusModelCurrent || '').trim();
-    return modelStatus || 'Думаю';
+    if (modelStatus) return modelStatus;
+    const previewStatus = String(n && n.statusPreviewCurrent || '').trim();
+    return previewStatus || 'Ожидаю ответ модели';
   }
 
   function formatActivityDuration(ms) {
@@ -2055,7 +2060,11 @@
   }
 
   function activityStatusEmoji(text, n) {
-    const savedEmoji = String(n && n.statusModelEmoji || '').trim();
+    const source = String(n && n.activityStatusSource || '');
+    const savedEmoji = String(n && (
+      source === 'preview' ? n.statusPreviewEmoji :
+      (!source ? n.statusModelEmoji : '')
+    ) || '').trim();
     if (savedEmoji) return savedEmoji;
     const value = stripActivityEmoji(text).toLowerCase();
     if (/(ошиб|не удалось|недоступ|сбой|failed|error)/u.test(value)) return '🛠️';
@@ -4615,31 +4624,20 @@
         }
         mergeUploadedFiles(uploaded);
 
-        const fileNames = uploaded.map(file => file.original_name || file.name || 'файл').join(', ');
-        const prompt = [
-          '## Перенос данных в AI CH — задача для Deep Research',
-          'Выполни полный, аккуратный перенос всех предоставленных материалов. Сначала проанализируй каждый файл и весь текст, затем сам реши, какую информацию куда распределить. Не заменяй фактическую обработку общим ответом.',
-          '1. Извлеки историю диалогов, важные решения, незавершённые темы, проекты, задачи, даты и ссылки. Сохраняй порядок и источник; не выдумывай пропущенные сообщения или факты.',
-          '2. Выдели устойчивые сведения обо мне, цели, интересы, ограничения и предпочтения. Используй доступный механизм долговременной памяти AI CH для сохранения того, что полезно в будущих разговорах.',
-          '3. Выдели инструкции персонализации: язык, желаемый тон, формат, степень подробности, правила и нежелательные подходы. Сохрани через доступные в AI CH инструменты памяти, навыков или персонализации, если они действительно доступны.',
-          '4. Перенеси контекст истории в этот чат: создай понятный хронологический индекс и тематическое резюме, сохрани наиболее важные детали и различай исходные данные и выводы.',
-          '5. Разложи материалы по категориям: память, инструкции, проекты, текущие задачи, справочные данные, история чатов и документы. Удаляй только явные дубликаты; противоречия перечисли отдельно.',
-          '6. Не утверждай, что что-либо сохранено в память или настройках, если действие фактически не выполнено. Если автоматическое сохранение категории недоступно, укажи это и дай готовый текст для ручного применения.',
-          '7. В конце составь отчёт: что изучено, что реально сохранено, какие темы/диалоги включены в индекс, что не удалось обработать и что требует моего решения.',
-          '',
-          'Текст и дополнительные пояснения пользователя:',
-          notes || '(Отдельные пояснения не добавлены.)',
-          previousDraft ? '\nТекст, ранее введённый в обычное поле чата:\n' + previousDraft : '',
-          fileNames ? '\nПрикреплённые файлы: ' + fileNames : '',
-          uploaded.length ? '\nВсе прикреплённые файлы перечислены как вложения к этому сообщению. Прочитай и обработай содержимое каждого из них.' : '',
-        ].filter(Boolean).join('\n');
+        // Keep internal transfer instructions on the server. The user message contains
+        // only user-provided notes; task orchestration is added server-side via import_transfer.
+        const visibleTransferMessage = [
+          notes ? 'Пояснения к переносу:\n' + notes : '',
+          previousDraft ? 'Дополнительные сведения:\n' + previousDraft : '',
+        ].filter(Boolean).join('\n\n').trim() ||
+          'Перенеси данные из прикреплённых материалов в AI CH.';
 
         state.currentChatId = null;
         state.tree = [];
         state.choices = {};
         state.pendingAttachments = (Array.isArray(state.pendingAttachments) ? state.pendingAttachments : []).concat(uploaded);
         if (mainInput) {
-          mainInput.value = prompt;
+          mainInput.value = visibleTransferMessage;
           autoGrow();
         }
         const previousDeepResearch = !!state.deepResearch;
@@ -5498,7 +5496,7 @@
           if (streamContext.node && statuses.length) {
             const selectedEmoji = String(data.emoji || '✨');
             streamContext.statusEmoji = selectedEmoji;
-            streamContext.node.statusModelEmoji = selectedEmoji;
+            streamContext.node.statusPreviewEmoji = selectedEmoji;
             stopPreviewStatuses();
             streamContext.previewStatuses = statuses.slice(0, 60);
             streamContext.previewStatusIndex = 0;
@@ -5516,12 +5514,20 @@
               if (statusText.trim()) {
                 const n = (state.currentChatId === streamContext.chatId
                   ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
-                // Keep the current model-generated status separate from transport/stage events.
-                n.statusModelCurrent = stripActivityEmoji(statusText);
-                n.statusModelEmoji = streamContext.statusEmoji || '✨';
-                streamContext.node.statusModelCurrent = n.statusModelCurrent;
-                streamContext.node.statusModelEmoji = n.statusModelEmoji;
-                appendActivity(n, { kind: 'status', text: n.statusModelCurrent });
+                const previewText = stripActivityEmoji(statusText);
+                // Keyword-matched previews are only a fallback while no real activity
+                // event has been observed. They must never overwrite tool/model states.
+                if (n.activityStatusSource && n.activityStatusSource !== 'preview') {
+                  stopPreviewStatuses();
+                  return;
+                }
+                n.statusPreviewCurrent = previewText;
+                n.statusPreviewEmoji = streamContext.statusEmoji || '✨';
+                n.activityStatusCurrent = previewText;
+                n.activityStatusSource = 'preview';
+                streamContext.node.statusPreviewCurrent = previewText;
+                streamContext.node.statusPreviewEmoji = n.statusPreviewEmoji;
+                appendActivity(n, { kind: 'status', text: previewText });
                 if (state.currentChatId === streamContext.chatId) {
                   renderMessageInPlace(streamContext.assistantId);
                   bindStreamRefs();
@@ -5543,7 +5549,13 @@
             const activeAgents = data.agents.filter(agent => ['queued', 'working', 'searching'].includes(String(agent.status || '')));
             if (activeAgents.length) {
               const current = activeAgents.find(agent => agent.status === 'searching') || activeAgents[0];
-              appendActivity(n, { kind: 'status', text: String(current.name || 'Агент') + ': ' + deepResearchStatusLabel(current.status) });
+              stopPreviewStatuses();
+              const currentText = String(current.name || 'Агент') + ': ' + deepResearchStatusLabel(current.status);
+              n.activityStatusCurrent = currentText;
+              n.activityStatusSource = 'system';
+              n.statusModelCurrent = '';
+              n.statusPreviewCurrent = '';
+              appendActivity(n, { kind: 'status', text: currentText });
             }
             if (state.currentChatId === streamContext.chatId) {
               renderMessageInPlace(streamContext.assistantId);
@@ -5562,12 +5574,45 @@
               bindStreamRefs();
             }
           }
+        } else if (ev === 'model_status') {
+          const n = (state.currentChatId === streamContext.chatId
+            ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
+          const statusText = stripActivityEmoji(data.text || '');
+          if (n && statusText) {
+            stopPreviewStatuses();
+            n.statusModelCurrent = statusText;
+            n.statusModelEmoji = '';
+            n.statusPreviewCurrent = '';
+            n.statusPreviewEmoji = '';
+            n.activityStatusCurrent = statusText;
+            n.activityStatusSource = 'model';
+            streamContext.node.statusModelCurrent = statusText;
+            streamContext.node.statusPreviewCurrent = '';
+            streamContext.node.activityStatusCurrent = statusText;
+            streamContext.node.activityStatusSource = 'model';
+            appendActivity(n, { kind: 'status', text: statusText });
+            if (state.currentChatId === streamContext.chatId) {
+              renderMessageInPlace(streamContext.assistantId);
+              bindStreamRefs();
+            }
+          }
         } else if (ev === 'ui_status') {
           const n = (state.currentChatId === streamContext.chatId
             ? findNode(state.tree, streamContext.assistantId) : null) || streamContext.node;
           const statusText = stripActivityEmoji(data.text || '');
-          const genericTransportStatus = /^(?:думаю|передаю запрос|обрабатываю запрос|получаю ответ от модели|подготавливаю ответ|подбираю способ решения|ожидаю завершения предыдущего ответа)[.…! ]*$/iu;
-          if (n && statusText && !genericTransportStatus.test(statusText.trim())) {
+          if (n && statusText) {
+            stopPreviewStatuses();
+            // This event is emitted by the backend for a concrete transport/tool phase.
+            n.activityStatusCurrent = statusText;
+            n.activityStatusSource = 'system';
+            n.statusPreviewCurrent = '';
+            n.statusPreviewEmoji = '';
+            n.statusModelCurrent = '';
+            n.statusModelEmoji = '';
+            streamContext.node.activityStatusCurrent = statusText;
+            streamContext.node.activityStatusSource = 'system';
+            streamContext.node.statusPreviewCurrent = '';
+            streamContext.node.statusModelCurrent = '';
             appendActivity(n, { kind: 'status', text: statusText });
             if (state.currentChatId === streamContext.chatId) {
               renderMessageInPlace(streamContext.assistantId);
@@ -5623,7 +5668,13 @@
             const item = { code: data.code || '', kind: blockKind, running: true, ok: true, files: [] };
             if (planSource) item.device_plan = planSource;
             n.tool_runs = (n.tool_runs || []).concat([item]);
-            appendActivity(n, { kind: 'status', text: blockKind === 'fileplan' ? 'Подготавливаю файл' : 'Выполняю код для задачи' });
+            stopPreviewStatuses();
+            const toolStatus = blockKind === 'fileplan' ? 'Подготавливаю файл' : 'Выполняю код для задачи';
+            n.activityStatusCurrent = toolStatus;
+            n.activityStatusSource = 'system';
+            n.statusModelCurrent = '';
+            n.statusPreviewCurrent = '';
+            appendActivity(n, { kind: 'status', text: toolStatus });
             if (n.execution_target === 'both' && !n.deviceRunnerStarted && deviceCode.trim()) {
               n.deviceRunnerStarted = true;
               appendActivity(n, { kind: 'status', text: 'Параллельно запускаю код на устройстве' });
@@ -5657,18 +5708,24 @@
               runs.push(data);
             }
             n.tool_runs = runs;
+            let resultStatus;
             if (data.files && data.files.length) {
               n.attachments = (n.attachments || []).concat(data.files.map(f => ({
                 id: f.id, file_id: f.file_id, name: normaliseOutputFilename(f.name, ''),
                 kind: f.kind, size: f.size,
               })));
-              appendActivity(n, { kind: 'status', text: 'Файлы подготовлены · завершаю проверку результата' });
+              resultStatus = 'Файлы подготовлены · завершаю проверку результата';
             } else if (suppressSandboxFailure) {
-              appendActivity(n, { kind: 'status', text: 'Продолжаю подготовку результата' });
+              resultStatus = 'Продолжаю подготовку результата';
             } else {
-              appendActivity(n, { kind: 'status', text: data.ok && !data.timed_out
-                ? 'Результат выполнения готов · завершаю проверку' : 'Продолжаю обработку результата' });
+              resultStatus = data.ok && !data.timed_out
+                ? 'Результат выполнения готов · завершаю проверку' : 'Продолжаю обработку результата';
             }
+            n.activityStatusCurrent = resultStatus;
+            n.activityStatusSource = 'system';
+            n.statusModelCurrent = '';
+            n.statusPreviewCurrent = '';
+            appendActivity(n, { kind: 'status', text: resultStatus });
           }
           if (state.currentChatId === streamContext.chatId) {
             renderMessageInPlace(streamContext.assistantId);

@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import prompts
-from ..ai.router import Job, router as ai_router
+from ..ai.router import IMPORT_TRANSFER_SYSTEM_INSTRUCTION, Job, router as ai_router
 from ..ai.stream_lifecycle import detach_output_drain
 from ..ai.providers import ProviderError, complete_chat, transcribe_audio
 from ..deps import (
@@ -145,6 +145,8 @@ async def _stream_job(
                     yield _sse("status_preview", {"statuses": payload})
             elif kind == "delta":
                 yield _sse("delta", {"text": payload})
+            elif kind == "model_status":
+                yield _sse("model_status", {"text": str(payload or "")})
             elif kind == "ui_status":
                 yield _sse("ui_status", {"text": str(payload or "")})
             elif kind == "ui_action":
@@ -937,6 +939,10 @@ async def send_message(
 
     code_mode = (chat.mode or "chat") == "code"
     system_prompt = prompts.CODE_SYSTEM if code_mode else prompts.MAIN_SYSTEM
+    if data.import_transfer:
+        # Transfer orchestration is deliberately server-side; never ship this task prompt
+        # in the browser bundle or store it as the visible user message.
+        system_prompt += "\n\n" + IMPORT_TRANSFER_SYSTEM_INSTRUCTION
     system_prompt += prompts.STYLE_PROMPTS.get((data.style or "auto").lower(), "")
     detail_key = str(data.response_detail or "standard").strip().lower()
     if detail_key not in prompts.RESPONSE_DETAIL_PROMPTS:
@@ -1023,6 +1029,7 @@ async def send_message(
         memory_enabled=memory_enabled,
         action_limit=action_limit,
         deep_research=bool(data.deep_research),
+        import_transfer=bool(data.import_transfer),
     )
     # Start the normal AI job first. The exact-title lookup runs only after it has
     # entered the router; on a hit, cancel that work and return the prepared answer.

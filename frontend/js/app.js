@@ -24,7 +24,7 @@
       return job;
     }
     async _start(job) {
-      const started = await api.post("/api/prefetch", { file_id: job.fileId });
+      const started = await api.postTimed("/api/prefetch", { file_id: job.fileId }, 6000);
       if (job.status === "CANCELLED") {
         if (started && started.prefetch_id) {
           api.post("/api/prefetch/" + encodeURIComponent(started.prefetch_id) + "/cancel", {}).catch(() => {});
@@ -41,7 +41,7 @@
     }
     async _poll(job) {
       while (job.status === "PROCESSING") {
-        const result = await api.get("/api/prefetch/" + encodeURIComponent(job.prefetchId));
+        const result = await api.getTimed("/api/prefetch/" + encodeURIComponent(job.prefetchId), 5000);
         if (job.status !== "PROCESSING") return null;
         const status = String(result && result.status || "").toUpperCase();
         if (status === "READY") { job.status = "READY"; return true; }

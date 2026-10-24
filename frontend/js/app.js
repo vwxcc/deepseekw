@@ -3880,6 +3880,7 @@
         const pendingPersistence = deviceFilePersistence.get(messageId);
         if (pendingPersistence) await pendingPersistence;
         setCodeRunnerBusy(messageId, null, false);
+        void loadChats().catch(() => {});
         if (messageNode) {
           messageNode.deviceRunnerFinishedAt = Date.now();
           const skippedFiles = Array.isArray(data.skipped) ? data.skipped.filter(Boolean).map(x => String(x).slice(0, 160)) : [];
@@ -3916,6 +3917,7 @@
       }
       if (data.type === 'device-code-error') {
         setCodeRunnerBusy(messageId, null, false);
+        void loadChats().catch(() => {});
         const message = String(data.message || 'Неизвестная ошибка выполнения').slice(0, 50000);
         if (isBackground) {
           if (messageNode) {

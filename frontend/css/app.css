@@ -6726,7 +6726,8 @@ input[type="range"].orange-range {
   cursor: pointer;
 }
 #effort-range::-webkit-slider-thumb,
-input[type="range"]::-webkit-slider-thumb {
+input[type="range"]::-webkit-slider-thumb,
+input[type="range"].orange-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 18px;
   height: 18px;
@@ -6737,7 +6738,8 @@ input[type="range"]::-webkit-slider-thumb {
   transition: transform .16s ease, box-shadow .16s ease;
 }
 #effort-range::-moz-range-thumb,
-input[type="range"]::-moz-range-thumb {
+input[type="range"]::-moz-range-thumb,
+input[type="range"].orange-range::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border: 1px solid rgba(71, 83, 102, .2);

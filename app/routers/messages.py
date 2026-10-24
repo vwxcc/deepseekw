@@ -374,17 +374,17 @@ async def _memory_block(
     if prefs:
         out += (
             "\\n\\n[Персонализация — постоянные предпочтения пользователя]\\n"
-            + "\\n".join("- " + value for value in reversed(prefs[-30:]))
+            + "\\n".join("- " + value for value in reversed(prefs[:30]))
         )
     if facts:
         out += (
             "\\n\\n[Память о пользователе — извлечена по запросу]\\n"
-            + "\\n".join("- " + value for value in reversed(facts[-40:]))
+            + "\\n".join("- " + value for value in reversed(facts[:40]))
         )
     if history:
         out += (
             "\\n\\n[Краткая история предыдущей работы — извлечена по запросу]\\n"
-            + "\\n".join("- " + value for value in reversed(history[-40:]))
+            + "\\n".join("- " + value for value in reversed(history[:40]))
             + "\\nИспользуй эти записи как контекст для продолжения; приоритет имеют последние сообщения текущего чата."
         )
     return out

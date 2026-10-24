@@ -1030,6 +1030,7 @@ async def send_message(
         action_limit=action_limit,
         deep_research=bool(data.deep_research),
         import_transfer=bool(data.import_transfer),
+        free_transfer=first_free_transfer,
     )
     # Start the normal AI job first. The exact-title lookup runs only after it has
     # entered the router; on a hit, cancel that work and return the prepared answer.

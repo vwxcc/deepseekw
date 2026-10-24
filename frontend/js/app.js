@@ -1235,6 +1235,8 @@
     style: localStorage.getItem('cs_style') || 'auto',
     responseDetail: 'standard',
     deepResearch: false,
+    codeRunningChatIds: new Set(),
+    codeRunnerChatByMessage: new Map(),
     generatingChatId: '',
     readonly: false,
     publicToken: null,
@@ -1442,7 +1444,7 @@
     const pinned = !!chat.is_pinned;
     const showPin = !(options && options.hidePin);
     return '<div class="chat-item' + (chat.id === state.currentChatId ? ' active' : '') + '" data-id="' + escapeHtml(chat.id) + '">' +
-      (chat.is_generating ? '<span class="chat-generating-spinner" role="status" aria-label="Запрос обрабатывается"></span>' : '') +
+      ((chat.is_generating || (state.codeRunningChatIds && state.codeRunningChatIds.has(String(chat.id)))) ? '<span class="chat-generating-spinner" role="status" aria-label="Запрос или выполнение кода обрабатывается"></span>' : '') +
       (chat.mode === 'research' ? '<span class="chat-mode-emoji" title="Deep Research" aria-label="Deep Research">🧭</span>' : '') +
       '<span class="title">' + escapeHtml(chat.title || 'Новый чат') + '</span>' +
       ((chat.mode === 'code' || chat.mode === 'council' || (chat.bundle_id && chat.mode !== 'council')) ?
@@ -3969,10 +3971,12 @@
         '</span>' + (edge.label ? '<small>' + escapeHtml(edge.label) + '</small>' : '') + '</div>';
     }).filter(Boolean).join('');
     const active = agents.some(agent => ['queued', 'working', 'searching'].includes(String(agent.status || '')));
+    const totalTokens = Math.max(0, Number(flow && flow.total_tokens) || 0);
     return '<section class="deep-research-flow" aria-label="Deep Research: ход исследования">' +
       '<div class="deep-research-flow-head"><span class="deep-research-flow-mark">🧭</span>' +
       '<strong>Deep Research</strong><span class="deep-research-flow-state">' +
       (active ? thinkAnim() + ' Исследуют' : 'Исследование завершено') + '</span></div>' +
+      '<div class="deep-research-total-tokens">Токены планировщика и всех агентов: <strong>' + totalTokens.toLocaleString('ru-RU') + '</strong></div>' +
       '<div class="deep-research-agents">' + agents.map(agent => {
         const state = String(agent.status || 'queued');
         const marker = ['queued', 'working', 'searching'].includes(state)
@@ -3980,12 +3984,14 @@
           : state === 'done' ? '<span class="deep-agent-state-dot is-done">✓</span>'
           : '<span class="deep-agent-state-dot is-error">!</span>';
         const id = escapeHtml(String(agent.agent_id || ''));
+        const agentTokens = Math.max(0, Number(agent.tokens_in) || 0) + Math.max(0, Number(agent.tokens_out) || 0);
+        const tokensLabel = agentTokens > 0 ? '<span class="deep-agent-token-count">' + agentTokens.toLocaleString('ru-RU') + ' токенов</span>' : '';
         return '<button type="button" class="deep-research-agent-card" data-deep-agent-id="' + id +
           '" data-message-id="' + escapeHtml(String(n.id || '')) + '" aria-label="Открыть результат агента ' +
           escapeHtml(agent.name || 'Агент') + '">' +
           '<span class="deep-agent-card-top">' + marker + '<strong>' + escapeHtml(agent.name || 'Агент') +
           '</strong><small>' + escapeHtml(deepResearchStatusLabel(state)) + '</small></span>' +
-          '<span class="deep-agent-card-task">' + escapeHtml(agent.task || '') + '</span>' +
+          '<span class="deep-agent-card-task">' + escapeHtml(agent.task || '') + '</span>' + tokensLabel +
           (agent.result ? '<span class="deep-agent-card-preview">' + escapeHtml(String(agent.result).slice(0, 180)) + '</span>' : '') +
           '</button>';
       }).join('') + '</div>' +
@@ -4171,6 +4177,8 @@
   function renderMessageInPlace(messageId, previousMessageId, options) {
     const box = $('#messages');
     const opts = options || {};
+    const previousScrollTop = box ? box.scrollTop : 0;
+    const previousStickBottom = state.stickBottom;
     const entries = allMessages(state.tree);
     const entryIndex = entries.findIndex(entry => String(entry.node.id) === String(messageId));
     const previousId = previousMessageId == null ? String(messageId) : String(previousMessageId);
@@ -4201,6 +4209,9 @@
       const content = $('.content.md', nextMessage);
       if (content) content.classList.add('answer-arrive');
       requestAnimationFrame(() => scrollToMessageStart(opts.focusMessageId));
+    } else if (opts.preserveScroll) {
+      box.scrollTop = previousScrollTop;
+      state.stickBottom = previousStickBottom;
     } else if (state.stickBottom !== false) {
       scrollToBottom();
     }
@@ -4272,7 +4283,7 @@
     }));
     $$('.quiz-card [data-quiz-toggle]', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null;
-      if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id);
+      if (!message) return; message.quizCollapsed=button.dataset.quizToggle==='collapse'; renderMessageInPlace(message.id, null, { preserveScroll: true });
     }));
     $$('.quiz-option[data-quiz-option]', scope).forEach(button => button.addEventListener('click', () => {
       const el=button.closest('.msg'), message=el?findNode(state.tree,el.dataset.mid):null, question=button.closest('.quiz-question');
@@ -4322,7 +4333,7 @@
       });
       const score=results.filter(item=>item.correct).length;
       message.quizResults=results;message.quizScore={correct:score,total:items.length};message.quizSubmitted=true;message.quizCollapsed=false;message.quizResponses=responses;message.quizResultSent=false;
-      renderMessageInPlace(message.id);toast('Результат: '+score+' из '+items.length);
+      renderMessageInPlace(message.id, null, { preserveScroll: true });toast('Результат: '+score+' из '+items.length);
       // The model opts in during quiz generation only when its follow-up needs the score.
       if(items.some(item=>item&&typeof item==='object'&&item.send_result_to_ai===true)){
         sendQuizResultToAI(message);
@@ -5476,6 +5487,7 @@
 
   function resetNewChatResponseOptions() {
     state.deepResearch = false;
+    renderDeepResearchChip();
     state.responseDetail = 'standard';
     try {
       localStorage.setItem('aich_deep_research', '0');
@@ -5538,6 +5550,17 @@
         : 'Не выбрано';
     }
     if (projectButton) projectButton.setAttribute('aria-label', projectTitle.textContent);
+    renderDeepResearchChip();
+  }
+
+  function renderDeepResearchChip() {
+    const chip = $('#deep-research-chip');
+    const composer = $('#composer');
+    if (!chip) return;
+    const enabled = !!state.deepResearch;
+    chip.classList.toggle('hidden', !enabled);
+    chip.setAttribute('aria-hidden', String(!enabled));
+    if (composer) composer.classList.toggle('deep-research-active', enabled);
   }
 
   function renderAddChatLibraryFiles() {
@@ -5830,6 +5853,7 @@
         state.deepResearch = !state.deepResearch;
         localStorage.setItem('aich_deep_research', state.deepResearch ? '1' : '0');
         renderAddChatActionLabels();
+        renderDeepResearchChip();
         toast(state.deepResearch ? 'Deep Research включён: до 5 агентов' : 'Deep Research выключен');
       } else if (action === 'memory') {
         setAddChatView('memory');
@@ -6286,6 +6310,14 @@
     const input = $('#input');
     updateComposerActionButton();
     bindAddToChatSheet();
+    const deepResearchRemove = $('#deep-research-chip-remove');
+    if (deepResearchRemove) deepResearchRemove.addEventListener('click', () => {
+      state.deepResearch = false;
+      try { localStorage.setItem('aich_deep_research', '0'); } catch (_) {}
+      renderAddChatActionLabels();
+      renderDeepResearchChip();
+      toast('Глубокое исследование выключено');
+    });
     const modelButton = $('#model-select-btn'), modelPanel = $('#model-picker');
     if (modelButton) modelButton.addEventListener('click', event => { event.stopPropagation(); setAddChatView(state.modelPickerOpen ? 'main' : 'model'); });
     if (modelPanel) modelPanel.addEventListener('click', async event => {
@@ -9664,11 +9696,12 @@
     if (filterMessageId) items = items.filter(m => m.message_id === filterMessageId);
     const facts = items.filter(m => (m.kind || 'fact') === 'fact');
     const prefs = items.filter(m => m.kind === 'preference');
+    const history = items.filter(m => m.kind === 'history');
     const row = (m) => '<div class="mem-row"><span>' + escapeHtml(m.content) + '</span>' +
       '<button data-del-mem="' + m.id + '" title="Удалить из памяти">' + icon('trash') + '</button></div>';
 
     openModal({
-      title: filterMessageId ? 'Что записано по этому ответу' : 'Память о вас',
+      title: filterMessageId ? 'Что записано по этому ответу' : 'Память, персонализация и история',
       okText: 'Закрыть',
       body:
         (!filterMessageId
@@ -9680,10 +9713,14 @@
           : '<p class="usage-note">Пока нет. Например: «отвечай кратко», «всегда с примерами кода».</p>') +
         '<div style="margin:8px 0 16px"><button class="chip-btn" id="mem-add-pref">' +
         icon('plus') + 'Добавить предпочтение</button></div>' +
-        '<h4 class="sec">Факты</h4>' +
+        '<h4 class="sec">Память · факты</h4>' +
         (facts.length
           ? '<div class="mem-list">' + facts.map(row).join('') + '</div>'
           : '<p class="usage-note">Пока пусто.</p>') +
+        '<h4 class="sec">История работы</h4>' +
+        (history.length
+          ? '<div class="mem-list">' + history.map(row).join('') + '</div>'
+          : '<p class="usage-note">Для многошаговых задач ИИ сохраняет кратко, что делали, каким способом и где остановились. История подмешивается в контекст только по запросу.</p>') +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="chip-btn" id="mem-add">' + icon('plus') + 'Добавить факт</button>' +
         (items.length && !filterMessageId

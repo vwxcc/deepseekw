@@ -3621,27 +3621,30 @@
     if (!id) return;
     if (!(state.codeRunnerChatByMessage instanceof Map)) state.codeRunnerChatByMessage = new Map();
     if (!(state.codeRunningChatIds instanceof Set)) state.codeRunningChatIds = new Set();
+    let targetChatId = String(chatId || '');
+
     if (busy) {
-      const resolvedChatId = String(chatId || state.codeRunnerChatByMessage.get(id) || state.currentChatId || '');
+      const resolvedChatId = targetChatId || state.codeRunnerChatByMessage.get(id) || state.currentChatId || '';
       if (!resolvedChatId) return;
       const previous = state.codeRunnerChatByMessage.get(id);
       if (previous && previous !== resolvedChatId) {
-        if (![...state.codeRunnerChatByMessage.values()].some(value => value === previous && value !== id)) {
-          state.codeRunningChatIds.delete(previous);
-        }
+        const stillBusy = [...state.codeRunnerChatByMessage.entries()]
+          .some(([otherId, value]) => otherId !== id && value === previous);
+        if (!stillBusy) state.codeRunningChatIds.delete(previous);
       }
-      state.codeRunnerChatByMessage.set(id, resolvedChatId);
-      state.codeRunningChatIds.add(resolvedChatId);
+      targetChatId = String(resolvedChatId);
+      state.codeRunnerChatByMessage.set(id, targetChatId);
+      state.codeRunningChatIds.add(targetChatId);
     } else {
       const previous = state.codeRunnerChatByMessage.get(id);
+      targetChatId = targetChatId || String(previous || '');
       state.codeRunnerChatByMessage.delete(id);
       if (previous && ![...state.codeRunnerChatByMessage.values()].includes(previous)) {
         state.codeRunningChatIds.delete(previous);
       }
     }
 
-    const targetChatId = String(chatId || state.codeRunnerChatByMessage.get(id) || '');
-    const matchingItems = $('.chat-item[data-id]').filter(item => item.dataset.id === targetChatId);
+    const matchingItems = $$('.chat-item[data-id]').filter(item => item.dataset.id === targetChatId);
     if (!matchingItems.length) {
       if ($('#chat-list') && Array.isArray(state.chats) && state.chats.some(chat => String(chat.id) === targetChatId)) {
         renderChatList();
